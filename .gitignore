@@ -1,0 +1,42 @@
+# --- Python / Backend ---
+__pycache__/
+*.py[cod]
+*$py.class
+backend/venv/
+backend/venv311/
+*.egg-info/
+.Python
+
+# --- Bases de datos ---
+*.db
+*.sqlite
+*.sqlite3
+
+# --- Logs ---
+backend/logs/*.log
+*.log
+
+# --- Credenciales y tokens (NUNCA versionar) ---
+backend/config/google_oauth.json
+backend/data/google/token.json
+backend/data/email_memory/*.json
+.env
+*.env
+!.env.example
+
+# --- Node / Frontend ---
+frontend/node_modules/
+frontend/dist/
+frontend/dist-electron/
+frontend/.vite/
+npm-debug.log*
+
+# --- Editor / OS ---
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+*.swp
+
+# --- Capturas y archivos sueltos de trabajo ---
+*.tmp

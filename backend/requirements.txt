@@ -1,0 +1,75 @@
+# Aithera Backend - Dependencias reproducibles
+# Generadas a partir del entorno venv instalado (Fase 0 - Higiene)
+# Instalar con: pip install -r requirements.txt
+#
+# Para el módulo Email Assistant ver también: modules/email_assistant/requirements.txt
+# (sus paquetes están incluidos abajo para tener un único archivo instalable)
+
+# --- Framework web ---
+fastapi==0.138.0
+starlette==1.3.1
+uvicorn==0.49.0
+httptools==0.8.0
+watchfiles==1.2.0
+websockets==16.0
+
+# --- Validación / configuración ---
+pydantic==2.13.4
+pydantic_core==2.46.4
+pydantic-settings==2.14.2
+python-dotenv==1.2.2
+python-multipart==0.0.32
+
+# --- Base de datos ---
+SQLAlchemy==2.0.51
+greenlet==3.5.2
+
+# --- Cliente HTTP (proveedores de IA) ---
+httpx==0.28.1
+httpcore==1.0.9
+h11==0.16.0
+anyio==4.14.0
+
+# --- Google APIs (Email Assistant: Gmail + Calendar) ---
+google-api-python-client==2.197.0
+google-auth==2.55.0
+google-auth-oauthlib==1.4.0
+google-auth-httplib2==0.4.0
+google-api-core==2.31.0
+googleapis-common-protos==1.75.0
+proto-plus==1.28.0
+protobuf==7.35.1
+httplib2==0.31.2
+uritemplate==4.2.0
+oauthlib==3.3.1
+requests-oauthlib==2.0.0
+pyasn1==0.6.3
+pyasn1-modules==0.4.2
+
+# --- Desktop app (CustomTkinter) ---
+customtkinter==5.2.2
+darkdetect==0.8.0
+
+# --- Voz (TTS / STT) ---
+pyttsx3==2.99
+SpeechRecognition==3.17.0
+PyAudio==0.2.14
+comtypes==1.4.16
+pywin32==312
+
+# --- Utilidades generales ---
+requests==2.34.2
+certifi==2026.6.17
+idna==3.18
+urllib3==2.7.0
+charset-normalizer==3.4.7
+click==8.4.1
+PyYAML==6.0.3
+cryptography==49.0.0
+cffi==2.0.0
+pycparser==3.0
+typing_extensions==4.15.0
+typing-inspection==0.4.2
+annotated-types==0.7.0
+pyparsing==3.3.2
+packaging==26.2
