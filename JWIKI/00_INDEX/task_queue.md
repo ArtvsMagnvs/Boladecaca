@@ -23,19 +23,25 @@
 
 ### JWIKI-001 — Historia cronológica 1990s-2026
 - **Path destino**: `01_LANDSCAPE/history.md`
-- **Estado**: pending
+- **Estado**: ✅ verified (tick 1 manual, 2026-06-30)
 - **Asignado**: aithera-wiki-inv2
 - **Dependencias**: ninguna
 - **Prioridad**: alta (Fase 1)
 - **Notas**: cronología desde Clippy 1997 → Siri 2011 → Alexa 2014 → ChatGPT 2022 → agentes OSS 2026. Hitos clave, papers, releases, fechas.
+- **Resultado**: doc en `01_LANDSCAPE/history.md`, material crudo en `JWIKI/material/JWIKI-001-raw.md`. Nivel de confianza 75%.
+- **Creado**: 2026-06-30
+- **Updated**: 2026-06-30 13:00 (turno B tick 1)
+- **Material crudo**: `JWIKI/material/JWIKI-001-raw.md` (en curso)
 
 ### JWIKI-003 — OpenClaw (376k stars)
 - **Path destino**: `01_LANDSCAPE/openclaw.md`
-- **Estado**: pending
+- **Estado**: in_progress
 - **Asignado**: aithera-wiki-inv2
 - **Dependencias**: ninguna
 - **Prioridad**: alta
 - **Notas**: el más popular. Stack (TypeScript), Discord/Telegram/WhatsApp/Slack, MCP-based, 376k stars. Features, arquitectura, limitaciones.
+- **Updated**: 2026-06-30 14:00 (turno B tick 2 — investigador despachado)
+- **Material crudo**: `JWIKI/material/JWIKI-003-raw.md` (en curso)
 
 ### JWIKI-005 — OpenJarvis (Stanford local-first)
 - **Path destino**: `01_LANDSCAPE/openjarvis.md`
@@ -65,19 +71,25 @@
 
 ### JWIKI-002 — Comparativa proyectos OSS principales
 - **Path destino**: `01_LANDSCAPE/projects.md`
-- **Estado**: pending
+- **Estado**: in_progress
 - **Asignado**: aithera-wiki-investigador
-- **Dependencias**: JWIKI-001 (para tener cronología)
+- **Dependencias**: JWIKI-001 (en curso, turno B)
 - **Prioridad**: alta (Fase 1)
 - **Notas**: tabla comparativa OpenClaw/OpenHuman/OpenJarvis/JarvisAgent/Hermes/Clawdbot/Superpowers. Stars, licencia, stack, features, último commit.
+- **Creado**: 2026-06-30
+- **Updated**: 2026-06-30 13:45 (turno A tick 2 -- investigador 13:15 cerro con 79 hechos; proximo tick A: escriba toma 002)
+- **Material crudo**: `JWIKI/material/JWIKI-002-raw.md` ok (222 lineas, 79 hechos verificados, listo para escriba)
 
 ### JWIKI-004 — OpenHuman desktop-first Rust+TS
 - **Path destino**: `01_LANDSCAPE/openhuman.md`
-- **Estado**: pending
+- **Estado**: in_progress
 - **Asignado**: aithera-wiki-investigador
 - **Dependencias**: ninguna
 - **Prioridad**: alta
-- **Notas**: 7.8k stars, Rust+TS, v0.53.43 (mayo 2026). Personal context layer, conexiones Gmail/Notion/GitHub/Slack/Calendar/Drive/Linear/Jira.
+- **Notas**: 7.8k stars, Rust+TS, v0.53.43 (mayo 2026). Personal context layer, conexiones Gmail/Notion/GitHub/Slack/Calendar/Drive/Linear/Jira. **Resolver conflicto v0.53.43 vs v0.54.7 detectado en JWIKI-002.**
+- **Creado**: 2026-06-30
+- **Updated**: 2026-06-30 13:55 (turno A tick 2 -- investigador entrego raw, 86 hechos verificados)
+- **Material crudo**: `JWIKI/material/JWIKI-004-raw.md` [OK] (24065 bytes, 86 hechos verificados)
 
 ### JWIKI-006 — JarvisAgent Tauri Vue 3
 - **Path destino**: `01_LANDSCAPE/jarvisagent.md`

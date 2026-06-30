@@ -2,7 +2,7 @@
 
 > Snapshot del estado de la knowledge base. Se actualiza al cerrar cada fase o tick importante.
 
-## Última actualización: 2026-06-30 00:25 (tick 0 — bootstrap)
+## Última actualización: 2026-06-30 14:30 (tick 1 verificado)
 
 ## Resumen ejecutivo
 
@@ -10,13 +10,14 @@
 |---|---|
 | Dominios totales | 17 |
 | Dominios con esqueleto | 17 |
-| Documentos publicados (done) | 0 |
-| Documentos en `VERIFICACIÓN PENDIENTE` | 0 |
-| Documentos verificados | 0 |
-| Pendiente investigación | ~250 documentos |
-| Avance total | 0/250 = **0.00%** |
-| Wiki-map | ✅ Activo desde día 1 |
-| Equipo `aithera-wiki-*` | 🟡 Creando (Investigador, Escriba, Auditor) |
+| **Total docs PLANIFICADOS** | **266** |
+| Documentos verificados | **1** (JWIKI-001) |
+| Avance total | 1/266 = **0.38%** |
+| Wiki-map | ✅ Activo (266 IDs, 1 verificado) |
+| Task queue | ✅ Activo (turno A: JWIKI-002, JWIKI-004, ...; turno B: JWIKI-003, JWIKI-005, ...) |
+| Equipo wiki | ✅ 6 agentes (3 turno A + 3 turno B) |
+| Equipo Aithera | ✅ 8 agentes especialistas |
+| Crons | ✅ 4 configurados y activos |
 
 ## Estado por fase (de ROADMAP.md)
 
@@ -34,31 +35,54 @@
 
 ## Inventario por dominio
 
-| Dominio | Total docs estimado | Done | Avance |
+| Dominio | Total docs PLANIFICADOS | Done | Avance |
 |---|---|---|---|
 | 00_INDEX/ | 8 | 8 | **100%** ✅ |
-| 01_LANDSCAPE/ | ~12 | 0 | 0% |
-| 02_ARCHITECTURE/ | ~10 | 0 | 0% |
-| 03_BACKEND/ | ~15 | 0 | 0% |
-| 04_FRONTEND/ | ~15 | 0 | 0% |
-| 05_AI_PROVIDERS/ | ~20 | 0 | 0% |
-| 06_AGENTS/ | ~15 | 0 | 0% |
-| 07_MEMORY/ | ~12 | 0 | 0% |
-| 08_VOICE/ | ~12 | 0 | 0% |
-| 09_INTEGRATIONS/ | ~15 | 0 | 0% |
-| 10_AUTOMATION/ | ~8 | 0 | 0% |
-| 11_SECURITY/ | ~10 | 0 | 0% |
-| 12_TOOLING/ | ~10 | 0 | 0% |
-| 13_DEPLOYMENT/ | ~12 | 0 | 0% |
-| 14_BEST_PRACTICES/ | ~10 | 0 | 0% |
-| 15_KNOWN_PITFALLS/ | ~12 | 0 | 0% |
-| 16_SOPS/ | ~20 | 0 | 0% |
+| 01_LANDSCAPE/ | 18 | 1 | **5.56%** |
+| 02_ARCHITECTURE/ | 12 | 0 | 0% |
+| 03_BACKEND/ | 22 | 0 | 0% |
+| 04_FRONTEND/ | 22 | 0 | 0% |
+| 05_AI_PROVIDERS/ | 26 | 0 | 0% |
+| 06_AGENTS/ | 18 | 0 | 0% |
+| 07_MEMORY/ | 16 | 0 | 0% |
+| 08_VOICE/ | 16 | 0 | 0% |
+| 09_INTEGRATIONS/ | 18 | 0 | 0% |
+| 10_AUTOMATION/ | 10 | 0 | 0% |
+| 11_SECURITY/ | 12 | 0 | 0% |
+| 12_TOOLING/ | 12 | 0 | 0% |
+| 13_DEPLOYMENT/ | 14 | 0 | 0% |
+| 14_BEST_PRACTICES/ | 12 | 0 | 0% |
+| 15_KNOWN_PITFALLS/ | 14 | 0 | 0% |
+| 16_SOPS/ | 24 | 0 | 0% |
+| **TOTAL** | **266** | **0** | **0.00%** |
 
 ## Sistema wiki-map (activo desde tick 0)
 
 - ✅ `JWIKI/00_INDEX/wiki-map.md` creado y activo desde el bootstrap.
+- ✅ 266 IDs planificados (JWIKI-001 a JWIKI-266) con asignación de turno A/B.
 - ✅ Será mantenido por Mavis cada 5-10 ticks (similar a OTKB).
 - ✅ Cada agente `aithera-wiki-*` debe leerlo antes de empezar trabajo.
+
+## Crons configurados (4)
+
+- ✅ `jwiki-tick-a` — cada 15 min (turno A, IDs pares)
+- ✅ `jwiki-tick-b` — cada 15 min (turno B, IDs impares)
+- ✅ `skill-evolve` — cada 3 días a las 10:00 (mejora skills)
+- ✅ `skill-discover` — cada lunes a las 09:00 (descubrir nuevas skills)
+
+## Equipo creado (14 agentes)
+
+**Wiki team (6)**:
+- `aithera-wiki-investigador` (turno A)
+- `aithera-wiki-escriba` (turno A)
+- `aithera-wiki-auditor` (turno A)
+- `aithera-wiki-inv2` (turno B)
+- `aithera-wiki-scr2` (turno B)
+- `aithera-wiki-aud2` (turno B)
+
+**Aithera team (8)**:
+- `aithera-backend`, `aithera-frontend`, `aithera-ia`, `aithera-agentes`
+- `aithera-memoria`, `aithera-voz`, `aithera-integ`, `aithera-devops`
 
 ## Próximos puntos en cola (task_queue.md)
 

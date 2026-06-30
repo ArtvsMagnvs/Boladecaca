@@ -16,14 +16,27 @@
 - `00_INDEX/status.md` con estado inicial (Fase 0 completa).
 - `00_INDEX/TEMPLATE.md` con plantilla obligatoria de documento.
 - `00_INDEX/WORKFLOW.md` con loop autónomo del equipo.
-- `00_INDEX/task_queue.md` con cola activa vacía (a llenar en Fase 1).
-- `00_INDEX/wiki-map.md` con mapa vivo de la JWIKI.
+- `00_INDEX/task_queue.md` con cola activa (266 IDs planificados).
+- `00_INDEX/wiki-map.md` con mapa vivo (266 docs).
 - README.md esqueleto en cada uno de los 16 dominios.
 
 ### Pendiente
 - Investigación real (Fase 1+).
 - Documentos validados con los 6 criterios.
-- Equipo `aithera-wiki-*` creado (Investigador, Escriba, Auditor).
+
+---
+
+## v1.1 — 2026-06-30 (primer tick verificado)
+
+### Añadido
+- **JWIKI-001** (`01_LANDSCAPE/history.md`) — Historia cronológica 1990s-2026. **VERIFIED** ✅.
+  - Material crudo en `JWIKI/material/JWIKI-001-raw.md`.
+  - 18 fuentes citadas (Wikipedia, Apple keynote, Amazon press, OpenAI blog, GitHub releases, arXiv).
+  - Nivel de confianza 75%.
+- Sistema de turnos operativo (Turno A: IDs pares, Turno B: IDs impares).
+- 14 agentes `aithera-*` con agent.md completo (6 wiki + 8 especialistas).
+- 4 crons configurados (jwiki-tick-a/b, skill-evolve, skill-discover).
+- Commit inicial del repo Aithera (84 archivos, 12720 líneas).
 
 ---
 
