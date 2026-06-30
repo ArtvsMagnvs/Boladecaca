@@ -4,6 +4,7 @@
 > **Turno A** (cada 15 min en :00, :15, :30, :45) procesa IDs pares.
 > **Turno B** (también cada 15 min) procesa IDs impares.
 > Los turnos corren en paralelo, con 30 min de margen entre el mismo turno.
+> **Operación 24/7** — sin restricción de horario (decisión usuario 2026-06-30).
 
 ## Cómo procesar un tick
 
@@ -45,11 +46,14 @@
 
 ### JWIKI-005 — OpenJarvis (Stanford local-first)
 - **Path destino**: `01_LANDSCAPE/openjarvis.md`
-- **Estado**: pending
+- **Estado**: in_progress
 - **Asignado**: aithera-wiki-inv2
 - **Dependencias**: ninguna
 - **Prioridad**: alta
 - **Notas**: Stanford, local-first, 5 primitivos (model, reasoning, agent, tools/memory, routing). Routing dinámico basado en complejidad. Energía como métrica.
+- **Creado**: 2026-06-30
+- **Updated**: 2026-06-30 14:15 (turno B tick 3 — spawn OK tras fix; agente `mvs_c3565c1cffec4d9781e4199d924b7b8e` despachado)
+- **Material crudo**: `JWIKI/material/JWIKI-005-raw.md` (en curso por `aithera-wiki-inv2`)
 
 ### JWIKI-007 — Hermes Agent (Nous Research)
 - **Path destino**: `01_LANDSCAPE/hermes-agent.md`
@@ -147,13 +151,13 @@ Todos los IDs del JWIKI-001 al JWIKI-266 con sus asignaciones por turno están e
 ## Métricas de progreso
 
 - **Total**: 266 docs
-- **Done**: 0
-- **Verified**: 0
-- **Rejected**: 0
-- **Abandoned**: 0
-- **Avance**: 0/266 = 0.00%
+- **Verified**: 2 (JWIKI-001, JWIKI-002)
+- **In progress (Turno A)**: 1 (JWIKI-004)
+- **In progress (Turno B)**: 2 (JWIKI-003, JWIKI-005)
+- **Pending**: 261
+- **Avance**: 2/266 = 0.75%
 
-**ETA** (asumiendo ~8 docs/hora con 2 turnos): ~33 horas netas de investigación.
+**ETA** (asumiendo ~8 docs/hora con 2 turnos en paralelo 24/7): **~33 horas netas** = **~1.5 días corridos** si la velocidad se mantiene.
 
 ---
 

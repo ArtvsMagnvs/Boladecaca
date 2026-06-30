@@ -63,12 +63,12 @@
 - ✅ Será mantenido por Mavis cada 5-10 ticks (similar a OTKB).
 - ✅ Cada agente `aithera-wiki-*` debe leerlo antes de empezar trabajo.
 
-## Crons configurados (4)
+## Crons configurados (4 — **24/7**)
 
-- ✅ `jwiki-tick-a` — cada 15 min (turno A, IDs pares)
-- ✅ `jwiki-tick-b` — cada 15 min (turno B, IDs impares)
-- ✅ `skill-evolve` — cada 3 días a las 10:00 (mejora skills)
-- ✅ `skill-discover` — cada lunes a las 09:00 (descubrir nuevas skills)
+- ✅ `jwiki-tick-a` — cada 15 min (turno A, IDs pares) **24/7**
+- ✅ `jwiki-tick-b` — cada 15 min (turno B, IDs impares) **24/7**
+- ✅ `skill-evolve` — cada 3 días a las 10:00 (mejora skills) **24/7**
+- ✅ `skill-discover` — cada lunes a las 09:00 (descubrir nuevas skills) **24/7**
 
 ## Equipo creado (14 agentes)
 

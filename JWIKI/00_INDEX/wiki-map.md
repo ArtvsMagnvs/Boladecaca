@@ -17,7 +17,7 @@
 | JWIKI-002 | 01_LANDSCAPE/projects.md | Comparativa proyectos OSS principales | A | ✅ verified |
 | JWIKI-003 | 01_LANDSCAPE/openclaw.md | OpenClaw (376k stars) | B | 🟡 in_progress |
 | JWIKI-004 | 01_LANDSCAPE/openhuman.md | OpenHuman desktop-first Rust+TS | A | 🟡 in_progress |
-| JWIKI-005 | 01_LANDSCAPE/openjarvis.md | OpenJarvis Stanford local-first | B | 🔴 pending |
+| JWIKI-005 | 01_LANDSCAPE/openjarvis.md | OpenJarvis Stanford local-first | B | 🟡 in_progress |
 | JWIKI-006 | 01_LANDSCAPE/jarvisagent.md | JarvisAgent Tauri Vue 3 | A | 🔴 pending |
 | JWIKI-007 | 01_LANDSCAPE/hermes-agent.md | Hermes Agent Nous Research | B | 🔴 pending |
 | JWIKI-008 | 01_LANDSCAPE/clawdbot.md | Clawdbot MCP-based | A | 🔴 pending |
