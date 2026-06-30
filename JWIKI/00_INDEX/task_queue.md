@@ -40,8 +40,8 @@
 - **Dependencias**: ninguna
 - **Prioridad**: alta
 - **Notas**: el más popular. Stack (TypeScript), Discord/Telegram/WhatsApp/Slack, MCP-based, 376k stars. Features, arquitectura, limitaciones.
-- **Updated**: 2026-06-30 14:00 (turno B tick 2 — investigador despachado)
-- **Material crudo**: `JWIKI/material/JWIKI-003-raw.md` (en curso)
+- **Updated**: 2026-06-30 14:18 (turno B tick 2 — raw entregado por Mavis, no por inv2: ver detalle en `ticks/B-20260630-1400.md`)
+- **Material crudo**: `JWIKI/material/JWIKI-003-raw.md` OK (63 hechos verificados, 22.2KB)
 
 ### JWIKI-005 — OpenJarvis (Stanford local-first)
 - **Path destino**: `01_LANDSCAPE/openjarvis.md`
@@ -71,11 +71,12 @@
 
 ### JWIKI-002 — Comparativa proyectos OSS principales
 - **Path destino**: `01_LANDSCAPE/projects.md`
-- **Estado**: in_progress
+- **Estado**: ✅ verified (tick 2 manual, 2026-06-30)
 - **Asignado**: aithera-wiki-investigador
-- **Dependencias**: JWIKI-001 (en curso, turno B)
+- **Dependencias**: JWIKI-001
 - **Prioridad**: alta (Fase 1)
-- **Notas**: tabla comparativa OpenClaw/OpenHuman/OpenJarvis/JarvisAgent/Hermes/Clawdbot/Superpowers. Stars, licencia, stack, features, último commit.
+- **Notas**: tabla comparativa 7 proyectos OSS activos.
+- **Resultado**: doc con 7 proyectos, 5 categorías, 10 fuentes. Nivel confianza 85%.
 - **Creado**: 2026-06-30
 - **Updated**: 2026-06-30 13:45 (turno A tick 2 -- investigador 13:15 cerro con 79 hechos; proximo tick A: escriba toma 002)
 - **Material crudo**: `JWIKI/material/JWIKI-002-raw.md` ok (222 lineas, 79 hechos verificados, listo para escriba)

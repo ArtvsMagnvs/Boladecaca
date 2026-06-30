@@ -14,7 +14,7 @@
 | ID | Path | Título | Turno | Estado |
 |---|---|---|---|---|
 | JWIKI-001 | 01_LANDSCAPE/history.md | Historia cronológica 1990s-2026 | B | ✅ verified |
-| JWIKI-002 | 01_LANDSCAPE/projects.md | Comparativa proyectos OSS principales | A | 🟡 in_progress |
+| JWIKI-002 | 01_LANDSCAPE/projects.md | Comparativa proyectos OSS principales | A | ✅ verified |
 | JWIKI-003 | 01_LANDSCAPE/openclaw.md | OpenClaw (376k stars) | B | 🟡 in_progress |
 | JWIKI-004 | 01_LANDSCAPE/openhuman.md | OpenHuman desktop-first Rust+TS | A | 🟡 in_progress |
 | JWIKI-005 | 01_LANDSCAPE/openjarvis.md | OpenJarvis Stanford local-first | B | 🔴 pending |

@@ -26,17 +26,36 @@
 
 ---
 
-## v1.1 — 2026-06-30 (primer tick verificado)
+## v1.1 — 2026-06-30 (primeros 2 ticks verificados)
 
 ### Añadido
 - **JWIKI-001** (`01_LANDSCAPE/history.md`) — Historia cronológica 1990s-2026. **VERIFIED** ✅.
-  - Material crudo en `JWIKI/material/JWIKI-001-raw.md`.
-  - 18 fuentes citadas (Wikipedia, Apple keynote, Amazon press, OpenAI blog, GitHub releases, arXiv).
-  - Nivel de confianza 75%.
+- **JWIKI-002** (`01_LANDSCAPE/projects.md`) — Comparativa proyectos OSS principales. **VERIFIED** ✅.
+  - Tabla con 7 proyectos OSS activos (OpenClaw 376k, Superpowers 215k, Hermes 53k, OpenHuman, OpenJarvis, JarvisAgent, Clawdbot).
+  - 5 categorías: multi-platform cloud, desktop-first, skill framework, self-evolving, académico.
+  - 10 fuentes citadas.
+  - Nivel de confianza 85%.
+- Material crudo en `JWIKI/material/JWIKI-001-raw.md` y `JWIKI-002-raw.md`.
 - Sistema de turnos operativo (Turno A: IDs pares, Turno B: IDs impares).
 - 14 agentes `aithera-*` con agent.md completo (6 wiki + 8 especialistas).
 - 4 crons configurados (jwiki-tick-a/b, skill-evolve, skill-discover).
-- Commit inicial del repo Aithera (84 archivos, 12720 líneas).
+- 12 skills custom creadas (4 globales + 8 por agente).
+- 2 commits en master (root-commit a7f9f49, tick 1 9a60e5b).
+
+### Estado de skills (entran en ciclo skill-evolve/skill-discover)
+
+- `aithera-v0-7-architecture` (global)
+- `aithera-coding-standards` (global)
+- `jwiki-tick-workflow` (global)
+- `mavis-orchestrator-loop` (global)
+- `web-research` (aithera-wiki-investigador)
+- `doc-synthesis` (aithera-wiki-escriba)
+- `audit-criteria` (aithera-wiki-auditor)
+- `fastapi-patterns` (aithera-backend)
+- `react-18-streaming` (aithera-frontend)
+- `provider-integration` (aithera-ia)
+- `agent-manager` (aithera-agentes)
+- `chromadb-patterns` (aithera-memoria)
 
 ---
 
