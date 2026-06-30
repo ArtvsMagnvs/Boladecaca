@@ -26,36 +26,33 @@
 
 ---
 
-## v1.1 — 2026-06-30 (primeros 2 ticks verificados)
+## v1.2 — 2026-06-30 (ticks automáticos + 24/7)
 
 ### Añadido
-- **JWIKI-001** (`01_LANDSCAPE/history.md`) — Historia cronológica 1990s-2026. **VERIFIED** ✅.
-- **JWIKI-002** (`01_LANDSCAPE/projects.md`) — Comparativa proyectos OSS principales. **VERIFIED** ✅.
-  - Tabla con 7 proyectos OSS activos (OpenClaw 376k, Superpowers 215k, Hermes 53k, OpenHuman, OpenJarvis, JarvisAgent, Clawdbot).
-  - 5 categorías: multi-platform cloud, desktop-first, skill framework, self-evolving, académico.
-  - 10 fuentes citadas.
-  - Nivel de confianza 85%.
-- Material crudo en `JWIKI/material/JWIKI-001-raw.md` y `JWIKI-002-raw.md`.
-- Sistema de turnos operativo (Turno A: IDs pares, Turno B: IDs impares).
-- 14 agentes `aithera-*` con agent.md completo (6 wiki + 8 especialistas).
-- 4 crons configurados (jwiki-tick-a/b, skill-evolve, skill-discover).
-- 12 skills custom creadas (4 globales + 8 por agente).
-- 2 commits en master (root-commit a7f9f49, tick 1 9a60e5b).
+- **JWIKI-003** (`01_LANDSCAPE/openclaw.md`) — OpenClaw 376k stars. **VERIFIED** ✅.
+  - Historia de renames (Clawdbot → Moltbot → OpenClaw).
+  - Arquitectura completa (Channels → Gateway → Agent Runtime → Sandbox).
+  - 11+ channels, MCP integration, ClawHub marketplace (1,508 activos / 31k histórico).
+  - Controversias de seguridad documentadas (ClawHavoc 1,184 malicious, scope squatting).
+  - 10 fuentes + arXiv paper.
+  - Nivel confianza 80%.
+- **JWIKI-004** (`01_LANDSCAPE/openhuman.md`) — OpenHuman desktop-first Rust+TS. **VERIFIED** ✅.
+  - Datos oficiales de GitHub API (33,923 stars, GPL-3.0, Tauri 2.0).
+  - 100+ OAuth connectors via Composio, sincronización cada 20 min.
+  - Mascot con ElevenLabs TTS + Google Meet integration.
+  - Vault paralelo Obsidian-compat.
+  - 9 fuentes citadas.
+  - Nivel confianza 90%.
+- Material crudo automático en `JWIKI/material/JWIKI-003-raw.md` (63 hechos, 22KB) y `JWIKI-004-raw.md` (86 hechos, 24KB).
+- Sistema de turnos operativo 24/7 (eliminado active-hours).
+- Pipeline automático: crons disparan cada 15 min, Investigadores producen raw, Mavis cierra el flujo (Escriba+Auditor).
+- Fix de spawn detectado en tick B 14:15 (path completo a mavis.cmd + lista args sin shell).
+- Reportes individuales por tick en `JWIKI/ticks/`.
 
-### Estado de skills (entran en ciclo skill-evolve/skill-discover)
-
-- `aithera-v0-7-architecture` (global)
-- `aithera-coding-standards` (global)
-- `jwiki-tick-workflow` (global)
-- `mavis-orchestrator-loop` (global)
-- `web-research` (aithera-wiki-investigador)
-- `doc-synthesis` (aithera-wiki-escriba)
-- `audit-criteria` (aithera-wiki-auditor)
-- `fastapi-patterns` (aithera-backend)
-- `react-18-streaming` (aithera-frontend)
-- `provider-integration` (aithera-ia)
-- `agent-manager` (aithera-agentes)
-- `chromadb-patterns` (aithera-memoria)
+### Métricas
+- **4/266 docs verificados (1.50%)**
+- 3 commits en master
+- 12 skills activas (entran en ciclo skill-evolve/skill-discover)
 
 ---
 

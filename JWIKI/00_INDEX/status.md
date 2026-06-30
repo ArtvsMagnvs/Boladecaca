@@ -11,8 +11,8 @@
 | Dominios totales | 17 |
 | Dominios con esqueleto | 17 |
 | **Total docs PLANIFICADOS** | **266** |
-| Documentos verificados | **2** (JWIKI-001, JWIKI-002) |
-| Avance total | 2/266 = **0.75%** |
+| Documentos verificados | **4** (JWIKI-001, JWIKI-002, JWIKI-003, JWIKI-004) |
+| Avance total | 4/266 = **1.50%** |
 | Wiki-map | ✅ Activo (266 IDs, 1 verificado) |
 | Task queue | ✅ Activo (turno A: JWIKI-002, JWIKI-004, ...; turno B: JWIKI-003, JWIKI-005, ...) |
 | Equipo wiki | ✅ 6 agentes (3 turno A + 3 turno B) |
@@ -38,7 +38,7 @@
 | Dominio | Total docs PLANIFICADOS | Done | Avance |
 |---|---|---|---|
 | 00_INDEX/ | 8 | 8 | **100%** ✅ |
-| 01_LANDSCAPE/ | 18 | 2 | **11.11%** |
+| 01_LANDSCAPE/ | 18 | 4 | **22.22%** |
 | 02_ARCHITECTURE/ | 12 | 0 | 0% |
 | 03_BACKEND/ | 22 | 0 | 0% |
 | 04_FRONTEND/ | 22 | 0 | 0% |

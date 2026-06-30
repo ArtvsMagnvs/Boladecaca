@@ -15,8 +15,8 @@
 |---|---|---|---|---|
 | JWIKI-001 | 01_LANDSCAPE/history.md | Historia cronológica 1990s-2026 | B | ✅ verified |
 | JWIKI-002 | 01_LANDSCAPE/projects.md | Comparativa proyectos OSS principales | A | ✅ verified |
-| JWIKI-003 | 01_LANDSCAPE/openclaw.md | OpenClaw (376k stars) | B | 🟡 in_progress |
-| JWIKI-004 | 01_LANDSCAPE/openhuman.md | OpenHuman desktop-first Rust+TS | A | 🟡 in_progress |
+| JWIKI-003 | 01_LANDSCAPE/openclaw.md | OpenClaw (376k stars) | B | ✅ verified |
+| JWIKI-004 | 01_LANDSCAPE/openhuman.md | OpenHuman desktop-first Rust+TS | A | ✅ verified |
 | JWIKI-005 | 01_LANDSCAPE/openjarvis.md | OpenJarvis Stanford local-first | B | 🟡 in_progress |
 | JWIKI-006 | 01_LANDSCAPE/jarvisagent.md | JarvisAgent Tauri Vue 3 | A | 🔴 pending |
 | JWIKI-007 | 01_LANDSCAPE/hermes-agent.md | Hermes Agent Nous Research | B | 🔴 pending |
