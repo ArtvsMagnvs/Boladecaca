@@ -23,10 +23,15 @@ toast contextual, detección de reuniones en dos etapas patrón AMD GAIA,
 - **V0.9** — Automation Engine (APScheduler + reglas + sistema de aprobaciones)
 - **V1.0** — Orchestrator (intent analyzer + planner + Claude Code Agent)
 
-**Estado del git**: branch `master` con todo el código staged (`A`/`AM`) pero
-**sin ningún commit todavía**. El staging area contiene la totalidad del
-repositorio; el primer commit está pendiente. El roadmap está en
-`AOS_Arquitectura_y_Roadmap.md` (249 líneas, sustituye al antiguo Plan AOS).
+**Estado del git**: branch `master` con historia activa. Todo el trabajo V0.7.1
+está commiteado (commit `abf4493`, tag `v0.7.1` — Sprint 1 del PLAN_MAESTRO_2026,
+2026-07-02). Regla desde entonces: un commit por paso terminado. El roadmap está en
+`AOS_Arquitectura_y_Roadmap.md`, complementado por `PLAN_MAESTRO_2026/03_ROADMAP_ACTUALIZADO.md`.
+
+**Tests**: `backend/tests/` con 61 tests pytest — smoke de arranque
+(`test_smoke.py`), contratos del API de email (~30 rutas congeladas en
+`test_email_contracts.py` como red de seguridad del split del god-endpoint) y
+meeting detection (`test_email_assistant.py`). Ejecutar: `cd backend && python -m pytest tests/ -v`.
 
 ---
 
@@ -97,8 +102,7 @@ Aithera/
 │   │   ├── voice/                  # ElevenLabs + eSpeak
 │   │   ├── integrations/           # google_auth.py (OAuth Google)
 │   │   └── services/               # [vacío, creado por预留]
-│   ├── modules/
-│   │   └── email_assistant/        # Módulo paralelo legacy (ver §10)
+│   ├── tests/                      # pytest: smoke + contratos email + meeting detection
 │   ├── alembic/
 │   │   ├── env.py
 │   │   └── versions/               # 8 migraciones aplicadas
@@ -484,7 +488,7 @@ npm run electron:build  # genera release/*.exe con electron-builder
 
 ### Deuda técnica crítica
 
-1. **⚠️ God-endpoint `email_assistant.py` (1889 líneas)** — viola la regla
+1. **⚠️ God-endpoint `email_assistant.py` (2038 líneas)** — viola la regla
    "un archivo por router". Múltiples routers viven en uno. Acopla auth +
    inbox + drafts + send + auto-reply + meetings. La Fase 4 lo creó así por
    urgencia; el refactor pendiente es dividirlo en:
@@ -494,10 +498,11 @@ npm run electron:build  # genera release/*.exe con electron-builder
    - `email_auto_reply.py` (reglas)
    - `email_meetings.py` (proposals + reschedule)
 
-2. **⚠️ Módulos paralelos `app/tools/email_tool.py` vs `modules/email_assistant/`**
-   — Hay lógica de email en dos sitios. `modules/email_assistant/` parece
-   legacy y `app/tools/email_tool.py` la implementación activa. Hay que
-   auditar qué hay en `modules/` y unificar.
+2. ~~**Módulos paralelos `app/tools/email_tool.py` vs `modules/email_assistant/`**~~
+   — ✅ **SALDADA (Sprint 1, 2026-07-02)**: `backend/modules/` auditado y
+   eliminado (código muerto, cero referencias). Veredicto por archivo en
+   `PLAN_MAESTRO_2026/05_AUDITORIA_MODULO_LEGACY.md`. Recuperable con
+   `git show v0.7.1 -- backend/modules/`. Una sola fuente de verdad para email.
 
 3. **⚠️ `backend/app/services/` está vacío** — directorio预留 sin uso real.
    Decidir si se rellena o se elimina.
@@ -532,7 +537,7 @@ npm run electron:build  # genera release/*.exe con electron-builder
 | ChromaDB + sentence-transformers ~1.5GB | Media | Documentar peso, descarga solo primer arranque |
 | MiniMax cambia su API | Media | `minimax_provider.py` aislado, fácil de actualizar |
 | Tres versiones de docs de fase descolocadas | Alta | Limpiar al cerrar V0.8 |
-| Git sin commits en master | Alta | Hacer commit inicial con todo el código staged |
+| ~~Git sin commits en master~~ | ✅ Resuelto | Sprint 1 (2026-07-02): tag `v0.7.1`, un commit por paso |
 | Auto-start backend en producción | Media | Definir mecanismo antes de release |
 
 ---
@@ -559,14 +564,4 @@ Este archivo debe evolucionar a la par del proyecto. Reglas:
 1. **Tras cada commit** que toque arquitectura, modelos o endpoints: actualizar
    la sección correspondiente.
 2. **Tras cada bump de versión** (V0.x → V0.y): actualizar §1, §4, §5 y §15.
-3. **Tras cada refactor mayor** (ej. dividir god-endpoint): actualizar §3, §6, §16.
-4. **Nunca** inventar secciones ni asumir comportamientos no presentes en el
-   código. Si algo no está implementado, marcar como `[pendiente]`.
-5. Si una sección queda obsoleta, moverla a `archive/` (no creado aún) o
-   eliminarla explícitamente.
-
----
-
-*Última actualización: julio 2026 — V0.7.1*
-*Construido desde el estado real del repositorio (código + Alembic + docs de fase).*
-*Sustituye a la versión V0.2 anterior, que declaraba un estado obsoleto.*
+3. **Tras cada refactor mayor** (ej. dividir god-endpoint): actualizar �
