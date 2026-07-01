@@ -1,0 +1,17 @@
+======================================================================
+ CLEANUP: borrar regla legacy #5 que bloquea a la regla #8
+======================================================================
+Encontrada regla id=5: name='Magnoviajes Reunion'
+  sender_emails=None
+  matching=sender_contains pattern='losmagnoviajes@gmail.com'
+  action=None
+  detect_meeting=None
+  reply_template='Hola {sender}, podriamos programar la reunión para otro día? Lo tengo ocupado'
+  ELIMINADA regla id=5
+
+Reglas restantes enabled:
+  id=8 name='Respuesta a losmagnoviajes' action=auto_send detect_meeting=True
+    sender_emails=["losmagnoviajes@gmail.com"]
+
+Tambien limpio propuestas y activity log antiguas (para forzar reprocesamiento):
+  Eliminadas 0 propuestas y 0 activity logs

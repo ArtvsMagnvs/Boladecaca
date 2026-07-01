@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Poop GLB Preview</title>
+<style>
+  body { margin: 0; background: #0a0a0f; overflow: hidden; font-family: sans-serif; color: #fff; }
+  #app { width: 100vw; height: 100vh; }
+  #info { position: absolute; top: 10px; left: 10px; z-index: 10; background: rgba(0,0,0,0.5); padding: 10px; border-radius: 8px; font-size: 12px; }
+</style>
+</head>
+<body>
+<div id="info">Poop GLB Preview (tripo-generated)</div>
+<div id="app"></div>
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+const app = document.getElementById('app');
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x0a0a0f);
+
+const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.01, 100);
+camera.position.set(0, 0.4, 2.4);
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(window.devicePixelRatio);
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+app.appendChild(renderer.domElement);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.target.set(0, 0, 0);
+controls.autoRotate = true;
+controls.autoRotateSpeed = 1.5;
+
+// Lights
+const amb = new THREE.AmbientLight(0xffffff, 0.6);
+scene.add(amb);
+const dir = new THREE.DirectionalLight(0xffe6c8, 2.2);
+dir.position.set(2, 3, 2);
+scene.add(dir);
+const fill = new THREE.DirectionalLight(0x7c9cff, 0.5);
+fill.position.set(-2, -1, -1);
+scene.add(fill);
+
+// Cargar GLB
+const loader = new GLTFLoader();
+loader.load(
+  '/models/poop.glb',
+  (gltf) => {
+    const obj = gltf.scene;
+    // Auto-fit: centrar y escalar a ~1 unidad
+    const box = new THREE.Box3().setFromObject(obj);
+    const size = box.getSize(new THREE.Vector3());
+    const center = box.getCenter(new THREE.Vector3());
+    const maxDim = Math.max(size.x, size.y, size.z);
+    const scale = 1.6 / maxDim;
+    obj.scale.setScalar(scale);
+    obj.position.sub(center.multiplyScalar(scale));
+    scene.add(obj);
+    console.log('GLB loaded', { vertices: size, scale });
+  },
+  (xhr) => console.log('loading', (xhr.loaded / xhr.total * 100).toFixed(1) + '%'),
+  (err) => console.error('error', err)
+);
+
+function animate() {
+  requestAnimationFrame(animate);
+  controls.update();
+  renderer.render(scene, camera);
+}
+animate();
+
+window.addEventListener('resize', () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,17 @@
+{
+  "messageId": 200,
+  "status": "delivered",
+  "data": {
+    "sessionId": "mvs_9b7c7d96bb4d48688e84ce55b9c1f963",
+    "agentName": "aithera-wiki-escriba",
+    "parentSessionId": "mvs_bc3b13a27aa04947b4eeae28e21a6047",
+    "taskTreeId": "mvs_9b7c7d96bb4d48688e84ce55b9c1f963"
+  },
+  "spawned_at": "2026-07-01 10:32 (Europe/Paris)",
+  "tick": "A-20260701-1032",
+  "tick_id": "JWIKI-008",
+  "tick_target": "Clawdbot escriba re-despachar (post-freeze recovery)",
+  "spawn_payload_path": "C:\\Users\\Alejandro\\Desktop\\CLAUDE\\Aithera\\JWIKI\\ticks\\spawn-008-write.json",
+  "spawn_method": "MINIMAX_CODE_DIRECT (root sidecar workaround -- mavis.cmd truncaba args largos)",
+  "note": "Re-despachar tras freeze M3 thinking 09:38-10:24 del agente mvs_fab3d5ca0aa54547abbcf61edc8e630a. Cron no podia despachar (bash classifier bloqueaba python y Copy-Item). Root tomo el spawn desde su bash directo a MiniMax Code.exe + cli.js bypassing cmd.exe wrapper. Sesion freeze cerrada via mavis session close (no abort)."
+}

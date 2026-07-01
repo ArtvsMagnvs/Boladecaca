@@ -11,6 +11,10 @@ backend/venv311/
 *.db
 *.sqlite
 *.sqlite3
+# FIX V0.3 (Fase 1 Estabilizacion Hub V03 - P3): bd local del backend
+# (real en %APPDATA%/Aithera/, nunca debe versionarse)
+backend/*.db
+backend/aithera.db
 
 # --- Logs ---
 backend/logs/*.log
@@ -23,6 +27,7 @@ backend/data/email_memory/*.json
 .env
 *.env
 !.env.example
+backend/.env
 
 # --- Node / Frontend ---
 frontend/node_modules/
@@ -40,3 +45,6 @@ Thumbs.db
 
 # --- Capturas y archivos sueltos de trabajo ---
 *.tmp
+
+# --- Repos de terceros anidados (no versionar) ---
+TripoSR/

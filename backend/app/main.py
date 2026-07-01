@@ -6,7 +6,17 @@ from contextlib import asynccontextmanager
 import traceback
 
 from app.db.database import engine, Base
-from app.api.endpoints import config, projects, tasks, calendar, ai, chat, agents, email_assistant
+from app.api.endpoints import config, projects, tasks, calendar, ai, chat, agents, email_assistant, voice, tools, memory
+# V0.4 (Fase 2 AgentManager + ToolSystem) + V0.5: importar el paquete
+# `app.tools` dispara el auto-registro del ToolManager (filesystem/shell/git).
+# Sin este import, `GET /api/tools/` devolveria [] y el AgentManager no podria
+# ejecutar nada. Importar como efecto secundario es el patron estandar
+# para inicializacion en Python.
+import app.tools  # noqa: F401  (registra tool_manager al importar)
+# V0.6 (Fase 3 Memory System): importamos el memory_manager para que se
+# inicialice al arrancar. Si ChromaDB/sentence-transformers fallan,
+# el constructor degrada gracefully (no rompe el backend).
+from app.memory.memory_manager import memory_manager
 from app.core.logging_config import get_system_logger, log_error, log_info
 
 # Configurar logger
@@ -23,9 +33,26 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         log_error("startup", e, "Error al inicializar base de datos")
         raise
-    
+
+    # V0.6 (Fase 3): arrancamos el sistema de memoria semantica. La primera
+    # vez descarga el modelo de embeddings (sentence-transformers, ~80MB),
+    # por eso este mensaje puede tardar 1-2 min en aparecer.
+    if memory_manager.is_healthy():
+        stats = memory_manager.get_stats()
+        log_info(
+            "startup",
+            f"Memory system listo — {stats['conversations']} conv, "
+            f"{stats['user_context']} ctx, {stats['documents']} docs",
+        )
+    else:
+        log_error(
+            "startup",
+            Exception(memory_manager.get_init_error() or "unknown"),
+            "Memory system no disponible (chat seguira funcionando sin memoria)",
+        )
+
     yield
-    
+
     # Shutdown: cleanup if needed
     log_info("shutdown", "Cerrando Aithera Backend...")
 
@@ -34,7 +61,9 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="Aithera API",
     description="Sistema Operativo de IA - Backend API",
-    version="0.1.0",
+    # V0.7.1 (Fase 4b Email Assistant refactor - bump sincronizado
+    # con root(), core/config.py y frontend/package.json).
+    version="0.7.1",
     lifespan=lifespan
 )
 
@@ -56,13 +85,20 @@ app.include_router(ai.router, prefix="/api")
 app.include_router(chat.router, prefix="/api")
 app.include_router(agents.router, prefix="/api")
 app.include_router(email_assistant.router, prefix="/api")
+app.include_router(voice.router, prefix="/api")
+# V0.5 (Fase 2 AgentManager + ExecutionEngine): herramientas del engine.
+app.include_router(tools.router, prefix="/api")
+# V0.6 (Fase 3 Memory System): endpoints de memoria semantica.
+app.include_router(memory.router, prefix="/api")
 
 
 @app.get("/")
 def root():
+    """V0.7.1 (Fase 4b Email Assistant refactor - bump sincronizado con FastAPI
+    app.version y core/config.py (VERSION = 0.7.1))."""
     return {
         "name": "Aithera",
-        "version": "0.1.0",
+        "version": "0.7.1",
         "status": "running"
     }
 

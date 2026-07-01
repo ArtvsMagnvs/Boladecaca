@@ -1,10 +1,10 @@
 # JWIKI Task Queue (266 docs)
 
-> Cola activa de tareas. Se procesa por orden cronológico con sistema de turnos.
-> **Turno A** (cada 15 min en :00, :15, :30, :45) procesa IDs pares.
-> **Turno B** (también cada 15 min) procesa IDs impares.
-> Los turnos corren en paralelo, con 30 min de margen entre el mismo turno.
+> Cola activa de tareas. Se procesa por orden cronológico con **1 equipo secuencial**.
+> **Tick único** (cron `jwiki-tick-a`, cada 30 min) toma el siguiente ID pending (más bajo, sin importar paridad).
+> Despacha al **investigador principal** (`aithera-wiki-investigador`); el **escriba** (`aithera-wiki-escriba`) y el **auditor** (`aithera-wiki-auditor`) cierran el flujo por doc.
 > **Operación 24/7** — sin restricción de horario (decisión usuario 2026-06-30).
+> **Cambio de paradigma 2026-06-30 19:15**: de 2 turnos paralelos (15 min cada uno, IDs pares/impares) a 1 equipo secuencial con ritmo natural de 30 min. Detalles en `ticks/CHANGEPARADIGM-20260630-1915.md`.
 
 ## Cómo procesar un tick
 
@@ -20,7 +20,19 @@
 
 ## Cola activa (próximos 5 de cada turno)
 
-### Turno B (IDs impares, próximo: JWIKI-001)
+### Turno B (IDs impares, próximo: JWIKI-011 [siguiente tras JWIKI-009 despachado 19:00 tick B#7])
+
+### JWIKI-011 — LangGraph overview
+- **Path destino**: `01_LANDSCAPE/langgraph.md`
+- **Estado**: ✅ verified
+- **Asignado**: aithera-wiki-investigador + aithera-wiki-escriba
+- **Dependencias**: ninguna
+- **Prioridad**: alta
+- **Notas**: Overview LangGraph (langchain-ai/langgraph). Python, state machines. Comparar con LangChain como base. Stars, releases, version actual, casos de uso, integraciones, fortalezas/debilidades vs CrewAI/AutoGen.
+- **Creado**: 2026-07-01
+- **Updated**: 2026-07-01 12:20
+- **Material crudo**: `JWIKI/material/JWIKI-011-raw.md` ✅
+- **Doc final**: `JWIKI/01_LANDSCAPE/langgraph.md` ✅ (escriba cerró 12:20 — 16 fuentes, 5 snippets, 3 tablas, 78% confianza)
 
 ### JWIKI-001 — Historia cronológica 1990s-2026
 - **Path destino**: `01_LANDSCAPE/history.md`
@@ -46,30 +58,30 @@
 
 ### JWIKI-005 — OpenJarvis (Stanford local-first)
 - **Path destino**: `01_LANDSCAPE/openjarvis.md`
-- **Estado**: in_progress
-- **Asignado**: aithera-wiki-inv2
-- **Dependencias**: ninguna
-- **Prioridad**: alta
-- **Notas**: Stanford, local-first, 5 primitivos (model, reasoning, agent, tools/memory, routing). Routing dinámico basado en complejidad. Energía como métrica.
-- **Creado**: 2026-06-30
-- **Updated**: 2026-06-30 14:15 (turno B tick 3 — spawn OK tras fix; agente `mvs_c3565c1cffec4d9781e4199d924b7b8e` despachado)
-- **Material crudo**: `JWIKI/material/JWIKI-005-raw.md` (en curso por `aithera-wiki-inv2`)
+- **Estado**: ✅ verified (auditor mvs_5ee3af3f 2026-07-01 11:57, 2 ⚠️ + 2 ❌: sin refs cruzadas JWIKI, sin marca copy-paste. Issues menores, no bloquean.)
+- **Issues pendientes**: (1) Escriba debe anadir refs cruzadas a otros docs JWIKI, (2) agendar domain validator review.
+- **Doc final**: `JWIKI/01_LANDSCAPE/openjarvis.md` ✅ (53899 bytes, 630 lineas, 23 fuentes)
 
 ### JWIKI-007 — Hermes Agent (Nous Research)
 - **Path destino**: `01_LANDSCAPE/hermes-agent.md`
-- **Estado**: pending
+- **Estado**: in_progress (re-despach post-crash turno B tick 6 18:45)
 - **Asignado**: aithera-wiki-inv2
 - **Dependencias**: ninguna
 - **Prioridad**: alta
-- **Notas**: Nous Research, self-evolving, Python+Node.js, 53k stars. Diferencias con OpenClaw.
+- **Notas**: Nous Research, self-evolving, Python+Node.js, 53k stars. Diferencias con OpenClaw. Familia Hermes 4/4.5, curriculum loops, hermes-agent SDK.
+- **Created**: 2026-06-30
+- **Updated**: 2026-06-30 18:45 (turno B tick 6 -- re-despach post-crash; agente origen `mvs_628bf554aaa446fdbb8dc2586ee9de03` muerto en crash 15:25-18:26)
+- **Material crudo**: `JWIKI/material/JWIKI-007-raw.md` (re-despach; esperado ~10-15 min)
 
 ### JWIKI-009 — Superpowers (Skill framework)
 - **Path destino**: `01_LANDSCAPE/superpowers.md`
-- **Estado**: pending
+- **Estado**: 🟡 in_progress
 - **Asignado**: aithera-wiki-inv2
 - **Dependencias**: ninguna
 - **Prioridad**: alta
 - **Notas**: framework para skills (similar a OTKB). 215k stars, Shell. Compatible con Claude Code, Codex.
+- **Updated**: 2026-06-30 19:00 (turno B tick #7 -- investigador despachado via `ticks/spawn_agent.py` slot 009. Sesión nueva `mvs_053662470f9846029ce79c50cb8417fc`. Diferenciador clave: NO es framework de agentes, es **libreria de skills reutilizables** para Claude Code/Codex. Briefing instruye verificar las 215k stars via GitHub API y comparar con Anthropic Skills nativo / Mavis skills).
+- **Material crudo**: `JWIKI/material/JWIKI-009-raw.md` (en curso; esperado ~10-15 min)
 
 ### Turno A (IDs pares, próximo: JWIKI-002)
 
@@ -96,29 +108,70 @@
 - **Updated**: 2026-06-30 13:55 (turno A tick 2 -- investigador entrego raw, 86 hechos verificados)
 - **Material crudo**: `JWIKI/material/JWIKI-004-raw.md` [OK] (24065 bytes, 86 hechos verificados)
 
+### JWIKI-011 — LangGraph overview
+- **Path destino**: `01_LANDSCAPE/langgraph.md`
+- **Estado**: 🟡 in_progress (investigador actual mvs_b1beac1a83214fdaa4c283769e62899c — RAW ENTREGADO)
+- **Asignado**: aithera-wiki-investigador (session mvs_8d85e8fb8a2e4a46bc8d4db87b9dfc8f)
+- **Dependencias**: ninguna
+- **Prioridad**: alta
+- **Notas**: Overview de LangGraph (langchain-ai/langgraph). Stack: Python, state machines. Comparar con LangChain como base. Stars, releases, version actual, casos de uso, integraciones, fortalezas y debilidades vs CrewAI/AutoGen.
+- **Creado**: 2026-06-30
+- **Updated**: 2026-07-01 11:49 (investigador despachado)
+- **Material crudo**: `JWIKI/material/JWIKI-011-raw.md` (en curso)
+
 ### JWIKI-006 — JarvisAgent Tauri Vue 3
 - **Path destino**: `01_LANDSCAPE/jarvisagent.md`
-- **Estado**: pending
+- **Estado**: in_progress
 - **Asignado**: aithera-wiki-investigador
 - **Dependencias**: ninguna
 - **Prioridad**: media
 - **Notas**: Tauri 2.0 + Vue 3 + Rust. 20+ LLMs. Snapshot engine, sub-agent delegation, plan approval.
+- **Creado**: 2026-06-30
+- **Updated**: 2026-06-30 18:30 (turno A tick 5 -- post-crash re-despach; investigador arrancado via `ticks/spawn_agent.py`)
+- **Material crudo**: `JWIKI/material/JWIKI-006-raw.md` (en curso)
 
-### JWIKI-008 — Clawdbot MCP-based
+### JWIKI-008 — Clawdbot (rename OpenClaw Jan-2026)
 - **Path destino**: `01_LANDSCAPE/clawdbot.md`
-- **Estado**: pending
-- **Asignado**: aithera-wiki-investigador
+- **Estado**: ✅ verified (auditor mvs_f69926e892b345e3a4aa55c308668ad8, 2026-07-01 11:54, 6/6 criterios pasan)
+- **Dependencias**: JWIKI-003 (complemento historico)
+- **Prioridad**: alta (Fase 1)
+- **Notas**: doc posicionado como complemento historico del nombre viral Clawdbot (2-26 ene 2026) -- NO como proyecto autonomo. Cubre rename lineage (Warelay → CLAWDIS → Clawdbot → Moltbot → OpenClaw), trademark Anthropic + doble rename 72h, controversias (MoltMatch, Cisco, China, MS/Google), y tabla de 4 proyectos genuinamente MCP-native (moltis, EverOS, memov, AionUi) -- incluido para clarificar "MCP-as-capa" vs "MCP-first puro". Anchors cubiertas: OpenClaw (JWIKI-003), OpenHuman (JWIKI-004), Hermes Agent (JWIKI-007), Aithera V0.7, moltis-org/moltis (lateral, NO seccion propia).
+- **Creado**: 2026-06-30
+- **Updated**: 2026-07-01 (escriba cerro -- doc 40345 bytes, 5296 palabras, 28 fuentes, anclas obligatorias y lateral moltis cubiertas, 8 pendientes del raw trasladados a seccion Pendientes del doc)
+- **Material crudo**: `JWIKI/material/JWIKI-008-raw.md` OK (28706 bytes, 74 hechos verificados, 213 lineas)
+- **Doc final**: `JWIKI/01_LANDSCAPE/clawdbot.md` ✅ (40345 bytes, 5296 palabras, 28 fuentes)
+
+### JWIKI-267 — moltis-org/moltis (MCP-first puro descubierto en JWIKI-008)
+- **Path destino**: `01_LANDSCAPE/moltis.md`
+- **Estado**: pending (descubierto lateralmente por Investigador 008; cola principal no bloqueada)
+- **Asignado**: aithera-wiki-investigador (proximo slot disponible turno A)
 - **Dependencias**: ninguna
-- **Prioridad**: media
-- **Notas**: basado en MCP protocol. Menos stars pero interesante por el enfoque.
+- **Prioridad**: baja (post-pipeline principal; no bloquea 266 originales)
+- **Notas**: Rust single-binary, 2.8k stars, MIT. UNICO proyecto MCP-first puro del landscape 2026 (vs Clawdbot = multi-canal-first). Mencionado en `material/JWIKI-008-raw.md` seccion 14. Vale la pena un doc dedicado.
+- **Created**: 2026-06-30 19:13
+- **Updated**: 2026-06-30 19:13 (despues de cierre tick A-6; turno A 19:15 procesara primero 008-escriba + 006-intervencion antes de tocar 267)
+- **Pendiente**: investigar slot disponible cuando turno A termine 264 restantes
 
 ### JWIKI-010 — Comparativa frameworks de agentes
 - **Path destino**: `01_LANDSCAPE/agent-frameworks.md`
-- **Estado**: pending
+- **Estado**: in_progress
 - **Asignado**: aithera-wiki-investigador
 - **Dependencias**: ninguna
 - **Prioridad**: alta
 - **Notas**: tabla LangGraph vs CrewAI vs AutoGen vs Google ADK vs OpenAI Agents SDK vs Semantic Kernel vs LlamaIndex vs Smolagents vs Strands.
+- **Updated**: 2026-06-30 19:00 (turno A tick 7 -- investigador arrancado via `ticks/spawn_agent.py` slot 010)
+- **Material crudo**: `JWIKI/material/JWIKI-010-raw.md` (en curso; esperado ~10-15 min)
+
+### JWIKI-012 — CrewAI overview
+- **Path destino**: `01_LANDSCAPE/crewai.md`
+- **Estado**: in_progress
+- **Asignado**: aithera-wiki-investigador
+- **Dependencias**: ninguna
+- **Prioridad**: alta
+- **Notas**: Overview CrewAI. Stack: Python, Agents/Crews/Tasks. Stars, releases, version actual, casos de uso, integraciones, fortalezas/debilidades vs LangGraph/AutoGen.
+- **Creado**: 2026-07-01
+- **Updated**: 2026-07-01 12:03
+- **Material crudo**: `JWIKI/material/JWIKI-012-raw.md` (en curso)
 
 ---
 
@@ -150,12 +203,13 @@ Todos los IDs del JWIKI-001 al JWIKI-266 con sus asignaciones por turno están e
 
 ## Métricas de progreso
 
-- **Total**: 266 docs
-- **Verified**: 2 (JWIKI-001, JWIKI-002)
-- **In progress (Turno A)**: 1 (JWIKI-004)
-- **In progress (Turno B)**: 2 (JWIKI-003, JWIKI-005)
-- **Pending**: 261
-- **Avance**: 2/266 = 0.75%
+- **Total**: 267 docs (266 originales + JWIKI-267 moltis descubierto lateral)
+- **Verified**: 7 (JWIKI-001, 002, 003, 004, 005, 008, 011)
+- **In progress (Turno A)**: 3 (JWIKI-006 raw, JWIKI-010 frameworks, JWIKI-012 investigador)
+- **In progress (Turno B)**: 2 (JWIKI-007 Hermes Agent, JWIKI-009 Superpowers)
+- **Pending**: 255
+- **Avance**: 7/267 = 2.62%
+- **DAEMON CRASH 2026-06-30 ~15:25 a 18:26**: 4 spawns perdidos sin raw (005/006/007/008). Recovery aplicado. JWIKI-005, 006, 008 re-despachados en turnos B/A 18:30/18:45. JWIKI-007 turno B 18:45 lo re-despachara. Ver `ticks/RECOVERY-20260630-1826.md`, `ticks/A-20260630-1830.md`, `ticks/B-20260630-1830.md`, `ticks/A-20260630-1845.md`.
 
 **ETA** (asumiendo ~8 docs/hora con 2 turnos en paralelo 24/7): **~33 horas netas** = **~1.5 días corridos** si la velocidad se mantiene.
 

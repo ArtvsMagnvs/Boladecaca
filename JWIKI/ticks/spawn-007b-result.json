@@ -1,0 +1,17 @@
+{
+  "messageId": 42,
+  "status": "delivered",
+  "data": {
+    "sessionId": "mvs_5fc4e1150b7f4267b11e604ab6dad173",
+    "agentName": "aithera-wiki-inv2",
+    "parentSessionId": "mvs_dad47a4061224bb7b216ea8cfac9cb85",
+    "taskTreeId": "mvs_5fc4e1150b7f4267b11e604ab6dad173"
+  },
+  "spawned_at": "2026-06-30 18:45 (Europe/Paris)",
+  "tick": "B-20260630-1845",
+  "tick_id": "JWIKI-007",
+  "tick_target": "Hermes Agent Nous Research (re-dispatch post-crash #3)",
+  "spawn_method": "spawn_agent.py bypass .cmd",
+  "spawn_payload_path": "C:\\Users\\Alejandro\\Desktop\\CLAUDE\\Aithera\\JWIKI\\ticks\\spawn-007b.json",
+  "note": "Re-dispatch post-daemon-crash recovery (RECOVERY-20260630-1826.md). Spawn OK sin retry -- primer intento entregado. Slot 007b distingue del 007 original (14:45 mvs_628bf554) y del 007b@16:00 (no llego a spawn por crash)."
+}

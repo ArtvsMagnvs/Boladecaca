@@ -23,6 +23,26 @@ python-multipart==0.0.32
 # --- Base de datos ---
 SQLAlchemy==2.0.51
 greenlet==3.5.2
+# V0.4 (Fase 1b PostgreSQL Migration): driver PostgreSQL + sistema de
+# migraciones Alembic para gestionar el esquema de forma reproducible.
+psycopg2-binary==2.9.9
+alembic==1.13.1
+
+# --- Memoria semantica (V0.6 Fase 3) ---
+# chromadb: base de datos vectorial local para busqueda semantica.
+# sentence-transformers: modelo de embeddings all-MiniLM-L6-v2 (~80MB).
+# NOTA: sentence-transformers arrastra PyTorch CPU (~1.5GB total). Es normal
+# que la primera instalacion tarde varios minutos.
+chromadb==1.5.9
+sentence-transformers==3.3.1
+
+# --- Integraciones Google (V0.7 Fase 4) ---
+# google-api-python-client: cliente de Gmail + Calendar API.
+# google-auth-oauthlib: flujo OAuth 2.0 (InstalledAppFlow).
+# google-auth-httplib2: transporte HTTP necesario para el cliente.
+google-api-python-client==2.160.0
+google-auth-oauthlib==1.2.1
+google-auth-httplib2==0.2.0
 
 # --- Cliente HTTP (proveedores de IA) ---
 httpx==0.28.1

@@ -1,0 +1,13 @@
+{
+  "messageId": 46,
+  "status": "delivered",
+  "sessionId": "mvs_053662470f9846029ce79c50cb8417fc",
+  "agentName": "aithera-wiki-inv2",
+  "parentSessionId": "mvs_87ab0ebdcbd84d5bb6cb44b250e61c1e",
+  "taskTreeId": "mvs_053662470f9846029ce79c50cb8417fc",
+  "spawn_method": "ticks/spawn_agent.py (bypass .cmd)",
+  "rc": 0,
+  "tick": "B-20260630-1900",
+  "target_doc": "JWIKI-009 - Superpowers (Skill framework)",
+  "raw_output_path": "C:\\Users\\Alejandro\\Desktop\\CLAUDE\\Aithera\\JWIKI\\material\\JWIKI-009-raw.md"
+}

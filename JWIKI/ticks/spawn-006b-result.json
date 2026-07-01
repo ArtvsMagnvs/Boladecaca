@@ -1,0 +1,17 @@
+{
+  "messageId": 28,
+  "status": "delivered",
+  "data": {
+    "sessionId": "mvs_54554922829c4407beba061e482b21ce",
+    "agentName": "aithera-wiki-investigador",
+    "parentSessionId": "mvs_04dc78770e834e87b8e4266560dce7b1",
+    "taskTreeId": "mvs_54554922829c4407beba061e482b21ce"
+  },
+  "spawned_at": "2026-06-30 18:30 (Europe/Paris)",
+  "tick": "A-20260630-1830",
+  "tick_id": "JWIKI-006",
+  "tick_target": "JarvisAgent Tauri Vue 3 (re-dispatch post-crash)",
+  "spawn_method": "spawn_agent.py bypass .cmd (helper creado en tick B 14:45)",
+  "spawn_payload_path": "C:\\Users\\Alejandro\\Desktop\\CLAUDE\\Aithera\\JWIKI\\ticks\\spawn-006b.json",
+  "note": "Re-dispatch post-daemon-crash recovery (RECOVERY-20260630-1826.md). Spawn OK sin retry -- daemon fresco (<30s uptime)."
+}

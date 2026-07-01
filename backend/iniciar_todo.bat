@@ -1,17 +1,45 @@
 @echo off
-title Aithera
+REM ============================================================================
+REM Aithera - Arranque completo (V0.3)
+REM Lanza el backend Y el frontend Electron+React en ventanas separadas.
+REM Espera unos segundos entre ambos para que el backend este listo.
+REM ============================================================================
+title Aithera Launcher (V0.3)
+setlocal
+
 cd /d "%~dp0"
 
-echo =====================================
-echo        AI T H E R A
-echo =====================================
+echo.
+echo ============================================================
+echo           A I T H E R A   -   L A U N C H E R
+echo                       Version 0.3.0
+echo ============================================================
+echo.
+echo Iniciando backend y frontend Electron...
+echo Cierra esta ventana para detener ambos procesos.
 echo.
 
-REM Start backend in a new window
-start "Aithera Backend" cmd /c "cd /d \"%~dp0\" && venv\Scripts\activate.bat && uvicorn app.main:app --host 0.0.0.0 --port 8000"
+REM --- Backend en ventana separada ------------------------------------------
+echo [1/2] Iniciando Aithera Backend...
+start "Aithera Backend (V0.3)" cmd /c "iniciar_backend.bat"
 
-echo Esperando que el backend inicie...
-timeout /t 3 /nobreak > nul
+REM --- Espera para que el backend este listo -------------------------------
+echo Esperando 5 segundos para que el backend este listo...
+timeout /t 5 /nobreak > nul
 
-REM Start desktop app
-start "Aithera Desktop" cmd /c "cd /d \"%~dp0\" && venv\Scripts\activate.bat && python app\desktop.py"
+REM --- Frontend Electron+React en otra ventana ----------------------------
+echo [2/2] Iniciando frontend Electron...
+cd ..
+if exist "iniciar_frontend_react.bat" (
+    start "Aithera Frontend (Electron)" cmd /c "iniciar_frontend_react.bat"
+) else (
+    echo [ERROR] No se encontro iniciar_frontend_react.bat en %CD%
+)
+
+echo.
+echo Backend y frontend lanzados en ventanas separadas.
+echo Puedes cerrar las ventanas individualmente cuando termines.
+echo.
+pause
+
+endlocal

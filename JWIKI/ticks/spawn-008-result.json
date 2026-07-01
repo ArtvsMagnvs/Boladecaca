@@ -1,0 +1,17 @@
+{
+  "messageId": 39,
+  "status": "delivered",
+  "data": {
+    "sessionId": "mvs_3c5eb4358dcb4123b2105d9c4d70e56c",
+    "agentName": "aithera-wiki-investigador",
+    "parentSessionId": "mvs_a40edbe302bf4515a9e583f99d1fb886",
+    "taskTreeId": "mvs_3c5eb4358dcb4123b2105d9c4d70e56c"
+  },
+  "spawned_at": "2026-06-30 18:45 (Europe/Paris)",
+  "tick": "A-20260630-1845",
+  "tick_id": "JWIKI-008",
+  "tick_target": "Clawdbot MCP-based (re-dispatch post-crash)",
+  "spawn_method": "spawn_agent.py bypass .cmd (helper creado en tick B 14:45)",
+  "spawn_payload_path": "C:\\Users\\Alejandro\\Desktop\\CLAUDE\\Aithera\\JWIKI\\ticks\\spawn-008.json",
+  "note": "Re-dispatch post-daemon-crash recovery (RECOVERY-20260630-1826.md). Spawn OK primer intento (RC 0)."
+}

@@ -17,13 +17,13 @@
 | JWIKI-002 | 01_LANDSCAPE/projects.md | Comparativa proyectos OSS principales | A | ✅ verified |
 | JWIKI-003 | 01_LANDSCAPE/openclaw.md | OpenClaw (376k stars) | B | ✅ verified |
 | JWIKI-004 | 01_LANDSCAPE/openhuman.md | OpenHuman desktop-first Rust+TS | A | ✅ verified |
-| JWIKI-005 | 01_LANDSCAPE/openjarvis.md | OpenJarvis Stanford local-first | B | 🟡 in_progress |
-| JWIKI-006 | 01_LANDSCAPE/jarvisagent.md | JarvisAgent Tauri Vue 3 | A | 🔴 pending |
-| JWIKI-007 | 01_LANDSCAPE/hermes-agent.md | Hermes Agent Nous Research | B | 🔴 pending |
-| JWIKI-008 | 01_LANDSCAPE/clawdbot.md | Clawdbot MCP-based | A | 🔴 pending |
-| JWIKI-009 | 01_LANDSCAPE/superpowers.md | Superpowers Skill framework | B | 🔴 pending |
-| JWIKI-010 | 01_LANDSCAPE/agent-frameworks.md | Comparativa frameworks agentes | A | 🔴 pending |
-| JWIKI-011 | 01_LANDSCAPE/langgraph.md | LangGraph overview | B | 🔴 pending |
+| JWIKI-005 | 01_LANDSCAPE/openjarvis.md | OpenJarvis Stanford local-first | B | ✅ verified | (auditado 2026-07-01 11:51 independiente — 26 fuentes contrastadas, 5 snippets codigo, 12 refs cruzadas, 7 correcciones al briefing, contradiccion projects.md (v0.5.x vs v1.0.2) marcada para corregir)
+| JWIKI-006 | 01_LANDSCAPE/jarvisagent.md | JarvisAgent Tauri Vue 3 | A | 🟡 in_progress | (post-crash, re-despach 18:30)
+| JWIKI-007 | 01_LANDSCAPE/hermes-agent.md | Hermes Agent Nous Research | B | 🟡 in_progress | (re-despach turno B tick 6 18:45 post-crash) |
+| JWIKI-008 | 01_LANDSCAPE/clawdbot.md | Clawdbot (rename OpenClaw Jan-2026) | A | ✅ verified | (auditor A 2026-07-01 11:53 — 6/6 criterios, 28 fuentes, 78% confianza) |
+| JWIKI-009 | 01_LANDSCAPE/superpowers.md | Superpowers Skill framework | B | 🟡 in_progress | (tick 7 19:00 dispatch turno B, slot 009) |
+| JWIKI-010 | 01_LANDSCAPE/agent-frameworks.md | Comparativa frameworks agentes | A | 🟡 in_progress | (tick 7 19:00 dispatch turno A) |
+| JWIKI-011 | 01_LANDSCAPE/langgraph.md | LangGraph overview | B | ✅ verified | (escriba 2026-07-01 12:20 — 16 fuentes, 5 snippets, 3 tablas, 78% confianza; auditado independiente 2026-07-01) |
 | JWIKI-012 | 01_LANDSCAPE/crewai.md | CrewAI overview | A | 🔴 pending |
 | JWIKI-013 | 01_LANDSCAPE/autogen.md | AutoGen Microsoft overview | B | 🔴 pending |
 | JWIKI-014 | 01_LANDSCAPE/google-adk.md | Google ADK overview | A | 🔴 pending |
@@ -354,6 +354,14 @@
 | JWIKI-264 | 16_SOPS/add-chromadb-collection.md | Añadir colección ChromaDB | A | 🔴 pending |
 | JWIKI-265 | 16_SOPS/add-voice-engine.md | Añadir motor TTS/STT | B | 🔴 pending |
 | JWIKI-266 | 16_SOPS/split-god-endpoint.md | Partir god-endpoint | A | 🔴 pending |
+
+---
+
+## 17_DISCOVERY (items descubiertos lateralmente por Investigadores)
+
+| ID | Path | Título | Turno | Estado |
+|---|---|---|---|---|
+| JWIKI-267 | 01_LANDSCAPE/moltis.md | moltis-org/moltis (MCP-first puro) | A | 🔴 pending | (descubierto en JWIKI-008; baja prioridad) |
 
 ---
 

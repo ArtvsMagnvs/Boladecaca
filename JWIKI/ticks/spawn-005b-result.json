@@ -1,0 +1,17 @@
+{
+  "messageId": 29,
+  "status": "delivered",
+  "data": {
+    "sessionId": "mvs_b117ddd66c934829a792e0bae259a2c2",
+    "agentName": "aithera-wiki-inv2",
+    "parentSessionId": "mvs_aacec17737f34658963ec8bc6108ee61",
+    "taskTreeId": "mvs_b117ddd66c934829a792e0bae259a2c2"
+  },
+  "spawned_at": "2026-06-30 18:30 (Europe/Paris)",
+  "tick": "B-20260630-1830",
+  "tick_id": "JWIKI-005",
+  "tick_target": "OpenJarvis Stanford local-first (re-dispatch post-crash)",
+  "spawn_method": "spawn_agent.py bypass .cmd (helper creado en tick B 14:45)",
+  "spawn_payload_path": "C:\\Users\\Alejandro\\Desktop\\CLAUDE\\Aithera\\JWIKI\\ticks\\spawn-005b.json",
+  "note": "Re-dispatch post-daemon-crash recovery (RECOVERY-20260630-1826.md). Spawn OK sin retry -- daemon fresco (<5min uptime desde recovery 18:26). Slot 005b distingue del 005 original que se perdio en crash 15:25."
+}

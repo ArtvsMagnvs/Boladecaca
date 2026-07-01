@@ -1,0 +1,16 @@
+{
+  "messageId": 22,
+  "status": "delivered",
+  "data": {
+    "sessionId": "mvs_e2b851169ddb40ee8039e1a15d336184",
+    "agentName": "aithera-wiki-investigador",
+    "parentSessionId": "mvs_edd7f2825f0e46559341c779b232105f",
+    "taskTreeId": "mvs_e2b851169ddb40ee8039e1a15d336184"
+  },
+  "spawned_at": "2026-06-30 14:30 (Europe/Paris)",
+  "tick": "A-20260630-1430",
+  "tick_id": "JWIKI-006",
+  "tick_target": "JarvisAgent Tauri Vue 3",
+  "spawn_method": "ELECTRON_RUN_AS_NODE direct .exe call (bypass mavis.cmd shell)",
+  "spawn_payload_path": "C:\\Users\\Alejandro\\Desktop\\CLAUDE\\Aithera\\JWIKI\\ticks\\spawn-006.json"
+}

@@ -2,7 +2,7 @@
 
 > Snapshot del estado de la knowledge base. Se actualiza al cerrar cada fase o tick importante.
 
-## Última actualización: 2026-06-30 14:30 (tick 1 verificado)
+## Última actualización: 2026-07-01 11:53 (JWIKI-008 auditado y verificado)
 
 ## Resumen ejecutivo
 
@@ -10,9 +10,10 @@
 |---|---|
 | Dominios totales | 17 |
 | Dominios con esqueleto | 17 |
-| **Total docs PLANIFICADOS** | **266** |
-| Documentos verificados | **4** (JWIKI-001, JWIKI-002, JWIKI-003, JWIKI-004) |
-| Avance total | 4/266 = **1.50%** |
+| **Total docs PLANIFICADOS** | **267** |
+| Documentos verificados | **6** (JWIKI-001, JWIKI-002, JWIKI-003, JWIKI-004, JWIKI-005, JWIKI-008) |
+| En auditoría | 0 |
+| Avance total | 6/267 = **2.25%** |
 | Wiki-map | ✅ Activo (266 IDs, 1 verificado) |
 | Task queue | ✅ Activo (turno A: JWIKI-002, JWIKI-004, ...; turno B: JWIKI-003, JWIKI-005, ...) |
 | Equipo wiki | ✅ 6 agentes (3 turno A + 3 turno B) |
@@ -38,7 +39,7 @@
 | Dominio | Total docs PLANIFICADOS | Done | Avance |
 |---|---|---|---|
 | 00_INDEX/ | 8 | 8 | **100%** ✅ |
-| 01_LANDSCAPE/ | 18 | 4 | **22.22%** |
+| 01_LANDSCAPE/ | 18 | 6 | **33.33%** |
 | 02_ARCHITECTURE/ | 12 | 0 | 0% |
 | 03_BACKEND/ | 22 | 0 | 0% |
 | 04_FRONTEND/ | 22 | 0 | 0% |

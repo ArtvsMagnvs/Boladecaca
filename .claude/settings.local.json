@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(node_modules/.bin/tsc --noEmit)",
+      "PowerShell(cd \"C:\\\\Users\\\\Alejandro\\\\Desktop\\\\Aithera\\\\frontend\"; Get-ChildItem node_modules\\\\.bin | Where-Object { $_.Name -match \"tsc|vite\" } | Select-Object Name)",
+      "PowerShell(cd \"C:\\\\Users\\\\Alejandro\\\\Desktop\\\\Aithera\\\\frontend\"; $p = Get-Content node_modules\\\\three\\\\package.json | ConvertFrom-Json; Write-Output \"main: $\\($p.main\\)\"; Write-Output \"module: $\\($p.module\\)\"; Write-Output \"version: $\\($p.version\\)\")",
+      "mcp__Claude_in_Chrome__navigate"
+    ]
+  }
+}

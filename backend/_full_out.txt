@@ -1,0 +1,41 @@
+
+============================================================
+             A I T H E R A   B A C K E N D
+                      Version 0.7.0
+       Email Assistant + Calendar Inteligente
+============================================================
+
+[OK] Python: C:\Users\Alejandro\Desktop\CLAUDE\Aithera\backend\venv\Scripts\python.exe
+Python 3.13.5
+
+Verificando dependencias...
+[OK] Dependencias criticas instaladas.
+
+Comprobando puerto 8000...
+[OK] Puerto 8000 libre.
+
+Cargando configuracion desde .env...
+[OK] Variables de entorno cargadas.
+
+Abriendo navegador en http://localhost:8000/docs ...
+
+Iniciando Aithera Backend en http://localhost:8000 ...
+(Pulsa Ctrl+C para detener)
+
+INFO:     Started server process [43808]
+INFO:     Waiting for application startup.
+[2026-06-28 00:27:05] [INFO] [aithera] [startup] Iniciando Aithera Backend...
+[2026-06-28 00:27:05] [INFO] [aithera] [startup] Base de datos inicializada correctamente
+[2026-06-28 00:27:05] [ERROR] [aithera.error] [startup] Exception: InternalError: error returned from database: (code: 14) unable to open database file | Context: Memory system no disponible (chat seguira funcionando sin memoria)
+[2026-06-28 00:27:05] [ERROR] [aithera.error] [startup] Exception: InternalError: error returned from database: (code: 14) unable to open database file | Context: Memory system no disponible (chat seguira funcionando sin memoria)
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
+[MemoryManager] Inicializacion fallida: InternalError: error returned from database: (code: 14) unable to open database file
+INFO:     127.0.0.1:49768 - "GET /docs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49768 - "GET /openapi.json HTTP/1.1" 200 OK
+
+[ERROR] uvicorn finalizo con codigo de error.
+        Si el puerto sigue ocupado, ejecuta manualmente:
+        netstat -ano | findstr ":8000"
+        taskkill /F /PID <numero>
+Presione una tecla para continuar . . . 

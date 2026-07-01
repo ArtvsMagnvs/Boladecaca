@@ -1,0 +1,33 @@
+======================================================================
+ TEST COMPLETO DEL FLUJO: matching + IA + calendar + contrapropuesta
+======================================================================
+
+[Cleanup] Limpiando propuestas antiguas (pueden bloquear reprocesamiento)...
+  Eliminadas 0 propuestas
+
+======================================================================
+ TEST 1: detect_meeting_proposal
+======================================================================
+  subj='Reunion', body='Quedamos el 1 de julio a las 11h?'
+    is_meeting=True, dt=2026-07-01T11:00:00, method=ia
+    reason=Propone quedar el 1 de julio a las 11h con fecha y hora concretas
+  subj='Reunion', body='Hola, quiero proponerte quedar el 1 de julio a las'
+    is_meeting=True, dt=2026-07-01T11:00:00, method=ia
+    reason=Propone quedar el 1 de julio a las 11h con fecha y hora concretas
+  subj='Propuesta reunion', body='Quedamos el 1 de julio a las 11h?'
+    is_meeting=True, dt=2026-07-01T11:00:00, method=ia
+    reason=Propone quedar el 1 de julio a las 11h con tono de pregunta
+  subj='RE:Reunion', body='ey, podriamos quedar el 1 de julio a las 11h?'
+    is_meeting=True, dt=2026-07-01T11:00:00, method=ia
+    reason=Propone quedar el 1 de julio a las 11h, fecha y hora concretas.
+
+======================================================================
+ TEST 2: Calendar busy check para 1 julio 11h
+======================================================================
+  Bloques en 2026-07-01: 1
+    8-14 unavailable 'Estoy en la playa'
+  is_busy para 2026-07-01 11:00:00: True
+
+======================================================================
+ TEST 3: find_free_slots para 1 julio y siguientes
+======================================================================

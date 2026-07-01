@@ -9,11 +9,14 @@
 
 ## 1. Estado actual del proyecto
 
-**Versión real**: `0.7.0` (consistente en `backend/app/main.py`,
+**Versión real**: `0.7.1` (consistente en `backend/app/main.py`,
 `backend/app/core/config.py` y `frontend/package.json`).
 
 **Fases completadas**: V0.2 (base) → V0.3 (Hub) → V0.4 (PostgreSQL + Alembic) →
-V0.5 (AgentManager + ToolManager) → V0.6 (Memory ChromaDB) → V0.7 (Email + Calendar).
+V0.5 (AgentManager + ToolManager) → V0.6 (Memory ChromaDB) → V0.7 (Email + Calendar) →
+V0.7.1 (Fase 4b — Email Assistant refactor: captura de emails urgentes sin regla,
+toast contextual, detección de reuniones en dos etapas patrón AMD GAIA,
+`detect_calendar_conflicts` con cross-check de Google Calendar y tests unitarios).
 
 **Fases pendientes (documentadas, no implementadas)**:
 - **V0.8** — Clientes Telegram + Web App (FastAPI serving React build) + PWA
@@ -564,6 +567,6 @@ Este archivo debe evolucionar a la par del proyecto. Reglas:
 
 ---
 
-*Última actualización: junio 2026 — V0.7.0*
+*Última actualización: julio 2026 — V0.7.1*
 *Construido desde el estado real del repositorio (código + Alembic + docs de fase).*
 *Sustituye a la versión V0.2 anterior, que declaraba un estado obsoleto.*

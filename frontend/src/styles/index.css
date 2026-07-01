@@ -1,0 +1,163 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/*
+  Tokens de diseño Aithera (Fase Visual).
+  Dark-first: no es un "modo oscuro" alternativo, es el unico modo.
+  Jerarquia por luminancia, bordes sutiles en vez de sombras pesadas,
+  glassmorphism solo en superficies flotantes (nunca como fondo general).
+*/
+:root {
+  --ease-smooth: cubic-bezier(0.22, 1, 0.36, 1);
+  --duration-fast: 150ms;
+  --duration-base: 250ms;
+  --duration-slow: 450ms;
+}
+
+html, body, #root {
+  height: 100%;
+  margin: 0;
+  background-color: theme("colors.base.950");
+  color: theme("colors.ink.DEFAULT");
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  font-family: theme("fontFamily.sans");
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Superficie de cristal reutilizable: paneles flotantes, menus, el nucleo. */
+.glass-surface {
+  background: rgba(23, 26, 36, 0.6);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+/* Anillos de estado del nucleo IA */
+@keyframes ring-pulse {
+  0%, 100% { opacity: 0.18; transform: scale(1); }
+  50% { opacity: 0.42; transform: scale(1.06); }
+}
+@keyframes ring-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+/* V0.5 (Fase 2 AgentManager + ExecutionEngine): inputs del formulario
+   de agentes. Aplican a <input>, <textarea>, <select> cuando llevan
+   la clase .form-input. Mantienen el dark-first con borde sutil y focus
+   ring en color accent. */
+.form-input {
+  width: 100%;
+  background: rgba(13, 15, 22, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.875rem;
+  color: theme("colors.ink.DEFAULT");
+  outline: none;
+  transition: border-color var(--duration-fast) var(--ease-smooth),
+              box-shadow var(--duration-fast) var(--ease-smooth);
+}
+.form-input::placeholder {
+  color: theme("colors.ink.faint");
+}
+.form-input:focus {
+  border-color: theme("colors.accent.DEFAULT");
+  box-shadow: 0 0 0 1px theme("colors.accent.DEFAULT");
+}
+.form-input:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+select.form-input {
+  appearance: none;
+  background-image: linear-gradient(45deg, transparent 50%, theme("colors.ink.faint") 50%),
+                    linear-gradient(135deg, theme("colors.ink.faint") 50%, transparent 50%);
+  background-position: calc(100% - 14px) 50%, calc(100% - 8px) 50%;
+  background-size: 6px 6px, 6px 6px;
+  background-repeat: no-repeat;
+  padding-right: 2rem;
+}
+@keyframes ring-spin-rev {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(-360deg); }
+}
+@keyframes wave-expand {
+  0% { transform: scale(0.85); opacity: 0.7; }
+  100% { transform: scale(2.0); opacity: 0; }
+}
+@keyframes listening-breath {
+  0%, 100% { opacity: 0.22; transform: scale(1); }
+  50% { opacity: 0.55; transform: scale(1.04); }
+}
+@keyframes speaking-pulse {
+  0%, 100% { opacity: 0.3; transform: scale(1); }
+  30% { opacity: 0.65; transform: scale(1.07); }
+  60% { opacity: 0.45; transform: scale(1.03); }
+}
+@keyframes dot-blink {
+  0%, 80%, 100% { opacity: 0.2; }
+  40% { opacity: 1; }
+}
+
+.ring-idle {
+  animation: ring-pulse 4s ease-in-out infinite;
+}
+.ring-listening {
+  animation: listening-breath 1.8s ease-in-out infinite;
+}
+.ring-thinking {
+  animation: ring-spin 3s linear infinite;
+}
+.ring-thinking-rev {
+  animation: ring-spin-rev 5s linear infinite;
+}
+.ring-speaking {
+  animation: speaking-pulse 0.9s ease-in-out infinite;
+}
+.ring-processing {
+  animation: ring-spin 2s linear infinite;
+}
+.wave-ring {
+  animation: wave-expand 2s ease-out infinite;
+}
+
+/* Slider track/thumb */
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  height: 14px;
+  width: 14px;
+  border-radius: 50%;
+  background: theme("colors.accent.DEFAULT");
+  border: 2px solid theme("colors.base.900");
+  cursor: pointer;
+  box-shadow: 0 0 6px rgba(94, 168, 255, 0.4);
+}
+input[type="range"]::-moz-range-thumb {
+  height: 14px;
+  width: 14px;
+  border-radius: 50%;
+  background: theme("colors.accent.DEFAULT");
+  border: 2px solid theme("colors.base.900");
+  cursor: pointer;
+}
+
+/* Scrollbar discreto, consistente con el resto de la interfaz. */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-thumb {
+  background: theme("colors.base.600");
+  border-radius: 8px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}

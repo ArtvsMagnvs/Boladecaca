@@ -8,12 +8,12 @@ from .base import BaseAIProvider
 class AnthropicProvider(BaseAIProvider):
     """Anthropic Claude API provider."""
 
-    def __init__(self, api_key: str, model: str = "claude-3-opus-20240229"):
+    def __init__(self, api_key: str, model: str = "claude-sonnet-4-6"):
         super().__init__(api_key=api_key, model=model)
         self.api_url = "https://api.anthropic.com/v1/messages"
 
     def get_default_model(self) -> str:
-        return "claude-3-opus-20240229"
+        return "claude-sonnet-4-6"
 
     @property
     def provider_name(self) -> str:

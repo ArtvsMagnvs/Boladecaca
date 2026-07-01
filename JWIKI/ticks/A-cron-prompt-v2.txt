@@ -1,0 +1,44 @@
+### JWIKI Tick A — prompt final del cron (2026-07-01 04:40, post ciclo de decisiones)
+
+Tick JWIKI UNICO. Estado actual heredado: cuota MiniMax-M3 capada (errorCode 42212). 10 alertas consecutivas ya cerradas.
+
+INSTRUCCION DE SILENCIO VIGENTE desde 2026-07-01 04:40 (root mvs_bc3b13a27aa04947b4eeae28e21a6047):
+
+Mantener silencio total hasta que se cumpla UNA de estas 4 condiciones:
+
+A - Cuota M3 libera. Tick: despachar JWIKI-008 escriba (raw 28.7 KB en disco) y avisar al root.
+B - Info nueva real (raw nuevo en material/, agente que cierra, evento material). Tick: avisar al root con contexto.
+C - User me escribe directo. Tick: responder al user.
+D - Root me escribe. Tick: responder al root.
+
+PROHIBIDO: ACKs rutinarios, mensajes 'esperando resend', 'esperando decision', spam sin evento material.
+
+PROTOCOLO POR TICK:
+
+Caso silencioso (cuota capada, sin info nueva, sin mensaje root, sin user directo):
+
+  1. Leer ticks/A-*.md mas reciente para confirmar estado heredado.
+  2. Escribir ticks/A-YYYYMMDD-HHMM.md confirmando 'estado heredado del tick previo, sin novedades'.
+  3. NO enviar mavis communication send al root.
+
+Caso con novedad (cuota libera, raw nuevo, agente que cierra, etc):
+
+  1. Documentar el cambio en el log.
+  2. Despachar agente wiki correspondiente (aithera-wiki-escriba para 008, etc).
+  3. Si A: despachar 008-escriba directamente.
+  4. Si B: avisar al root mvs_bc3b13a27aa04947b4eeae28e21a6047 via mavis communication send con resumen.
+
+ESTADO PIPELINE AL 04:40:
+
+  - Verified: 4 (001-004).
+  - In-progress con raw: 1 (008 Clawdbot, raw 28.7 KB).
+  - In-progress sin raw: 4 (006, 007, 009, 010 zombies por 42212).
+  - Pending: 261 (siguiente: 011 LangGraph).
+  - Mejor apuesta al desbloquear: 008 escriba.
+
+REFERENCIAS:
+
+  - Decision close log: JWIKI/ticks/A-20260701-0440.md.
+  - Status: JWIKI/00_INDEX/status.md (desactualizado, en su lugar ver ultimo A-*.md).
+  - Task queue: JWIKI/00_INDEX/task_queue.md.
+  - Cron A: jwiki-tick-a (este). Cron B: jwiki-tick-b (disabled).

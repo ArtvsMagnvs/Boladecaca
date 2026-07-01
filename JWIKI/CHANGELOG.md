@@ -26,7 +26,23 @@
 
 ---
 
-## v1.2 — 2026-06-30 (ticks automáticos + 24/7)
+## v1.3 — 2026-07-01 (JWIKI-005 auditado + JWIKI-008 en auditoría)
+
+### Añadido
+- **JWIKI-005** (`01_LANDSCAPE/openjarvis.md`) — OpenJarvis Stanford local-first. **VERIFIED** ✅ (auditor 2026-07-01 11:51, revisión independiente).
+  - 26 fuentes contrastadas (GitHub API, arXiv x2, blog Stanford, blog Hazy Research, web oficial, blog Ollama, README, CHANGELOG, código fuente directo).
+  - 5 primitivas reales confirmadas (Intelligence/Engine/Agents/Tools & Memory/Learning) — corrige 7 errores del briefing original.
+  - Routing dual (HeuristicRouter + LearnedRouterPolicy), ComplexityQueryAnalyzer con 5-tier.
+  - EnergyMonitor ABC con 4 vendors (NVIDIA/AMD/Apple/CPU_RAPL).
+  - 5 snippets de código copy-paste ready con path:line.
+  - 12 referencias cruzadas a otros docs JWIKI.
+  - Tabla comparativa vs OpenClaw/OpenHuman/Hermes/Aithera V0.7.
+  - **CONTRADICCION CONOCIDA**: `projects.md` declara `v0.5.x` pero el repo real es `v1.0.2` — marcada para corregir en JWIKI-002 (projects.md).
+  - Nivel de confianza 85%.
+- **JWIKI-008** (`01_LANDSCAPE/clawdbot.md`) — en auditoría (auditor 2026-07-01 11:49, session `mvs_f69926e8`).
+
+### Métricas
+- **5/266 docs verificados (1.88%)**
 
 ### Añadido
 - **JWIKI-003** (`01_LANDSCAPE/openclaw.md`) — OpenClaw 376k stars. **VERIFIED** ✅.

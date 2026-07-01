@@ -1,0 +1,17 @@
+{
+  "messageId": 56,
+  "status": "delivered",
+  "data": {
+    "sessionId": "mvs_7b3037df4cc048fe8f312ca3e8efc8fd",
+    "agentName": "aithera-wiki-scr2",
+    "parentSessionId": "mvs_bc3b13a27aa04947b4eeae28e21a6047",
+    "taskTreeId": "mvs_7b3037df4cc048fe8f312ca3e8efc8fd"
+  },
+  "spawned_at": "2026-06-30 19:16 (Europe/Paris, UTC+2)",
+  "tick": "manual-Mavis-1916",
+  "tick_id": "JWIKI-005",
+  "tick_target": "Escriba OpenJarvis (cierre cuello botella post-crash, raw entregado 18:52)",
+  "spawn_method": "spawn_agent.py bypass .cmd",
+  "spawn_payload_path": "C:\\Users\\Alejandro\\Desktop\\CLAUDE\\Aithera\\JWIKI\\ticks\\spawn-011.json",
+  "note": "Despacho manual por Mavis (orquestador) para cerrar el cuello de botella del escriba turno B. Material crudo JWIKI-005 (50031 bytes, 141 hechos) llevaba ~24 min esperando desde 18:52. Slot 011 distingue del 005b (investigador) y 005 original (perdido en crash 15:25). Path destino final: 01_LANDSCAPE/openjarvis.md."
+}
