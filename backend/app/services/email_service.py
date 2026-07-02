@@ -384,3 +384,38 @@ async def generate_ai_reply(
     except Exception as e:
         print(f"[email] generate_ai_reply fallo (fail-soft): {e}")
         return None
+
+
+def local_events_for_date(target_date) -> list:
+    """FIX (2026-07-02, bug reportado por el usuario): el chequeo de conflictos
+    solo miraba CalendarAvailability + Google Calendar e IGNORABA los eventos
+    del calendario propio de Aithera (CalendarEvent, pagina Calendario).
+    Resultado: una fecha marcada como ocupada en Aithera se daba por libre y
+    el email de reunion se aceptaba en vez de contraproponer otra fecha.
+
+    Devuelve los eventos locales del dia en el mismo formato que los de
+    Google ({"start","end"} ISO) para concatenarlos en detect_calendar_conflicts.
+    all_day bloquea el dia entero; sin end_date se asume 1 hora.
+    """
+    from datetime import timedelta
+    from app.db.models import CalendarEvent
+    events: list = []
+    db = SessionLocal()
+    try:
+        rows = db.query(CalendarEvent).filter(
+            CalendarEvent.start_date >= datetime.combine(target_date, time.min),
+            CalendarEvent.start_date <= datetime.combine(target_date, time.max),
+        ).all()
+        for ev in rows:
+            if ev.all_day:
+                start = datetime.combine(target_date, time.min)
+                end = datetime.combine(target_date, time(23, 59, 59))
+            else:
+                start = ev.start_date
+                end = ev.end_date or (ev.start_date + timedelta(hours=1))
+            events.append({"start": start.isoformat(), "end": end.isoformat()})
+    except Exception as e:
+        print(f"[email] local_events_for_date fallo (fail-soft, solo gcal+bloques): {e}")
+    finally:
+        db.close()
+    return events

@@ -48,10 +48,10 @@ def db_session():
 def _clean_email_tables():
     """Limpia las tablas del dominio email entre tests (BD temporal)."""
     yield
-    from app.db.models import EmailActivityLog, MeetingProposal, EmailAutoReplyRule, EmailTriage
+    from app.db.models import EmailActivityLog, MeetingProposal, EmailAutoReplyRule, EmailTriage, CalendarEvent
     session = SessionLocal()
     try:
-        for model in (EmailActivityLog, MeetingProposal, EmailAutoReplyRule, EmailTriage):
+        for model in (EmailActivityLog, MeetingProposal, EmailAutoReplyRule, EmailTriage, CalendarEvent):
             try:
                 session.query(model).delete()
             except Exception:

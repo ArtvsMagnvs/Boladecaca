@@ -141,3 +141,76 @@ def test_digest_con_datos(client, db_session):
 
 def test_digest_fecha_invalida_400(client):
     assert client.get("/api/email/digest?date=ayer").status_code == 400
+
+
+# ----------------------------------------------------------------------
+# Regresion (2026-07-02, bug reportado): los eventos del calendario LOCAL
+# de Aithera no contaban como "ocupado" en el chequeo de conflictos de
+# reuniones (solo CalendarAvailability + Google Calendar).
+# ----------------------------------------------------------------------
+
+def test_evento_local_cuenta_como_ocupado(client, db_session):
+    from datetime import datetime, timedelta
+    from app.db.models import CalendarEvent
+    from app.services.email_service import (
+        local_events_for_date,
+        detect_calendar_conflicts,
+        _parse_iso,
+    )
+
+    dia = datetime(2026, 7, 10)
+    # Evento local en el calendario de Aithera: 10:00-11:00
+    db_session.add(CalendarEvent(
+        title="Ocupado (marcado en Aithera)",
+        start_date=dia.replace(hour=10),
+        end_date=dia.replace(hour=11),
+        all_day=False,
+    ))
+    db_session.commit()
+
+    eventos = local_events_for_date(dia.date())
+    assert len(eventos) == 1
+
+    # Reunion propuesta a las 10:30 -> CONFLICTO (antes se daba por libre)
+    assert detect_calendar_conflicts(
+        dia.replace(hour=10, minute=30),
+        dia.replace(hour=11, minute=30),
+        [],           # sin bloques de disponibilidad
+        eventos,      # SOLO el evento local
+    ) is True
+
+    # Reunion a las 15:00 -> libre
+    assert detect_calendar_conflicts(
+        dia.replace(hour=15),
+        dia.replace(hour=16),
+        [],
+        eventos,
+    ) is False
+
+
+def test_evento_all_day_bloquea_todo_el_dia(client, db_session):
+    from datetime import datetime
+    from app.db.models import CalendarEvent
+    from app.services.email_service import local_events_for_date, detect_calendar_conflicts
+
+    dia = datetime(2026, 7, 11)
+    db_session.add(CalendarEvent(
+        title="Fuera todo el dia", start_date=dia, all_day=True,
+    ))
+    db_session.commit()
+    eventos = local_events_for_date(dia.date())
+    assert detect_calendar_conflicts(
+        dia.replace(hour=9), dia.replace(hour=10), [], eventos,
+    ) is True
+
+
+def test_evento_local_sin_end_date_asume_1h(client, db_session):
+    from datetime import datetime
+    from app.db.models import CalendarEvent
+    from app.services.email_service import local_events_for_date
+
+    dia = datetime(2026, 7, 12)
+    db_session.add(CalendarEvent(title="Sin fin", start_date=dia.replace(hour=9)))
+    db_session.commit()
+    ev = local_events_for_date(dia.date())[0]
+    assert ev["end"].endswith("10:00:00")

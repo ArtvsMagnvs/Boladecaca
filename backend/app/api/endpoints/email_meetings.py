@@ -36,6 +36,7 @@ from app.tools.email_tool import (
 from app.db.database import SessionLocal
 from app.db.models import MeetingProposal, CalendarAvailability, EmailActivityLog
 from app.services.email_service import (
+    local_events_for_date,
     _email_tool,
     _parse_iso,
     detect_calendar_conflicts,
@@ -136,6 +137,8 @@ async def process_meetings(max_emails: int = Query(10, ge=1, le=50)):
         finally:
             db.close()
         gcal_events = await _gcal_events_for_date(proposed_dt.date(), gcal_cache)
+        # FIX: incluir eventos del calendario local de Aithera (ver email_service)
+        gcal_events = gcal_events + local_events_for_date(proposed_dt.date())
         is_busy = detect_calendar_conflicts(
             proposed_dt,
             proposed_dt + timedelta(hours=1),
