@@ -255,3 +255,48 @@ async def daily_digest(date: Optional[str] = Query(None, description="YYYY-MM-DD
         }
     finally:
         db.close()
+
+
+@router.post("/activity/{entry_id}/respond")
+async def respond_from_activity(entry_id: int, mode: str = Query(..., pattern="^(draft|send)$")):
+    """2026-07-02 (peticion usuario): actuar sobre una alerta del dashboard.
+
+    mode=draft -> genera la propuesta como borrador en Gmail.
+    mode=send  -> responde automaticamente YA.
+    Ejecuta el pipeline completo (regla + reunion + calendario local/Google).
+    El click del usuario es el consentimiento: ignora la autonomia de la regla.
+    """
+    from app.services.email_service import respond_to_email
+
+    db = SessionLocal()
+    try:
+        entry = db.query(EmailActivityLog).filter(EmailActivityLog.id == entry_id).first()
+        if not entry:
+            raise HTTPException(status_code=404, detail=f"entrada no encontrada: id={entry_id}")
+        email_id = entry.email_id
+        sender = entry.sender or ""
+        subject = entry.subject or ""
+        snippet = entry.snippet or ""
+    finally:
+        db.close()
+
+    if not google_auth.is_connected():
+        raise HTTPException(status_code=503, detail="Google no conectado")
+
+    result = await respond_to_email(
+        email_id=email_id or "", mode=mode,
+        fallback_sender=sender, fallback_subject=subject, fallback_body=snippet,
+    )
+    if not result.get("ok"):
+        raise HTTPException(status_code=400, detail=result.get("detail", "no se pudo responder"))
+
+    # marcar la alerta original como leida (ya se ha actuado)
+    db = SessionLocal()
+    try:
+        entry = db.query(EmailActivityLog).filter(EmailActivityLog.id == entry_id).first()
+        if entry:
+            entry.read = True
+            db.commit()
+    finally:
+        db.close()
+    return result

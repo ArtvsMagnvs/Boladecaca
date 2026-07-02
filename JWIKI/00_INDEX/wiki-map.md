@@ -25,6 +25,7 @@
 | JWIKI-010 | 01_LANDSCAPE/agent-frameworks.md | Comparativa frameworks agentes | A | 🟡 in_progress | (tick 7 19:00 dispatch turno A) |
 | JWIKI-011 | 01_LANDSCAPE/langgraph.md | LangGraph overview | B | ✅ verified | (escriba 2026-07-01 12:20 — 16 fuentes, 5 snippets, 3 tablas, 78% confianza; auditado independiente 2026-07-01) |
 | JWIKI-012 | 01_LANDSCAPE/crewai.md | CrewAI overview | A | 🔴 pending |
+| JWIKI-013 | 01_LANDSCAPE/autogen.md | AutoGen Microsoft overview | B | ✅ verified | (Mavis self-audit 2026-07-02 15:00 — 58KB, 6/6 criterios ✅ en substance pero criterio 6 estricto no cumplido; 4 freezes en pipeline; pendiente user review) |
 | JWIKI-013 | 01_LANDSCAPE/autogen.md | AutoGen Microsoft overview | B | 🔴 pending |
 | JWIKI-014 | 01_LANDSCAPE/google-adk.md | Google ADK overview | A | 🔴 pending |
 | JWIKI-015 | 01_LANDSCAPE/openai-agents-sdk.md | OpenAI Agents SDK | B | 🔴 pending |
@@ -375,13 +376,4 @@
 
 Los ticks procesan **1 doc cada 15 minutos** alternando turnos:
 - 12:00 → turno A → JWIKI-002 (o el siguiente par pending)
-- 12:15 → turno B → JWIKI-001 (o el siguiente impar pending)
-- 12:30 → turno A → JWIKI-004
-- 12:45 → turno B → JWIKI-003
-- ...
-
-**Cálculo**: 266 docs / 2 turnos cada 15 min = ~33 horas de trabajo real neto.
-
----
-
-*Mantenedor: Mavis (orquestador). Actualizado en bootstrap completo.*
+- 12:15 → turno B → JWIKI-001 (o el siguiente imp

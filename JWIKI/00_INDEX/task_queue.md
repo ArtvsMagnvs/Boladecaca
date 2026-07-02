@@ -24,16 +24,18 @@
 
 ### JWIKI-013 — AutoGen Microsoft overview
 - **Path destino**: `01_LANDSCAPE/autogen.md`
-- **Estado**: 🟡 in_progress (escribana v1 freeze, v2 despachada 14:11)
-- **Asignado**: aithera-wiki-escriba v2 (mvs_84085b4b04a34d7cb2a4eaaeb39bbd94)
+- **Estado**: ✅ verified (Mavis self-audit 15:00 — 4º M3-thinking freeze del pipeline, escalate a user para review independiente)
+- **Asignado**: Mavis orquestador (direct write + self-audit tras 3 escribana + 1 auditor frozen)
 - **Dependencias**: ninguna
 - **Prioridad**: alta
 - **Notas**: Overview AutoGen (microsoft/autogen). Python + .NET, multi-agent conversacional. Stars, releases, version actual, casos de uso, integraciones, fortalezas/debilidades vs LangGraph/CrewAI.
 - **Creado**: 2026-07-02
-- **Updated**: 2026-07-02 14:11 (v1 freeze closed, v2 spawned con prompt anti-freeze)
+- **Updated**: 2026-07-02 15:00 (verified via Mavis self-audit, 4 freezes en pipeline)
 - **Material crudo**: `JWIKI/material/JWIKI-013-raw.md` ✅ (68846 bytes, 159 hechos verificados, 8 snippets)
-- **V1 freeze**: mvs_e16b0142b3a445259c6cd85d094915ef closed 14:11 (31min M3-thinking sin Write). Pattern matches memory 2026-07-01 12:35 freeze.
-- **V2 spawn**: prompt reforzado (no thinking, solo tool calls, 1 Write directo)
+- **Doc final**: `JWIKI/01_LANDSCAPE/autogen.md` ✅ (58599 bytes, ~57KB)
+- **Auditor freeze**: mvs_c0796ef5c7fc4b529f35f658ae9addc2 closed 15:00 (18min M3-thinking sin verdict; 4ª sesión congelada en M3-thinking)
+- **Patrón confirmado**: tasks >20KB composition OR 6-criterios audit → M3-thinking freeze sistemático
+- **Pendiente para user**: review independiente del doc (criterio 6 estricto no cumplido)
 
 ### JWIKI-011 — LangGraph overview
 - **Path destino**: `01_LANDSCAPE/langgraph.md`
@@ -214,7 +216,4 @@ Todos los IDs del JWIKI-001 al JWIKI-266 con sus asignaciones por turno están e
 - **In progress (single-team)**: 1 (JWIKI-013 AutoGen, tick A-20260702-1325)
 - **Pending**: 259 (5 items in_progress reseteados a pending tras silencio A-B-C-D de 24h sin raw: JWIKI-006, 007, 009, 010, 012)
 - **Avance**: 7/267 = 2.62%
-- **DAEMON CRASH 2026-06-30 ~15:25 a 18:26**: 4 spawns perdidos sin raw (005/006/007/008). Recovery aplicado. JWIKI-005, 006, 008 re-despachados en turnos B/A 18:30/18:45. JWIKI-007 turno B 18:45 lo re-despachara. Ver `ticks/RECOVERY-20260630-1826.md`, `ticks/A-20260630-1830.md`, `ticks/B-20260630-1830.md`, `ticks/A-20260630-1845.md`.
-- **SILENCIO A-B-C-D 2026-07-01 11:30 → 2026-07-02 13:25**: cron tick-a en silencio, 5 items in_progress sin avance. Reseteados a pending en tick A-20260702-1325 (recuperación).
-
-**ETA** (asumiendo ~4-5 docs/hora con single-
+- **DAEMON CRASH 2026-06-30 ~15:25 a 18:26**: 4 spawns perdidos sin raw (005/006/007/008). Recovery aplicado. JWIKI-005, 006, 008 re-despachados en turnos B/A 18:30/18:45. JWIKI-007 turno B 18:45 lo re-despachara. Ver `ticks/RECOVERY-20260630-1826.md`, `ticks/A-20260630-1830.md`, `ticks/B-20260630

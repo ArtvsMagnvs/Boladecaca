@@ -65,6 +65,10 @@ const PROPOSAL_STATUS_COLORS: Record<string, { bg: string; text: string; label: 
   expired:      { bg: "bg-base-700/40",   text: "text-ink-faint",   label: "Caducada" },
 };
 
+// 2026-07-02: link al email real en Gmail web (por message id)
+const gmailLink = (emailId?: string | null) =>
+  emailId ? `https://mail.google.com/mail/u/0/#all/${emailId}` : null;
+
 // V0.7.3 (Sprint 3): color de badge por categoria de triaje
 const TRIAGE_STYLES: Record<string, string> = {
   urgente: "bg-red-500/20 text-red-400",
@@ -211,6 +215,30 @@ export default function EmailAssistant() {
       await refresh();
     } catch (e: any) {
       setMsg({ kind: "err", text: `Error registrando feedback: ${e.message}` });
+    }
+  };
+
+  // 2026-07-02: responder desde una alerta del dashboard
+  const [respondingId, setRespondingId] = useState<number | null>(null);
+  const handleRespondFromAlert = async (entryId: number, mode: "draft" | "send") => {
+    setRespondingId(entryId);
+    try {
+      const r = await api.respondFromActivity(entryId, mode);
+      const extra = r.meeting
+        ? r.calendar_status === "ocupado"
+          ? ` (reunion, ocupado${r.new_date_proposed ? `, propuesta: ${new Date(r.new_date_proposed).toLocaleString("es-ES", { dateStyle: "short", timeStyle: "short" })}` : ""})`
+          : " (reunion, fecha libre: aceptada)"
+        : "";
+      setMsg({
+        kind: "ok",
+        text: `${r.action === "borrador_creado" ? "Borrador creado en Gmail" : "Respuesta enviada"}${extra}: "${r.reply_preview.slice(0, 120)}..."`,
+      });
+      await refresh();
+      await refreshActivity();
+    } catch (e: any) {
+      setMsg({ kind: "err", text: `Error respondiendo: ${e.message}` });
+    } finally {
+      setRespondingId(null);
     }
   };
 
@@ -723,9 +751,15 @@ export default function EmailAssistant() {
                         </span>
                       )}
                     </div>
-                    <p className={`text-xs truncate ${m.unread ? "text-ink" : "text-ink-dim"}`}>
+                    <a
+                      href={gmailLink(m.id) || undefined}
+                      target="_blank"
+                      rel="noreferrer"
+                      className={`block text-xs truncate hover:text-accent ${m.unread ? "text-ink" : "text-ink-dim"}`}
+                      title="Abrir en Gmail"
+                    >
                       {m.subject || "(sin asunto)"}
-                    </p>
+                    </a>
                     {m.snippet && (
                       <p className="text-[10px] text-ink-faint truncate mt-0.5">{m.snippet}</p>
                     )}
@@ -933,7 +967,19 @@ export default function EmailAssistant() {
                         {entry.subject && (
                           <>
                             <span className="text-ink-faint"> · </span>
-                            <span className="text-ink">{entry.subject}</span>
+                            {gmailLink(entry.email_id) ? (
+                              <a
+                                href={gmailLink(entry.email_id)!}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="text-ink underline decoration-dotted underline-offset-2 hover:text-accent"
+                                title="Abrir en Gmail"
+                              >
+                                {entry.subject} ↗
+                              </a>
+                            ) : (
+                              <span className="text-ink">{entry.subject}</span>
+                            )}
                           </>
                         )}
                       </p>
@@ -987,6 +1033,27 @@ export default function EmailAssistant() {
                             {details.preview_reply}
                           </p>
                         </details>
+                      )}
+                      {/* 2026-07-02: actuar desde la alerta (peticion usuario) */}
+                      {entry.action_type === "alert" && entry.email_id && (
+                        <div className="flex items-center gap-1.5 mt-1.5">
+                          <button
+                            onClick={() => handleRespondFromAlert(entry.id, "draft")}
+                            disabled={respondingId === entry.id}
+                            className="text-[10px] px-2 py-1 rounded bg-amber-500/15 text-amber-300 hover:bg-amber-500/25 disabled:opacity-50"
+                            title="Genera la respuesta (reunion: consulta calendario) y la deja en Borradores de Gmail"
+                          >
+                            {respondingId === entry.id ? "Generando..." : "✎ Generar propuesta"}
+                          </button>
+                          <button
+                            onClick={() => handleRespondFromAlert(entry.id, "send")}
+                            disabled={respondingId === entry.id}
+                            className="text-[10px] px-2 py-1 rounded bg-signal-ok/15 text-signal-ok hover:bg-signal-ok/25 disabled:opacity-50"
+                            title="Genera la respuesta y la ENVIA ya"
+                          >
+                            {respondingId === entry.id ? "Enviando..." : "➤ Responder automaticamente"}
+                          </button>
+                        </div>
                       )}
                       {/* V0.7.3 (Sprint 4, B6): feedback sobre borradores propuestos */}
                       {entry.action_type === "draft" && entry.rule_id && (

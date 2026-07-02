@@ -603,6 +603,32 @@ class CalendarTool(BaseTool):
         finally:
             db.close()
 
+        # 1b) FIX (2026-07-02): eventos del calendario LOCAL de Aithera
+        # (CalendarEvent) tambien bloquean horas. Antes solo contaban los
+        # bloques de availability + Google -> se proponian huecos que el
+        # usuario tenia ocupados en su propio calendario.
+        db = SessionLocal()
+        try:
+            from app.db.models import CalendarEvent
+            local_events = db.query(CalendarEvent).filter(
+                CalendarEvent.start_date >= datetime.combine(d, dt_time()),
+                CalendarEvent.start_date < datetime.combine(d, dt_time()) + timedelta(days=1),
+            ).all()
+            for ev in local_events:
+                if ev.all_day:
+                    unavailable_hours.update(range(0, 24))
+                    continue
+                ev_start = ev.start_date
+                ev_end = ev.end_date or (ev.start_date + timedelta(hours=1))
+                cur = ev_start
+                while cur < ev_end:
+                    unavailable_hours.add(cur.hour)
+                    cur += timedelta(hours=1)
+        except Exception as e:
+            print(f"[calendar] find_free_slots: eventos locales fallo (fail-soft): {e}")
+        finally:
+            db.close()
+
         # 2) Horas ocupadas por eventos Google (si OAuth).
         google_busy_hours = set()
         if creds:

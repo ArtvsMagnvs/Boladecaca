@@ -419,3 +419,149 @@ def local_events_for_date(target_date) -> list:
     finally:
         db.close()
     return events
+
+
+async def respond_to_email(email_id: str, mode: str, fallback_sender: str = "",
+                           fallback_subject: str = "", fallback_body: str = "") -> Dict[str, Any]:
+    """Accion manual desde el dashboard (2026-07-02, peticion usuario): dado un
+    email concreto, ejecuta el workflow completo de respuesta AHORA.
+
+    mode: 'draft' (crear borrador en Gmail) | 'send' (enviar ya).
+    Es una orden explicita del usuario, asi que IGNORA la autonomia de la
+    regla (el click es el consentimiento). Reusa el mismo pipeline que
+    process-inbox: regla -> deteccion de reunion -> calendario (bloques +
+    Google + eventos locales) -> aceptar / contraproponer / ai_prompt /
+    plantilla.
+
+    Devuelve {ok, action, reply_preview, meeting, calendar_status, detail}.
+    """
+    from datetime import timedelta
+    from app.tools.email_tool import (
+        check_auto_reply_match,
+        detect_meeting_proposal,
+        extract_meeting_datetime,
+        generate_meeting_reschedule_reply,
+        generate_meeting_accept_reply,
+        _render_template,
+        _extract_email_address,
+    )
+    from app.db.models import CalendarAvailability
+
+    if mode not in {"draft", "send"}:
+        return {"ok": False, "detail": f"mode invalido: {mode!r}"}
+
+    tool = _email_tool()
+
+    # 1) Recuperar el email real de Gmail (fallback: datos de la entrada)
+    sender, subject, body = fallback_sender, fallback_subject, fallback_body
+    if email_id:
+        fetched = await tool.execute("get_email", {"email_id": email_id})
+        if fetched.get("success"):
+            data = fetched.get("result") or {}
+            sender = data.get("from") or data.get("sender") or sender
+            subject = data.get("subject") or subject
+            body = data.get("body") or data.get("snippet") or body
+    sender_email = _extract_email_address(sender or "")
+    if not sender_email:
+        return {"ok": False, "detail": "no se pudo determinar el remitente"}
+
+    # 2) Regla que matchea (para ai_prompt / plantilla / deteccion)
+    match = check_auto_reply_match(sender=sender or "", subject=subject or "", body=body or "")
+    ai_prompt = (match or {}).get("ai_prompt")
+    template_text = (match or {}).get("reply_text") or ""
+    detect_meetings = (match or {}).get("detect_meeting_with_ia", True)
+
+    # 3) Es una reunion?
+    reply_text = None
+    meeting = False
+    calendar_status = None
+    new_date = None
+    if detect_meetings:
+        detection = await detect_meeting_proposal(subject=subject or "", body=body or "")
+        if detection.is_meeting_request:
+            meeting = True
+            proposed_dt = _parse_iso(detection.datetime_iso or "") or _parse_iso(
+                await extract_meeting_datetime(subject or "", body or "") or ""
+            )
+            if proposed_dt:
+                db = SessionLocal()
+                try:
+                    day_blocks = db.query(CalendarAvailability).filter(
+                        CalendarAvailability.date == datetime.combine(proposed_dt.date(), time.min)
+                    ).all()
+                finally:
+                    db.close()
+                gcal = await _gcal_events_for_date(proposed_dt.date(), {})
+                busy_events = gcal + local_events_for_date(proposed_dt.date())
+                is_busy = detect_calendar_conflicts(
+                    proposed_dt, proposed_dt + timedelta(hours=1), day_blocks, busy_events,
+                )
+                if is_busy:
+                    calendar_status = "ocupado"
+                    # buscar hueco (hoy y hasta 14 dias)
+                    for offset in range(0, 14):
+                        alt = (proposed_dt + timedelta(days=offset)).date()
+                        resp = await _calendar_find_free_slots(None, alt.isoformat(), 60)
+                        slots = (resp.get("result") or {}).get("slots") if resp.get("success") else None
+                        if slots:
+                            new_date = slots[0]["start"]
+                            break
+                    if new_date:
+                        reply_text = await generate_meeting_reschedule_reply(
+                            sender=sender, subject=subject, original_body=body,
+                            original_proposed_iso=proposed_dt.isoformat(),
+                            new_proposed_iso=new_date,
+                        )
+                else:
+                    calendar_status = "libre"
+                    reply_text = await generate_meeting_accept_reply(
+                        sender=sender, subject=subject, original_body=body,
+                        confirmed_datetime_iso=proposed_dt.isoformat(),
+                    )
+
+    # 4) No reunion (o sin fecha): ai_prompt -> plantilla
+    if not reply_text and ai_prompt:
+        extra = ""
+        if meeting and calendar_status == "ocupado":
+            extra = "El usuario esta OCUPADO en la fecha propuesta: propon amablemente buscar otro dia."
+        reply_text = await generate_ai_reply(ai_prompt, sender, subject, body, extra_context=extra)
+    if not reply_text and template_text:
+        reply_text = template_text
+    if not reply_text:
+        return {
+            "ok": False, "meeting": meeting, "calendar_status": calendar_status,
+            "detail": "no se pudo generar respuesta (sin regla aplicable, sin ai_prompt y sin plantilla)",
+        }
+
+    # 5) Ejecutar
+    subject_reply = subject if (subject or "").lower().startswith("re:") else f"Re: {subject}"
+    action = "create_draft" if mode == "draft" else "send_email"
+    result = await tool.execute(action, {
+        "to": sender_email, "subject": subject_reply, "body": reply_text,
+    })
+    if not result.get("success"):
+        return {"ok": False, "detail": f"Gmail fallo: {result.get('error')}",
+                "meeting": meeting, "calendar_status": calendar_status}
+
+    log_activity(
+        action_type="draft" if mode == "draft" else "sent",
+        sender=sender, subject=subject, snippet=(body or "")[:300],
+        details={
+            "manual_action": True, "source": "dashboard_respond",
+            "meeting": meeting, "calendar_status": calendar_status,
+            "new_date_proposed": new_date,
+            "reply_body_preview": reply_text[:200],
+            "rule_name": (match or {}).get("name"),
+        },
+        rule_id=(match or {}).get("rule_id"),
+        rule_name=(match or {}).get("name"),
+        email_id=email_id,
+    )
+    return {
+        "ok": True,
+        "action": "borrador_creado" if mode == "draft" else "respuesta_enviada",
+        "meeting": meeting,
+        "calendar_status": calendar_status,
+        "new_date_proposed": new_date,
+        "reply_preview": reply_text[:300],
+    }

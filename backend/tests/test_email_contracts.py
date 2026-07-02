@@ -59,6 +59,8 @@ EMAIL_API_CONTRACT = [
     # V0.7.3 (Sprint 4, B7): digest diario
     ("GET",    "/api/email/digest"),
     ("POST",   "/api/email/activity/{entry_id}/read"),
+    # 2026-07-02: actuar desde una alerta del dashboard
+    ("POST",   "/api/email/activity/{entry_id}/respond"),
     ("POST",   "/api/email/activity/mark-all-read"),
     ("DELETE", "/api/email/activity/{entry_id}"),
     ("DELETE", "/api/email/activity"),

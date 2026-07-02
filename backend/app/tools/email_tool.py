@@ -854,6 +854,7 @@ def check_auto_reply_match(sender: str, subject: str, body: str = "") -> Optiona
                     # V0.7.3b (Sprint 4b): si hay ai_prompt, el caller debe
                     # generar la respuesta con IA y usar reply_text de fallback
                     "ai_prompt": getattr(rule, "ai_prompt", None),
+                    "detect_meeting_with_ia": getattr(rule, "detect_meeting_with_ia", True),
                 }
         return None
     finally:

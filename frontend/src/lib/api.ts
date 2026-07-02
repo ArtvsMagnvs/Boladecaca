@@ -414,6 +414,16 @@ export const api = {
       method: "POST",
       body: JSON.stringify(data),
     }),
+  // 2026-07-02: actuar sobre una alerta del dashboard (borrador o envio directo)
+  respondFromActivity: (id: number, mode: "draft" | "send") =>
+    request<{
+      ok: boolean;
+      action: string;
+      meeting: boolean;
+      calendar_status: string | null;
+      new_date_proposed: string | null;
+      reply_preview: string;
+    }>(`/email/activity/${id}/respond?mode=${mode}`, { method: "POST" }),
   // V0.7.3 (Sprint 4, B6): feedback del usuario sobre propuestas de una regla
   ruleFeedback: (id: number, result: "approved" | "edited" | "rejected") =>
     request<{
