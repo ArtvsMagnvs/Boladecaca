@@ -145,6 +145,12 @@ export interface AutoReplyRule {
   // Siempre presentes
   reply_template: string;
   enabled: boolean;
+  // V0.7.3 (Sprint 4, B6): autonomia gradual
+  autonomy?: "propose" | "auto";
+  approved_count?: number;
+  edited_count?: number;
+  rejected_count?: number;
+  can_promote?: boolean;
   created_at?: string;
 }
 
@@ -401,7 +407,32 @@ export const api = {
       method: "POST",
       body: JSON.stringify(data),
     }),
-  updateAutoReplyRule: (id: number, data: Partial<AutoReplyRuleInput>) =>
+  // V0.7.3 (Sprint 4, B6): feedback del usuario sobre propuestas de una regla
+  ruleFeedback: (id: number, result: "approved" | "edited" | "rejected") =>
+    request<{
+      id: number;
+      autonomy: string;
+      approved_count: number;
+      edited_count: number;
+      rejected_count: number;
+      can_promote: boolean;
+      promote_threshold: number;
+    }>(`/email/auto-reply/rules/${id}/feedback`, {
+      method: "POST",
+      body: JSON.stringify({ result }),
+    }),
+  // V0.7.3 (Sprint 4, B7): digest diario para Hub y briefing
+  getDigest: (date?: string) =>
+    request<{
+      date: string;
+      triage_counts: Record<string, number>;
+      triaged_total: number;
+      urgent_pending: number;
+      drafts_awaiting: number;
+      meetings: { today: number; pending: number };
+      rules: { enabled: number; auto: number; propose: number };
+    }>(`/email/digest${date ? `?date=${date}` : ""}`),
+  updateAutoReplyRule: (id: number, data: Partial<AutoReplyRuleInput> & { autonomy?: "propose" | "auto" }) =>
     request<{ id: number; updated: boolean }>(`/email/auto-reply/rules/${id}`, {
       method: "PATCH",
       body: JSON.stringify(data),

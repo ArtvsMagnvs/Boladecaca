@@ -36,6 +36,7 @@ from app.tools.email_tool import (
 from app.db.database import SessionLocal
 from app.db.models import MeetingProposal, CalendarAvailability, EmailActivityLog
 from app.services.email_service import (
+    effective_rule_action,
     _email_tool,
     _parse_iso,
     detect_calendar_conflicts,
@@ -119,7 +120,15 @@ async def process_inbox(max_emails: int = Query(30, ge=1, le=100)):
                 "matching": r.matching,
                 "pattern": r.pattern,
                 "reply_template": r.reply_template,
-                "action": getattr(r, "action", "auto_send"),
+                # V0.7.3 (Sprint 4, B6): gating de autonomia. Una regla en
+                # 'propose' con auto_send se degrada a create_draft: el
+                # usuario aprueba el borrador en Gmail antes de que salga.
+                "action": effective_rule_action(
+                    getattr(r, "action", "auto_send"),
+                    getattr(r, "autonomy", "auto"),
+                ),
+                "raw_action": getattr(r, "action", "auto_send"),
+                "autonomy": getattr(r, "autonomy", "auto") or "auto",
                 "detect_meeting_with_ia": getattr(r, "detect_meeting_with_ia", True),
             })
     finally:

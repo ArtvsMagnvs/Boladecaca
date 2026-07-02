@@ -68,6 +68,20 @@ def _render_template(template: str, sender: str, subject: str, body: str) -> str
     )
 
 
+def _rule_can_promote_safe(r) -> bool:
+    """V0.7.3 (Sprint 4, B6): wrapper fail-soft de rule_can_promote."""
+    try:
+        from app.services.email_service import rule_can_promote
+        return rule_can_promote(
+            getattr(r, "autonomy", "auto"),
+            getattr(r, "approved_count", 0),
+            getattr(r, "edited_count", 0),
+            getattr(r, "rejected_count", 0),
+        )
+    except Exception:
+        return False
+
+
 class EmailTool(BaseTool):
     tool_id = "email"
     name = "Email Tool"
@@ -282,6 +296,12 @@ class EmailTool(BaseTool):
                     "pattern": r.pattern,
                     "reply_template": r.reply_template,
                     "enabled": r.enabled,
+                    # V0.7.3 (Sprint 4, B6): autonomia gradual
+                    "autonomy": getattr(r, "autonomy", "auto") or "auto",
+                    "approved_count": getattr(r, "approved_count", 0) or 0,
+                    "edited_count": getattr(r, "edited_count", 0) or 0,
+                    "rejected_count": getattr(r, "rejected_count", 0) or 0,
+                    "can_promote": _rule_can_promote_safe(r),
                     "created_at": r.created_at.isoformat() if r.created_at else None,
                 })
             return {"success": True, "result": {"rules": items, "count": len(items)}, "error": None}
@@ -296,6 +316,11 @@ class EmailTool(BaseTool):
         sender_emails = params.get("sender_emails") or []
         sender_domains = params.get("sender_domains") or []
         action = (params.get("action") or "auto_send").strip()
+        # V0.7.3 (Sprint 4, B6): toda regla nueva nace en 'propose' salvo
+        # peticion explicita. La promocion a 'auto' se gana con feedback.
+        autonomy = (params.get("autonomy") or "propose").strip()
+        if autonomy not in {"propose", "auto"}:
+            return {"success": False, "result": None, "error": f"autonomy invalido: {autonomy!r}"}
         detect_meeting = bool(params.get("detect_meeting_with_ia", True))
         matching = params.get("matching") or "sender_contains"
         pattern = (params.get("pattern") or "").strip()
@@ -341,6 +366,7 @@ class EmailTool(BaseTool):
         db = SessionLocal()
         try:
             rule = EmailAutoReplyRule(
+                autonomy=autonomy,
                 name=name,
                 sender_emails=json.dumps(emails_clean),
                 sender_domains=json.dumps(domains_clean),
@@ -398,6 +424,15 @@ class EmailTool(BaseTool):
                 rule.action = params["action"]
             if "detect_meeting_with_ia" in params:
                 rule.detect_meeting_with_ia = bool(params["detect_meeting_with_ia"])
+            # V0.7.3 (Sprint 4, B6): promocion/degradacion manual de autonomia
+            if "autonomy" in params:
+                if params["autonomy"] not in {"propose", "auto"}:
+                    return {
+                        "success": False,
+                        "result": None,
+                        "error": f"autonomy invalido: {params['autonomy']!r}",
+                    }
+                rule.autonomy = params["autonomy"]
             if "matching" in params:
                 if params["matching"] and params["matching"] not in VALID_MATCHINGS:
                     return {

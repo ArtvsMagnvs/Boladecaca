@@ -78,6 +78,8 @@ class AutoReplyRulePayload(BaseModel):
     # Legacy V0.7 (compatibilidad)
     matching: Optional[str] = None
     pattern: Optional[str] = None
+    # V0.7.3 (Sprint 4, B6): autonomia gradual — toda regla nace en propose
+    autonomy: str = "propose"  # propose | auto
     # Siempre presentes
     reply_template: str
     enabled: bool = True
@@ -192,3 +194,46 @@ async def send_auto_reply(payload: AutoReplySendPayload):
 # combinando auto-reply rules + deteccion IA de reuniones en una sola pasada
 # ----------------------------------------------------------------------
 
+
+
+class RuleFeedbackPayload(BaseModel):
+    """V0.7.3 (Sprint 4, B6): feedback del usuario sobre una propuesta
+    generada por la regla (borrador creado en modo 'propose')."""
+    result: str  # approved | edited | rejected
+
+
+@router.post("/auto-reply/rules/{rule_id}/feedback")
+async def rule_feedback(rule_id: int, payload: RuleFeedbackPayload):
+    """Registra el veredicto del usuario sobre una propuesta de la regla.
+    Con saldo de aprobadas netas >= PROMOTE_THRESHOLD la respuesta incluye
+    can_promote=true y la UI ofrece subir la regla a 'auto'
+    (PATCH /auto-reply/rules/{id} con {"autonomy": "auto"})."""
+    from app.db.models import EmailAutoReplyRule
+    from app.services.email_service import rule_can_promote, PROMOTE_THRESHOLD
+
+    if payload.result not in {"approved", "edited", "rejected"}:
+        raise HTTPException(status_code=400, detail=f"result invalido: {payload.result!r}")
+    db = SessionLocal()
+    try:
+        rule = db.query(EmailAutoReplyRule).filter(EmailAutoReplyRule.id == rule_id).first()
+        if not rule:
+            raise HTTPException(status_code=404, detail=f"regla no encontrada: id={rule_id}")
+        field = f"{payload.result}_count"
+        setattr(rule, field, (getattr(rule, field, 0) or 0) + 1)
+        db.commit()
+        counters = {
+            "approved_count": rule.approved_count,
+            "edited_count": rule.edited_count,
+            "rejected_count": rule.rejected_count,
+        }
+        return {
+            "id": rule.id,
+            "autonomy": rule.autonomy,
+            **counters,
+            "can_promote": rule_can_promote(
+                rule.autonomy, rule.approved_count, rule.edited_count, rule.rejected_count
+            ),
+            "promote_threshold": PROMOTE_THRESHOLD,
+        }
+    finally:
+        db.close()

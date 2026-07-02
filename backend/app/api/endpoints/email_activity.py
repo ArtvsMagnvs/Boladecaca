@@ -182,3 +182,76 @@ async def clear_activity():
     finally:
         db.close()
 
+
+
+@router.get("/digest")
+async def daily_digest(date: Optional[str] = Query(None, description="YYYY-MM-DD; default hoy")):
+    """V0.7.3 (Sprint 4, B7): digest diario del Email Assistant.
+
+    Una sola llamada para la tarjeta del Hub y el briefing matinal (V0.9):
+      - triage_counts: emails triados ese dia por categoria
+      - urgent_pending: alertas sin leer en el dashboard
+      - drafts_awaiting: borradores propuestos sin revisar (autonomia propose)
+      - meetings: propuestas de reunion del dia + pendientes totales
+      - rules: reglas activas y su autonomia
+    Solo lee BD local: no llama a Gmail ni al LLM.
+    """
+    from datetime import date as _date
+    from app.db.models import EmailTriage, EmailAutoReplyRule
+
+    if date:
+        try:
+            target = _date.fromisoformat(date)
+        except ValueError:
+            raise HTTPException(status_code=400, detail=f"fecha invalida: {date!r} (formato YYYY-MM-DD)")
+    else:
+        target = datetime.utcnow().date()
+
+    db = SessionLocal()
+    try:
+        # 1) Triaje del dia por categoria
+        triage_counts: Dict[str, int] = {}
+        for row in db.query(EmailTriage).all():
+            if row.created_at and row.created_at.date() == target:
+                triage_counts[row.category] = triage_counts.get(row.category, 0) + 1
+
+        # 2) Alertas urgentes sin leer
+        urgent_pending = db.query(EmailActivityLog).filter(
+            EmailActivityLog.action_type == "alert",
+            EmailActivityLog.read == False,  # noqa: E712
+        ).count()
+
+        # 3) Borradores propuestos sin revisar
+        drafts_awaiting = db.query(EmailActivityLog).filter(
+            EmailActivityLog.action_type == "draft",
+            EmailActivityLog.read == False,  # noqa: E712
+        ).count()
+
+        # 4) Reuniones
+        proposals = db.query(MeetingProposal).all()
+        meetings_today = sum(
+            1 for p in proposals if p.created_at and p.created_at.date() == target
+        )
+        meetings_pending = sum(1 for p in proposals if (p.status or "") == "pending")
+
+        # 5) Reglas
+        rules = db.query(EmailAutoReplyRule).filter(
+            EmailAutoReplyRule.enabled == True  # noqa: E712
+        ).all()
+        rules_summary = {
+            "enabled": len(rules),
+            "auto": sum(1 for r in rules if getattr(r, "autonomy", "auto") == "auto"),
+            "propose": sum(1 for r in rules if getattr(r, "autonomy", "auto") == "propose"),
+        }
+
+        return {
+            "date": target.isoformat(),
+            "triage_counts": triage_counts,
+            "triaged_total": sum(triage_counts.values()),
+            "urgent_pending": urgent_pending,
+            "drafts_awaiting": drafts_awaiting,
+            "meetings": {"today": meetings_today, "pending": meetings_pending},
+            "rules": rules_summary,
+        }
+    finally:
+        db.close()

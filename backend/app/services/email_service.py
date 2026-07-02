@@ -315,3 +315,27 @@ def get_triage_map(email_ids: list) -> Dict[str, str]:
         return {r.email_id: r.category for r in rows}
     finally:
         db.close()
+
+
+# ----------------------------------------------------------------------
+# Autonomia gradual por regla — V0.7.3 (Sprint 4, B6, patron Inbox Zero)
+# ----------------------------------------------------------------------
+
+PROMOTE_THRESHOLD = 5  # propuestas aprobadas netas para ofrecer 'auto'
+
+
+def effective_rule_action(action: str, autonomy: str) -> str:
+    """Gating de autonomia: una regla 'propose' con action='auto_send' se
+    degrada a 'create_draft' (nada sale sin aprobacion del usuario).
+    'create_draft' y 'alert_only' no cambian: ya son seguras."""
+    if (action or "auto_send") == "auto_send" and (autonomy or "propose") == "propose":
+        return "create_draft"
+    return action or "auto_send"
+
+
+def rule_can_promote(autonomy: str, approved: int, edited: int, rejected: int) -> bool:
+    """True si la regla lleva saldo suficiente de aprobaciones para
+    ofrecer subirla a 'auto' (aprobadas netas >= PROMOTE_THRESHOLD)."""
+    if (autonomy or "propose") != "propose":
+        return False
+    return (approved or 0) - (edited or 0) - (rejected or 0) >= PROMOTE_THRESHOLD

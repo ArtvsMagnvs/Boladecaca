@@ -10,7 +10,7 @@ class Settings:
     APP_NAME = "Aithera"
     # V0.7.1 (Fase 4b Email Assistant refactor - bump sincronizado con main.py y
     # frontend/package.json).
-    VERSION = "0.7.2"
+    VERSION = "0.7.3"
     DEBUG = os.getenv("DEBUG", "false").lower() == "true"
 
     # API settings

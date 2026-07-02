@@ -86,6 +86,13 @@ export default function Hub() {
   const [voiceStatus, setVoiceStatus] = useState<VoiceStatusInfo | null>(null);
   // V0.7 extra: estado real de Email en el Hub
   const [emailStatus, setEmailStatus] = useState<EmailStatus | null>(null);
+  // V0.7.3 (Sprint 4, B7): digest diario del Email Assistant
+  const [digest, setDigest] = useState<{
+    triaged_total: number;
+    urgent_pending: number;
+    drafts_awaiting: number;
+    meetings: { today: number; pending: number };
+  } | null>(null);
   const [proposalsCount, setProposalsCount] = useState<{ pending: number; counter_sent: number; confirmed: number }>({
     pending: 0, counter_sent: 0, confirmed: 0,
   });
@@ -165,6 +172,10 @@ export default function Hub() {
     useAppStore.getState().refreshAIStatus();
 
     // V0.7 extra: estado real de Email (conexion Google + propuestas).
+    // V0.7.3 (Sprint 4, B7): digest diario (solo BD local, barato)
+    api.getDigest()
+      .then((d) => safeSet(setDigest, d))
+      .catch(() => safeSet(setDigest, null));
     api.getEmailStatus()
       .then((d) => safeSet<EmailStatus>(setEmailStatus, d))
       .catch(() => safeSet<EmailStatus>(setEmailStatus, {
@@ -510,6 +521,19 @@ export default function Hub() {
                   <p className="text-base font-medium text-signal-ok">{proposalsCount.confirmed}</p>
                 </div>
               </div>
+              {/* V0.7.3 (Sprint 4, B7): digest de hoy */}
+              {digest && (
+                <div className="mt-2 flex items-center justify-between text-[10px] px-2 py-1.5 rounded-lg bg-base-800/40">
+                  <span className="text-ink-faint">Hoy:</span>
+                  <span className="text-ink-dim">{digest.triaged_total} triados</span>
+                  <span className={digest.urgent_pending > 0 ? "text-signal-error font-medium" : "text-ink-faint"}>
+                    {digest.urgent_pending} urgentes
+                  </span>
+                  <span className={digest.drafts_awaiting > 0 ? "text-amber-300" : "text-ink-faint"}>
+                    {digest.drafts_awaiting} borradores
+                  </span>
+                </div>
+              )}
               <button
                 onClick={() => navigate("/email")}
                 className="mt-3 text-[10px] px-2 py-1 rounded bg-base-800 text-ink-dim hover:bg-base-700 w-full"

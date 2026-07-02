@@ -73,9 +73,9 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="Aithera API",
     description="Sistema Operativo de IA - Backend API",
-    # V0.7.2 (Sprint 2 split god-endpoint - bump sincronizado
+    # V0.7.3 (Sprint 4 cierre fase Email Assistant - bump sincronizado
     # con root(), core/config.py y frontend/package.json).
-    version="0.7.2",
+    version="0.7.3",
     lifespan=lifespan
 )
 
@@ -112,11 +112,11 @@ app.include_router(memory.router, prefix="/api")
 
 @app.get("/")
 def root():
-    """V0.7.2 (Sprint 2 split god-endpoint - bump sincronizado con FastAPI
+    """V0.7.3 (Sprint 4 cierre fase Email Assistant - bump sincronizado con FastAPI
     app.version y core/config.py (VERSION = 0.7.1))."""
     return {
         "name": "Aithera",
-        "version": "0.7.2",
+        "version": "0.7.3",
         "status": "running"
     }
 

@@ -43,6 +43,8 @@ EMAIL_API_CONTRACT = [
     ("PATCH",  "/api/email/auto-reply/rules/{rule_id}"),
     ("DELETE", "/api/email/auto-reply/rules/{rule_id}"),
     ("POST",   "/api/email/auto-reply/test"),
+    # V0.7.3 (Sprint 4, B6): feedback de autonomia gradual
+    ("POST",   "/api/email/auto-reply/rules/{rule_id}/feedback"),
     ("POST",   "/api/email/auto-reply/send"),
     # Procesamiento
     ("POST",   "/api/email/process-inbox"),
@@ -54,6 +56,8 @@ EMAIL_API_CONTRACT = [
     # Activity log
     ("GET",    "/api/email/activity"),
     ("GET",    "/api/email/activity/stats"),
+    # V0.7.3 (Sprint 4, B7): digest diario
+    ("GET",    "/api/email/digest"),
     ("POST",   "/api/email/activity/{entry_id}/read"),
     ("POST",   "/api/email/activity/mark-all-read"),
     ("DELETE", "/api/email/activity/{entry_id}"),

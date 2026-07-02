@@ -266,6 +266,16 @@ class EmailAutoReplyRule(Base):
     matching = Column(String(30), default='sender_contains')
     pattern = Column(String(200), nullable=False)
     reply_template = Column(Text, nullable=False)
+    # V0.7.3 (Sprint 4, B6 - patron Inbox Zero): autonomia gradual por regla.
+    #   'propose' (default): si action='auto_send', se degrada a borrador
+    #                        (el usuario aprueba antes de que salga nada).
+    #   'auto'             : la regla actua sola (se gana con confianza).
+    # Los contadores se alimentan del feedback del usuario sobre cada
+    # propuesta; con saldo >= 5 la UI ofrece "subir a automatico".
+    autonomy = Column(String(10), nullable=False, default='propose')
+    approved_count = Column(Integer, nullable=False, default=0)
+    edited_count = Column(Integer, nullable=False, default=0)
+    rejected_count = Column(Integer, nullable=False, default=0)
     enabled = Column(Boolean, default=True)
     # V0.7 extra: cuando es True, NO usa reply_template para reuniones.
     # La IA genera la respuesta completa (confirmacion o contrapropuesta).

@@ -9,7 +9,7 @@
 
 ## 1. Estado actual del proyecto
 
-**Versión real**: `0.7.2` (consistente en `backend/app/main.py`,
+**Versión real**: `0.7.3` (consistente en `backend/app/main.py`,
 `backend/app/core/config.py` y `frontend/package.json`).
 
 **Fases completadas**: V0.2 (base) → V0.3 (Hub) → V0.4 (PostgreSQL + Alembic) →
@@ -19,7 +19,13 @@ toast contextual, detección de reuniones en dos etapas patrón AMD GAIA,
 `detect_calendar_conflicts` con cross-check de Google Calendar y tests unitarios)
 → **V0.7.2** (Sprint 2 PLAN_MAESTRO_2026: split del god-endpoint email en 7
 routers + `app/services/email_service.py`, rutas públicas intactas por contrato;
-FIX del bug latente `json`/`log_activity` que impedía persistir el activity log).
+FIX del bug latente `json`/`log_activity` que impedía persistir el activity log)
+→ **V0.7.3** (Sprints 3-4 PLAN_MAESTRO_2026 — **Email Assistant TERMINADO**:
+triaje del inbox en 7 categorías con clasificador de 2 etapas heurística→LLM;
+autonomía gradual por regla patrón Inbox Zero — toda regla nace en 'propose'
+(borradores), el feedback del usuario (✓/✎/✗) alimenta contadores y con saldo
+≥5 se ofrece subirla a 'auto'; digest diario `GET /api/email/digest` + tarjeta
+en el Hub; docs de fase duplicados archivados en `archive/`).
 
 **Fases pendientes (documentadas, no implementadas)**:
 - **V0.8** — Clientes Telegram + Web App (FastAPI serving React build) + PWA
@@ -31,11 +37,12 @@ está commiteado (commit `abf4493`, tag `v0.7.1` — Sprint 1 del PLAN_MAESTRO_2
 2026-07-02). Regla desde entonces: un commit por paso terminado. El roadmap está en
 `AOS_Arquitectura_y_Roadmap.md`, complementado por `PLAN_MAESTRO_2026/03_ROADMAP_ACTUALIZADO.md`.
 
-**Tests**: `backend/tests/` con 81 tests pytest — smoke de arranque
+**Tests**: `backend/tests/` con 97 tests pytest — smoke de arranque
 (`test_smoke.py`), contratos del API de email (~30 rutas congeladas en
 `test_email_contracts.py` como red de seguridad del split del god-endpoint,
 más regresión del bug json/log_activity), triaje de inbox
-(`test_email_triage.py`, Sprint 3) y meeting detection (`test_email_assistant.py`). Ejecutar: `cd backend && python -m pytest tests/ -v`.
+(`test_email_triage.py`, Sprint 3), autonomía + digest (`test_email_autonomy_digest.py`,
+Sprint 4) y meeting detection (`test_email_assistant.py`). Ejecutar: `cd backend && python -m pytest tests/ -v`.
 
 ---
 
@@ -163,7 +170,7 @@ Cambios ya aplicados (ver `Actualizacion_V0.2.txt` sección 3):
 ### ✅ V0.4 — PostgreSQL + Alembic
 - Migración SQLite → PostgreSQL completada (ver `Fase_1b_PostgreSQL_Migration_V04.md`)
 - `DATABASE_URL` dinámico en `config.py` con fallback automático a SQLite
-- **9 migraciones Alembic** (la 9ª, `a1f2e3d4c5b6_v073_email_triage`, añadida en Sprint 3):
+- **10 migraciones Alembic** (9ª `a1f2e3d4c5b6_v073_email_triage` Sprint 3; 10ª `b2c3d4e5f6a7_v073_rule_autonomy` Sprint 4):
   - `4ab2071f433f_initial_schema_snapshot_from_sqlite_migration.py` (V0.4)
   - `24b8353ad754_add_agent_fields_and_execution_table.py` (V0.5)
   - `25c926be5811_force_cascade_delete_on_agent_execut...py` (V0.5 fix)
@@ -260,10 +267,10 @@ Doc: `Fase_8_Orchestrator_V10.md`
 | `/api/email` | `email_auth.py` | 113 líneas | OAuth + credenciales + status |
 | `/api/email` | `email_inbox.py` | 231 líneas | Inbox, preview (con categoría), búsqueda, summary, triage/run (V0.7.3) |
 | `/api/email` | `email_compose.py` | 84 líneas | Draft + send (con confirmación) |
-| `/api/email` | `email_auto_reply.py` | 194 líneas | Reglas auto-reply (CRUD + test + send) |
+| `/api/email` | `email_auto_reply.py` | ~250 líneas | Reglas auto-reply (CRUD + test + send + feedback de autonomía) |
 | `/api/email` | `email_processing.py` | 1017 líneas | process-inbox + process-test (⚠️ dividir en Sprint 3 con el triaje) |
 | `/api/email` | `email_meetings.py` | 419 líneas | process-meetings, check-confirmations, proposals |
-| `/api/email` | `email_activity.py` | 184 líneas | Activity log (dashboard) |
+| `/api/email` | `email_activity.py` | ~260 líneas | Activity log (dashboard) + digest diario |
 | `/api/voice` | `voice.py` | 8.6KB | ElevenLabs + eSpeak |
 | `/api/tools` | `tools.py` | 2.3KB | Catálogo de herramientas + ejecución |
 | `/api/memory` | `memory.py` | 5.6KB | Búsqueda y stats de memoria semántica |
@@ -521,12 +528,9 @@ npm run electron:build  # genera release/*.exe con electron-builder
    email: `_email_tool`, `detect_calendar_conflicts`, `_gcal_events_for_date`,
    `log_activity`, `_calendar_find_free_slots`).
 
-4. **⚠️ Dos versiones de algunos docs de fase**:
-   - `Fase_2_AgentManager_ToolSystem_V04.md` (V04, temprana)
-   - `Fase_2_AgentManager_ExecutionEngine_V05.md` (V05, real)
-   - `Fase_5_Clients_Telegram_Web_V08.md` (V08)
-   - `Fase_5_Telegram_V07.md` (V07, temprana)
-   Conservar la versión final (V05, V08) y archivar las tempranas.
+4. ~~**Dos versiones de algunos docs de fase**~~ — ✅ **SALDADA (Sprint 4)**:
+   `Fase_2_AgentManager_ToolSystem_V04.md` y `Fase_5_Telegram_V07.md`
+   archivadas en `archive/`. Quedan las versiones finales (V05, V08).
 
 5. **⚠️ Backend NO arranca backend desde Electron** — el usuario lo arranca
    manualmente. Solución de producción pendiente (servicio Windows / script
@@ -550,7 +554,7 @@ npm run electron:build  # genera release/*.exe con electron-builder
 | Refactor del god-endpoint email_assistant rompa OAuth | Media | Hacer pruebas con cuenta secundaria antes |
 | ChromaDB + sentence-transformers ~1.5GB | Media | Documentar peso, descarga solo primer arranque |
 | MiniMax cambia su API | Media | `minimax_provider.py` aislado, fácil de actualizar |
-| Tres versiones de docs de fase descolocadas | Alta | Limpiar al cerrar V0.8 |
+| ~~Tres versiones de docs de fase descolocadas~~ | ✅ Resuelto | Sprint 4: archivadas en `archive/` |
 | ~~Git sin commits en master~~ | ✅ Resuelto | Sprint 1 (2026-07-02): tag `v0.7.1`, un commit por paso |
 | Auto-start backend en producción | Media | Definir mecanismo antes de release |
 
@@ -586,6 +590,6 @@ Este archivo debe evolucionar a la par del proyecto. Reglas:
 
 ---
 
-*Última actualización: 2026-07-02 — V0.7.2 (Sprint 2 PLAN_MAESTRO_2026)*
+*Última actualización: 2026-07-02 — V0.7.3 (Sprints 3-4 PLAN_MAESTRO_2026 — Email Assistant terminado)*
 *Construido desde el estado real del repositorio (código + Alembic + docs de fase).*
 *Sustituye a la versión V0.2 anterior, que declaraba un estado obsoleto.*

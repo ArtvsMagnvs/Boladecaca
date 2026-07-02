@@ -192,6 +192,25 @@ export default function EmailAssistant() {
     }
   };
 
+  // V0.7.3 (Sprint 4, B6): feedback -> contadores de la regla; si la regla
+  // ya se gano la confianza, ofrecemos promocionarla.
+  const handleRuleFeedback = async (ruleId: number, result: "approved" | "edited" | "rejected") => {
+    try {
+      const r = await api.ruleFeedback(ruleId, result);
+      if (r.can_promote) {
+        setMsg({
+          kind: "ok",
+          text: `Feedback registrado. La regla lleva ${r.approved_count} propuestas aprobadas: ya puedes subirla a AUTO desde el panel de reglas.`,
+        });
+      } else {
+        setMsg({ kind: "ok", text: "Feedback registrado." });
+      }
+      await refresh();
+    } catch (e: any) {
+      setMsg({ kind: "err", text: `Error registrando feedback: ${e.message}` });
+    }
+  };
+
   const handleDismissEntry = async (id: number) => {
     try {
       await api.deleteActivityEntry(id);
@@ -340,6 +359,23 @@ export default function EmailAssistant() {
       refresh();
     } catch (e) {
       setMsg({ kind: "err", text: `Error creando regla: ${(e as Error).message}` });
+    }
+  };
+
+  // V0.7.3 (Sprint 4, B6): cambia la autonomia de una regla
+  const promoteRule = async (rule: AutoReplyRule, autonomy: "propose" | "auto") => {
+    try {
+      await api.updateAutoReplyRule(rule.id, { autonomy });
+      setMsg({
+        kind: "ok",
+        text:
+          autonomy === "auto"
+            ? `Regla "${rule.name}" ahora es AUTOMATICA: respondera sin pedirte OK.`
+            : `Regla "${rule.name}" vuelve a modo propuesta (borradores).`,
+      });
+      await refresh();
+    } catch (e: any) {
+      setMsg({ kind: "err", text: `Error cambiando autonomia: ${e.message}` });
     }
   };
 
@@ -945,6 +981,33 @@ export default function EmailAssistant() {
                           </p>
                         </details>
                       )}
+                      {/* V0.7.3 (Sprint 4, B6): feedback sobre borradores propuestos */}
+                      {entry.action_type === "draft" && entry.rule_id && (
+                        <div className="flex items-center gap-1 mt-1.5">
+                          <span className="text-[9px] text-ink-faint">Este borrador:</span>
+                          <button
+                            onClick={() => handleRuleFeedback(entry.rule_id!, "approved")}
+                            className="text-[9px] px-1.5 py-0.5 rounded bg-signal-ok/15 text-signal-ok hover:bg-signal-ok/25"
+                            title="Lo envie tal cual (la regla acerto)"
+                          >
+                            ✓ Aprobado
+                          </button>
+                          <button
+                            onClick={() => handleRuleFeedback(entry.rule_id!, "edited")}
+                            className="text-[9px] px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-400 hover:bg-amber-500/25"
+                            title="Lo edite antes de enviarlo"
+                          >
+                            ✎ Editado
+                          </button>
+                          <button
+                            onClick={() => handleRuleFeedback(entry.rule_id!, "rejected")}
+                            className="text-[9px] px-1.5 py-0.5 rounded bg-signal-error/15 text-signal-error hover:bg-signal-error/25"
+                            title="Lo descarte (la regla fallo)"
+                          >
+                            ✗ Rechazado
+                          </button>
+                        </div>
+                      )}
                       {entry.rule_name && (
                         <p className="text-[10px] text-ink-faint mt-1">
                           Regla aplicada: <span className="text-ink-dim">{entry.rule_name}</span>
@@ -1080,6 +1143,26 @@ export default function EmailAssistant() {
                       }`}>
                         {rule.enabled ? "ACTIVA" : "INACTIVA"}
                       </span>
+                      {/* V0.7.3 (Sprint 4, B6): autonomia gradual */}
+                      <span
+                        className={`text-[10px] px-1.5 py-0.5 rounded ${
+                          rule.autonomy === "auto"
+                            ? "bg-signal-ok/20 text-signal-ok"
+                            : "bg-amber-500/20 text-amber-400"
+                        }`}
+                        title={
+                          rule.autonomy === "auto"
+                            ? "La regla actua sola (envia sin pedirte OK)"
+                            : "Modo propuesta: crea borradores; tu apruebas antes de enviar"
+                        }
+                      >
+                        {rule.autonomy === "auto" ? "AUTO" : "PROPUESTA"}
+                      </span>
+                      {(rule.approved_count || 0) + (rule.rejected_count || 0) + (rule.edited_count || 0) > 0 && (
+                        <span className="text-[9px] text-ink-faint" title="aprobadas / editadas / rechazadas">
+                          ✓{rule.approved_count || 0} ✎{rule.edited_count || 0} ✗{rule.rejected_count || 0}
+                        </span>
+                      )}
                     </div>
                     {/* FIX (Tarea 1.3 Fase 4b): mostrar los campos reales
                         (sender_emails / sender_domains), no los legacy matching/pattern. */}
@@ -1104,6 +1187,24 @@ export default function EmailAssistant() {
                     </p>
                   </div>
                   <div className="flex items-center gap-1 shrink-0">
+                    {rule.can_promote && (
+                      <button
+                        onClick={() => promoteRule(rule, "auto")}
+                        className="text-[10px] px-2 py-1 rounded bg-signal-ok/15 text-signal-ok hover:bg-signal-ok/25 border border-signal-ok/30"
+                        title="Suficientes propuestas aprobadas: la regla puede actuar sola"
+                      >
+                        Subir a AUTO
+                      </button>
+                    )}
+                    {rule.autonomy === "auto" && (
+                      <button
+                        onClick={() => promoteRule(rule, "propose")}
+                        className="text-[10px] px-2 py-1 rounded bg-base-700/50 text-ink-faint hover:bg-base-700"
+                        title="Volver a modo propuesta (borradores con tu aprobacion)"
+                      >
+                        Bajar a propuesta
+                      </button>
+                    )}
                     <button
                       onClick={() => toggleRule(rule)}
                       className="text-[10px] px-2 py-1 rounded bg-base-700/50 text-ink-dim hover:bg-base-700"

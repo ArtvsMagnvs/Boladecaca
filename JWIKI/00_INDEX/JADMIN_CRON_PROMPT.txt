@@ -1,0 +1,84 @@
+JWIKI TICK (24/7, single-team secuencial, ritmo natural 30min, paradigma unico desde 2026-06-30 19:15):
+
+## ⚠️ PATH CRITICO — USA ABSOLUTOS
+**JWIKI repo esta en**: `C:\Users\Alejandro\Desktop\CLAUDE\Aithera\JWIKI\` (NO en `~/.mavis/agents/mavis/JWIKI/` que esta vacio).
+NO uses paths relativos. Lee `C:\Users\Alejandro\Desktop\CLAUDE\Aithera\JWIKI\00_INDEX\task_queue.md` directamente.
+
+## Paths absolutos (PowerShell)
+- task_queue: `C:\Users\Alejandro\Desktop\CLAUDE\Aithera\JWIKI\00_INDEX\task_queue.md`
+- wiki-map: `C:\Users\Alejandro\Desktop\CLAUDE\Aithera\JWIKI\00_INDEX\wiki-map.md`
+- status: `C:\Users\Alejandro\Desktop\CLAUDE\Aithera\JWIKI\00_INDEX\status.md`
+- WORKFLOW: `C:\Users\Alejandro\Desktop\CLAUDE\Aithera\JWIKI\00_INDEX\WORKFLOW.md`
+- TEMPLATE: `C:\Users\Alejandro\Desktop\CLAUDE\Aithera\JWIKI\00_INDEX\TEMPLATE.md`
+- material dir: `C:\Users\Alejandro\Desktop\CLAUDE\Aithera\JWIKI\material\JWIKI-NNN-raw.md`
+- ticks dir: `C:\Users\Alejandro\Desktop\CLAUDE\Aithera\JWIKI\ticks\A-YYYYMMDD-HHMM.md`
+- destination dirs: `C:\Users\Alejandro\Desktop\CLAUDE\Aithera\JWIKI\01_LANDSCAPE\`, `02_ARCHITECTURE\`, `03_BACKEND\`, etc.
+
+## Equipo (single-team, 3 agentes que SI existen)
+- `aithera-wiki-investigador` — produce raw en `material/JWIKI-NNN-raw.md` (~80 hechos verificados c/URL+fecha)
+- `aithera-wiki-escriba` — convierte raw en doc final en el dir destino (siguiendo TEMPLATE.md)
+- `aithera-wiki-auditor` — verifica calidad (≥3000 palabras, fuentes, sin marketing, anclas)
+**NO usar `aithera-wiki-inv2`, `aithera-wiki-scr2`, `aithera-wiki-aud2`** — NO existen (paradigma single-team desde 2026-06-30 19:15).
+
+## Workflow por tick
+1. Lee `C:\Users\Alejandro\Desktop\CLAUDE\Aithera\JWIKI\00_INDEX\task_queue.md`. Toma el **siguiente ID pending de menor numero** (single-team: ignorar paridad).
+2. Marca el ID como `in_progress` en `task_queue.md` (reemplaza el bullet `pending` por `in_progress @ <timestamp>`).
+3. Despacha spawn al `aithera-wiki-investigador` con briefing del ID. Investigator escribe `material/JWIKI-NNN-raw.md`.
+4. Cuando raw este listo, despacha al `aithera-wiki-escriba` para producir doc final en el dir destino correspondiente (path absoluto).
+5. Cuando doc final este escrito, despacha al `aithera-wiki-auditor` para verificar (marca `verified` si pasa; si falla, devuelve a escriba con fixes).
+6. Actualiza `task_queue.md` (pending→done→verified), `status.md` (metricas), `wiki-map.md` (estado).
+7. Escribe tick report en `JWIKI\ticks\A-YYYYMMDD-HHMM.md` (~500B-1KB) **usando ruta absoluta**.
+
+## Spawn pattern (PowerShell, evita .cmd truncation)
+```powershell
+$payload = '{"agent":"aithera-wiki-investigador","prompt":"<BRIEFING>"}'
+mavis communication send --from $env:CURRENT_SESSION_ID --to <agent-session> --command spawn --content $payload
+```
+**ALTERNATIVA MAS ROBUSTA** (via python + electron-as-node, evita todos los bugs de truncado):
+```powershell
+$payload = @{agent='aithera-wiki-investigador';prompt='<BRIEFING>'} | ConvertTo-Json -Compress
+$payload_escaped = $payload -replace '\\','\\\\' -replace '"','\\"'
+python -c @"
+import os, json, subprocess
+exe = r'C:\Users\Alejandro\AppData\Local\Programs\MiniMax Code\MiniMax Code.exe'
+cli = r'C:\Users\Alejandro\AppData\Local\Programs\MiniMax Code\resources\resources\daemon\cli.js'
+env = os.environ.copy(); env['ELECTRON_RUN_AS_NODE'] = '1'
+payload = '''$payload_escaped'''
+subprocess.run([exe, cli, 'communication', 'send', '--from', os.environ['CURRENT_SESSION_ID'], '--to', 'NEW', '--command', 'spawn', '--content', payload], env=env)
+"@
+```
+
+## Cadencia y silencio
+- **NO** reportes al root via IM (mantener silencio operativo — el root ya mira la wiki directamente).
+- Si encuentras algo bloqueante (ej: agente no responde >10min), emite alerta IM al root con `<mavis-progress>JWIKI_BLOCKED: ...</mavis-progress>` y skip el tick.
+
+## Reglas duras (de CONSTITUTION.md)
+- **NUNCA inventar informacion**. Sin URL + fecha de acceso, no publicamos.
+- **Tier 1 source primero**: GitHub API (`/repos/<owner>/<repo>`, `/releases/latest`, `/languages`), README oficial, docs oficiales. NO tutoriales.
+- **Priorizar pre-existing docs**: si el doc destino ya existe (parallel agent o escriba anterior), verifica calidad y skip write si es buena. Solo actualiza estado.
+- **Silencio A-B-C-D**: solo reporta al root si hay evento material (bloqueo, milestone, error). NO reportar cada tick.
+
+## Self-reminder TTL
+Este cron expira el 2026-08-01 23:59 Paris. Si `Date.now() > 1754083199999`, tu primera acción debe ser:
+1. Actualizar este prompt cambiando la fecha de expiracion.
+2. Emitir IM al root: `<mavis-progress>JWIKI_TTL_EXTENDED</mavis-progress>`.
+
+## Output por tick (formato del .md en ticks/)
+```
+# JWIKI Tick A — YYYY-MM-DD HH:MM Paris
+- Cron: jwiki-tick-a (*/30)
+- ID procesado: JWIKI-NNN
+- Path destino: C:\Users\Alejandro\Desktop\CLAUDE\Aithera\JWIKI\<dir>\<doc>.md
+- Estado final: verified | done | in_progress | blocked
+- Avance: X/266 (Y%)
+- Diagnostico: ~1-3 lineas
+- Proximo: JWIKI-NNN+1 ...
+```
+
+## Guard
+- Si el tick anterior (<30min) aun no cerro, **NO procesar**: escribe tick alerta y skip.
+- Si task_queue.md esta vacio (todos done), NO hacer nada — emite alerta al root.
+
+---
+*Keeper session: la de este cron. Si esta sesion acumula >400k tokens o se desvia del workflow JWIKI, rotar con handoff a `JWIKI/00_INDEX/HANDOFF.md`.*
+*Pattern copiado de OTKB (cron `otkb-tick` que funciona). Si OTKB corre bien, esta deberia correr igual.*

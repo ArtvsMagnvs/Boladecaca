@@ -1,0 +1,30 @@
+{
+  "messageId": 305,
+  "status": "delivered",
+  "data": {
+    "sessionId": "mvs_e16b0142b3a445259c6cd85d094915ef",
+    "agentName": "aithera-wiki-escriba",
+    "parentSessionId": "mvs_09387714d352441e9d4698d2dd65ac8d"
+  },
+  "spawned_at": "2026-07-02 13:39 (Europe/Paris, UTC+2)",
+  "tick": "A-20260702-1339",
+  "tick_id": "JWIKI-013",
+  "tick_target": "Escriba AutoGen (post-investigador raw OK)",
+  "spawn_method": "spawn_agent.py bypass .cmd",
+  "spawn_payload_path": "C:\\Users\\Alejandro\\Desktop\\CLAUDE\\Aithera\\JWIKI\\ticks\\spawn-013-escriba-payload.json",
+  "raw_input": {
+    "path": "C:\\Users\\Alejandro\\Desktop\\CLAUDE\\Aithera\\JWIKI\\material\\JWIKI-013-raw.md",
+    "bytes": 68846,
+    "hechos": 159,
+    "snippets": 8,
+    "tablas": "5-frameworks comparativa",
+    "pendientes_validacion": 12,
+    "investigador_session": "mvs_cdc263d65add49c082d2da0efc31240c"
+  },
+  "expected_output": {
+    "path": "C:\\Users\\Alejandro\\Desktop\\CLAUDE\\Aithera\\JWIKI\\01_LANDSCAPE\\autogen.md",
+    "size_target": ">20KB",
+    "eta": "15-25min"
+  },
+  "note": "JWIKI-013 raw entregado en 13min (rango ETA 10-15min cumplido). Watchdog previo jwiki-watch-013 self-cleaned (cron deleted). Nuevo watchdog jwiki-watch-013-escriba activo cada 5min hasta 14:19."
+}
