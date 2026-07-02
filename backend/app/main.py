@@ -6,7 +6,19 @@ from contextlib import asynccontextmanager
 import traceback
 
 from app.db.database import engine, Base
-from app.api.endpoints import config, projects, tasks, calendar, ai, chat, agents, email_assistant, voice, tools, memory
+from app.api.endpoints import config, projects, tasks, calendar, ai, chat, agents, voice, tools, memory
+# V0.7.2 (Sprint 2, PLAN_MAESTRO_2026 B4): god-endpoint de email dividido en
+# 7 routers de dominio + app/services/email_service.py. Todos comparten
+# prefix='/email'; la superficie publica /api/email es identica (contratos).
+from app.api.endpoints import (
+    email_auth,
+    email_inbox,
+    email_compose,
+    email_auto_reply,
+    email_processing,
+    email_meetings,
+    email_activity,
+)
 # V0.4 (Fase 2 AgentManager + ToolSystem) + V0.5: importar el paquete
 # `app.tools` dispara el auto-registro del ToolManager (filesystem/shell/git).
 # Sin este import, `GET /api/tools/` devolveria [] y el AgentManager no podria
@@ -61,9 +73,9 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="Aithera API",
     description="Sistema Operativo de IA - Backend API",
-    # V0.7.1 (Fase 4b Email Assistant refactor - bump sincronizado
+    # V0.7.2 (Sprint 2 split god-endpoint - bump sincronizado
     # con root(), core/config.py y frontend/package.json).
-    version="0.7.1",
+    version="0.7.2",
     lifespan=lifespan
 )
 
@@ -84,7 +96,13 @@ app.include_router(calendar.router, prefix="/api")
 app.include_router(ai.router, prefix="/api")
 app.include_router(chat.router, prefix="/api")
 app.include_router(agents.router, prefix="/api")
-app.include_router(email_assistant.router, prefix="/api")
+app.include_router(email_auth.router, prefix="/api")
+app.include_router(email_inbox.router, prefix="/api")
+app.include_router(email_compose.router, prefix="/api")
+app.include_router(email_auto_reply.router, prefix="/api")
+app.include_router(email_processing.router, prefix="/api")
+app.include_router(email_meetings.router, prefix="/api")
+app.include_router(email_activity.router, prefix="/api")
 app.include_router(voice.router, prefix="/api")
 # V0.5 (Fase 2 AgentManager + ExecutionEngine): herramientas del engine.
 app.include_router(tools.router, prefix="/api")
@@ -94,11 +112,11 @@ app.include_router(memory.router, prefix="/api")
 
 @app.get("/")
 def root():
-    """V0.7.1 (Fase 4b Email Assistant refactor - bump sincronizado con FastAPI
+    """V0.7.2 (Sprint 2 split god-endpoint - bump sincronizado con FastAPI
     app.version y core/config.py (VERSION = 0.7.1))."""
     return {
         "name": "Aithera",
-        "version": "0.7.1",
+        "version": "0.7.2",
         "status": "running"
     }
 

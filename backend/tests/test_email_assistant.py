@@ -18,7 +18,8 @@ from app.tools.email_tool import (
     MeetingDetection,
     _heuristic_meeting_detection,
 )
-from app.api.endpoints.email_assistant import detect_calendar_conflicts
+# V0.7.2 (Sprint 2): detect_calendar_conflicts vive ahora en el service
+from app.services.email_service import detect_calendar_conflicts
 
 
 # ----------------------------------------------------------------------

@@ -124,7 +124,7 @@ def test_status_shape(client):
 
 
 def test_inbox_con_gmail_mockeado(client, monkeypatch):
-    from app.api.endpoints import email_assistant as ea
+    from app.api.endpoints import email_inbox as ea
 
     fake = FakeEmailTool({
         "list_inbox": {
@@ -141,7 +141,7 @@ def test_inbox_con_gmail_mockeado(client, monkeypatch):
 
 
 def test_inbox_error_gmail_devuelve_400(client, monkeypatch):
-    from app.api.endpoints import email_assistant as ea
+    from app.api.endpoints import email_inbox as ea
 
     fake = FakeEmailTool({
         "list_inbox": {"success": False, "error": "Google no conectado"}
@@ -155,7 +155,7 @@ def test_inbox_error_gmail_devuelve_400(client, monkeypatch):
 def test_send_sin_confirmacion_rechazado(client, monkeypatch):
     """CONTRATO DE SEGURIDAD (principio 5): enviar sin confirmed=true -> 400
     y el EmailTool NUNCA llega a ejecutarse."""
-    from app.api.endpoints import email_assistant as ea
+    from app.api.endpoints import email_compose as ea
 
     fake = FakeEmailTool()
     monkeypatch.setattr(ea, "_email_tool", lambda: fake)
@@ -167,7 +167,7 @@ def test_send_sin_confirmacion_rechazado(client, monkeypatch):
 
 
 def test_send_con_confirmacion(client, monkeypatch):
-    from app.api.endpoints import email_assistant as ea
+    from app.api.endpoints import email_compose as ea
 
     fake = FakeEmailTool({
         "send_email": {"success": True, "result": {"sent": True, "id": "m1"}}
@@ -255,3 +255,27 @@ def test_proposals_vacias(client):
 
 def test_proposal_delete_inexistente_404(client):
     assert client.delete("/api/email/proposals/999999").status_code == 404
+
+
+# --- Regresion Sprint 2: bug latente json/log_activity ---
+
+def test_log_activity_persiste_details(client):
+    """V0.7 tenia `import json as _json` pero log_activity usaba `json.dumps`
+    -> NameError silenciado -> el activity log NUNCA persistia. Arreglado en
+    el split (Sprint 2). Este test evita la regresion end-to-end."""
+    from app.services.email_service import log_activity
+
+    entry_id = log_activity(
+        action_type="alert",
+        sender="Regresion <bug@aithera.local>",
+        subject="log_activity funciona",
+        details={"motivo": "test regresion sprint 2", "n": 42},
+    )
+    assert entry_id is not None, "log_activity devolvio None: no persistio"
+
+    r = client.get("/api/email/activity")
+    assert r.status_code == 200
+    items = [i for i in r.json()["items"] if i["id"] == entry_id]
+    assert len(items) == 1
+    assert items[0]["details"] == {"motivo": "test regresion sprint 2", "n": 42}
+    assert items[0]["sender_email"] == "bug@aithera.local"

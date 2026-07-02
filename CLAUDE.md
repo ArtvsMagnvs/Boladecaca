@@ -9,14 +9,17 @@
 
 ## 1. Estado actual del proyecto
 
-**Versión real**: `0.7.1` (consistente en `backend/app/main.py`,
+**Versión real**: `0.7.2` (consistente en `backend/app/main.py`,
 `backend/app/core/config.py` y `frontend/package.json`).
 
 **Fases completadas**: V0.2 (base) → V0.3 (Hub) → V0.4 (PostgreSQL + Alembic) →
 V0.5 (AgentManager + ToolManager) → V0.6 (Memory ChromaDB) → V0.7 (Email + Calendar) →
 V0.7.1 (Fase 4b — Email Assistant refactor: captura de emails urgentes sin regla,
 toast contextual, detección de reuniones en dos etapas patrón AMD GAIA,
-`detect_calendar_conflicts` con cross-check de Google Calendar y tests unitarios).
+`detect_calendar_conflicts` con cross-check de Google Calendar y tests unitarios)
+→ **V0.7.2** (Sprint 2 PLAN_MAESTRO_2026: split del god-endpoint email en 7
+routers + `app/services/email_service.py`, rutas públicas intactas por contrato;
+FIX del bug latente `json`/`log_activity` que impedía persistir el activity log).
 
 **Fases pendientes (documentadas, no implementadas)**:
 - **V0.8** — Clientes Telegram + Web App (FastAPI serving React build) + PWA
@@ -28,10 +31,11 @@ está commiteado (commit `abf4493`, tag `v0.7.1` — Sprint 1 del PLAN_MAESTRO_2
 2026-07-02). Regla desde entonces: un commit por paso terminado. El roadmap está en
 `AOS_Arquitectura_y_Roadmap.md`, complementado por `PLAN_MAESTRO_2026/03_ROADMAP_ACTUALIZADO.md`.
 
-**Tests**: `backend/tests/` con 61 tests pytest — smoke de arranque
+**Tests**: `backend/tests/` con 62 tests pytest — smoke de arranque
 (`test_smoke.py`), contratos del API de email (~30 rutas congeladas en
-`test_email_contracts.py` como red de seguridad del split del god-endpoint) y
-meeting detection (`test_email_assistant.py`). Ejecutar: `cd backend && python -m pytest tests/ -v`.
+`test_email_contracts.py` como red de seguridad del split del god-endpoint,
+más regresión del bug json/log_activity) y meeting detection
+(`test_email_assistant.py`). Ejecutar: `cd backend && python -m pytest tests/ -v`.
 
 ---
 
@@ -94,14 +98,14 @@ Aithera/
 │   │   │   ├── database.py         # 12 modelos SQLAlchemy + engine dinámico
 │   │   │   ├── models.py           # Re-exports
 │   │   │   └── schemas.py          # Pydantic v2
-│   │   ├── api/endpoints/          # 11 routers (ver §6)
+│   │   ├── api/endpoints/          # 17 routers: 10 core + 7 email (ver §6)
 │   │   ├── ai/                     # ai_manager, catalog, 9 providers
 │   │   ├── agents/                 # AgentManager (15KB) + ArchitectAgent
 │   │   ├── memory/                 # ChromaDB MemoryManager
 │   │   ├── tools/                  # ToolManager + 8 herramientas (ver §8)
 │   │   ├── voice/                  # ElevenLabs + eSpeak
 │   │   ├── integrations/           # google_auth.py (OAuth Google)
-│   │   └── services/               # [vacío, creado por预留]
+│   │   └── services/               # email_service.py (helpers email, V0.7.2)
 │   ├── tests/                      # pytest: smoke + contratos email + meeting detection
 │   ├── alembic/
 │   │   ├── env.py
@@ -253,7 +257,13 @@ Doc: `Fase_8_Orchestrator_V10.md`
 | `/api/ai` | `ai.py` | 5.9KB | Status, catálogo, configured, test, activate, ollama models |
 | `/api/chat` | `chat.py` | 5.7KB | POST /stream (SSE), GET /history, DELETE /history |
 | `/api/agents` | `agents.py` | 7.0KB | CRUD agentes + ejecuciones |
-| `/api/email` | `email_assistant.py` | **75KB / 1889 líneas** | God-endpoint: auth + inbox + draft + send + auto-reply + meetings |
+| `/api/email` | `email_auth.py` | 113 líneas | OAuth + credenciales + status |
+| `/api/email` | `email_inbox.py` | 160 líneas | Inbox, preview, detalle, búsqueda, summary |
+| `/api/email` | `email_compose.py` | 84 líneas | Draft + send (con confirmación) |
+| `/api/email` | `email_auto_reply.py` | 194 líneas | Reglas auto-reply (CRUD + test + send) |
+| `/api/email` | `email_processing.py` | 1017 líneas | process-inbox + process-test (⚠️ dividir en Sprint 3 con el triaje) |
+| `/api/email` | `email_meetings.py` | 419 líneas | process-meetings, check-confirmations, proposals |
+| `/api/email` | `email_activity.py` | 184 líneas | Activity log (dashboard) |
 | `/api/voice` | `voice.py` | 8.6KB | ElevenLabs + eSpeak |
 | `/api/tools` | `tools.py` | 2.3KB | Catálogo de herramientas + ejecución |
 | `/api/memory` | `memory.py` | 5.6KB | Búsqueda y stats de memoria semántica |
@@ -488,24 +498,27 @@ npm run electron:build  # genera release/*.exe con electron-builder
 
 ### Deuda técnica crítica
 
-1. **⚠️ God-endpoint `email_assistant.py` (2038 líneas)** — viola la regla
-   "un archivo por router". Múltiples routers viven en uno. Acopla auth +
-   inbox + drafts + send + auto-reply + meetings. La Fase 4 lo creó así por
-   urgencia; el refactor pendiente es dividirlo en:
-   - `email_auth.py` (OAuth + credenciales)
-   - `email_inbox.py` (lectura)
-   - `email_compose.py` (drafts + send)
-   - `email_auto_reply.py` (reglas)
-   - `email_meetings.py` (proposals + reschedule)
+1. ~~**God-endpoint `email_assistant.py` (2038 líneas)**~~ — ✅ **SALDADA
+   (Sprint 2, 2026-07-02)**: dividido en 7 routers (auth, inbox, compose,
+   auto_reply, processing, meetings, activity — 2 más que los 5 previstos
+   porque activity y el pipeline process-* no existían al escribir el plan)
+   + `app/services/email_service.py`. Rutas públicas idénticas, verificado
+   por tests de contrato. Pendiente menor: `email_processing.py` (1017
+   líneas) se descompone en Sprint 3 al construir el triaje.
+   De paso se arregló el bug latente `import json as _json` vs `json.`:
+   `log_activity` fallaba en silencio y **el activity log nunca había
+   persistido nada**. Test de regresión incluido.
 
 2. ~~**Módulos paralelos `app/tools/email_tool.py` vs `modules/email_assistant/`**~~
    — ✅ **SALDADA (Sprint 1, 2026-07-02)**: `backend/modules/` auditado y
    eliminado (código muerto, cero referencias). Veredicto por archivo en
    `PLAN_MAESTRO_2026/05_AUDITORIA_MODULO_LEGACY.md`. Recuperable con
-   `git show v0.7.1 -- backend/modules/`. Una sola fuente de verdad para email.
+   `git show v0.7.1 -- backend/modules/`.
 
-3. **⚠️ `backend/app/services/` está vacío** — directorio预留 sin uso real.
-   Decidir si se rellena o se elimina.
+3. ~~**`backend/app/services/` está vacío**~~ — ✅ **SALDADA (Sprint 2)**:
+   primer inquilino real, `email_service.py` (helpers compartidos del dominio
+   email: `_email_tool`, `detect_calendar_conflicts`, `_gcal_events_for_date`,
+   `log_activity`, `_calendar_find_free_slots`).
 
 4. **⚠️ Dos versiones de algunos docs de fase**:
    - `Fase_2_AgentManager_ToolSystem_V04.md` (V04, temprana)
@@ -564,4 +577,14 @@ Este archivo debe evolucionar a la par del proyecto. Reglas:
 1. **Tras cada commit** que toque arquitectura, modelos o endpoints: actualizar
    la sección correspondiente.
 2. **Tras cada bump de versión** (V0.x → V0.y): actualizar §1, §4, §5 y §15.
-3. **Tras cada refactor mayor** (ej. dividir god-endpoint): actualizar �
+3. **Tras cada refactor mayor** (ej. dividir god-endpoint): actualizar §3, §6, §16.
+4. **Nunca** inventar secciones ni asumir comportamientos no presentes en el
+   código. Si algo no está implementado, marcar como `[pendiente]`.
+5. Si una sección queda obsoleta, moverla a `archive/` (no creado aún) o
+   eliminarla explícitamente.
+
+---
+
+*Última actualización: 2026-07-02 — V0.7.2 (Sprint 2 PLAN_MAESTRO_2026)*
+*Construido desde el estado real del repositorio (código + Alembic + docs de fase).*
+*Sustituye a la versión V0.2 anterior, que declaraba un estado obsoleto.*
