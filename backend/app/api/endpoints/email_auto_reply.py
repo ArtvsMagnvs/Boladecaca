@@ -78,10 +78,15 @@ class AutoReplyRulePayload(BaseModel):
     # Legacy V0.7 (compatibilidad)
     matching: Optional[str] = None
     pattern: Optional[str] = None
-    # V0.7.3 (Sprint 4, B6): autonomia gradual — toda regla nace en propose
+    # V0.7.3 (Sprint 4, B6): autonomia gradual. El usuario puede elegir
+    # "auto" directamente al crear la regla (reglas de baja frecuencia
+    # tardarian meses en ganar el saldo de 5 aprobaciones).
     autonomy: str = "propose"  # propose | auto
-    # Siempre presentes
-    reply_template: str
+    # V0.7.3b (Sprint 4b): instruccion para respuesta generada por IA.
+    # Si esta relleno, reply_template pasa a ser opcional (fallback).
+    ai_prompt: Optional[str] = None
+    # reply_template ahora es opcional si hay ai_prompt
+    reply_template: str = ""
     enabled: bool = True
 
 
@@ -168,7 +173,22 @@ async def send_auto_reply(payload: AutoReplySendPayload):
     # Invertimos el email: si me escribio mi jefe, yo respondo a mi jefe
     to_addr = _extract_email_address(payload.sender)
     subject_reply = payload.subject if payload.subject.lower().startswith("re:") else f"Re: {payload.subject}"
-    body_reply = match["reply_text"]
+    # V0.7.3b (Sprint 4b): con ai_prompt la respuesta se genera con IA;
+    # la plantilla renderizada queda de fallback.
+    body_reply = None
+    if match.get("ai_prompt"):
+        from app.services.email_service import generate_ai_reply
+        body_reply = await generate_ai_reply(
+            match["ai_prompt"], payload.sender, payload.subject, payload.body,
+        )
+    if not body_reply:
+        body_reply = match["reply_text"]
+    if not (body_reply or "").strip():
+        return {
+            "sent": False,
+            "rule_used": match,
+            "reason": "la IA no genero respuesta y la regla no tiene plantilla de fallback",
+        }
 
     tool = _email_tool()
     send_result = await tool.execute("send_email", {

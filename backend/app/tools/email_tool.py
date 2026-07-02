@@ -295,6 +295,8 @@ class EmailTool(BaseTool):
                     "matching": r.matching,
                     "pattern": r.pattern,
                     "reply_template": r.reply_template,
+                    # V0.7.3b (Sprint 4b): respuesta generada por IA
+                    "ai_prompt": getattr(r, "ai_prompt", None),
                     "enabled": r.enabled,
                     # V0.7.3 (Sprint 4, B6): autonomia gradual
                     "autonomy": getattr(r, "autonomy", "auto") or "auto",
@@ -325,6 +327,8 @@ class EmailTool(BaseTool):
         matching = params.get("matching") or "sender_contains"
         pattern = (params.get("pattern") or "").strip()
         reply_template = params.get("reply_template") or ""
+        # V0.7.3b (Sprint 4b): instruccion de respuesta generada por IA
+        ai_prompt = (params.get("ai_prompt") or "").strip() or None
         enabled = bool(params.get("enabled", True))
 
         if not name:
@@ -353,11 +357,11 @@ class EmailTool(BaseTool):
         # V0.7 extra (FIX): la plantilla es opcional si detect_meeting_with_ia=True
         # porque la IA genera la respuesta completa para reuniones.
         # Solo es obligatoria si NO se detectan reuniones con IA.
-        if not reply_template.strip() and not detect_meeting:
+        if not reply_template.strip() and not detect_meeting and not ai_prompt:
             return {
                 "success": False,
                 "result": None,
-                "error": "reply_template obligatorio si detect_meeting_with_ia=False",
+                "error": "hace falta reply_template o ai_prompt si detect_meeting_with_ia=False",
             }
 
         emails_clean = [e.strip().lower() for e in (sender_emails or []) if isinstance(e, str) and e.strip()]
@@ -367,6 +371,7 @@ class EmailTool(BaseTool):
         try:
             rule = EmailAutoReplyRule(
                 autonomy=autonomy,
+                ai_prompt=ai_prompt,
                 name=name,
                 sender_emails=json.dumps(emails_clean),
                 sender_domains=json.dumps(domains_clean),
@@ -424,6 +429,10 @@ class EmailTool(BaseTool):
                 rule.action = params["action"]
             if "detect_meeting_with_ia" in params:
                 rule.detect_meeting_with_ia = bool(params["detect_meeting_with_ia"])
+            # V0.7.3b (Sprint 4b): instruccion de respuesta IA ("" la borra)
+            if "ai_prompt" in params:
+                val = (params["ai_prompt"] or "").strip()
+                rule.ai_prompt = val or None
             # V0.7.3 (Sprint 4, B6): promocion/degradacion manual de autonomia
             if "autonomy" in params:
                 if params["autonomy"] not in {"propose", "auto"}:
@@ -842,6 +851,9 @@ def check_auto_reply_match(sender: str, subject: str, body: str = "") -> Optiona
                     "pattern": rule.pattern,
                     "action": getattr(rule, "action", "auto_send"),
                     "reply_text": _render_template(rule.reply_template, sender, subject, body),
+                    # V0.7.3b (Sprint 4b): si hay ai_prompt, el caller debe
+                    # generar la respuesta con IA y usar reply_text de fallback
+                    "ai_prompt": getattr(rule, "ai_prompt", None),
                 }
         return None
     finally:

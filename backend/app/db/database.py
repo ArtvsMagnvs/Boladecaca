@@ -272,6 +272,11 @@ class EmailAutoReplyRule(Base):
     #   'auto'             : la regla actua sola (se gana con confianza).
     # Los contadores se alimentan del feedback del usuario sobre cada
     # propuesta; con saldo >= 5 la UI ofrece "subir a automatico".
+    # V0.7.3b (Sprint 4b): respuesta generada por IA en vez de plantilla.
+    # Si ai_prompt tiene contenido, la respuesta se genera con el proveedor
+    # IA activo siguiendo esta instruccion (tono natural, mismo idioma del
+    # email). reply_template pasa a ser fallback si la IA no responde.
+    ai_prompt = Column(Text, nullable=True)
     autonomy = Column(String(10), nullable=False, default='propose')
     approved_count = Column(Integer, nullable=False, default=0)
     edited_count = Column(Integer, nullable=False, default=0)

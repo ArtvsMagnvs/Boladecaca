@@ -25,7 +25,10 @@ triaje del inbox en 7 categorías con clasificador de 2 etapas heurística→LLM
 autonomía gradual por regla patrón Inbox Zero — toda regla nace en 'propose'
 (borradores), el feedback del usuario (✓/✎/✗) alimenta contadores y con saldo
 ≥5 se ofrece subirla a 'auto'; digest diario `GET /api/email/digest` + tarjeta
-en el Hub; docs de fase duplicados archivados en `archive/`).
+en el Hub; docs de fase duplicados archivados en `archive/`; **remate 4b**:
+autonomía elegible directamente al crear la regla (para remitentes poco
+frecuentes) y `ai_prompt` por regla — respuesta redactada por el proveedor IA
+activo con instrucción de estilo del usuario, plantilla como fallback).
 
 **Fases pendientes (documentadas, no implementadas)**:
 - **V0.8** — Clientes Telegram + Web App (FastAPI serving React build) + PWA
@@ -37,7 +40,7 @@ está commiteado (commit `abf4493`, tag `v0.7.1` — Sprint 1 del PLAN_MAESTRO_2
 2026-07-02). Regla desde entonces: un commit por paso terminado. El roadmap está en
 `AOS_Arquitectura_y_Roadmap.md`, complementado por `PLAN_MAESTRO_2026/03_ROADMAP_ACTUALIZADO.md`.
 
-**Tests**: `backend/tests/` con 97 tests pytest — smoke de arranque
+**Tests**: `backend/tests/` con 106 tests pytest — smoke de arranque
 (`test_smoke.py`), contratos del API de email (~30 rutas congeladas en
 `test_email_contracts.py` como red de seguridad del split del god-endpoint,
 más regresión del bug json/log_activity), triaje de inbox
@@ -170,7 +173,7 @@ Cambios ya aplicados (ver `Actualizacion_V0.2.txt` sección 3):
 ### ✅ V0.4 — PostgreSQL + Alembic
 - Migración SQLite → PostgreSQL completada (ver `Fase_1b_PostgreSQL_Migration_V04.md`)
 - `DATABASE_URL` dinámico en `config.py` con fallback automático a SQLite
-- **10 migraciones Alembic** (9ª `a1f2e3d4c5b6_v073_email_triage` Sprint 3; 10ª `b2c3d4e5f6a7_v073_rule_autonomy` Sprint 4):
+- **11 migraciones Alembic** (9ª `a1f2e3d4c5b6_v073_email_triage`; 10ª `b2c3d4e5f6a7_v073_rule_autonomy`; 11ª `c3d4e5f6a7b8_v073b_rule_ai_prompt`):
   - `4ab2071f433f_initial_schema_snapshot_from_sqlite_migration.py` (V0.4)
   - `24b8353ad754_add_agent_fields_and_execution_table.py` (V0.5)
   - `25c926be5811_force_cascade_delete_on_agent_execut...py` (V0.5 fix)

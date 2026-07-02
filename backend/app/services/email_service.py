@@ -339,3 +339,48 @@ def rule_can_promote(autonomy: str, approved: int, edited: int, rejected: int) -
     if (autonomy or "propose") != "propose":
         return False
     return (approved or 0) - (edited or 0) - (rejected or 0) >= PROMOTE_THRESHOLD
+
+
+# ----------------------------------------------------------------------
+# Respuesta generada por IA (por regla) — V0.7.3b (Sprint 4b)
+# ----------------------------------------------------------------------
+
+_AI_REPLY_SYSTEM = (
+    "Eres el asistente de email personal del usuario y escribes en su nombre. "
+    "Escribe SOLO el cuerpo de la respuesta al email recibido. "
+    "Reglas: responde en el mismo idioma del email recibido; tono natural y "
+    "humano; breve y directo; sin asunto; sin placeholders tipo [Tu nombre]; "
+    "no digas nunca que eres una IA ni que la respuesta es automatica; "
+    "no inventes datos concretos (fechas, precios) que no esten en el email "
+    "o en la instruccion del usuario."
+)
+
+
+async def generate_ai_reply(
+    ai_prompt: str,
+    sender: str,
+    subject: str,
+    body: str = "",
+    extra_context: str = "",
+) -> Optional[str]:
+    """Genera la respuesta con el proveedor IA activo siguiendo la instruccion
+    de la regla (ai_prompt). Fail-soft: None si el LLM falla o devuelve vacio
+    (el caller decide fallback: plantilla o alerta)."""
+    try:
+        from app.ai.ai_manager import ai_manager
+        message = (
+            f"Instruccion del usuario para responder: {ai_prompt}\n"
+            + (f"Contexto adicional: {extra_context}\n" if extra_context else "")
+            + "\n--- EMAIL RECIBIDO ---\n"
+            f"De: {(sender or '')[:200]}\n"
+            f"Asunto: {(subject or '')[:200]}\n"
+            f"Cuerpo:\n{(body or '')[:1500]}"
+        )
+        result = await ai_manager.chat(message, system_prompt=_AI_REPLY_SYSTEM)
+        if result.get("error"):
+            return None
+        text = (result.get("response") or "").strip()
+        return text or None
+    except Exception as e:
+        print(f"[email] generate_ai_reply fallo (fail-soft): {e}")
+        return None

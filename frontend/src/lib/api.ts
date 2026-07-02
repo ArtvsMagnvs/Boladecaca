@@ -145,6 +145,8 @@ export interface AutoReplyRule {
   // Siempre presentes
   reply_template: string;
   enabled: boolean;
+  // V0.7.3b (Sprint 4b): instruccion de respuesta IA
+  ai_prompt?: string | null;
   // V0.7.3 (Sprint 4, B6): autonomia gradual
   autonomy?: "propose" | "auto";
   approved_count?: number;
@@ -162,7 +164,12 @@ export interface AutoReplyRuleInput {
   detect_meeting_with_ia?: boolean;
   matching?: string;
   pattern?: string;
-  reply_template: string;
+  // V0.7.3b: opcional si hay ai_prompt
+  reply_template?: string;
+  // V0.7.3b (Sprint 4b): instruccion para respuesta generada por IA
+  ai_prompt?: string | null;
+  // V0.7.3 (Sprint 4, B6): eleccion directa al crear
+  autonomy?: "propose" | "auto";
   enabled?: boolean;
 }
 

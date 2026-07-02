@@ -37,6 +37,7 @@ from app.db.database import SessionLocal
 from app.db.models import MeetingProposal, CalendarAvailability, EmailActivityLog
 from app.services.email_service import (
     effective_rule_action,
+    generate_ai_reply,
     _email_tool,
     _parse_iso,
     detect_calendar_conflicts,
@@ -120,6 +121,8 @@ async def process_inbox(max_emails: int = Query(30, ge=1, le=100)):
                 "matching": r.matching,
                 "pattern": r.pattern,
                 "reply_template": r.reply_template,
+                # V0.7.3b (Sprint 4b): respuesta generada por IA
+                "ai_prompt": getattr(r, "ai_prompt", None),
                 # V0.7.3 (Sprint 4, B6): gating de autonomia. Una regla en
                 # 'propose' con auto_send se degrada a create_draft: el
                 # usuario aprueba el borrador en Gmail antes de que salga.
@@ -633,7 +636,7 @@ async def process_inbox(max_emails: int = Query(30, ge=1, le=100)):
             continue
 
         # 6) No es reunion: usar reply_template
-        if not matched_rule.get("reply_template"):
+        if not matched_rule.get("reply_template") and not matched_rule.get("ai_prompt"):
             log_activity(
                 action_type="skipped",
                 sender=sender,
@@ -642,7 +645,7 @@ async def process_inbox(max_emails: int = Query(30, ge=1, le=100)):
                 details={
                     "rule_id": matched_rule["id"],
                     "rule_name": matched_rule["name"],
-                    "reason": "no es reunion y la regla no tiene plantilla",
+                    "reason": "no es reunion y la regla no tiene plantilla ni ai_prompt",
                 },
                 rule_id=matched_rule["id"],
                 rule_name=matched_rule["name"],
@@ -656,7 +659,40 @@ async def process_inbox(max_emails: int = Query(30, ge=1, le=100)):
             })
             continue
 
-        reply_text = _render_template(matched_rule["reply_template"], sender, subject, body)
+        # V0.7.3b (Sprint 4b): si la regla tiene ai_prompt, la respuesta se
+        # genera con el proveedor IA activo (tono natural). La plantilla queda
+        # como fallback si la IA no responde; si no hay ninguna, alerta.
+        reply_text = None
+        ai_generated = False
+        if matched_rule.get("ai_prompt"):
+            reply_text = await generate_ai_reply(
+                matched_rule["ai_prompt"], sender, subject, body,
+            )
+            ai_generated = reply_text is not None
+        if not reply_text and matched_rule.get("reply_template"):
+            reply_text = _render_template(matched_rule["reply_template"], sender, subject, body)
+        if not reply_text:
+            log_activity(
+                action_type="alert",
+                sender=sender,
+                subject=subject,
+                snippet=body[:300],
+                details={
+                    "rule_id": matched_rule["id"],
+                    "rule_name": matched_rule["name"],
+                    "reason": "la IA no genero respuesta y la regla no tiene plantilla de fallback",
+                },
+                rule_id=matched_rule["id"],
+                rule_name=matched_rule["name"],
+                email_id=mid,
+            )
+            processed.append({
+                "email_id": mid,
+                "subject": subject,
+                "rule_used": matched_rule["name"],
+                "skipped": "IA sin respuesta y sin plantilla de fallback",
+            })
+            continue
         if matched_rule["action"] == "auto_send":
             send_result = await tool.execute("send_email", {
                 "to": sender_email,

@@ -103,6 +103,9 @@ export default function EmailAssistant() {
   const [inboxLoading, setInboxLoading] = useState(false);
   // V0.7.3 (Sprint 3): triaje del inbox
   const [triageLoading, setTriageLoading] = useState(false);
+  // V0.7.3b (Sprint 4b): formulario — autonomia directa + prompt de IA
+  const [formAutonomy, setFormAutonomy] = useState<"propose" | "auto">("propose");
+  const [formAiPrompt, setFormAiPrompt] = useState("");
 
   // Form
   const [formName, setFormName] = useState("");
@@ -319,10 +322,10 @@ export default function EmailAssistant() {
     // V0.7 extra (FIX): la plantilla es OPCIONAL si detect_meeting_with_ia=True
     // porque la IA genera la respuesta completa para reuniones.
     // Solo es obligatoria si NO detecta reuniones con IA.
-    if (!formDetectMeeting && !formReplyTemplate.trim()) {
+    if (!formDetectMeeting && !formReplyTemplate.trim() && !formAiPrompt.trim()) {
       setMsg({
         kind: "err",
-        text: "Si desactivas 'detectar reuniones con IA', la plantilla es obligatoria",
+        text: "Sin deteccion de reuniones necesitas una plantilla O un prompt de IA",
       });
       return;
     }
@@ -346,6 +349,8 @@ export default function EmailAssistant() {
         action: formAction,
         detect_meeting_with_ia: formDetectMeeting,
         reply_template: formReplyTemplate.trim() || "",  // V0.7 extra: opcional
+        ai_prompt: formAiPrompt.trim() || null,  // V0.7.3b: respuesta generada por IA
+        autonomy: formAutonomy,  // V0.7.3: eleccion directa propose/auto
         enabled: formEnabled,
       });
       setMsg({ kind: "ok", text: `Regla '${formName}' creada` });
@@ -356,6 +361,8 @@ export default function EmailAssistant() {
       setFormEnabled(true);
       setFormAction("auto_send");
       setFormDetectMeeting(true);
+      setFormAutonomy("propose");
+      setFormAiPrompt("");
       refresh();
     } catch (e) {
       setMsg({ kind: "err", text: `Error creando regla: ${(e as Error).message}` });
@@ -1183,7 +1190,14 @@ export default function EmailAssistant() {
                       );
                     })()}
                     <p className="text-[11px] text-ink-faint mt-1 italic truncate">
-                      Respuesta: {rule.reply_template}
+                      {rule.ai_prompt ? (
+                        <>
+                          <span className="text-accent not-italic">IA:</span> {rule.ai_prompt}
+                          {rule.reply_template && <span className="text-ink-faint"> (fallback: plantilla)</span>}
+                        </>
+                      ) : (
+                        <>Respuesta: {rule.reply_template || "(solo reuniones IA)"}</>
+                      )}
                     </p>
                   </div>
                   <div className="flex items-center gap-1 shrink-0">
@@ -1359,6 +1373,67 @@ export default function EmailAssistant() {
                 automaticamente (incluso las de no-reunion).
               </p>
             )}
+          </div>
+
+          {/* V0.7.3b (Sprint 4b): Paso 4b — Respuesta generada por IA */}
+          <div className="mb-3">
+            <label className="block text-[10px] uppercase tracking-wider text-ink-faint mb-1">
+              4b. Respuesta generada por IA
+              <span className="text-ink-faint normal-case tracking-normal ml-1">
+                (opcional; si lo rellenas, la plantilla pasa a ser fallback)
+              </span>
+            </label>
+            <textarea
+              value={formAiPrompt}
+              onChange={(e) => setFormAiPrompt(e.target.value)}
+              placeholder='ej. "Responde cordialmente proponiendo una reunion otro dia. Tono cercano, en español."'
+              rows={2}
+              className="w-full bg-base-700 border border-base-600 rounded-lg px-3 py-1.5 text-sm text-ink placeholder:text-ink-faint focus:outline-none focus:border-accent/50 resize-y"
+            />
+            <p className="text-[9px] text-ink-faint mt-1">
+              Dale una instruccion de estilo y la IA redactara cada respuesta a
+              medida (mismo idioma del email, tono natural, sin sonar a robot).
+              Si la IA no responde, se usa la plantilla del paso 4.
+            </p>
+          </div>
+
+          {/* V0.7.3 (Sprint 4, B6): Paso 5 — Autonomia (eleccion directa) */}
+          <div className="mb-3">
+            <label className="block text-[10px] uppercase tracking-wider text-ink-faint mb-1">
+              5. Autonomia de la regla
+            </label>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => setFormAutonomy("propose")}
+                className={`text-xs px-3 py-2 rounded-lg border text-left ${
+                  formAutonomy === "propose"
+                    ? "bg-amber-500/20 border-amber-500/50 text-amber-300"
+                    : "bg-base-700/50 border-base-600 text-ink-dim hover:bg-base-700"
+                }`}
+              >
+                <strong className="block text-ink">Propuesta (recomendado)</strong>
+                <span className="text-[10px] text-ink-faint">
+                  Crea borradores; tu apruebas antes de enviar. A las 5 aprobadas
+                  te ofrece subir a AUTO.
+                </span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setFormAutonomy("auto")}
+                className={`text-xs px-3 py-2 rounded-lg border text-left ${
+                  formAutonomy === "auto"
+                    ? "bg-signal-ok/20 border-signal-ok/50 text-signal-ok"
+                    : "bg-base-700/50 border-base-600 text-ink-dim hover:bg-base-700"
+                }`}
+              >
+                <strong className="block text-ink">AUTO desde el principio</strong>
+                <span className="text-[10px] text-ink-faint">
+                  Actua sola desde ya. Util para remitentes poco frecuentes
+                  (ej. la escuela) donde ganar confianza tardaria meses.
+                </span>
+              </button>
+            </div>
           </div>
 
           <div className="flex items-center justify-between">
