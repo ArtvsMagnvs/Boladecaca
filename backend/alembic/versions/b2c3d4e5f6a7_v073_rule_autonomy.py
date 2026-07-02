@@ -22,16 +22,24 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    op.add_column('email_auto_reply_rules',
-        sa.Column('autonomy', sa.String(length=10), nullable=False, server_default='propose'))
-    op.add_column('email_auto_reply_rules',
-        sa.Column('approved_count', sa.Integer(), nullable=False, server_default='0'))
-    op.add_column('email_auto_reply_rules',
-        sa.Column('edited_count', sa.Integer(), nullable=False, server_default='0'))
-    op.add_column('email_auto_reply_rules',
-        sa.Column('rejected_count', sa.Integer(), nullable=False, server_default='0'))
-    # Backfill: preservar comportamiento de reglas auto_send ya consentidas
-    op.execute("UPDATE email_auto_reply_rules SET autonomy = 'auto' WHERE action = 'auto_send'")
+    # Idempotente (ver migracion a1f2e3d4c5b6): solo anade lo que falte.
+    bind = op.get_bind()
+    insp = sa.inspect(bind)
+    existing = {c['name'] for c in insp.get_columns('email_auto_reply_rules')}
+    if 'autonomy' not in existing:
+        op.add_column('email_auto_reply_rules',
+            sa.Column('autonomy', sa.String(length=10), nullable=False, server_default='propose'))
+        # Backfill: preservar comportamiento de reglas auto_send ya consentidas
+        op.execute("UPDATE email_auto_reply_rules SET autonomy = 'auto' WHERE action = 'auto_send'")
+    if 'approved_count' not in existing:
+        op.add_column('email_auto_reply_rules',
+            sa.Column('approved_count', sa.Integer(), nullable=False, server_default='0'))
+    if 'edited_count' not in existing:
+        op.add_column('email_auto_reply_rules',
+            sa.Column('edited_count', sa.Integer(), nullable=False, server_default='0'))
+    if 'rejected_count' not in existing:
+        op.add_column('email_auto_reply_rules',
+            sa.Column('rejected_count', sa.Integer(), nullable=False, server_default='0'))
 
 
 def downgrade() -> None:

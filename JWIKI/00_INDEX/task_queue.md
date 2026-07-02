@@ -24,14 +24,16 @@
 
 ### JWIKI-013 — AutoGen Microsoft overview
 - **Path destino**: `01_LANDSCAPE/autogen.md`
-- **Estado**: 🟡 done (raw entregado 13:38 — 68,846 bytes, 159 hechos, 8 snippets, tabla 5-frameworks, 12 pendientes validación)
-- **Asignado**: aithera-wiki-escriba (próximo dispatch, tick A-20260702-1339)
+- **Estado**: 🟡 in_progress (escribana v1 freeze, v2 despachada 14:11)
+- **Asignado**: aithera-wiki-escriba v2 (mvs_84085b4b04a34d7cb2a4eaaeb39bbd94)
 - **Dependencias**: ninguna
 - **Prioridad**: alta
 - **Notas**: Overview AutoGen (microsoft/autogen). Python + .NET, multi-agent conversacional. Stars, releases, version actual, casos de uso, integraciones, fortalezas/debilidades vs LangGraph/CrewAI.
 - **Creado**: 2026-07-02
-- **Updated**: 2026-07-02 13:39 (raw done, escriba despachado)
-- **Material crudo**: `JWIKI/material/JWIKI-013-raw.md` ✅ (68846 bytes, 159 hechos verificados, 8 snippets, 13min elapsed)
+- **Updated**: 2026-07-02 14:11 (v1 freeze closed, v2 spawned con prompt anti-freeze)
+- **Material crudo**: `JWIKI/material/JWIKI-013-raw.md` ✅ (68846 bytes, 159 hechos verificados, 8 snippets)
+- **V1 freeze**: mvs_e16b0142b3a445259c6cd85d094915ef closed 14:11 (31min M3-thinking sin Write). Pattern matches memory 2026-07-01 12:35 freeze.
+- **V2 spawn**: prompt reforzado (no thinking, solo tool calls, 1 Write directo)
 
 ### JWIKI-011 — LangGraph overview
 - **Path destino**: `01_LANDSCAPE/langgraph.md`
@@ -215,10 +217,4 @@ Todos los IDs del JWIKI-001 al JWIKI-266 con sus asignaciones por turno están e
 - **DAEMON CRASH 2026-06-30 ~15:25 a 18:26**: 4 spawns perdidos sin raw (005/006/007/008). Recovery aplicado. JWIKI-005, 006, 008 re-despachados en turnos B/A 18:30/18:45. JWIKI-007 turno B 18:45 lo re-despachara. Ver `ticks/RECOVERY-20260630-1826.md`, `ticks/A-20260630-1830.md`, `ticks/B-20260630-1830.md`, `ticks/A-20260630-1845.md`.
 - **SILENCIO A-B-C-D 2026-07-01 11:30 → 2026-07-02 13:25**: cron tick-a en silencio, 5 items in_progress sin avance. Reseteados a pending en tick A-20260702-1325 (recuperación).
 
-**ETA** (asumiendo ~4-5 docs/hora con single-team secuencial ritmo 30min 24/7): **~55-65 horas netas** = **~2.5 días corridos** si la velocidad se mantiene.
-
----
-
-## Cómo añadir un punto nuevo
-
-1. Identifica el dom
+**ETA** (asumiendo ~4-5 docs/hora con single-

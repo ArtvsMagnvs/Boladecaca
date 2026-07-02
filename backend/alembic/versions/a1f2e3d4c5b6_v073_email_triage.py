@@ -20,6 +20,13 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
+    # Idempotente: el lifespan del backend hace Base.metadata.create_all al
+    # arrancar, asi que la tabla puede existir ya si el backend arranco antes
+    # de migrar. En ese caso solo estampamos la revision.
+    bind = op.get_bind()
+    insp = sa.inspect(bind)
+    if insp.has_table('email_triage'):
+        return
     op.create_table(
         'email_triage',
         sa.Column('id', sa.Integer(), nullable=False),

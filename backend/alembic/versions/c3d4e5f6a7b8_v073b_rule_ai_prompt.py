@@ -21,7 +21,12 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    op.add_column('email_auto_reply_rules', sa.Column('ai_prompt', sa.Text(), nullable=True))
+    # Idempotente (ver migracion a1f2e3d4c5b6)
+    bind = op.get_bind()
+    insp = sa.inspect(bind)
+    existing = {c['name'] for c in insp.get_columns('email_auto_reply_rules')}
+    if 'ai_prompt' not in existing:
+        op.add_column('email_auto_reply_rules', sa.Column('ai_prompt', sa.Text(), nullable=True))
 
 
 def downgrade() -> None:
