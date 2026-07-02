@@ -31,11 +31,11 @@ está commiteado (commit `abf4493`, tag `v0.7.1` — Sprint 1 del PLAN_MAESTRO_2
 2026-07-02). Regla desde entonces: un commit por paso terminado. El roadmap está en
 `AOS_Arquitectura_y_Roadmap.md`, complementado por `PLAN_MAESTRO_2026/03_ROADMAP_ACTUALIZADO.md`.
 
-**Tests**: `backend/tests/` con 62 tests pytest — smoke de arranque
+**Tests**: `backend/tests/` con 81 tests pytest — smoke de arranque
 (`test_smoke.py`), contratos del API de email (~30 rutas congeladas en
 `test_email_contracts.py` como red de seguridad del split del god-endpoint,
-más regresión del bug json/log_activity) y meeting detection
-(`test_email_assistant.py`). Ejecutar: `cd backend && python -m pytest tests/ -v`.
+más regresión del bug json/log_activity), triaje de inbox
+(`test_email_triage.py`, Sprint 3) y meeting detection (`test_email_assistant.py`). Ejecutar: `cd backend && python -m pytest tests/ -v`.
 
 ---
 
@@ -163,7 +163,7 @@ Cambios ya aplicados (ver `Actualizacion_V0.2.txt` sección 3):
 ### ✅ V0.4 — PostgreSQL + Alembic
 - Migración SQLite → PostgreSQL completada (ver `Fase_1b_PostgreSQL_Migration_V04.md`)
 - `DATABASE_URL` dinámico en `config.py` con fallback automático a SQLite
-- **8 migraciones Alembic aplicadas**:
+- **9 migraciones Alembic** (la 9ª, `a1f2e3d4c5b6_v073_email_triage`, añadida en Sprint 3):
   - `4ab2071f433f_initial_schema_snapshot_from_sqlite_migration.py` (V0.4)
   - `24b8353ad754_add_agent_fields_and_execution_table.py` (V0.5)
   - `25c926be5811_force_cascade_delete_on_agent_execut...py` (V0.5 fix)
@@ -258,7 +258,7 @@ Doc: `Fase_8_Orchestrator_V10.md`
 | `/api/chat` | `chat.py` | 5.7KB | POST /stream (SSE), GET /history, DELETE /history |
 | `/api/agents` | `agents.py` | 7.0KB | CRUD agentes + ejecuciones |
 | `/api/email` | `email_auth.py` | 113 líneas | OAuth + credenciales + status |
-| `/api/email` | `email_inbox.py` | 160 líneas | Inbox, preview, detalle, búsqueda, summary |
+| `/api/email` | `email_inbox.py` | 231 líneas | Inbox, preview (con categoría), búsqueda, summary, triage/run (V0.7.3) |
 | `/api/email` | `email_compose.py` | 84 líneas | Draft + send (con confirmación) |
 | `/api/email` | `email_auto_reply.py` | 194 líneas | Reglas auto-reply (CRUD + test + send) |
 | `/api/email` | `email_processing.py` | 1017 líneas | process-inbox + process-test (⚠️ dividir en Sprint 3 con el triaje) |
@@ -322,7 +322,7 @@ para auto-registrar las herramientas en el `ToolManager`. Sin este import,
 
 ---
 
-## 9. Modelos de base de datos (12 reales)
+## 9. Modelos de base de datos (14 reales)
 
 Definidos en `backend/app/db/database.py`:
 
@@ -340,6 +340,7 @@ Definidos en `backend/app/db/database.py`:
 | `CalendarAvailability` | `calendar_availability` | Disponibilidad por tipo de actividad | V0.7 |
 | `MeetingProposal` | `meeting_proposals` | Propuestas detectadas en emails | V0.7 |
 | `EmailActivityLog` | `email_activity_log` | Auditoría de acciones email | V0.7 |
+| `EmailTriage` | `email_triage` | Categoría de triaje por email (7 categorías, 2 etapas) | V0.7.3 |
 | `AIProviderConfig` | `ai_provider_configs` | Config de cada proveedor IA | V0.2 |
 
 **Migración de esquema**: ahora con Alembic. NO usar `_ensure_columns()` —

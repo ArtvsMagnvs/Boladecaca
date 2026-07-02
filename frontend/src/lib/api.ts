@@ -196,6 +196,16 @@ export interface InboxEmail {
   date: string;
   snippet: string;
   unread: boolean;
+  // V0.7.3 (Sprint 3): categoria de triaje persistida (null si sin triar)
+  category?: string | null;
+}
+
+// V0.7.3 (Sprint 3): resultado de POST /email/triage/run
+export interface TriageRunResult {
+  total: number;
+  classified_now: number;
+  counts: Record<string, number>;
+  items: { id: string; subject: string; from: string; category: string; method: string }[];
 }
 
 // V0.7 extra: tipos para propuestas de reunion automaticas
@@ -364,6 +374,11 @@ export const api = {
     request<{ count: number; items: InboxEmail[] }>(
       `/email/inbox/preview?max_emails=${max_emails}`
     ),
+  // V0.7.3 (Sprint 3): clasifica el inbox en 7 categorias (2 etapas)
+  runTriage: (max_emails = 30) =>
+    request<TriageRunResult>(`/email/triage/run?max_emails=${max_emails}`, {
+      method: "POST",
+    }),
   getEmail: (id: string) =>
     request<{
       id: string;

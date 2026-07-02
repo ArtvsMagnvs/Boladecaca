@@ -11,5 +11,6 @@ from app.db.database import (
     CalendarAvailability,  # V0.7 (Fase 4 Email + Calendar)
     MeetingProposal,  # V0.7 extra (Fase 4): propuestas de reunion automaticas
     EmailActivityLog,  # V0.7 extra (FIX): dashboard persistente de actividad
+    EmailTriage,  # V0.7.3 (Sprint 3): categoria de triaje por email
     AIProviderConfig,
 )

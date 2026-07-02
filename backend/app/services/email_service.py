@@ -167,3 +167,151 @@ async def _calendar_find_free_slots(creds, date_str: str, duration_minutes: int 
     })
 
 
+
+
+# ----------------------------------------------------------------------
+# Triaje del inbox — V0.7.3 (Sprint 3 PLAN_MAESTRO_2026, B5)
+#
+# Patron Inbox Zero + dos etapas (como meeting detection / AMD GAIA):
+#   Etapa 1: heuristica barata (remitente + asunto + snippet), 0 coste.
+#   Etapa 2: LLM (proveedor activo) SOLO para los ambiguos.
+# Fail-soft: si el LLM no responde o responde basura -> 'fyi' con
+# method='fallback'. El triaje nunca rompe el procesamiento del inbox.
+# ----------------------------------------------------------------------
+
+TRIAGE_CATEGORIES = (
+    "urgente", "responder", "reunion", "newsletter",
+    "factura", "spam-social", "fyi",
+)
+
+# Keywords por categoria (es + en). Orden de evaluacion = prioridad.
+_TRIAGE_KEYWORDS = [
+    ("urgente", (
+        "urgent", "urgente", "asap", "immediately", "action required",
+        "accion requerida", "warning", "alerta", "alert", "deletion",
+        "suspended", "suspendida", "security", "seguridad", "deadline",
+        "vence", "expira", "last chance", "ultimo aviso",
+    )),
+    ("factura", (
+        "factura", "invoice", "receipt", "recibo", "payment", "pago",
+        "billing", "cobro", "renovacion", "renewal", "presupuesto",
+        "transferencia", "iban",
+    )),
+    ("reunion", (
+        "meeting", "reunion", "reunión", "quedamos", "agendar", "cita",
+        "llamada", "call", "zoom.us", "meet.google", "teams.microsoft",
+        "calendar invite", "invitacion",
+    )),
+    ("spam-social", (
+        "facebook", "instagram", "twitter", "linkedin", "tiktok",
+        "te ha mencionado", "followed you", "liked your", "new follower",
+        "comento tu", "friend request",
+    )),
+    ("newsletter", (
+        "unsubscribe", "darse de baja", "cancelar suscripcion",
+        "newsletter", "boletin", "boletín", "digest", "weekly update",
+        "no-reply", "noreply", "mailing",
+    )),
+]
+
+
+def heuristic_triage(subject: str, sender: str, snippet: str = "") -> Optional[str]:
+    """Etapa 1: clasificacion por keywords. Devuelve None si es ambiguo
+    (y por tanto debe decidir el LLM)."""
+    text = f"{subject or ''} {sender or ''} {snippet or ''}".lower()
+    for category, keywords in _TRIAGE_KEYWORDS:
+        for kw in keywords:
+            if kw in text:
+                return category
+    return None
+
+
+_TRIAGE_PROMPT = (
+    "Clasifica este email en UNA de estas categorias exactas: "
+    "urgente, responder, reunion, newsletter, factura, spam-social, fyi.\n"
+    "- urgente: requiere atencion inmediata\n"
+    "- responder: una persona espera respuesta del usuario\n"
+    "- reunion: propone/confirma una reunion o llamada\n"
+    "- newsletter: boletin o lista de correo\n"
+    "- factura: factura, recibo o pago\n"
+    "- spam-social: notificacion de red social o promocion\n"
+    "- fyi: informativo, sin accion\n"
+    "Responde SOLO con la palabra de la categoria, nada mas.\n\n"
+    "De: {sender}\nAsunto: {subject}\nExtracto: {snippet}"
+)
+
+
+async def llm_triage(subject: str, sender: str, snippet: str = "") -> Optional[str]:
+    """Etapa 2: pregunta al proveedor IA activo. Devuelve None si falla o
+    la respuesta no es una categoria valida (el caller decide el fallback)."""
+    try:
+        from app.ai.ai_manager import ai_manager
+        result = await ai_manager.chat(
+            _TRIAGE_PROMPT.format(
+                sender=(sender or "")[:200],
+                subject=(subject or "")[:200],
+                snippet=(snippet or "")[:300],
+            ),
+            system_prompt="Eres un clasificador de emails. Respondes con una sola palabra.",
+        )
+        if result.get("error"):
+            return None
+        answer = (result.get("response") or "").strip().lower()
+        # tolerar respuestas tipo "categoria: reunion" o con puntuacion
+        for cat in TRIAGE_CATEGORIES:
+            if cat in answer:
+                return cat
+        return None
+    except Exception as e:
+        print(f"[email] llm_triage fallo (fail-soft): {e}")
+        return None
+
+
+async def triage_email(email_id: str, subject: str, sender: str, snippet: str = ""):
+    """Clasifica un email (2 etapas) y devuelve (category, method)."""
+    category = heuristic_triage(subject, sender, snippet)
+    if category:
+        return category, "heuristic"
+    category = await llm_triage(subject, sender, snippet)
+    if category:
+        return category, "llm"
+    return "fyi", "fallback"
+
+
+def save_triage(email_id: str, sender: str, subject: str, category: str, method: str) -> None:
+    """Upsert de la categoria en email_triage (idempotente por email_id)."""
+    from app.db.models import EmailTriage
+    db = SessionLocal()
+    try:
+        row = db.query(EmailTriage).filter(EmailTriage.email_id == email_id).first()
+        if row:
+            row.category = category
+            row.method = method
+        else:
+            db.add(EmailTriage(
+                email_id=email_id,
+                sender=(sender or "")[:300],
+                subject=(subject or "")[:500],
+                category=category,
+                method=method,
+            ))
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        print(f"[email] save_triage error: {e}")
+    finally:
+        db.close()
+
+
+def get_triage_map(email_ids: list) -> Dict[str, str]:
+    """Devuelve {email_id: category} para los ids dados (para enriquecer
+    el inbox preview sin re-clasificar)."""
+    if not email_ids:
+        return {}
+    from app.db.models import EmailTriage
+    db = SessionLocal()
+    try:
+        rows = db.query(EmailTriage).filter(EmailTriage.email_id.in_(email_ids)).all()
+        return {r.email_id: r.category for r in rows}
+    finally:
+        db.close()

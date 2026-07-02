@@ -46,6 +46,8 @@ EMAIL_API_CONTRACT = [
     ("POST",   "/api/email/auto-reply/send"),
     # Procesamiento
     ("POST",   "/api/email/process-inbox"),
+    # V0.7.3 (Sprint 3): triaje del inbox
+    ("POST",   "/api/email/triage/run"),
     ("POST",   "/api/email/process-test"),
     ("POST",   "/api/email/process-meetings"),
     ("POST",   "/api/email/check-confirmations"),

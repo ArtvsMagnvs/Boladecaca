@@ -68,7 +68,7 @@ Sprint 4: autonomía gradual + digest + panel Hub + B8 (cierre de fase, tag v0.7
 |---|---|---|---|
 | 1 | 2026-07-02 | B1, B2, B3 | ✅ Completado (tag v0.7.1, 61 tests) |
 | 2 | 2026-07-02 | B4 | ✅ Completado (tag v0.7.2, 7 routers, 62 tests, fix log_activity) |
-| 3 | — | B5 | ⬜ Pendiente |
+| 3 | 2026-07-02 | B5 | ✅ Completado (triaje 7 categorías 2 etapas, 81 tests) |
 | 4 | — | B6, B7, B8 | ⬜ Pendiente |
 
 ---

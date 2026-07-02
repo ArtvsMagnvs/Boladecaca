@@ -36,6 +36,10 @@ from app.tools.email_tool import (
 from app.db.database import SessionLocal
 from app.db.models import MeetingProposal, CalendarAvailability, EmailActivityLog
 from app.services.email_service import (
+    TRIAGE_CATEGORIES,
+    triage_email,
+    save_triage,
+    get_triage_map,
     _email_tool,
     _parse_iso,
     detect_calendar_conflicts,
@@ -78,7 +82,20 @@ async def inbox_preview(max_emails: int = Query(15, ge=1, le=50)):
     result = await tool.execute("list_inbox_preview", {"max_results": max_emails})
     if not result.get("success"):
         raise HTTPException(status_code=400, detail=result.get("error"))
-    return result["result"]
+    payload = result["result"]
+    # V0.7.3 (Sprint 3): adjuntar categoria de triaje persistida (o None).
+    # Campo aditivo: no rompe el contrato del preview.
+    try:
+        items = payload.get("items") if isinstance(payload, dict) else None
+        if items is None and isinstance(payload, list):
+            items = payload
+        if items:
+            tmap = get_triage_map([e.get("id") for e in items if e.get("id")])
+            for e in items:
+                e["category"] = tmap.get(e.get("id"))
+    except Exception as ex:
+        print(f"[email] enriquecer preview con triaje fallo (fail-soft): {ex}")
+    return payload
 
 
 # V0.7 extra (FIX): ruta mas especifica (/email/{email_id}) para evitar
@@ -158,3 +175,57 @@ async def summary():
 # ----------------------------------------------------------------------
 # Auto-reply rules (NO requieren OAuth)
 # ----------------------------------------------------------------------
+
+
+@router.post("/triage/run")
+async def run_triage(max_emails: int = Query(30, ge=1, le=100), force: bool = Query(False)):
+    """V0.7.3 (Sprint 3, patron Inbox Zero): clasifica los ultimos emails del
+    inbox en 7 categorias con el clasificador de 2 etapas (heuristica -> LLM
+    solo si ambiguo) y persiste el resultado en email_triage.
+
+    - force=false (default): no re-clasifica emails que ya tienen categoria.
+    - Devuelve conteos por categoria + detalle por email (id, category, method).
+    """
+    if not google_auth.is_connected():
+        raise HTTPException(
+            status_code=503,
+            detail="Google no conectado. Conecta Google en Settings primero.",
+        )
+    tool = _email_tool()
+    result = await tool.execute("list_inbox_preview", {"max_results": max_emails})
+    if not result.get("success"):
+        raise HTTPException(status_code=400, detail=result.get("error"))
+    payload = result["result"]
+    items = payload.get("items") if isinstance(payload, dict) else payload
+    items = items or []
+
+    existing = {} if force else get_triage_map([e.get("id") for e in items if e.get("id")])
+    counts: Dict[str, int] = {c: 0 for c in TRIAGE_CATEGORIES}
+    detail = []
+    classified = 0
+    for e in items:
+        eid = e.get("id")
+        if not eid:
+            continue
+        if eid in existing:
+            category, method = existing[eid], "cached"
+        else:
+            category, method = await triage_email(
+                eid, e.get("subject", ""), e.get("from", ""), e.get("snippet", ""),
+            )
+            save_triage(eid, e.get("from", ""), e.get("subject", ""), category, method)
+            classified += 1
+        counts[category] = counts.get(category, 0) + 1
+        detail.append({
+            "id": eid,
+            "subject": e.get("subject", ""),
+            "from": e.get("from", ""),
+            "category": category,
+            "method": method,
+        })
+    return {
+        "total": len(detail),
+        "classified_now": classified,
+        "counts": counts,
+        "items": detail,
+    }

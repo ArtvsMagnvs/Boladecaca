@@ -65,6 +65,17 @@ const PROPOSAL_STATUS_COLORS: Record<string, { bg: string; text: string; label: 
   expired:      { bg: "bg-base-700/40",   text: "text-ink-faint",   label: "Caducada" },
 };
 
+// V0.7.3 (Sprint 3): color de badge por categoria de triaje
+const TRIAGE_STYLES: Record<string, string> = {
+  urgente: "bg-red-500/20 text-red-400",
+  responder: "bg-amber-500/20 text-amber-400",
+  reunion: "bg-blue-500/20 text-blue-400",
+  newsletter: "bg-base-700/60 text-ink-faint",
+  factura: "bg-emerald-500/20 text-emerald-400",
+  "spam-social": "bg-fuchsia-500/20 text-fuchsia-400",
+  fyi: "bg-base-700/60 text-ink-dim",
+};
+
 export default function EmailAssistant() {
   const [status, setStatus] = useState<{
     connected: boolean;
@@ -90,6 +101,8 @@ export default function EmailAssistant() {
   // V0.7.1 (Fase 4b): bandeja de entrada de Gmail (ultimos emails, no leidos)
   const [inbox, setInbox] = useState<InboxEmail[]>([]);
   const [inboxLoading, setInboxLoading] = useState(false);
+  // V0.7.3 (Sprint 3): triaje del inbox
+  const [triageLoading, setTriageLoading] = useState(false);
 
   // Form
   const [formName, setFormName] = useState("");
@@ -162,6 +175,20 @@ export default function EmailAssistant() {
       console.error("Error cargando bandeja:", e);
     } finally {
       setInboxLoading(false);
+    }
+  };
+
+  // V0.7.3 (Sprint 3): clasifica el inbox (heuristica -> LLM) y recarga.
+  const handleRunTriage = async () => {
+    if (!status?.connected) return;
+    setTriageLoading(true);
+    try {
+      await api.runTriage(30);
+      await loadInbox();
+    } catch (e) {
+      console.error("Error en triaje:", e);
+    } finally {
+      setTriageLoading(false);
     }
   };
 
@@ -591,13 +618,23 @@ export default function EmailAssistant() {
                 Tus ultimos emails de Gmail. Los no leidos aparecen resaltados.
               </p>
             </div>
-            <button
-              onClick={loadInbox}
-              disabled={!status?.connected || inboxLoading}
-              className="text-[10px] px-2 py-1 rounded bg-base-800 text-ink-dim hover:bg-base-700 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {inboxLoading ? "Cargando..." : "Refrescar"}
-            </button>
+            <div className="flex items-center gap-1.5">
+              <button
+                onClick={handleRunTriage}
+                disabled={!status?.connected || triageLoading || inboxLoading}
+                className="text-[10px] px-2 py-1 rounded bg-accent/20 text-accent hover:bg-accent/30 disabled:opacity-50 disabled:cursor-not-allowed"
+                title="Clasifica los ultimos 30 emails en 7 categorias (heuristica + IA)"
+              >
+                {triageLoading ? "Triando..." : "Triar inbox"}
+              </button>
+              <button
+                onClick={loadInbox}
+                disabled={!status?.connected || inboxLoading}
+                className="text-[10px] px-2 py-1 rounded bg-base-800 text-ink-dim hover:bg-base-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {inboxLoading ? "Cargando..." : "Refrescar"}
+              </button>
+            </div>
           </div>
 
           {!status?.connected ? (
@@ -631,6 +668,15 @@ export default function EmailAssistant() {
                       {m.unread && (
                         <span className="text-[9px] px-1 py-0.5 rounded bg-accent/20 text-accent">
                           NO LEIDO
+                        </span>
+                      )}
+                      {m.category && (
+                        <span
+                          className={`text-[9px] px-1 py-0.5 rounded uppercase ${
+                            TRIAGE_STYLES[m.category] || "bg-base-700/60 text-ink-dim"
+                          }`}
+                        >
+                          {m.category}
                         </span>
                       )}
                     </div>

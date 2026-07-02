@@ -48,10 +48,10 @@ def db_session():
 def _clean_email_tables():
     """Limpia las tablas del dominio email entre tests (BD temporal)."""
     yield
-    from app.db.models import EmailActivityLog, MeetingProposal, EmailAutoReplyRule
+    from app.db.models import EmailActivityLog, MeetingProposal, EmailAutoReplyRule, EmailTriage
     session = SessionLocal()
     try:
-        for model in (EmailActivityLog, MeetingProposal, EmailAutoReplyRule):
+        for model in (EmailActivityLog, MeetingProposal, EmailAutoReplyRule, EmailTriage):
             try:
                 session.query(model).delete()
             except Exception:
@@ -59,3 +59,9 @@ def _clean_email_tables():
         session.commit()
     finally:
         session.close()
+
+
+@pytest.fixture
+def anyio_backend():
+    """Backend para tests async con @pytest.mark.anyio (solo asyncio)."""
+    return "asyncio"

@@ -392,6 +392,36 @@ class EmailActivityLog(Base):
     read = Column(Boolean, default=False)  # si el usuario ya lo vio en dashboard
 
 
+
+class EmailTriage(Base):
+    """
+    V0.7.3 (Sprint 3 PLAN_MAESTRO_2026, B5): categoria de triaje por email.
+
+    El clasificador de 2 etapas (heuristica barata -> LLM solo si ambiguo,
+    patron Inbox Zero / AMD GAIA) persiste aqui el resultado para que el
+    inbox se muestre categorizado sin re-clasificar en cada carga.
+
+    category (7 fijas):
+      - 'urgente'     : requiere atencion inmediata
+      - 'responder'   : espera respuesta del usuario
+      - 'reunion'     : propuesta/confirmacion de reunion
+      - 'newsletter'  : boletines, listas de correo
+      - 'factura'     : facturas, recibos, pagos
+      - 'spam-social' : notificaciones de redes sociales / promos
+      - 'fyi'         : informativo, sin accion requerida
+
+    method: 'heuristic' | 'llm' | 'fallback' (LLM caido -> fyi)
+    """
+    __tablename__ = 'email_triage'
+
+    id = Column(Integer, primary_key=True, index=True)
+    email_id = Column(String(120), unique=True, index=True, nullable=False)
+    sender = Column(String(300))
+    subject = Column(String(500))
+    category = Column(String(20), nullable=False, index=True)
+    method = Column(String(12), nullable=False, default='heuristic')
+    created_at = Column(DateTime, default=datetime.utcnow)
+
 class AIProviderConfig(Base):
     """
     Fase 2 - Sistema de IA: proveedores configurados por el usuario.
