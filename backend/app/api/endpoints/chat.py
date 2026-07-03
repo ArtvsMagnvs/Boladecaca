@@ -11,6 +11,9 @@ from app.db.database import get_db, SessionLocal
 from app.db.models import ChatMessage
 from app.db.schemas import ChatRequest, ChatResponse
 from app.memory.memory_manager import memory_manager
+# B21 (2026-07-02): separar la cadena de pensamiento de los modelos
+# razonadores (MiniMax <think>) de la respuesta que ve el usuario.
+from app.ai.reasoning_filter import strip_reasoning, StreamingReasoningFilter
 
 router = APIRouter(prefix="/chat", tags=["Chat"])
 
@@ -58,7 +61,8 @@ async def chat(request: ChatRequest, db: Session = Depends(get_db)):
         system_prompt=system_prompt,
     )
 
-    response_text = result.get("response", "")
+    # B21: sin razonamiento del modelo en la respuesta del chat
+    response_text = strip_reasoning(result.get("response", ""))
     # V0.6: almacenamos la respuesta del asistente (si no esta vacia).
     if response_text:
         memory_manager.store_conversation("assistant", response_text)
@@ -105,11 +109,22 @@ async def chat_stream(request: ChatRequest):
     async def event_generator():
         full_response = ""
         model_used = ai_manager.current_provider_name
+        # B21: filtro incremental — el bloque <think> inicial se retiene y
+        # NO se emite; el historial y la memoria guardan la respuesta limpia.
+        reasoning_filter = StreamingReasoningFilter()
         try:
             async for chunk in ai_manager.chat_stream(request.message, system_prompt):
-                full_response += chunk
-                safe_chunk = chunk.replace("\r", "").replace("\n", "\\n")
+                visible = reasoning_filter.feed(chunk)
+                if not visible:
+                    continue
+                full_response += visible
+                safe_chunk = visible.replace("\r", "").replace("\n", "\\n")
                 yield f"data: {safe_chunk}\n\n"
+            tail = reasoning_filter.flush()
+            if tail:
+                full_response += tail
+                safe_tail = tail.replace("\r", "").replace("\n", "\\n")
+                yield f"data: {safe_tail}\n\n"
         finally:
             # V0.6: almacenamos la respuesta del asistente.
             if full_response:

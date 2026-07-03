@@ -69,26 +69,10 @@ def _render_template(template: str, sender: str, subject: str, body: str) -> str
 
 
 def strip_reasoning(text: str) -> str:
-    """FIX (2026-07-02, bug reportado): los modelos de razonamiento (MiniMax
-    M2.7, DeepSeek R-series...) devuelven su cadena de pensamiento en bloques
-    <think>...</think> antes de la respuesta real, y eso acabo DENTRO de un
-    email enviado. Este sanitizador se aplica a TODA salida de LLM que vaya
-    a un email (nunca al chat, donde el razonamiento puede ser util).
-
-    Casos cubiertos: <think>..</think> (uno o varios), bloque sin cerrar,
-    variantes <thinking>/<reasoning>, y espacios sobrantes.
-    """
-    if not text:
-        return text
-    out = re.sub(r"<(think|thinking|reasoning)>.*?</\1>", "", text, flags=re.S | re.I)
-    # bloque abierto sin cerrar: si empieza pensando y nunca cierra, no hay
-    # respuesta utilizable -> vaciamos (el caller hara fallback)
-    out = re.sub(r"<(think|thinking|reasoning)>(?!.*</\1>).*", "", out, flags=re.S | re.I)
-    # tag de cierre huerfano al principio (algunos providers omiten el de apertura)
-    m = re.search(r"</(think|thinking|reasoning)>", out, flags=re.I)
-    if m:
-        out = out[m.end():]
-    return out.strip()
+    """B21: delega en la implementacion canonica (app/ai/reasoning_filter).
+    Se mantiene este nombre aqui porque los flujos de email lo importan."""
+    from app.ai.reasoning_filter import strip_reasoning as _canonical
+    return _canonical(text)
 
 
 def _rule_can_promote_safe(r) -> bool:
