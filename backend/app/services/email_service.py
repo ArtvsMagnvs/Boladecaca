@@ -379,7 +379,9 @@ async def generate_ai_reply(
         result = await ai_manager.chat(message, system_prompt=_AI_REPLY_SYSTEM)
         if result.get("error"):
             return None
-        text = (result.get("response") or "").strip()
+        # FIX (2026-07-02): sin cadena de pensamiento (<think>) en emails
+        from app.tools.email_tool import strip_reasoning
+        text = strip_reasoning(result.get("response") or "")
         return text or None
     except Exception as e:
         print(f"[email] generate_ai_reply fallo (fail-soft): {e}")
@@ -454,16 +456,49 @@ async def respond_to_email(email_id: str, mode: str, fallback_sender: str = "",
 
     # 1) Recuperar el email real de Gmail (fallback: datos de la entrada)
     sender, subject, body = fallback_sender, fallback_subject, fallback_body
+    reply_to_header = ""
     if email_id:
         fetched = await tool.execute("get_email", {"email_id": email_id})
         if fetched.get("success"):
             data = fetched.get("result") or {}
             sender = data.get("from") or data.get("sender") or sender
+            reply_to_header = data.get("reply_to") or ""
             subject = data.get("subject") or subject
-            body = data.get("body") or data.get("snippet") or body
-    sender_email = _extract_email_address(sender or "")
+            body = data.get("body_text") or data.get("body") or data.get("snippet") or body
+
+    # FIX (2026-07-02, bug reportado): la respuesta se envio al propio usuario.
+    # Resolucion blindada del destinatario, en orden:
+    #   1. Header Reply-To (estandar de email)
+    #   2. Header From del email
+    #   3. Sender guardado en la entrada del dashboard
+    # Y NUNCA la propia cuenta conectada: si un candidato es mi propia
+    # direccion se descarta y se prueba el siguiente.
+    own_email = (google_auth.get_connected_email() or "").strip().lower()
+    # Si el From del email resuelve a MI PROPIA cuenta (p.ej. un email que yo
+    # mismo envie dentro del hilo), el remitente real para matching de reglas
+    # y saludo es el guardado en la entrada del dashboard.
+    if own_email and _extract_email_address(sender or "").strip().lower() == own_email:
+        if _extract_email_address(fallback_sender or "").strip().lower() not in ("", own_email):
+            sender = fallback_sender
+    # OJO: el candidato elegido es SOLO el destinatario del envio;
+    # 'sender' (el From) se conserva intacto para el matching de reglas
+    # y para que la IA salude a la persona correcta.
+    candidates = [reply_to_header, sender, fallback_sender]
+    sender_email = ""
+    for cand in candidates:
+        addr = _extract_email_address(cand or "").strip().lower()
+        if addr and addr != own_email:
+            sender_email = addr
+            break
     if not sender_email:
-        return {"ok": False, "detail": "no se pudo determinar el remitente"}
+        return {
+            "ok": False,
+            "detail": (
+                "no se pudo determinar un destinatario valido: todos los "
+                f"candidatos resuelven a tu propia cuenta ({own_email}) o estan vacios. "
+                "Puede que el email original sea uno enviado por ti."
+            ),
+        }
 
     # 2) Regla que matchea (para ai_prompt / plantilla / deteccion)
     match = check_auto_reply_match(sender=sender or "", subject=subject or "", body=body or "")
@@ -548,6 +583,7 @@ async def respond_to_email(email_id: str, mode: str, fallback_sender: str = "",
         sender=sender, subject=subject, snippet=(body or "")[:300],
         details={
             "manual_action": True, "source": "dashboard_respond",
+            "sent_to": sender_email,
             "meeting": meeting, "calendar_status": calendar_status,
             "new_date_proposed": new_date,
             "reply_body_preview": reply_text[:200],
@@ -560,6 +596,7 @@ async def respond_to_email(email_id: str, mode: str, fallback_sender: str = "",
     return {
         "ok": True,
         "action": "borrador_creado" if mode == "draft" else "respuesta_enviada",
+        "sent_to": sender_email,
         "meeting": meeting,
         "calendar_status": calendar_status,
         "new_date_proposed": new_date,

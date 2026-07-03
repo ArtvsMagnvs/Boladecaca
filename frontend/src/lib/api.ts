@@ -419,6 +419,7 @@ export const api = {
     request<{
       ok: boolean;
       action: string;
+      sent_to: string;
       meeting: boolean;
       calendar_status: string | null;
       new_date_proposed: string | null;

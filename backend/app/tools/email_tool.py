@@ -68,6 +68,29 @@ def _render_template(template: str, sender: str, subject: str, body: str) -> str
     )
 
 
+def strip_reasoning(text: str) -> str:
+    """FIX (2026-07-02, bug reportado): los modelos de razonamiento (MiniMax
+    M2.7, DeepSeek R-series...) devuelven su cadena de pensamiento en bloques
+    <think>...</think> antes de la respuesta real, y eso acabo DENTRO de un
+    email enviado. Este sanitizador se aplica a TODA salida de LLM que vaya
+    a un email (nunca al chat, donde el razonamiento puede ser util).
+
+    Casos cubiertos: <think>..</think> (uno o varios), bloque sin cerrar,
+    variantes <thinking>/<reasoning>, y espacios sobrantes.
+    """
+    if not text:
+        return text
+    out = re.sub(r"<(think|thinking|reasoning)>.*?</\1>", "", text, flags=re.S | re.I)
+    # bloque abierto sin cerrar: si empieza pensando y nunca cierra, no hay
+    # respuesta utilizable -> vaciamos (el caller hara fallback)
+    out = re.sub(r"<(think|thinking|reasoning)>(?!.*</\1>).*", "", out, flags=re.S | re.I)
+    # tag de cierre huerfano al principio (algunos providers omiten el de apertura)
+    m = re.search(r"</(think|thinking|reasoning)>", out, flags=re.I)
+    if m:
+        out = out[m.end():]
+    return out.strip()
+
+
 def _rule_can_promote_safe(r) -> bool:
     """V0.7.3 (Sprint 4, B6): wrapper fail-soft de rule_can_promote."""
     try:
@@ -615,6 +638,8 @@ class EmailTool(BaseTool):
                 "id": email_id,
                 "subject": headers.get("subject", ""),
                 "from": headers.get("from", ""),
+                # Estandar de email: si hay Reply-To, las respuestas van ahi
+                "reply_to": headers.get("reply-to", ""),
                 "to": headers.get("to", ""),
                 "date": headers.get("date", ""),
                 "snippet": msg.get("snippet", ""),
@@ -1062,7 +1087,8 @@ async def generate_meeting_reschedule_reply(
                 "Redactas emails breves, amables y profesionales en espanol."
             ),
         )
-        return ai_resp.get("response", "").strip()
+        # FIX: sin cadena de pensamiento del modelo dentro del email
+        return strip_reasoning(ai_resp.get("response", ""))
     except Exception as e:
         # Fallback si IA falla
         print(f"[email_tool] generate_meeting_reschedule_reply IA fallo: {e}")
@@ -1137,7 +1163,8 @@ async def generate_meeting_accept_reply(
                 "Redactas emails breves, amables y profesionales en espanol."
             ),
         )
-        return ai_resp.get("response", "").strip()
+        # FIX: sin cadena de pensamiento del modelo dentro del email
+        return strip_reasoning(ai_resp.get("response", ""))
     except Exception as e:
         print(f"[email_tool] generate_meeting_accept_reply IA fallo: {e}")
         return (

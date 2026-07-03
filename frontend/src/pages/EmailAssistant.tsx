@@ -231,7 +231,7 @@ export default function EmailAssistant() {
         : "";
       setMsg({
         kind: "ok",
-        text: `${r.action === "borrador_creado" ? "Borrador creado en Gmail" : "Respuesta enviada"}${extra}: "${r.reply_preview.slice(0, 120)}..."`,
+        text: `${r.action === "borrador_creado" ? "Borrador creado en Gmail" : "Respuesta enviada"} → ${r.sent_to}${extra}: "${r.reply_preview.slice(0, 120)}..."`,
       });
       await refresh();
       await refreshActivity();

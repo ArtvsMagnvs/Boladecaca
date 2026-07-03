@@ -286,3 +286,128 @@ def test_respond_endpoint_validaciones(client, monkeypatch):
     monkeypatch.setattr(ea.google_auth, "is_connected", lambda: True)
     assert client.post("/api/email/activity/999999/respond?mode=send").status_code == 404
     assert client.post("/api/email/activity/1/respond?mode=yolo").status_code == 422
+
+
+# ----------------------------------------------------------------------
+# 2026-07-02 (bugs reportados): <think> en el email + respuesta a uno mismo
+# ----------------------------------------------------------------------
+
+def test_strip_reasoning_quita_think():
+    from app.tools.email_tool import strip_reasoning
+    raw = "<think> The user wants me to draft... Let me draft this: </think> Hola Alejandro, gracias por tu propuesta."
+    assert strip_reasoning(raw) == "Hola Alejandro, gracias por tu propuesta."
+
+
+def test_strip_reasoning_variantes():
+    from app.tools.email_tool import strip_reasoning
+    assert strip_reasoning("<thinking>bla</thinking>Respuesta") == "Respuesta"
+    assert strip_reasoning("sin think") == "sin think"
+    # bloque sin cerrar: no hay respuesta utilizable -> vacio (fallback)
+    assert strip_reasoning("<think>pensando sin parar...") == ""
+    # cierre huerfano al principio
+    assert strip_reasoning("razonamiento previo</think>Hola!") == "Hola!"
+    # multiples bloques
+    assert strip_reasoning("<think>a</think>Hola<think>b</think>") == "Hola"
+
+
+@pytest.mark.anyio
+async def test_generate_ai_reply_sin_think(monkeypatch):
+    class FakeAI:
+        async def chat(self, message, system_prompt=None):
+            return {"response": "<think>drafting...</think>Nos vemos el jueves!", "error": False}
+    import app.ai.ai_manager as aim
+    monkeypatch.setattr(aim, "ai_manager", FakeAI())
+    out = await svc.generate_ai_reply("responde", "a@b.com", "s", "b")
+    assert out == "Nos vemos el jueves!"
+    assert "<think>" not in out
+
+
+@pytest.mark.anyio
+async def test_respond_nunca_a_uno_mismo(monkeypatch, client):
+    """El email fetched dice From = MI PROPIA cuenta -> se descarta y se usa
+    el sender guardado en la entrada del dashboard."""
+    client.post("/api/email/auto-reply/rules", json={
+        "name": "Guard", "sender_emails": ["losmagnoviajes@gmail.com"],
+        "action": "auto_send", "autonomy": "auto", "ai_prompt": "Responde bien",
+    })
+    tool = FakeRespondTool({
+        "from": "Alexandros Olmo <alexandros.olmo.magno@gmail.com>",  # yo mismo!
+        "reply_to": "",
+        "subject": "Reunion",
+        "body_text": "Podemos vernos?",
+    })
+    monkeypatch.setattr(svc, "_email_tool", lambda: tool)
+    monkeypatch.setattr(svc.google_auth, "get_connected_email",
+                        lambda: "alexandros.olmo.magno@gmail.com")
+
+    async def fake_ai(prompt, sender, subject, body="", extra_context=""):
+        return "Claro, hablemos."
+    monkeypatch.setattr(svc, "generate_ai_reply", fake_ai)
+    import app.tools.email_tool as et
+    import dataclasses
+
+    @dataclasses.dataclass(frozen=True)
+    class _Det:
+        is_meeting_request: bool = False
+        datetime_iso: str = ""
+        reason: str = "mock"
+    async def fake_detect(subject, body):
+        return _Det()
+    monkeypatch.setattr(et, "detect_meeting_proposal", fake_detect)
+
+    r = await svc.respond_to_email(
+        "mail-y", "send",
+        fallback_sender="Los Magno Viajes <losmagnoviajes@gmail.com>",
+    )
+    assert r["ok"] is True, r
+    assert r["sent_to"] == "losmagnoviajes@gmail.com"  # NUNCA mi propia cuenta
+    sent = [p for a2, p in tool.executed if a2 == "send_email"]
+    assert sent[0]["to"] == "losmagnoviajes@gmail.com"
+
+
+@pytest.mark.anyio
+async def test_respond_todos_candidatos_propios_error(monkeypatch):
+    tool = FakeRespondTool({
+        "from": "alexandros.olmo.magno@gmail.com",
+        "reply_to": "", "subject": "x", "body_text": "y",
+    })
+    monkeypatch.setattr(svc, "_email_tool", lambda: tool)
+    monkeypatch.setattr(svc.google_auth, "get_connected_email",
+                        lambda: "alexandros.olmo.magno@gmail.com")
+    r = await svc.respond_to_email("mail-z", "send",
+                                   fallback_sender="alexandros.olmo.magno@gmail.com")
+    assert r["ok"] is False
+    assert "propia cuenta" in r["detail"]
+
+
+@pytest.mark.anyio
+async def test_respond_prefiere_reply_to(monkeypatch, client):
+    client.post("/api/email/auto-reply/rules", json={
+        "name": "ReplyTo", "sender_emails": ["losmagnoviajes@gmail.com"],
+        "action": "auto_send", "autonomy": "auto", "ai_prompt": "Responde",
+    })
+    tool = FakeRespondTool({
+        "from": "Los Magno Viajes <losmagnoviajes@gmail.com>",
+        "reply_to": "agenda@losmagno.com",
+        "subject": "Reunion", "body_text": "hola",
+    })
+    monkeypatch.setattr(svc, "_email_tool", lambda: tool)
+    monkeypatch.setattr(svc.google_auth, "get_connected_email", lambda: "yo@gmail.com")
+
+    async def fake_ai(*a, **k):
+        return "Vale!"
+    monkeypatch.setattr(svc, "generate_ai_reply", fake_ai)
+    import app.tools.email_tool as et
+    import dataclasses
+
+    @dataclasses.dataclass(frozen=True)
+    class _Det:
+        is_meeting_request: bool = False
+        datetime_iso: str = ""
+        reason: str = "mock"
+    async def fake_detect(subject, body):
+        return _Det()
+    monkeypatch.setattr(et, "detect_meeting_proposal", fake_detect)
+
+    r = await svc.respond_to_email("mail-rt", "send")
+    assert r["ok"] is True and r["sent_to"] == "agenda@losmagno.com"

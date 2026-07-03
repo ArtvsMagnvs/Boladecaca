@@ -29,6 +29,7 @@
 | B18 | Orchestrator (intent routing + planner + traces) | P3 | V1.0 | B16 |
 | B19 | MCP server + cliente | P3 | V1.1 | B18 |
 | B20 | Auto-start backend desde Electron | P3 | flotante | B1 |
+| B21 | Chat general: separar/ocultar razonamiento de modelos reasoning (MiniMax `<think>`) | P2 | flotante | — |
 
 ## Sprint 1 (el próximo prompt) — "Red de seguridad"
 
