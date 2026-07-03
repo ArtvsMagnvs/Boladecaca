@@ -96,4 +96,5 @@ def test_stream_razonamiento_va_a_reasoning_text():
 def test_stream_respuesta_larga_sin_tag_no_se_retiene_para_siempre():
     # una respuesta que NO empieza con tag debe empezar a fluir enseguida
     texto = "Esta es una respuesta bastante larga que no lleva razonamiento."
-    out, _ = _run_stream(list(texto))  # char a c
+    out, _ = _run_stream(list(texto))  # char a char
+    assert out == texto
