@@ -112,7 +112,13 @@ def test_format_tareas_excluye_completadas(db_session):
 
 
 def test_format_estado_cuenta(db_session):
-    from app.db.models import Project, Task
+    from app.db.models import Project, Task, CalendarEvent
+    # aislamiento: el conftest no limpia Project/Task entre tests, y otros
+    # tests de este archivo dejan filas. Partimos de tablas vacias.
+    db_session.query(Task).delete()
+    db_session.query(Project).delete()
+    db_session.query(CalendarEvent).delete()
+    db_session.commit()
     db_session.add(Project(name="P1", status="active"))
     db_session.add(Task(title="T1", status="pending", priority="medium"))
     db_session.commit()

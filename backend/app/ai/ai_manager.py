@@ -32,6 +32,20 @@ from .catalog import PROVIDER_CATALOG, get_provider_info, list_provider_names
 
 from app.db.database import SessionLocal
 from app.db.models import AIProviderConfig
+# V0.8 (hardening): las API keys se guardan CIFRADAS en reposo (DPAPI). Se
+# cifran al persistir y se descifran solo al instanciar el proveedor.
+from app.core import secrets
+
+
+def _enc(v: Optional[str]) -> Optional[str]:
+    """Cifra una api_key para guardarla; conserva None/'' (ej. Ollama)."""
+    return secrets.encrypt(v) if v else v
+
+
+def _dec(v: Optional[str]) -> Optional[str]:
+    """Descifra una api_key guardada; conserva None/'' y tolera texto plano legado."""
+    return secrets.decrypt(v) if v else v
+
 
 # Proveedores que no requieren API key (hoy solo Ollama, local).
 NO_KEY_PROVIDERS = {"ollama"}
@@ -166,7 +180,7 @@ class AIManager:
 
             active_name = None
             for row in rows:
-                instance = _instantiate_provider(row.provider, row.model, row.api_key, row.base_url)
+                instance = _instantiate_provider(row.provider, row.model, _dec(row.api_key), row.base_url)
                 if instance:
                     self.providers[row.provider] = instance
                     if row.is_active:
@@ -235,7 +249,7 @@ class AIManager:
             row = AIProviderConfig(
                 provider=provider,
                 model=model,
-                api_key=api_key,
+                api_key=_enc(api_key),  # cifrada en reposo
                 base_url=base_url,
                 is_active=(provider == default_provider),
             )
@@ -369,13 +383,14 @@ class AIManager:
             row = rows.get(provider_name)
             is_configured = row is not None or provider_name in NO_KEY_PROVIDERS
             has_key = bool(row and row.api_key)
+            _plain_key = _dec(row.api_key) if has_key else ""  # solo para el preview
             result.append({
                 "provider": provider_name,
                 "label": info["label"],
                 "model": (row.model if row else None) or info.get("default_model"),
                 "base_url": row.base_url if row else None,
                 "has_api_key": has_key,
-                "api_key_preview": ("..." + row.api_key[-4:]) if has_key and len(row.api_key) >= 4 else None,
+                "api_key_preview": ("..." + _plain_key[-4:]) if _plain_key and len(_plain_key) >= 4 else None,
                 "is_active": provider_name == self.current_provider_name,
                 "is_configured": is_configured,
                 "requires_key": info.get("requires_key", True),
@@ -396,7 +411,7 @@ class AIManager:
                 if model is not None:
                     row.model = model
                 if api_key is not None:
-                    row.api_key = api_key
+                    row.api_key = _enc(api_key)  # cifrada en reposo
                 if base_url is not None:
                     row.base_url = base_url
             else:
@@ -404,14 +419,14 @@ class AIManager:
                 row = AIProviderConfig(
                     provider=provider_name,
                     model=model or catalog_info.get("default_model"),
-                    api_key=api_key,
+                    api_key=_enc(api_key),  # cifrada en reposo
                     base_url=base_url,
                     is_active=False,
                 )
                 db.add(row)
             db.commit()
 
-            instance = _instantiate_provider(provider_name, row.model, row.api_key, row.base_url)
+            instance = _instantiate_provider(provider_name, row.model, _dec(row.api_key), row.base_url)
             if instance:
                 self.providers[provider_name] = instance
                 self._health_cache.pop(provider_name, None)

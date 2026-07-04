@@ -50,16 +50,23 @@ activo con instrucción de estilo del usuario, plantilla como fallback).
   `lifespan` solo si hay token; degradación graceful si falta la lib o el token.
 - **Cifrado de secretos en reposo (DPAPI)** (`app/core/secrets.py`): `encrypt`/
   `decrypt`/`mask` con DPAPI de Windows (fallback marcado en no-Windows, y
-  compatibilidad con valores legado en texto plano). Primer uso: el token del
-  bot de Telegram. Base para cifrar las API keys de los proveedores en el
-  hardening de V0.8.
+  compatibilidad con valores legado en texto plano). Usado por el token de
+  Telegram y por las API keys de los proveedores IA.
+- **Security Hardening (V0.8)**: CORS restringido a orígenes conocidos en
+  `main.py` (localhost + `null` de Electron + `Settings.CORS_ALLOWED_ORIGINS`;
+  ya NO `allow_origins=['*']`). API keys de los proveedores cifradas en reposo:
+  el `AIManager` cifra al persistir (`_enc`) y descifra al instanciar (`_dec`);
+  migración Alembic `d4e5f6a7b8c9_v08_encrypt_api_keys` re-cifra las existentes
+  (idempotente). Falta solo el PIN/token de red (irá con el cliente Web, post-V1.0).
 
-**Fases pendientes (documentadas, no implementadas)**:
-- **V0.8** — restante: Web App (FastAPI serving React build) + PWA + hardening
-  de seguridad (CORS restringido, cifrado de API keys reusando `secrets.py`).
-  Gateway + canal Telegram ya hechos (ver arriba).
+**Fases pendientes (documentadas, no implementadas)** — ver §5 para el orden
+completo acordado (Hub Visual → Voz → V0.85 Memory → V0.9 → V1.0 → V1.1 Hermes;
+Web+PWA aplazado a post-V1.0):
+- **V0.85** — Memory & Context (captura de skills, contexto de proyectos,
+  briefings ricos, patrones de trabajo) — ANTES del Automation Engine
 - **V0.9** — Automation Engine (APScheduler + reglas + sistema de aprobaciones)
 - **V1.0** — Orchestrator (intent analyzer + planner + Claude Code Agent)
+- **V1.1** — Hermes (Nous Research) como sistema de agentes bajo el Orchestrator
 
 **Estado del git**: branch `master` con historia activa. V0.7.1 commiteado
 (commit `abf4493`, tag `v0.7.1`). Trabajo V0.8 sobre `master`: B21
@@ -253,42 +260,73 @@ Cambios ya aplicados (ver `Actualizacion_V0.2.txt` sección 3):
 
 ## 5. Fases pendientes — roadmap
 
-### 🔨 V0.8 — Clientes adicionales (Gateway + Telegram + Web + PWA)
+> **Orden de roadmap acordado (2026-07-04)**: tras el hardening, primero pulido
+> de producto (Hub Visual + Voz), luego un salto de memoria (V0.85) ANTES del
+> Automation Engine, y finalmente Orchestrator y Hermes. El cliente Web + PWA se
+> aplaza a DESPUÉS de V1.0 (no bloquea el resto).
+
+### 🔨 V0.8 — Gateway + Telegram + Security Hardening
 Doc: `Fase_5_Clients_Telegram_Web_V08.md` + `PLAN_MAESTRO_2026/06_GATEWAY_V08_DISENO.md`
 - ✅ **Gateway + MessageEnvelope** (`app/gateway/`): núcleo channel-agnostic
-  (patrón OpenClaw). La lógica de negocio no sabe de qué canal viene un mensaje;
-  cada canal es un adapter fino. Ver §20.
-- ✅ **Telegram bot**: `python-telegram-bot 21.10` en polling como adapter del
-  Gateway (`app/gateway/adapters/telegram_adapter.py`), whitelist por `chat_id`,
-  comandos `/start` `/proyectos` `/tareas` `/estado` + chat natural.
-  Configurable desde Ajustes; router `/api/telegram`. Token cifrado (DPAPI).
-- ⏳ **Web client**: build de React servido por FastAPI en `/app` (mismo build
-  que Electron, sin lógica de negocio propia) — pendiente.
-- ⏳ **PWA**: manifest + service worker básico — pendiente.
-- ⏳ **Hardening**: CORS restringido, PIN/token para red local, cifrado de API
-  keys reusando `app/core/secrets.py` (DPAPI, ya creado) — pendiente.
-- **Estado**: Gateway + canal Telegram + cifrado DPAPI implementados; Web/PWA y
-  el resto del hardening pendientes.
+  (patrón OpenClaw). Ver §20.
+- ✅ **Telegram bot**: adapter sobre el Gateway (polling), whitelist por `chat_id`,
+  comandos + chat natural, configurable desde Ajustes, token cifrado (DPAPI).
+- ✅ **Security Hardening**: CORS restringido a orígenes conocidos (localhost +
+  `null` de Electron + extras por `CORS_ALLOWED_ORIGINS`, ya NO `*`); API keys de
+  los proveedores IA cifradas en reposo (DPAPI, reusando `app/core/secrets.py`) —
+  cifrado al escribir / descifrado al instanciar en el `AIManager`, con migración
+  Alembic `d4e5f6a7b8c9_v08_encrypt_api_keys` que re-cifra las existentes.
+- ⏳ **Pendiente menor**: PIN/token de red se implementa junto al cliente Web
+  (post-V1.0, cuando haga falta exponer a la red).
+
+### ⏳ V0.82 — Hub Visual (pulido de UI) — *etiqueta indicativa*
+- Animación de conversación en el Hub (chat con vida).
+- Modo pantalla completa con botones para desplegar/plegar las barras laterales
+  (tareas, proyectos, funcionalidades, etc.).
+- **Estado**: planificado, sin implementar.
+
+### ⏳ V0.83 — Voz completa — *etiqueta indicativa*
+- Terminar de configurar las voces principales de ElevenLabs.
+- **STT** (speech-to-text) con reconocimiento de voz.
+- **Estado**: base existente (`app/voice/`), falta rematar; sin implementar.
+
+### ⏳ V0.85 — Memory & Context (ANTES del Automation Engine)
+Salto de memoria de verdad, previo a la automatización y al orchestrator:
+- Captura automática de skills.
+- Contexto de proyectos.
+- Briefings ricos.
+- Detección de patrones de trabajo.
+- **Estado**: planificado, sin implementar.
 
 ### ⏳ V0.9 — Automation Engine
 Doc: `Fase_6_Automation_V08.md`
-- Modelos `AutomationRule` y `AutomationExecution`
-- **APScheduler** integrado en el `lifespan` de FastAPI
-- Tipos de acción: `telegram_message`, `email_summary`, `agent_task`, `chat_query`
-- Sistema de aprobaciones para acciones sensibles
-- UI de automatizaciones
-- Reglas de ejemplo predefinidas (desactivadas por defecto)
-- **Estado**: solo documentado, sin implementar
+- Modelos `AutomationRule` y `AutomationExecution`; **APScheduler** en el `lifespan`.
+- Acciones: `telegram_message`, `email_summary`, `agent_task`, `chat_query`.
+- Sistema de aprobaciones + UI + reglas de ejemplo (desactivadas por defecto).
+- **Estado**: solo documentado, sin implementar.
 
 ### ⏳ V1.0 — Orchestrator
 Doc: `Fase_8_Orchestrator_V10.md`
-- **Intent Analyzer**: clasifica intención (query / create / execute / automate / conversational)
-- **Task Planner**: planifica pasos usando el AI Manager
-- **Response Builder**: sintetiza resultados en lenguaje natural
-- **Claude Code Agent**: delega tareas de código a Claude Code CLI si está disponible
-- Integración en chat: el Orchestrator decide si necesita tools o es conversación
-- UI de aprobación de planes
-- **Estado**: solo documentado, sin implementar
+- **Intent Analyzer** (query/create/execute/automate/conversational), **Task
+  Planner** (sobre el AI Manager), **Response Builder**, **Claude Code Agent**.
+- Enganche clave: `gateway.set_handler(orchestrator)` — un solo punto, sin tocar
+  adapters. UI de aprobación de planes.
+- **Estado**: solo documentado, sin implementar.
+
+### ⏳ V1.1 — Hermes como sistema de agentes principal
+Integrar **Hermes** (Nous Research, https://hermes-agent.nousresearch.com/) POR
+DEBAJO del Orchestrator: los agentes guiados por Hermes usarían su sistema de
+skills, memoria y aprendizaje de trabajo. Hay que investigar la vía de
+integración con Aithera (el Orchestrator delega en Hermes; Hermes ejecuta con su
+propio stack de skills/memoria).
+- **Estado**: idea de roadmap, pendiente de diseño.
+
+### ⏳ Post-V1.0 — Cliente Web + PWA (aplazado)
+- Build de React servido por FastAPI en `/app` (mismo build que Electron, sin
+  lógica propia) + PIN/token de red + PWA (manifest + service worker).
+- **Aplazado a propósito**: no bloquea Hub Visual, Voz, Memory, Automation ni
+  Orchestrator. Se retoma tras V1.0.
+- **Estado**: documentado (`Fase_7_WebApp_PWA_V09.md`), sin implementar.
 
 ---
 
@@ -549,12 +587,14 @@ npm run electron:build  # genera release/*.exe con electron-builder
 1. **Backend arrancado manualmente** — no hay auto-start desde Electron
 2. **Windows-first** — paths tipo `%APPDATA%/Aithera/`, scripts `.bat`
 3. **SQLite fallback** — si no hay `DATABASE_URL`, cae a SQLite en `%APPDATA%`
-4. **API keys en BD local** — aún texto plano en `ai_provider_configs`. Ya
-   existe `app/core/secrets.py` (cifrado DPAPI) y lo usa el token de Telegram;
-   migrar las API keys a cifrado es tarea del hardening de V0.8.
-5. **CORS abierto (`*`)** — aceptable en localhost, no en producción (se
-   restringe en el hardening de V0.8)
-6. **Sin autenticación** — app personal, un solo usuario
+4. ~~**API keys en BD local — texto plano**~~ — ✅ **SALDADA (V0.8 hardening,
+   2026-07-04)**: cifradas en reposo con DPAPI (`app/core/secrets.py`) vía
+   `AIManager._enc/_dec` + migración `d4e5f6a7b8c9`. Tolera valores legado en
+   plano (decrypt los devuelve tal cual) hasta que la migración los re-cifra.
+5. ~~**CORS abierto (`*`)**~~ — ✅ **SALDADA (V0.8 hardening)**: restringido a
+   localhost + `null` (Electron) + `CORS_ALLOWED_ORIGINS`. Ver `main.py`.
+6. **Sin autenticación de red** — app personal monousuario. El PIN/token para
+   exponer a la red local se implementará junto al cliente Web (post-V1.0).
 
 ### Deuda técnica crítica
 
@@ -673,6 +713,6 @@ Registro/arranque en el `lifespan` de `main.py` (`gateway.register(...)` +
 
 ---
 
-*Última actualización: 2026-07-03 — V0.8 en curso (B21 + Gateway + canal Telegram + cifrado DPAPI)*
+*Última actualización: 2026-07-04 — V0.8 (B21 + Gateway + Telegram + Security Hardening: CORS + API keys cifradas). Roadmap reordenado: Hub Visual → Voz → V0.85 Memory → V0.9 → V1.0 → V1.1 Hermes; Web+PWA post-V1.0*
 *Construido desde el estado real del repositorio (código + Alembic + docs de fase).*
 *Sustituye a la versión V0.2 anterior, que declaraba un estado obsoleto.*

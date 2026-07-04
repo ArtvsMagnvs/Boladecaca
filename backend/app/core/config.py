@@ -17,6 +17,12 @@ class Settings:
     API_URL = "http://localhost:8000"
     API_PREFIX = "/api"
 
+    # V0.8 (hardening): CORS restringido. Además de localhost (cubierto por
+    # regex) y file:// de Electron (origen 'null'), se pueden declarar orígenes
+    # extra por env como CSV — p.ej. la IP de la red local al exponer la web:
+    # CORS_ALLOWED_ORIGINS="http://192.168.1.50:8000,http://192.168.1.50:5173"
+    CORS_ALLOWED_ORIGINS = os.getenv("CORS_ALLOWED_ORIGINS", "")
+
     # AI Settings
     DEFAULT_AI_PROVIDER = os.getenv("AI_PROVIDER", "ollama")
     DEFAULT_MODEL = os.getenv("DEFAULT_MODEL", "llama3")

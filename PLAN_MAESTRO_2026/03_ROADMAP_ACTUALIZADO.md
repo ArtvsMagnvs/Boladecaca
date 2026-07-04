@@ -1,4 +1,4 @@
-# Roadmap actualizado — V0.7.2 → V1.1
+# Roadmap actualizado — V0.7.2 → V1.2
 
 > Evolución del roadmap de `AOS_Arquitectura_y_Roadmap.md` incorporando los patrones
 > del benchmark (`01_BENCHMARK_JARVIS_OSS.md`). Los principios 1-8 del AOS siguen
@@ -25,19 +25,40 @@ negocio no sabe qué canal la llamó. Coste: ~1 sesión extra. Beneficio: cualqu
 canal futuro (Discord, WhatsApp) es solo un adapter.
 
 🆕 **Security hardening (bloqueante para exponer la red):**
-- CORS restringido a orígenes conocidos (localhost + IP local declarada).
-- PIN/token de sesión para todo origen no-localhost (ya previsto; se implementa aquí, no después).
-- Cifrado de API keys en BD: DPAPI de Windows (`win32crypt`) o Fernet con clave en `%APPDATA%/Aithera/.secret` fuera del repo. Migración Alembic para re-cifrar las existentes.
-- Rate limiting básico (slowapi) en endpoints públicos.
-- Autenticación del bot de Telegram por `chat_id` whitelist (ya previsto).
+- ✅ CORS restringido a orígenes conocidos (localhost + `null` de Electron +
+  `CORS_ALLOWED_ORIGINS` para IPs de LAN). Ya NO `allow_origins=['*']`.
+- ✅ Cifrado de API keys en BD: DPAPI de Windows (`app/core/secrets.py`), cifrado
+  al escribir / descifrado al instanciar en el `AIManager`; migración Alembic
+  `d4e5f6a7b8c9_v08_encrypt_api_keys` re-cifra las existentes (idempotente).
+- ✅ Autenticación del bot de Telegram por `chat_id` whitelist.
+- ⏳ PIN/token de sesión para origen no-localhost — se implementa junto al
+  cliente Web (post-V1.0), que es cuando hace falta exponer a la red.
+- ⏳ Rate limiting básico (slowapi) — opcional, con el cliente Web.
 
-Resto igual que el doc de fase: python-telegram-bot v21 polling, comandos
-`/proyectos`, `/tareas`, `/estado` + chat natural; React build servido por FastAPI
-en `/app`; manifest + service worker.
+**Estado V0.8**: ✅ Gateway + Telegram (adapter, comandos, chat natural,
+config desde Ajustes) + Security Hardening (CORS + API keys cifradas) HECHOS.
+⏳ **Cliente Web (`/app`) + PWA APLAZADOS a post-V1.0** (decisión 2026-07-04):
+no bloquean Hub Visual, Voz, Memory, Automation ni Orchestrator.
 
-## V0.8.5 — Memory 2.0: contexto proactivo (fase 🆕, patrón OpenHuman)
+## V0.82 — Hub Visual (pulido de UI, 🆕 2026-07-04)
 
-Hoy la memoria es pasiva. Esta fase la convierte en contexto vivo:
+Tras el hardening, mejora visual del Hub:
+- Animación de conversación (el chat cobra vida en el Hub).
+- Modo pantalla completa con botones para desplegar/plegar las barras laterales
+  (tareas, proyectos, funcionalidades, etc.).
+
+## V0.83 — Voz completa (🆕 2026-07-04)
+
+- Terminar de configurar las voces principales de ElevenLabs.
+- STT (speech-to-text) con reconocimiento de voz. (Adelanta parte de la antigua
+  "Voice 2.0" de Post-V1.1.)
+
+## V0.85 — Memory & Context (ANTES del Automation Engine)
+
+Salto de memoria de verdad, previo a la automatización y al orchestrator
+(decisión 2026-07-04). Objetivo: un sistema de memoria realmente bueno con
+**captura automática de skills, contexto de proyectos, briefings ricos y
+detección de patrones de trabajo**. Sobre esa base (patrón OpenHuman):
 
 1. **Ingesta en background**: job asyncio (no APScheduler aún) cada 20 min que trae emails nuevos y eventos próximos y los indexa en ChromaDB con su categoría de triaje.
 2. **Summary trees**: resúmenes jerárquicos email→hilo→día→semana, generados en batch nocturno con modelo local (Ollama) para coste cero.
@@ -85,7 +106,25 @@ OpenJarvis) y del debugging.
 Sin cambios en la decisión clave: orchestrator custom (~200 líneas), sin LangChain/
 LangGraph/CrewAI como dependencia.
 
-## V1.1 — MCP Interop (fase 🆕)
+## V1.1 — Hermes como sistema de agentes principal (🆕 2026-07-04)
+
+Integrar **Hermes** (Nous Research, https://hermes-agent.nousresearch.com/) POR
+DEBAJO del Orchestrator, como motor de agentes principal. La idea: el Orchestrator
+(V1.0) sigue decidiendo intención y plan, pero delega la EJECUCIÓN de agentes en
+Hermes, de forma que los agentes guiados por Hermes usen su propio sistema de
+**skills, memoria y aprendizaje de trabajo**.
+
+Trabajo de esta fase:
+1. **Investigar la vía de integración**: cómo se invoca Hermes (API/SDK/local),
+   qué contrato expone, y cómo encaja con el `AgentManager`/`ExecutionEngine`
+   actuales sin romper la whitelist ni los approval gates (principio 5).
+2. **Puente Orchestrator → Hermes**: el Orchestrator delega tareas de agente en
+   Hermes y recibe resultados; Aithera conserva el control de ejecución.
+3. **Skills/memoria de Hermes ↔ memoria de Aithera (V0.85)**: decidir qué es la
+   fuente de verdad y cómo se sincronizan.
+- **Estado**: idea de roadmap, pendiente de diseño.
+
+## V1.2 — MCP Interop (antes V1.1, desplazada por Hermes)
 
 MCP es el estándar de facto 2026 (OpenClaw, OpenJarvis, moltis). Dos mitades:
 
@@ -95,7 +134,7 @@ MCP es el estándar de facto 2026 (OpenClaw, OpenJarvis, moltis). Dos mitades:
 Preparación barata antes de llegar: al tocar `tool_manager.py` en fases previas,
 mantener los schemas de parámetros en JSON Schema puro (ya casi lo son).
 
-## Post-V1.1 (sin comprometer)
+## Post-V1.2 (sin comprometer)
 
 - Voice 2.0: wake word / push-to-talk global, STT Whisper local (JWIKI 08_VOICE).
 - Learning loop sobre `orchestrator_traces` (ajuste de prompts/routing).
@@ -104,16 +143,23 @@ mantener los schemas de parámetros en JSON Schema puro (ya casi lo son).
 
 ## Tabla resumen
 
-| Versión | Nombre | Duración estimada | Entregable usable |
+| Versión | Nombre | Estado | Entregable usable |
 |---|---|---|---|
-| V0.7.2-3 | Email FINAL + fundamentos | 5-6 sesiones | Email assistant terminado, repo con git+tests |
-| V0.8 | Clientes + seguridad | 5-7 sesiones | Aithera desde Telegram y navegador, red segura |
-| V0.8.5 | Memory 2.0 | 3-4 sesiones | Asistente con contexto fresco automático |
-| V0.9 | Automation + approvals | 5-6 sesiones | Briefing matinal, reglas, aprobaciones |
-| V1.0 | Orchestrator | 6-8 sesiones | Chat que decide, planifica y ejecuta |
-| V1.1 | MCP | 3-4 sesiones | Interop con ecosistema MCP |
+| V0.7.2-3 | Email FINAL + fundamentos | ✅ hecho | Email assistant terminado, repo con git+tests |
+| V0.8 | Gateway + Telegram + Hardening | ✅ hecho | Aithera desde Telegram, CORS restringido, API keys cifradas |
+| V0.82 | Hub Visual | ⏳ | Animación de conversación + modo pantalla completa con toggles laterales |
+| V0.83 | Voz completa | ⏳ | Voces ElevenLabs principales + STT |
+| V0.85 | Memory & Context | ⏳ | Skills auto-capturadas, contexto de proyectos, briefings ricos, patrones |
+| V0.9 | Automation + approvals | ⏳ | Briefing matinal, reglas, aprobaciones |
+| V1.0 | Orchestrator | ⏳ | Chat que decide, planifica y ejecuta |
+| V1.1 | Hermes | ⏳ | Agentes con skills/memoria/aprendizaje de Hermes bajo el Orchestrator |
+| V1.2 | MCP Interop | ⏳ | Interop con ecosistema MCP |
+| post-V1.0 | Cliente Web + PWA | ⏳ aplazado | Web servida por FastAPI + PWA + PIN de red |
 
 Regla de siempre: si una fase crece, se parte en dos (principio 7).
 
 ---
-*Creado: 2026-07-02. Complementa a `AOS_Arquitectura_y_Roadmap.md` y a los docs Fase_5/6/8 existentes.*
+*Creado: 2026-07-02. Reordenado 2026-07-04: V0.8 (Gateway+Telegram+Hardening) cerrado;
+añadidas V0.82 Hub Visual y V0.83 Voz; V0.85 Memory & Context antes de V0.9; V1.1 pasa
+a ser Hermes (Nous Research) y MCP Interop se desplaza a V1.2; Cliente Web + PWA aplazados
+a post-V1.0. Complementa a `AOS_Arquitectura_y_Roadmap.md` y a los docs Fase_5/6/8.*

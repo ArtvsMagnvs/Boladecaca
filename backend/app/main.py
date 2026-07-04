@@ -6,6 +6,7 @@ from contextlib import asynccontextmanager
 import traceback
 
 from app.db.database import engine, Base
+from app.core.config import settings
 from app.api.endpoints import config, projects, tasks, calendar, ai, chat, agents, voice, tools, memory
 # V0.8 (Fase 5 Clientes): router de configuracion del canal Telegram.
 from app.api.endpoints import telegram as telegram_endpoints
@@ -127,10 +128,25 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-# CORS middleware
+# CORS middleware — V0.8 (hardening): ya NO wildcard. Se permiten:
+#  - localhost / 127.0.0.1 en cualquier puerto (regex) → Vite dev + build local
+#  - "null" → Electron carga la UI con file:// y envía Origin: null
+#  - orígenes extra declarados en Settings.CORS_ALLOWED_ORIGINS (IPs de LAN)
+# Bloqueante antes de exponer a la red: una web maliciosa en el navegador ya no
+# puede llamar al backend (su origen no está en la lista). El PIN/token de red
+# es una capa aparte, pendiente para cuando se sirva la web (post-V1.0).
+_default_cors_origins = [
+    "http://localhost:5173", "http://127.0.0.1:5173",  # Vite dev server
+    "http://localhost:8000", "http://127.0.0.1:8000",  # build servido por FastAPI
+    "null",                                             # Electron (file://)
+]
+_extra_cors_origins = [
+    o.strip() for o in settings.CORS_ALLOWED_ORIGINS.split(",") if o.strip()
+]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=_default_cors_origins + _extra_cors_origins,
+    allow_origin_regex=r"^http://(localhost|127\.0\.0\.1)(:\d+)?$",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
