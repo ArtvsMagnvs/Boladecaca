@@ -4,7 +4,7 @@
 // V0.6 (Fase 3 Memory System): nueva seccion "Memoria" con stats, gestion
 // de preferencias del usuario y borrado del historial de ChromaDB.
 import { useState, useEffect } from "react";
-import { api, type AIProviderEntry, type ContextItem, type MemoryStats } from "@/lib/api";
+import { api, type AIProviderEntry, type ContextItem, type MemoryStats, type TelegramStatus } from "@/lib/api";
 import { useAppStore } from "@/store/useAppStore";
 
 
@@ -321,6 +321,171 @@ function EmailGoogleStatus() {
   );
 }
 
+/**
+ * V0.8 (Fase 5 Clientes): configuracion del bot de Telegram desde Ajustes.
+ * El token se guarda CIFRADO en el backend (DPAPI) y NUNCA se devuelve; aqui
+ * solo se ve una mascara. Para cambiarlo se escribe uno nuevo; dejarlo vacio
+ * conserva el guardado. Los cambios aplican al reiniciar el backend (el
+ * polling del canal se monta en el arranque).
+ */
+function TelegramSettings() {
+  const [status, setStatus] = useState<TelegramStatus | null>(null);
+  const [token, setToken] = useState("");
+  const [chatIds, setChatIds] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
+
+  const refresh = async () => {
+    try {
+      const s = await api.getTelegramStatus();
+      setStatus(s);
+      setChatIds(s.allowed_chat_ids.join(", "));
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  useEffect(() => {
+    refresh();
+  }, []);
+
+  const save = async () => {
+    setSaving(true);
+    setMsg(null);
+    try {
+      const ids = chatIds
+        .split(",")
+        .map((c) => c.trim())
+        .filter(Boolean);
+      await api.configureTelegram({
+        token: token.trim() || undefined, // vacio => conserva el guardado
+        chat_ids: ids,
+      });
+      setToken("");
+      setMsg({
+        kind: "ok",
+        text: "Guardado. Reinicia el backend para que el bot tome los cambios.",
+      });
+      refresh();
+    } catch (e) {
+      setMsg({ kind: "err", text: `Error guardando: ${(e as Error).message}` });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const remove = async () => {
+    if (!confirm("Borrar la configuracion de Telegram? El bot dejara de responder tras reiniciar.")) return;
+    try {
+      await api.deconfigureTelegram();
+      setToken("");
+      setMsg({ kind: "ok", text: "Configuracion de Telegram borrada." });
+      refresh();
+    } catch (e) {
+      setMsg({ kind: "err", text: `Error borrando: ${(e as Error).message}` });
+    }
+  };
+
+  return (
+    <div className="space-y-3">
+      {/* Estado */}
+      <div className="text-xs text-ink-dim">
+        {status?.running ? (
+          <>
+            <span className="text-signal-ok">●</span> Bot activo
+            {status.allowed_chat_ids.length > 0
+              ? ` — ${status.allowed_chat_ids.length} chat autorizado(s)`
+              : " — sin chats autorizados todavia"}
+          </>
+        ) : status?.configured ? (
+          <>
+            <span className="text-amber-400">●</span> Token guardado{" "}
+            <span className="text-ink-faint">({status.token_masked})</span>, bot no
+            activo. Reinicia el backend para arrancarlo.
+          </>
+        ) : (
+          <>
+            <span className="text-ink-faint">●</span> Sin configurar. Pega el token de
+            tu bot de BotFather.
+          </>
+        )}
+      </div>
+
+      {/* Formulario */}
+      <div className="space-y-2">
+        <input
+          value={token}
+          onChange={(e) => setToken(e.target.value)}
+          type="password"
+          placeholder={
+            status?.configured
+              ? "Token guardado (dejar vacio para conservarlo)"
+              : "Token del bot (de @BotFather)"
+          }
+          className="w-full bg-base-700 border border-base-600 rounded-lg px-3 py-1.5 text-xs text-ink placeholder:text-ink-faint focus:outline-none focus:border-accent/50"
+        />
+        <input
+          value={chatIds}
+          onChange={(e) => setChatIds(e.target.value)}
+          placeholder="chat_id autorizados, separados por comas (ej: 123456789)"
+          className="w-full bg-base-700 border border-base-600 rounded-lg px-3 py-1.5 text-xs text-ink placeholder:text-ink-faint focus:outline-none focus:border-accent/50"
+        />
+        <div className="flex gap-2">
+          <button
+            onClick={save}
+            disabled={saving}
+            className="text-xs px-3 py-1.5 rounded-lg bg-accent text-base-950 font-medium hover:bg-accent-glow disabled:opacity-50"
+          >
+            {saving ? "Guardando..." : "Guardar"}
+          </button>
+          {status?.configured && (
+            <button
+              onClick={remove}
+              className="text-xs px-3 py-1.5 rounded-lg bg-signal-error/15 text-signal-error border border-signal-error/30 hover:bg-signal-error/25"
+            >
+              Borrar
+            </button>
+          )}
+        </div>
+      </div>
+
+      {msg && (
+        <p className={`text-xs ${msg.kind === "ok" ? "text-signal-ok" : "text-signal-error"}`}>
+          {msg.text}
+        </p>
+      )}
+
+      {/* Como obtener el chat_id */}
+      <details className="text-[11px] text-ink-dim">
+        <summary className="cursor-pointer hover:text-ink select-none">
+          <span className="text-accent">▸</span> Como obtener tu chat_id
+        </summary>
+        <ol className="mt-2 space-y-1.5 pl-5 list-decimal text-ink-faint">
+          <li>
+            Crea el bot con{" "}
+            <a href="https://t.me/BotFather" target="_blank" rel="noreferrer" className="text-accent underline">
+              @BotFather
+            </a>{" "}
+            y copia el token aqui arriba. Guarda (sin chat_id todavia) y reinicia el backend.
+          </li>
+          <li>
+            Abre tu bot en Telegram y escribele <code className="bg-base-950/50 px-1 rounded">/start</code>.
+            Te respondera con tu <strong>chat_id</strong>.
+          </li>
+          <li>
+            Pega ese numero en el campo de chat_id de arriba, guarda y reinicia el backend
+            otra vez. Listo: ya puedes chatear con Aithera por Telegram.
+          </li>
+        </ol>
+        <p className="mt-2 text-ink-faint text-[10px] italic">
+          Seguridad: solo los chat_id de la lista pueden usar el bot. El token se guarda
+          cifrado (DPAPI) en la BD local, nunca en texto plano.
+        </p>
+      </details>
+    </div>
+  );
+}
+
 interface EditState {
   provider: string;
   api_key: string;
@@ -620,6 +785,18 @@ export default function Settings() {
                 la lectura/envio de emails reales lo requiere.
               </p>
               <EmailGoogleStatus />
+            </div>
+
+            {/* V0.8 (Fase 5 Clientes): seccion Telegram */}
+            <div className="glass-surface rounded-2xl p-4">
+              <h3 className="text-sm font-medium text-ink mb-3">
+                Telegram (bot)
+              </h3>
+              <p className="text-xs text-ink-dim mb-3">
+                Chatea con Aithera desde Telegram. El token se guarda cifrado y solo
+                los chat_id que autorices pueden usar el bot.
+              </p>
+              <TelegramSettings />
             </div>
 
             {/* V0.6 (Fase 3 Memory System): seccion Memoria (ChromaDB) */}

@@ -281,6 +281,13 @@ export interface AITestConnectionResult {
   message: string;
 }
 
+export interface TelegramStatus {
+  configured: boolean;
+  running: boolean;
+  allowed_chat_ids: string[];
+  token_masked: string;
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${API_URL}${path}`, {
     headers: { "Content-Type": "application/json" },
@@ -360,6 +367,17 @@ export const api = {
     request<{ tools: ToolInfo[]; count: number }>("/tools/"),
   getExecutionLog: (limit = 50) =>
     request<{ log: ExecutionLogEntry[] }>(`/tools/execution-log?limit=${limit}`),
+
+  // --- Telegram (V0.8 Fase 5) ---
+  getTelegramStatus: () =>
+    request<TelegramStatus>("/telegram/status"),
+  configureTelegram: (data: { token?: string; chat_ids: string[] }) =>
+    request<TelegramStatus>("/telegram/configure", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+  deconfigureTelegram: () =>
+    request<TelegramStatus>("/telegram/configure", { method: "DELETE" }),
 
   // --- Email + Calendar (V0.7 Fase 4) ---
   // Email status

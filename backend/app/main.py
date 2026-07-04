@@ -82,7 +82,9 @@ async def lifespan(app: FastAPI):
         finally:
             _db.close()
 
-        token = (_tok.value if _tok else "").strip()
+        # El token se guarda cifrado (DPAPI); lo desciframos para el adapter.
+        from app.core import secrets
+        token = secrets.decrypt((_tok.value if _tok else "") or "").strip()
         if token:
             from app.gateway.adapters.telegram_adapter import TelegramAdapter
             allowed = {
