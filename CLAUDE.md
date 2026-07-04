@@ -30,22 +30,51 @@ autonomía elegible directamente al crear la regla (para remitentes poco
 frecuentes) y `ai_prompt` por regla — respuesta redactada por el proveedor IA
 activo con instrucción de estilo del usuario, plantilla como fallback).
 
+**Trabajo V0.8 en curso (post-0.7.3, sobre `master`; versión en código aún `0.7.3`)**:
+- **B21 — filtro de razonamiento** (`app/ai/reasoning_filter.py`): separa la
+  cadena de pensamiento `<think>…</think>` de los modelos razonadores (MiniMax
+  M2.7, DeepSeek R) de la respuesta real. `strip_reasoning()` (completas) +
+  `StreamingReasoningFilter` (SSE chunk a chunk, tolera el tag partido entre
+  chunks). Aplicado en `chat.py`; `email_tool.strip_reasoning` delega aquí.
+- **Gateway + MessageEnvelope (esqueleto V0.8, patrón OpenClaw)** (`app/gateway/`):
+  núcleo channel-agnostic. `MessageEnvelope`/`OutboundMessage`/`Attachment`,
+  `ChannelAdapter` (ABC), `Gateway` (registro + `dispatch` fail-soft) y
+  `chat_message_handler` (equivalente channel-agnostic de `/api/chat`, con B21).
+  Diseño en `PLAN_MAESTRO_2026/06_GATEWAY_V08_DISENO.md`. En V1.0 el handler se
+  cambia por el Orchestrator con `gateway.set_handler()` — un solo punto.
+- **Canal Telegram** (`app/gateway/adapters/telegram_adapter.py`): primer adapter
+  real sobre el Gateway (python-telegram-bot 21.10, polling). Chat natural →
+  `gateway.dispatch`; comandos `/start` `/proyectos` `/tareas` `/estado`;
+  whitelist de `chat_id`. Configurable desde Ajustes (sección Telegram en
+  `Settings.tsx`) vía router `/api/telegram` (status/configure). Registrado en el
+  `lifespan` solo si hay token; degradación graceful si falta la lib o el token.
+- **Cifrado de secretos en reposo (DPAPI)** (`app/core/secrets.py`): `encrypt`/
+  `decrypt`/`mask` con DPAPI de Windows (fallback marcado en no-Windows, y
+  compatibilidad con valores legado en texto plano). Primer uso: el token del
+  bot de Telegram. Base para cifrar las API keys de los proveedores en el
+  hardening de V0.8.
+
 **Fases pendientes (documentadas, no implementadas)**:
-- **V0.8** — Clientes Telegram + Web App (FastAPI serving React build) + PWA
+- **V0.8** — restante: Web App (FastAPI serving React build) + PWA + hardening
+  de seguridad (CORS restringido, cifrado de API keys reusando `secrets.py`).
+  Gateway + canal Telegram ya hechos (ver arriba).
 - **V0.9** — Automation Engine (APScheduler + reglas + sistema de aprobaciones)
 - **V1.0** — Orchestrator (intent analyzer + planner + Claude Code Agent)
 
-**Estado del git**: branch `master` con historia activa. Todo el trabajo V0.7.1
-está commiteado (commit `abf4493`, tag `v0.7.1` — Sprint 1 del PLAN_MAESTRO_2026,
-2026-07-02). Regla desde entonces: un commit por paso terminado. El roadmap está en
-`AOS_Arquitectura_y_Roadmap.md`, complementado por `PLAN_MAESTRO_2026/03_ROADMAP_ACTUALIZADO.md`.
+**Estado del git**: branch `master` con historia activa. V0.7.1 commiteado
+(commit `abf4493`, tag `v0.7.1`). Trabajo V0.8 sobre `master`: B21
+(`153f93b`) + Gateway (`a382b99`) + fix del test truncado (`8a961dc`)
+commiteados; canal Telegram + DPAPI pendientes de commit local (ver mensaje de
+sesión). Regla: un commit por paso terminado. Roadmap en
+`AOS_Arquitectura_y_Roadmap.md` + `PLAN_MAESTRO_2026/03_ROADMAP_ACTUALIZADO.md`.
 
-**Tests**: `backend/tests/` con 106 tests pytest — smoke de arranque
-(`test_smoke.py`), contratos del API de email (~30 rutas congeladas en
-`test_email_contracts.py` como red de seguridad del split del god-endpoint,
-más regresión del bug json/log_activity), triaje de inbox
-(`test_email_triage.py`, Sprint 3), autonomía + digest (`test_email_autonomy_digest.py`,
-Sprint 4) y meeting detection (`test_email_assistant.py`). Ejecutar: `cd backend && python -m pytest tests/ -v`.
+**Tests**: `backend/tests/` pytest — smoke de arranque (`test_smoke.py`),
+contratos del API de email (`test_email_contracts.py`, ~30 rutas congeladas +
+regresión bug json/log_activity), triaje (`test_email_triage.py`), autonomía +
+digest (`test_email_autonomy_digest.py`), meeting detection
+(`test_email_assistant.py`). **V0.8**: `test_reasoning_filter.py` (12, B21),
+`test_gateway.py` (17), `test_telegram_adapter.py` (10), `test_secrets.py` (6).
+Ejecutar: `cd backend && python -m pytest tests/ -v`.
 
 ---
 
@@ -102,15 +131,17 @@ Aithera/
 │   ├── app/
 │   │   ├── main.py                 # FastAPI app (v0.7.0), lifespan, exception handler
 │   │   ├── core/
-│   │   │   ├── config.py           # Settings (VERSION=0.7.0, DATABASE_URL dinámico)
+│   │   │   ├── config.py           # Settings (VERSION=0.7.3, DATABASE_URL dinámico)
+│   │   │   ├── secrets.py          # V0.8: cifrado DPAPI de secretos (token TG)
 │   │   │   └── logging_config.py
 │   │   ├── db/
-│   │   │   ├── database.py         # 12 modelos SQLAlchemy + engine dinámico
+│   │   │   ├── database.py         # 14 modelos SQLAlchemy + engine dinámico
 │   │   │   ├── models.py           # Re-exports
 │   │   │   └── schemas.py          # Pydantic v2
-│   │   ├── api/endpoints/          # 17 routers: 10 core + 7 email (ver §6)
-│   │   ├── ai/                     # ai_manager, catalog, 9 providers
+│   │   ├── api/endpoints/          # 18 routers: core + 7 email + telegram (ver §6)
+│   │   ├── ai/                     # ai_manager, catalog, 9 providers + reasoning_filter (B21)
 │   │   ├── agents/                 # AgentManager (15KB) + ArchitectAgent
+│   │   ├── gateway/                # V0.8: Gateway channel-agnostic + adapters/telegram (§20)
 │   │   ├── memory/                 # ChromaDB MemoryManager
 │   │   ├── tools/                  # ToolManager + 8 herramientas (ver §8)
 │   │   ├── voice/                  # ElevenLabs + eSpeak
@@ -222,15 +253,22 @@ Cambios ya aplicados (ver `Actualizacion_V0.2.txt` sección 3):
 
 ## 5. Fases pendientes — roadmap
 
-### ⏳ V0.8 — Clientes adicionales (Telegram + Web + PWA)
-Doc: `Fase_5_Clients_Telegram_Web_V08.md` + `Fase_5_Telegram_V07.md`
-- **Telegram bot**: `python-telegram-bot v21` en polling, autenticación por
-  `chat_id`, comandos `/proyectos`, `/tareas`, `/estado` + chat natural
-- **Web client**: build de React servido por FastAPI en `/app` (mismo build
-  que Electron, sin lógica de negocio propia)
-- **PWA**: manifest + service worker básico
-- Sistema de PIN para acceso desde la red local
-- **Estado**: solo documentado, sin implementar
+### 🔨 V0.8 — Clientes adicionales (Gateway + Telegram + Web + PWA)
+Doc: `Fase_5_Clients_Telegram_Web_V08.md` + `PLAN_MAESTRO_2026/06_GATEWAY_V08_DISENO.md`
+- ✅ **Gateway + MessageEnvelope** (`app/gateway/`): núcleo channel-agnostic
+  (patrón OpenClaw). La lógica de negocio no sabe de qué canal viene un mensaje;
+  cada canal es un adapter fino. Ver §20.
+- ✅ **Telegram bot**: `python-telegram-bot 21.10` en polling como adapter del
+  Gateway (`app/gateway/adapters/telegram_adapter.py`), whitelist por `chat_id`,
+  comandos `/start` `/proyectos` `/tareas` `/estado` + chat natural.
+  Configurable desde Ajustes; router `/api/telegram`. Token cifrado (DPAPI).
+- ⏳ **Web client**: build de React servido por FastAPI en `/app` (mismo build
+  que Electron, sin lógica de negocio propia) — pendiente.
+- ⏳ **PWA**: manifest + service worker básico — pendiente.
+- ⏳ **Hardening**: CORS restringido, PIN/token para red local, cifrado de API
+  keys reusando `app/core/secrets.py` (DPAPI, ya creado) — pendiente.
+- **Estado**: Gateway + canal Telegram + cifrado DPAPI implementados; Web/PWA y
+  el resto del hardening pendientes.
 
 ### ⏳ V0.9 — Automation Engine
 Doc: `Fase_6_Automation_V08.md`
@@ -256,7 +294,7 @@ Doc: `Fase_8_Orchestrator_V10.md`
 
 ## 6. Backend — routers y endpoints activos
 
-11 routers montados en `main.py` (orden de registro):
+18 routers montados en `main.py` (orden de registro):
 
 | Prefijo | Router | Tamaño | Descripción |
 |---------|--------|--------|-------------|
@@ -265,7 +303,7 @@ Doc: `Fase_8_Orchestrator_V10.md`
 | `/api/tasks` | `tasks.py` | 2.0KB | CRUD tareas |
 | `/api/calendar` | `calendar.py` | 10KB | CRUD eventos |
 | `/api/ai` | `ai.py` | 5.9KB | Status, catálogo, configured, test, activate, ollama models |
-| `/api/chat` | `chat.py` | 5.7KB | POST /stream (SSE), GET /history, DELETE /history |
+| `/api/chat` | `chat.py` | 5.7KB | POST /stream (SSE), GET /history, DELETE /history — B21: filtra `<think>` (stream + no-stream) |
 | `/api/agents` | `agents.py` | 7.0KB | CRUD agentes + ejecuciones |
 | `/api/email` | `email_auth.py` | 113 líneas | OAuth + credenciales + status |
 | `/api/email` | `email_inbox.py` | 231 líneas | Inbox, preview (con categoría), búsqueda, summary, triage/run (V0.7.3) |
@@ -277,6 +315,7 @@ Doc: `Fase_8_Orchestrator_V10.md`
 | `/api/voice` | `voice.py` | 8.6KB | ElevenLabs + eSpeak |
 | `/api/tools` | `tools.py` | 2.3KB | Catálogo de herramientas + ejecución |
 | `/api/memory` | `memory.py` | 5.6KB | Búsqueda y stats de memoria semántica |
+| `/api/telegram` | `telegram.py` | ~110 líneas | V0.8: status + configure (token cifrado DPAPI) del canal Telegram |
 
 Health checks: `GET /` (versión), `GET /health` (status simple).
 Exception handler global en `main.py:113` que captura y loguea todo.
@@ -423,8 +462,15 @@ Pipeline:
 - Documentación en `GUIA-OAUTH-GOOGLE.md`
 - Credenciales se guardan en BD vía `POST /api/email/auth/credentials`
 
-### Telegram (V0.8, pendiente)
-- Solo documentado. No hay código todavía.
+### Telegram (V0.8, implementado)
+- Adapter sobre el Gateway: `app/gateway/adapters/telegram_adapter.py`
+  (`python-telegram-bot 21.10`, polling). Chat natural → `gateway.dispatch`;
+  comandos `/start` `/proyectos` `/tareas` `/estado`; whitelist por `chat_id`.
+- Configuración desde Ajustes (router `/api/telegram`): token + `chat_id` en la
+  tabla `Config`. El token se guarda **cifrado con DPAPI** (`app/core/secrets.py`).
+- Registrado en el `lifespan` de `main.py` solo si hay token; si falta la lib o
+  el token, se omite y el backend sigue (degradación graceful).
+- Config keys: `telegram_bot_token` (cifrado), `telegram_chat_id` (CSV).
 
 ---
 
@@ -503,8 +549,11 @@ npm run electron:build  # genera release/*.exe con electron-builder
 1. **Backend arrancado manualmente** — no hay auto-start desde Electron
 2. **Windows-first** — paths tipo `%APPDATA%/Aithera/`, scripts `.bat`
 3. **SQLite fallback** — si no hay `DATABASE_URL`, cae a SQLite en `%APPDATA%`
-4. **API keys en BD local** — texto plano en `ai_provider_configs` y BD
-5. **CORS abierto (`*`)** — aceptable en localhost, no en producción
+4. **API keys en BD local** — aún texto plano en `ai_provider_configs`. Ya
+   existe `app/core/secrets.py` (cifrado DPAPI) y lo usa el token de Telegram;
+   migrar las API keys a cifrado es tarea del hardening de V0.8.
+5. **CORS abierto (`*`)** — aceptable en localhost, no en producción (se
+   restringe en el hardening de V0.8)
 6. **Sin autenticación** — app personal, un solo usuario
 
 ### Deuda técnica crítica
@@ -593,6 +642,37 @@ Este archivo debe evolucionar a la par del proyecto. Reglas:
 
 ---
 
-*Última actualización: 2026-07-02 — V0.7.3 (Sprints 3-4 PLAN_MAESTRO_2026 — Email Assistant terminado)*
+## 20. Gateway multi-canal (V0.8)
+
+Núcleo channel-agnostic que desacopla los clientes de la lógica de negocio
+(patrón OpenClaw). Diseño completo y guía para escribir adapters:
+`PLAN_MAESTRO_2026/06_GATEWAY_V08_DISENO.md`.
+
+Piezas en `app/gateway/`:
+- `envelope.py` — `MessageEnvelope` (entrante), `OutboundMessage` (saliente),
+  `Attachment`. Es EL contrato entre canales y negocio.
+- `base.py` — `ChannelAdapter` (ABC): `to_envelope`/`deliver` obligatorios +
+  hooks `authorize`/`start`/`stop`.
+- `gateway.py` — `Gateway` (registro + `dispatch` con fail-soft) +
+  `chat_message_handler` (equivalente channel-agnostic de `/api/chat`, con B21)
+  + singleton `gateway`.
+- `adapters/telegram_adapter.py` — primer adapter real (ver §13).
+
+Flujo: `canal → adapter.to_envelope() → gateway.dispatch() → handler →
+OutboundMessage → adapter.deliver() → canal`. Garantías del `dispatch`: canal
+desconocido → `GatewayError`; `authorize()` False → el handler NI se llama;
+excepción del handler → fail-soft (mensaje amable al usuario, detalle al log).
+
+Regla de oro (principio 3): la lógica de negocio NUNCA sabe de qué canal vino un
+mensaje. Añadir un canal = escribir un adapter fino, cero cambios en el resto.
+En V1.0, `gateway.set_handler(orchestrator)` sustituye el chat directo por el
+Orchestrator sin tocar ningún adapter.
+
+Registro/arranque en el `lifespan` de `main.py` (`gateway.register(...)` +
+`gateway.start_all()` en startup, `gateway.stop_all()` en shutdown).
+
+---
+
+*Última actualización: 2026-07-03 — V0.8 en curso (B21 + Gateway + canal Telegram + cifrado DPAPI)*
 *Construido desde el estado real del repositorio (código + Alembic + docs de fase).*
 *Sustituye a la versión V0.2 anterior, que declaraba un estado obsoleto.*
