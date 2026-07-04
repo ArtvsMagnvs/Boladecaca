@@ -137,13 +137,26 @@ class TelegramAdapter(ChannelAdapter):
         )
 
     async def deliver(self, message: OutboundMessage, envelope: MessageEnvelope) -> None:
-        """Entrega la respuesta al chat de origen."""
+        """Entrega la respuesta al chat de origen, con reintentos ante fallos de
+        red transitorios (la API de Telegram a veces da TimedOut/ConnectTimeout
+        aunque el getUpdates funcione)."""
         if self._app is None:
             logger.error("[telegram] deliver sin Application iniciada")
             return
-        await self._app.bot.send_message(
-            chat_id=int(envelope.user_ref),
-            text=message.text or "(sin respuesta)",
+        import asyncio
+        from telegram.error import NetworkError, TimedOut
+
+        text = message.text or "(sin respuesta)"
+        last_err = None
+        for attempt in range(3):
+            try:
+                await self._app.bot.send_message(chat_id=int(envelope.user_ref), text=text)
+                return
+            except (TimedOut, NetworkError) as e:
+                last_err = e
+                await asyncio.sleep(2.0 * (attempt + 1))  # 2s, 4s
+        logger.error(
+            f"[telegram] no se pudo entregar tras 3 intentos (red inestable): {last_err!r}"
         )
 
     # -------------------- ciclo de vida --------------------
@@ -156,7 +169,19 @@ class TelegramAdapter(ChannelAdapter):
             filters,
         )
 
-        self._app = Application.builder().token(self._token).build()
+        # Timeouts generosos: la conexion a api.telegram.org puede ser lenta o
+        # inestable segun la red; con margen amplio evitamos TimedOut espurios.
+        self._app = (
+            Application.builder()
+            .token(self._token)
+            .connect_timeout(30.0)
+            .read_timeout(30.0)
+            .write_timeout(30.0)
+            .pool_timeout(30.0)
+            .get_updates_connect_timeout(30.0)
+            .get_updates_read_timeout(30.0)
+            .build()
+        )
         self._app.add_handler(CommandHandler("start", self._cmd_start))
         self._app.add_handler(CommandHandler("proyectos", self._cmd_proyectos))
         self._app.add_handler(CommandHandler("tareas", self._cmd_tareas))
@@ -165,6 +190,9 @@ class TelegramAdapter(ChannelAdapter):
         self._app.add_handler(
             MessageHandler(filters.TEXT & ~filters.COMMAND, self._on_text)
         )
+        # error handler: evita el traceback "No error handlers are registered"
+        # y deja el fallo (normalmente de red) en el log de forma limpia.
+        self._app.add_error_handler(self._on_error)
 
         await self._app.initialize()
         await self._app.start()
@@ -231,6 +259,10 @@ class TelegramAdapter(ChannelAdapter):
         from app.gateway.gateway import gateway
         env = await self.to_envelope(update)
         await gateway.dispatch(env)
+
+    async def _on_error(self, _update: Any, context: Any) -> None:
+        """Handler global de errores de PTB (normalmente red hacia Telegram)."""
+        logger.error(f"[telegram] error no controlado: {getattr(context, 'error', None)!r}")
 
     @staticmethod
     def _with_db(fn) -> str:
