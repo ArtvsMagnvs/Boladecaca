@@ -66,6 +66,11 @@ requests-oauthlib==2.0.0
 pyasn1==0.6.3
 pyasn1-modules==0.4.2
 
+# --- Clientes multi-canal (V0.8 Fase 5) ---
+# python-telegram-bot: adapter de Telegram sobre el Gateway (polling).
+# Trae su propio httpx; ya esta fijado arriba en version compatible.
+python-telegram-bot==21.10
+
 # --- Desktop app (CustomTkinter) ---
 customtkinter==5.2.2
 darkdetect==0.8.0

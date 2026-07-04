@@ -7,6 +7,8 @@ import traceback
 
 from app.db.database import engine, Base
 from app.api.endpoints import config, projects, tasks, calendar, ai, chat, agents, voice, tools, memory
+# V0.8 (Fase 5 Clientes): router de configuracion del canal Telegram.
+from app.api.endpoints import telegram as telegram_endpoints
 # V0.7.2 (Sprint 2, PLAN_MAESTRO_2026 B4): god-endpoint de email dividido en
 # 7 routers de dominio + app/services/email_service.py. Todos comparten
 # prefix='/email'; la superficie publica /api/email es identica (contratos).
@@ -63,10 +65,54 @@ async def lifespan(app: FastAPI):
             "Memory system no disponible (chat seguira funcionando sin memoria)",
         )
 
+    # V0.8 (Fase 5 Clientes): arranque de canales sobre el Gateway. El adapter
+    # de Telegram se registra SOLO si hay token en Config; si falta la lib
+    # python-telegram-bot o el token, se omite y el backend sigue (principio 1:
+    # no romper lo que funciona). Los adapters son piezas finas: la logica de
+    # negocio vive detras del Gateway. Ver 06_GATEWAY_V08_DISENO.md.
+    try:
+        from app.gateway.gateway import gateway
+        from app.db.database import SessionLocal
+        from app.db.models import Config
+
+        _db = SessionLocal()
+        try:
+            _tok = _db.query(Config).filter(Config.key == "telegram_bot_token").first()
+            _ids = _db.query(Config).filter(Config.key == "telegram_chat_id").first()
+        finally:
+            _db.close()
+
+        token = (_tok.value if _tok else "").strip()
+        if token:
+            from app.gateway.adapters.telegram_adapter import TelegramAdapter
+            allowed = {
+                c.strip()
+                for c in ((_ids.value if _ids else "") or "").split(",")
+                if c.strip()
+            }
+            gateway.register(TelegramAdapter(token, allowed))
+            await gateway.start_all()
+            log_info(
+                "startup",
+                f"Canal Telegram iniciado ({len(allowed)} chat_id autorizados)",
+            )
+        else:
+            log_info("startup", "Telegram no configurado (sin token) — canal omitido")
+    except Exception as e:
+        log_error(
+            "startup", e,
+            "No se pudo iniciar el canal Telegram (backend sigue sin ese canal)",
+        )
+
     yield
 
-    # Shutdown: cleanup if needed
+    # Shutdown: parada limpia de los canales del Gateway (polling de Telegram).
     log_info("shutdown", "Cerrando Aithera Backend...")
+    try:
+        from app.gateway.gateway import gateway
+        await gateway.stop_all()
+    except Exception as e:
+        log_error("shutdown", e, "Error deteniendo los canales del Gateway")
 
 
 # Create FastAPI app
@@ -108,6 +154,8 @@ app.include_router(voice.router, prefix="/api")
 app.include_router(tools.router, prefix="/api")
 # V0.6 (Fase 3 Memory System): endpoints de memoria semantica.
 app.include_router(memory.router, prefix="/api")
+# V0.8 (Fase 5 Clientes): configuracion del canal Telegram (status/configure).
+app.include_router(telegram_endpoints.router, prefix="/api")
 
 
 @app.get("/")
