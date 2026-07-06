@@ -16,12 +16,13 @@
 
 import { useEffect, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import { AitheraSeed } from "@/components/hub/AitheraSeed";
 import { AICore } from "@/components/hub/AICore";
 import { PoopSphere } from "@/components/hub/PoopSphere";
 import { RasenganSphere } from "@/components/hub/RasenganSphere";
 import { useAppStore, type AICoreState } from "@/store/useAppStore";
 
-export type CoreModelId = "blue_orb" | "poop_sphere" | "rasengan";
+export type CoreModelId = "aithera_seed" | "blue_orb" | "poop_sphere" | "rasengan";
 
 interface CoreModel {
   id: CoreModelId;
@@ -35,6 +36,13 @@ interface CoreModel {
 }
 
 const CORE_MODELS: CoreModel[] = [
+  {
+    id: "aithera_seed",
+    label: "Semilla de Aithera",
+    shortLabel: "Semilla",
+    hint: "Logo vivo inicial, dorado y centrado",
+    dotClass: "bg-amber-300",
+  },
   {
     id: "blue_orb",
     label: "Orbe azul",
@@ -61,14 +69,14 @@ const CORE_MODELS: CoreModel[] = [
 const STORAGE_KEY = "aithera.coreModel";
 
 export function loadStoredModel(): CoreModelId {
-  if (typeof window === "undefined") return "blue_orb";
+  if (typeof window === "undefined") return "aithera_seed";
   try {
     const v = window.localStorage.getItem(STORAGE_KEY);
-    if (v === "blue_orb" || v === "poop_sphere" || v === "rasengan") return v;
+    if (v === "aithera_seed" || v === "blue_orb" || v === "poop_sphere" || v === "rasengan") return v;
   } catch {
     // localStorage no disponible (modo incognito, etc.) — fallback silencioso.
   }
-  return "blue_orb";
+  return "aithera_seed";
 }
 
 const STATE_RING_COLOR: Record<AICoreState, string> = {
@@ -223,7 +231,9 @@ export function CoreModelView({
 
   const inner = (
     <CoreFrame coreState={coreState} size={size}>
-      {model === "blue_orb" ? (
+      {model === "aithera_seed" ? (
+        <AitheraSeed size={size} />
+      ) : model === "blue_orb" ? (
         <AICore size={size} />
       ) : model === "poop_sphere" ? (
         <PoopSphere size={size} audioLevel={0} />
