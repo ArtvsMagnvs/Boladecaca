@@ -169,10 +169,26 @@ async def synthesize(request: SynthesizeRequest) -> Response:
                     media_type="audio/mpeg",
                     headers={"Content-Disposition": 'inline; filename="speech.mp3"'}
                 )
+            # elevenlabs_synthesize devolvio None (fallo silencioso en el
+            # cliente). V0.83 (fix): no seguimos al fallback sin avisar
+            # porque el usuario queda colgado sin saber que ElevenLabs fallo.
+            # Levantamos 502 con detalle del problema y el codigo HTTP.
+            raise HTTPException(
+                status_code=502,
+                detail="ElevenLabs devolvio audio vacio. Revisa la API key, el voice_id, o si tu cuenta tiene cuota.",
+            )
+        except HTTPException:
+            raise
         except Exception as e:
-            print(f"ElevenLabs failed, trying eSpeak: {e}")
-    
-    # Fallback to eSpeak NG
+            # Si ElevenLabs falla con excepcion de red/auth, etc., devolvemos
+            # 502 explicito (no 503 generico). Asi el frontend sabe que es
+            # ElevenLabs y no "el backend no sabe sintetizar".
+            raise HTTPException(
+                status_code=502,
+                detail=f"ElevenLabs fallo: {type(e).__name__}: {e}",
+            )
+
+    # Si llegamos aqui, ElevenLabs no estaba configurado. Fallback a eSpeak.
     if is_espeak_available():
         # Map ElevenLabs voice IDs to eSpeak voice keys
         espeak_voice_map = {
@@ -227,10 +243,19 @@ async def synthesize_base64(request: SynthesizeRequest) -> JSONResponse:
                     "format": "mp3",
                     "source": "elevenlabs"
                 })
+            raise HTTPException(
+                status_code=502,
+                detail="ElevenLabs devolvio audio vacio.",
+            )
+        except HTTPException:
+            raise
         except Exception as e:
-            print(f"ElevenLabs failed: {e}")
-    
-    # Fallback to eSpeak NG
+            raise HTTPException(
+                status_code=502,
+                detail=f"ElevenLabs fallo: {type(e).__name__}: {e}",
+            )
+
+    # Fallback a eSpeak NG
     if is_espeak_available():
         espeak_voice_map = {
             "XB0fDUnXU5powGXd8GSW": "es_female",
