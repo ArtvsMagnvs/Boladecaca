@@ -1,10 +1,14 @@
-# Voice Synthesis API Endpoints - Supports both ElevenLabs and eSpeak NG
-from fastapi import APIRouter, HTTPException
+# Voice Synthesis API Endpoints - Supports both ElevenLabs, eSpeak NG, and
+# faster-whisper STT (V0.83, Paso 4).
+from fastapi import APIRouter, HTTPException, UploadFile, File
 from fastapi.responses import Response, JSONResponse
 from pydantic import BaseModel
 from typing import Optional, List, Union
 import base64
 import io
+import os
+import tempfile
+import httpx
 
 from app.voice.elevenlabs_voice import (
     voice_client as elevenlabs_client,
@@ -19,6 +23,7 @@ from app.voice.espeak_voice import (
     is_espeak_available,
     ESPEAK_VOICES
 )
+from app.voice.whisper_stt import transcribe, get_status as stt_status
 
 router = APIRouter(prefix="/voice", tags=["Voice"])
 
@@ -36,15 +41,45 @@ def list_voices() -> JSONResponse:
     Includes both ElevenLabs (if configured) and eSpeak NG (always available).
     """
     voices = []
-    
+
     # Add ElevenLabs voices if configured
     if elevenlabs_client.api_key:
         voices.extend(elevenlabs_client.get_professional_voices())
-    
+
     # Add eSpeak NG voices (always available as fallback)
     voices.extend(get_espeak_voices())
-    
+
     return JSONResponse(content=voices)
+
+
+# V0.83 (Paso 3, sprint voz): lista las voces reales de la cuenta del usuario
+# desde la API de ElevenLabs. Diferencia con /voices: este NO mezcla las
+# predefinidas, solo devuelve lo que la cuenta tiene (premade + clonadas +
+# professional + generated). El frontend las marca con badges por categoria.
+@router.get("/voices/account")
+async def list_account_voices() -> JSONResponse:
+    """Lista las voces reales de la cuenta ElevenLabs del usuario."""
+    if not elevenlabs_client.api_key:
+        raise HTTPException(
+            status_code=503,
+            detail="ElevenLabs no configurado. Configura la API key en Ajustes.",
+        )
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            r = await client.get(
+                f"{elevenlabs_client.base_url}/voices",
+                headers={"xi-api-key": elevenlabs_client.api_key},
+            )
+        if r.status_code != 200:
+            raise HTTPException(
+                status_code=r.status_code,
+                detail=f"ElevenLabs devolvio {r.status_code}: {r.text[:200]}",
+            )
+        return JSONResponse(content=r.json())
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error consultando ElevenLabs: {e}")
 
 
 @router.get("/status")
@@ -230,7 +265,7 @@ def espeak_install_guide() -> JSONResponse:
         "installer": "espeak-ng-x64.msi",
         "portable": "espeak-ng-x64.zip",
         "languages": [
-            "Spanish (es)", "English (en)", "French (fr)", 
+            "Spanish (es)", "English (en)", "French (fr)",
             "German (de)", "Italian (it)", "Portuguese (pt)",
             "Japanese (ja)", "Chinese (zh)", "Russian (ru)",
             "And 100+ more languages"
@@ -242,3 +277,84 @@ def espeak_install_guide() -> JSONResponse:
             "4. Place in 'voces/espeak-ng' subfolder of Aithera backend"
         ]
     })
+
+
+# --------------------------------------------------------------------------
+# V0.83 (Paso 4) — STT local con faster-whisper
+# --------------------------------------------------------------------------
+# Recibe un blob de audio del frontend (MediaRecorder produce audio/webm;
+# codecs=opus) y devuelve la transcripcion. Sin internet, sin cloud, sin
+# API key. El modelo "base" (~150 MB) se descarga la primera vez que se
+# llama a /transcribe y se cachea en HF_HOME.
+# --------------------------------------------------------------------------
+
+
+@router.get("/stt/status")
+def stt_status_endpoint() -> JSONResponse:
+    """Dice si faster-whisper esta instalado y operativo."""
+    return JSONResponse(content=stt_status())
+
+
+@router.post("/transcribe")
+async def transcribe_endpoint(
+    audio: UploadFile = File(...),
+    language: str = "es",
+) -> JSONResponse:
+    """
+    Transcribe a short audio clip (typicamente 3-15s del micro del Hub).
+
+    Accepts multipart/form-data con:
+      - audio: blob (audio/webm, audio/ogg, audio/wav, audio/mpeg)
+      - language: query param (default "es"). Forzado para evitar
+        auto-detect en clips cortos (pitfall #4 skill aithera-voice-stt).
+
+    Returns: { text, language, language_probability, duration, segments }
+    """
+    if not audio.filename:
+        raise HTTPException(
+            status_code=400,
+            detail="Falta el archivo 'audio' (multipart/form-data).",
+        )
+    if audio.content_type and "audio" not in audio.content_type:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Content-Type esperado audio/*, recibido {audio.content_type}",
+        )
+
+    # faster-whisper necesita una ruta de archivo. Escribimos a temp y
+    # borramos al final. NO convertimos a wav manualmente: faster-whisper
+    # usa PyAV internamente y decodifica webm/opus directamente (skill
+    # aithera-voice-stt, seccion "Important").
+    suffix = os.path.splitext(audio.filename or "rec.webm")[1] or ".webm"
+    tmp_fd, tmp_path = tempfile.mkstemp(suffix=suffix, prefix="aithera_stt_")
+    try:
+        with os.fdopen(tmp_fd, "wb") as f:
+            while True:
+                chunk = await audio.read(64 * 1024)
+                if not chunk:
+                    break
+                f.write(chunk)
+
+        # Transcribe. Esto lazy-loads el modelo la primera vez (5-10s);
+        # las siguientes son <2s para clips de 5s.
+        try:
+            result = transcribe(tmp_path, language=language)
+        except RuntimeError as e:
+            # faster-whisper no instalado o modelo no cargable
+            raise HTTPException(
+                status_code=503,
+                detail=f"STT no disponible: {e}",
+            )
+        return JSONResponse(content=result)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error transcribiendo audio: {e}",
+        )
+    finally:
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass

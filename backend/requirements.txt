@@ -81,6 +81,13 @@ SpeechRecognition==3.17.0
 PyAudio==0.2.14
 comtypes==1.4.16
 pywin32==312
+# V0.83 (Paso 4) STT local con faster-whisper. Modelo "base" espanol
+# (~150MB) se descarga bajo demanda en la primera llamada a /api/voice/
+# transcribe y se cachea en HF_HOME. Requiere CPU decente para <2s en
+# clips de 5s; GPU opcional con nvidia-cublas-cu12 + nvidia-cudnn-cu12
+# (no incluidas por defecto). El backend sigue arrancando aunque esta
+# dep no este instalada: el endpoint devuelve 503 explicito.
+faster-whisper==1.2.1
 
 # --- Utilidades generales ---
 requests==2.34.2
