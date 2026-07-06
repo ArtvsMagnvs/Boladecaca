@@ -767,6 +767,63 @@ export const api = {
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     return response.json();
   },
+
+  // V0.83 (Paso 3): voces reales de la cuenta ElevenLabs del usuario.
+  // No se mezclan con las predefinidas: devuelve solo lo que la API de
+  // ElevenLabs tiene (premade + clonadas + professional + generated).
+  // Marca cada voz con category desde el cliente.
+  async getAccountVoices(): Promise<{ voices: Array<{
+    voice_id: string;
+    name: string;
+    category?: string;
+    labels?: Record<string, string>;
+    description?: string;
+    preview_url?: string;
+    available_languages?: string[];
+  }> }> {
+    const response = await fetch(`${API_URL}/voice/voices/account`);
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({ detail: "HTTP error" }));
+      throw new Error(err.detail || `HTTP ${response.status}`);
+    }
+    // La API de ElevenLabs devuelve { voices: [...] } directamente; el
+    // cliente lo reenvuelve tal cual. Si en el futuro el backend normaliza
+    // (e.g. { voices, count }), solo hay que cambiar este punto.
+    return response.json();
+  },
+
+  // V0.83 (Paso 4): STT local. Envia el blob de audio del MediaRecorder
+  // como multipart/form-data. Devuelve { text, language, duration, segments }.
+  async transcribeVoice(audioBlob: Blob, language = "es"): Promise<{
+    text: string;
+    language: string;
+    language_probability: number;
+    duration: number;
+    segments: Array<{ start: number; end: number; text: string }>;
+  }> {
+    const fd = new FormData();
+    // El filename ("rec.webm") importa: el backend usa os.path.splitext
+    // para deducir el formato y faster-whisper lo decodifica via PyAV.
+    fd.append("audio", audioBlob, "rec.webm");
+    const url = `${API_URL}/voice/transcribe?language=${encodeURIComponent(language)}`;
+    const response = await fetch(url, { method: "POST", body: fd });
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({ detail: "HTTP error" }));
+      throw new Error(err.detail || `HTTP ${response.status}`);
+    }
+    return response.json();
+  },
+
+  async getSttStatus(): Promise<{
+    available: boolean;
+    model: string;
+    language: string;
+    load_error: string | null;
+  }> {
+    const response = await fetch(`${API_URL}/voice/stt/status`);
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    return response.json();
+  },
 };
 
 export interface VoiceInfo {

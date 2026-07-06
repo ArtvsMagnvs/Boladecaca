@@ -1,6 +1,7 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { api } from "@/lib/api";
 import { useAppStore } from "@/store/useAppStore";
+import MicButton from "@/components/voice/MicButton";
 
 interface Message {
   role: "user" | "assistant";
@@ -80,6 +81,17 @@ export default function Chat() {
     }
   };
 
+  // V0.83 (Paso 4): al transcribir, el texto del micro rellena el input.
+  // El usuario puede revisarlo/editarlo antes de pulsar Enviar.
+  const handleTranscript = useCallback((text: string) => {
+    setInput((prev) => {
+      // Si ya hay texto en el input, lo concatenamos con un espacio.
+      // Asi puedes dictar encima de algo que ya escribiste a mano.
+      if (prev.trim()) return `${prev.trim()} ${text}`;
+      return text;
+    });
+  }, []);
+
   return (
     <div className="h-full flex flex-col gap-4">
       <div className="flex items-center justify-between">
@@ -112,7 +124,7 @@ export default function Chat() {
         <div ref={messagesEndRef} />
       </div>
 
-      <div className="flex gap-3">
+      <div className="flex gap-3 items-start">
         <input
           type="text"
           value={input}
@@ -122,6 +134,8 @@ export default function Chat() {
           className="flex-1 bg-base-800 border border-base-700 rounded-xl px-4 py-3 text-sm text-ink placeholder:text-ink-faint focus:outline-none focus:border-accent/40"
           disabled={loading}
         />
+        {/* V0.83 (Paso 4): boton de micro al lado del input. */}
+        <MicButton onTranscript={handleTranscript} language="es" />
         <button
           onClick={handleSend}
           disabled={loading || !input.trim()}

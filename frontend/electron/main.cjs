@@ -5,7 +5,7 @@
 // "iniciar_backend.bat" y luego la app de escritorio. Mantener ese flujo de
 // arranque ya probado evita introducir una nueva fuente de fallos al migrar
 // la capa visual.
-const { app, BrowserWindow } = require("electron");
+const { app, BrowserWindow, session } = require("electron");
 const path = require("path");
 
 // V0.7.1 (FIX): Suprimir warnings internos de Chromium DevTools que aparecen
@@ -70,7 +70,19 @@ function createWindow() {
   }
 }
 
-app.whenReady().then(createWindow);
+app.whenReady().then(() => {
+  // V0.83 (Paso 4) STT: el micro se usa desde el Hub/Chat (MediaRecorder).
+  // Sin este handler, Chromium pide permiso al SO y a veces lo deniega en
+  // silencio. Aithera es personal-use, asi que autorizamos media/microphone
+  // por defecto. Si en el futuro se quiere granularidad, se cambia aqui.
+  session.defaultSession.setPermissionRequestHandler((_wc, permission, callback) => {
+    if (permission === "media" || permission === "microphone") {
+      return callback(true);
+    }
+    return callback(true);
+  });
+  createWindow();
+});
 
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") app.quit();
