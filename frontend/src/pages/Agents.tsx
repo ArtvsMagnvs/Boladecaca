@@ -9,9 +9,10 @@
 //   │                │                      │   ejecuciones)        │
 //   └────────────────┴─────────────────────┴──────────────────────┘
 
-import { useEffect, useState, useCallback, useMemo } from "react";
+import { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { api, type Agent, type AgentExecution, type ToolInfo } from "@/lib/api";
+import { useAppStore } from "@/store/useAppStore";
 
 type Status = "idle" | "saving" | "loading" | "error" | "executing";
 
@@ -66,6 +67,14 @@ export default function Agents() {
   const [taskInput, setTaskInput] = useState("");
   const [executions, setExecutions] = useState<AgentExecution[]>([]);
   const [activeExecId, setActiveExecId] = useState<number | null>(null);
+  // V0.8.1 (Paso 2): cableado del nucleo al ciclo de vida de ejecucion.
+  // Granular selector para no re-render por cambios de coreState (pitfall #4).
+  const setCoreState = useAppStore((s) => s.setCoreState);
+  const pulseError   = useAppStore((s) => s.pulseError);
+  // Guardamos el id de la ejecucion que esta animando el nucleo; si el
+  // componente se desmonta a mitad, el cleanup del useEffect de abajo lo
+  // devuelve a idle.
+  const nucleoExecIdRef = useRef<number | null>(null);
 
   // ------------------------------------------------------------------
   // Carga inicial
@@ -190,14 +199,55 @@ export default function Agents() {
       // Refresca el historial
       const list = await api.getAgentExecutions(selectedId, 50);
       setExecutions(list || []);
+      // V0.8.1 (Paso 2): ejecucion lanzada, nucleo en "processing".
+      // Se mantendra aqui hasta que el useEffect de abajo vea que la
+      // ejecucion ha terminado (status terminal).
+      nucleoExecIdRef.current = ex.id;
+      setCoreState("processing");
       setStatus("idle");
       // Arranca polling para esta ejecucion
       pollExecution(ex.id);
     } catch (e) {
       setErrorMsg(`Error lanzando tarea: ${(e as Error).message}`);
       setStatus("error");
+      pulseError();
     }
   };
+
+  // V0.8.1 (Paso 2): si el usuario sale de /agents mientras una ejecucion
+  // sigue corriendo, devolvemos el nucleo a idle para no dejarlo pegado
+  // en "processing". Tambien cubrimos el caso de error en el lanzamiento.
+  useEffect(() => {
+    return () => {
+      if (nucleoExecIdRef.current !== null) {
+        setCoreState("idle");
+        nucleoExecIdRef.current = null;
+      }
+    };
+  }, [setCoreState]);
+
+  // V0.8.1 (Paso 2): cuando la ejecucion activa pasa a estado terminal,
+  // el nucleo vuelve a idle. Es la unica forma de soltar el processing
+  // porque pollExecution hace await en bucle sin devolvernos una promesa.
+  useEffect(() => {
+    if (activeExecId === null) return;
+    const ex = executions.find((e) => e.id === activeExecId);
+    if (!ex) return;
+    const isTerminal =
+      ex.status === "completed" ||
+      ex.status === "failed" ||
+      ex.status === "cancelled";
+    if (isTerminal && nucleoExecIdRef.current === activeExecId) {
+      nucleoExecIdRef.current = null;
+      // Usamos pulseError para que el nucleo haga un pulso rojo breve
+      // y vuelva solo a idle (pitfall #3 de aithera-hub-corestate).
+      if (ex.status === "failed") {
+        pulseError();
+      } else {
+        setCoreState("idle");
+      }
+    }
+  }, [executions, activeExecId, setCoreState, pulseError]);
 
   const pollExecution = useCallback((execId: number) => {
     let cancelled = false;
@@ -236,6 +286,11 @@ export default function Agents() {
         setExecutions(list || []);
       }
       setActiveExecId(null);
+      // V0.8.1 (Paso 2): cancelacion manual -> nucleo a idle inmediato
+      if (nucleoExecIdRef.current === execId) {
+        nucleoExecIdRef.current = null;
+        setCoreState("idle");
+      }
     } catch (e) {
       setErrorMsg(`Error cancelando: ${(e as Error).message}`);
     }

@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { api, type VoiceInfo } from "@/lib/api";
+import { useAppStore } from "@/store/useAppStore";
 
 interface VoiceConfig {
   id: string;
@@ -44,8 +45,21 @@ export default function VoiceCenter() {
   const [filterGender, setFilterGender] = useState<"all" | "male" | "female">("all");
   const [filterLang, setFilterLang] = useState<string>("all");
   const [volume, setVolume] = useState(1);
-  
+
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  // V0.8.1 (Paso 2): cableado del nucleo al TTS manual (boton "Escuchar muestra").
+  // Granular selector para no re-render por cambios de coreState (pitfall #4).
+  const setCoreState = useAppStore((s) => s.setCoreState);
+
+  // V0.8.1 (Paso 2): si el usuario sale de VoiceCenter con un preview
+  // sonando, devolvemos el nucleo a idle en lugar de dejarlo en "speaking".
+  useEffect(() => {
+    return () => {
+      if (audioRef.current && !audioRef.current.paused) {
+        setCoreState("idle");
+      }
+    };
+  }, [setCoreState]);
 
   // Verificar estado de ElevenLabs
   useEffect(() => {
@@ -74,6 +88,8 @@ export default function VoiceCenter() {
         audioRef.current = null;
       }
       setIsPlaying(false);
+      // V0.8.1 (Paso 2): parar = nucleo a idle
+      setCoreState("idle");
       return;
     }
 
@@ -83,43 +99,53 @@ export default function VoiceCenter() {
     try {
       // Obtener audio del backend (ElevenLabs)
       const audioBuffer = await api.synthesizeVoice(selectedVoice.previewText, selectedVoice.id);
-      
+
       // Crear blob y audio
       const blob = new Blob([audioBuffer], { type: "audio/mpeg" });
       const url = URL.createObjectURL(blob);
-      
+
       // Detener anterior si existe
       if (audioRef.current) {
         audioRef.current.pause();
         URL.revokeObjectURL(audioRef.current.src);
       }
-      
+
       // Crear nuevo audio
       const audio = new Audio(url);
       audio.volume = volume;
       audioRef.current = audio;
-      
+
+      audio.onplay = () => {
+        // V0.8.1 (Paso 2): nucleo en "speaking" mientras suena el preview
+        setCoreState("speaking");
+      };
+
       audio.onended = () => {
         setIsPlaying(false);
         URL.revokeObjectURL(url);
+        // V0.8.1 (Paso 2): fin del audio -> nucleo a idle
+        setCoreState("idle");
       };
-      
+
       audio.onerror = () => {
         setIsPlaying(false);
         setError("Error al reproducir audio");
+        // V0.8.1 (Paso 2): error de reproduccion -> nucleo a idle
+        setCoreState("idle");
       };
-      
+
       setIsPlaying(true);
       await audio.play();
-      
+
     } catch (err: any) {
       console.error("Error synthesizing:", err);
       setError(err.message || "Error al sintetizar voz");
       setIsPlaying(false);
+      setCoreState("idle");
     } finally {
       setIsLoading(false);
     }
-  }, [selectedVoice, volume, isPlaying, isLoading]);
+  }, [selectedVoice, volume, isPlaying, isLoading, setCoreState]);
 
   const handleStop = () => {
     if (audioRef.current) {
@@ -127,6 +153,8 @@ export default function VoiceCenter() {
       audioRef.current = null;
     }
     setIsPlaying(false);
+    // V0.8.1 (Paso 2): stop manual -> nucleo a idle
+    setCoreState("idle");
   };
 
   // Cleanup al desmontar

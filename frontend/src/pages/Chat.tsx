@@ -18,17 +18,34 @@ export default function Chat() {
   // de estado (que capturaría siempre el valor inicial "").
   const accumulatedRef = useRef("");
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const { backendConnected } = useAppStore();
+  // V0.8.1 (Paso 2): selector granular para no re-renderizar el componente
+  // en cada cambio de coreState/aiStatus (pitfall #4 de aithera-hub-corestate).
+  const backendConnected = useAppStore((s) => s.backendConnected);
+  const setCoreState     = useAppStore((s) => s.setCoreState);
+  const pulseError       = useAppStore((s) => s.pulseError);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, streamingText]);
+
+  // V0.8.1 (Paso 2): cleanup defensivo del estado del nucleo al desmontar.
+  // Si el usuario navega a otra pagina mientras el stream esta en vuelo
+  // (loading=true), el useEffect de cleanup de abajo lo deja en idle
+  // en lugar de dejar el nucleo enganado en "thinking".
+  useEffect(() => {
+    return () => {
+      if (useAppStore.getState().coreState === "thinking") {
+        setCoreState("idle");
+      }
+    };
+  }, [setCoreState]);
 
   const handleSend = async () => {
     if (!input.trim() || loading) return;
     if (!backendConnected) {
       setMessages(prev => [...prev, { role: "user", content: input }, { role: "assistant", content: "Error: No hay conexión con el backend." }]);
       setInput("");
+      pulseError();
       return;
     }
 
@@ -38,6 +55,7 @@ export default function Chat() {
     setLoading(true);
     setStreamingText("");
     accumulatedRef.current = "";
+    setCoreState("thinking");
 
     try {
       await api.streamChat(userMessage, (chunk) => {
@@ -48,9 +66,15 @@ export default function Chat() {
       });
       setMessages(prev => [...prev, { role: "assistant", content: accumulatedRef.current || "Sin respuesta" }]);
       setStreamingText("");
+      // V0.8.1 (Paso 2): thinking -> idle explicito antes del finally.
+      // Cuando llegue el TTS autoplay (Paso 5), el hook hara
+      // idle -> speaking (nunca thinking -> speaking directo, por la
+      // regla R2 de aithera-hub-corestate).
+      setCoreState("idle");
     } catch (error) {
       console.error("Error en streamChat:", error);
       setMessages(prev => [...prev, { role: "assistant", content: "Lo siento, hubo un error al procesar tu mensaje." }]);
+      pulseError();
     } finally {
       setLoading(false);
     }
