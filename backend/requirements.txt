@@ -85,13 +85,18 @@ SpeechRecognition==3.17.0
 PyAudio==0.2.14
 comtypes==1.4.16
 pywin32==312
-# V0.83 (Paso 4) STT local con faster-whisper. Modelo "base" espanol
-# (~150MB) se descarga bajo demanda en la primera llamada a /api/voice/
-# transcribe y se cachea en HF_HOME. Requiere CPU decente para <2s en
-# clips de 5s; GPU opcional con nvidia-cublas-cu12 + nvidia-cudnn-cu12
-# (no incluidas por defecto). El backend sigue arrancando aunque esta
-# dep no este instalada: el endpoint devuelve 503 explicito.
-faster-whisper==1.2.1
+# faster-whisper NO esta pineado aqui a proposito. Ya esta instalado en el
+# venv (lo demuestra tu propio `pip install -r requirements.txt` con
+# "Requirement already satisfied: faster-whisper==1.2.1"). Pinearlo en este
+# archivo hace que pip revalide todo el grafo de deps cada vez (incluido
+# chromadb y sus transitivas), y eso reventaba la compilacion de
+# psycopg2-binary en Windows. El backend de STT en
+# backend/app/voice/whisper_stt.py hace import lazy y degrada con
+# elegancia si la dep no esta. Si en algun momento necesitas reinstalar
+# desde cero en un venv nuevo, instala faster-whisper aparte:
+#   pip install faster-whisper==1.2.1
+# o usa el requirements como esta (chromadb y el resto ya estan
+# pineados a versiones probadas).
 
 # --- Utilidades generales ---
 requests==2.34.2
