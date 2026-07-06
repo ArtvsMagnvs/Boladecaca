@@ -1,6 +1,7 @@
 import { useMemo, useRef } from "react";
 import { Canvas, useFrame } from "@react-three/fiber";
 import * as THREE from "three";
+import { DEFAULT_CORE_DESIGN, type CoreDesignSettings } from "@/components/hub/coreDesign";
 import { useAppStore, type AICoreState } from "@/store/useAppStore";
 
 /**
@@ -50,9 +51,10 @@ const fragmentShader = `
   }
 `;
 
-function CoreMesh({ audioLevel }: { audioLevel: number }) {
+function CoreMesh({ audioLevel, design }: { audioLevel: number; design: CoreDesignSettings }) {
   const meshRef = useRef<THREE.Mesh>(null);
   const coreState = useAppStore((s) => s.coreState);
+  const targetColor = useRef(new THREE.Color());
 
   const uniforms = useMemo(
     () => ({
@@ -65,18 +67,18 @@ function CoreMesh({ audioLevel }: { audioLevel: number }) {
 
   useFrame((_, delta) => {
     const config = STATE_CONFIG[coreState];
-    const targetIntensity = config.intensity + (coreState === "speaking" ? audioLevel * 0.5 : 0);
+    const targetIntensity = (config.intensity + (coreState === "speaking" ? audioLevel * 0.5 : 0)) * design.energy;
 
-    uniforms.uTime.value += delta * config.speed;
+    uniforms.uTime.value += delta * config.speed * design.speed;
     uniforms.uIntensity.value = THREE.MathUtils.lerp(uniforms.uIntensity.value, targetIntensity, delta * 3);
-    (uniforms.uColor.value as THREE.Color).lerp(new THREE.Color(config.color), delta * 2.5);
+    (uniforms.uColor.value as THREE.Color).lerp(targetColor.current.set(config.color), delta * 2.5);
 
     if (meshRef.current) {
       // Respiracion en reposo: escala oscilante suave (1.0 <-> ~1.03 cada ~4s).
-      const breathe = coreState === "idle" ? 1 + Math.sin(uniforms.uTime.value * 0.5) * 0.03 : 1 + audioLevel * 0.04;
+      const breathe = coreState === "idle" ? 1 + Math.sin(uniforms.uTime.value * 0.5) * 0.03 * design.energy : 1 + audioLevel * 0.04 * design.energy;
       meshRef.current.scale.setScalar(breathe);
-      meshRef.current.rotation.y += delta * 0.06 * config.rotationBoost;
-      meshRef.current.rotation.x += delta * 0.015 * config.rotationBoost;
+      meshRef.current.rotation.y += delta * 0.06 * config.rotationBoost * design.speed;
+      meshRef.current.rotation.x += delta * 0.015 * config.rotationBoost * design.speed;
     }
   });
 
@@ -89,10 +91,10 @@ function CoreMesh({ audioLevel }: { audioLevel: number }) {
 }
 
 /** Particulas orbitando, solo visibles en "thinking"/"processing" (spec: "Pensando: partículas"). */
-function ThinkingParticles() {
+function ThinkingParticles({ design }: { design: CoreDesignSettings }) {
   const groupRef = useRef<THREE.Group>(null);
   const coreState = useAppStore((s) => s.coreState);
-  const visible = coreState === "thinking" || coreState === "processing";
+  const visible = (coreState === "thinking" || coreState === "processing") && design.particles > 0.05;
 
   const positions = useMemo(() => {
     const arr = new Float32Array(60 * 3);
@@ -108,21 +110,18 @@ function ThinkingParticles() {
   }, []);
 
   useFrame((_, delta) => {
-    if (groupRef.current) {
-      groupRef.current.rotation.y += delta * 0.4;
-      groupRef.current.rotation.x += delta * 0.15;
-    }
+    if (!visible || !groupRef.current) return;
+    groupRef.current.rotation.y += delta * 0.4 * design.speed;
+    groupRef.current.rotation.x += delta * 0.15 * design.speed;
   });
 
-  if (!visible) return null;
-
   return (
-    <group ref={groupRef}>
+    <group ref={groupRef} visible={visible}>
       <points>
         <bufferGeometry>
           <bufferAttribute attach="attributes-position" args={[positions, 3]} />
         </bufferGeometry>
-        <pointsMaterial color="#8FD9FF" size={0.035} transparent opacity={0.75} />
+        <pointsMaterial color="#8FD9FF" size={0.02 + design.particles * 0.015} transparent opacity={Math.min(0.9, 0.75 * design.particles)} />
       </points>
     </group>
   );
@@ -132,16 +131,17 @@ interface AICoreProps {
   size?: number;
   /** Nivel de audio 0-1 para sincronizar pulsos con la voz mientras habla. */
   audioLevel?: number;
+  design?: CoreDesignSettings;
 }
 
-export function AICore({ size = 280, audioLevel = 0 }: AICoreProps) {
+export function AICore({ size = 280, audioLevel = 0, design = DEFAULT_CORE_DESIGN }: AICoreProps) {
   return (
     <div style={{ width: size, height: size }} className="relative mx-auto">
-      <Canvas camera={{ position: [0, 0, 3] }} gl={{ antialias: true, alpha: true }}>
-        <ambientLight intensity={0.4} />
-        <pointLight position={[2, 2, 2]} intensity={1.2} />
-        <CoreMesh audioLevel={audioLevel} />
-        <ThinkingParticles />
+      <Canvas camera={{ position: [0, 0, 3] }} dpr={[1, 2]} gl={{ antialias: true, alpha: true }}>
+        <ambientLight intensity={0.4 * design.energy} />
+        <pointLight position={[2, 2, 2]} intensity={1.2 * design.energy} />
+        <CoreMesh audioLevel={audioLevel} design={design} />
+        <ThinkingParticles design={design} />
       </Canvas>
     </div>
   );

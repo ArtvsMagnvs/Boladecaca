@@ -14,6 +14,7 @@ import { Canvas, useFrame, useLoader } from "@react-three/fiber";
 import { Gltf } from "@/lib/drei-shim";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import * as THREE from "three";
+import { DEFAULT_CORE_DESIGN, type CoreDesignSettings } from "@/components/hub/coreDesign";
 import { useAppStore, type AICoreState } from "@/store/useAppStore";
 
 // -----------------------------------------------------------------------------
@@ -266,7 +267,7 @@ const poopFragmentShader = `
   }
 `;
 
-function PoopMesh({ audioLevel }: { audioLevel: number }) {
+function PoopMesh({ audioLevel, design }: { audioLevel: number; design: CoreDesignSettings }) {
   const meshRef = useRef<THREE.Mesh>(null);
   const coreState = useAppStore((s) => s.coreState);
 
@@ -295,10 +296,10 @@ function PoopMesh({ audioLevel }: { audioLevel: number }) {
 
   useFrame((_, delta) => {
     const a = AGITATION[coreState];
-    material.uniforms.uTime.value += delta * a.speed;
+    material.uniforms.uTime.value += delta * a.speed * design.speed;
     material.uniforms.uIntensity.value = THREE.MathUtils.lerp(
       material.uniforms.uIntensity.value,
-      a.intensity,
+      a.intensity * design.energy,
       delta * 2.5,
     );
     material.uniforms.uAudioLevel.value = THREE.MathUtils.lerp(
@@ -307,7 +308,7 @@ function PoopMesh({ audioLevel }: { audioLevel: number }) {
       delta * 8.0,
     );
     if (meshRef.current) {
-      meshRef.current.rotation.y += delta * 0.08;
+      meshRef.current.rotation.y += delta * 0.08 * design.speed;
     }
   });
 
@@ -320,7 +321,7 @@ function PoopMesh({ audioLevel }: { audioLevel: number }) {
 // Pelusas — lineas finas dispersas sobre la superficie
 // -----------------------------------------------------------------------------
 
-function HairTufts() {
+function HairTufts({ design }: { design: CoreDesignSettings }) {
   const meshRef = useRef<THREE.InstancedMesh>(null);
   const coreState = useAppStore((s) => s.coreState);
 
@@ -352,8 +353,8 @@ function HairTufts() {
     const a = AGITATION[coreState];
     meshRef.current.userData.erect = THREE.MathUtils.lerp(
       meshRef.current.userData.erect ?? 0,
-      a.hairErect,
-      delta * 2.5,
+      a.hairErect * design.energy,
+      delta * 2.5 * design.speed,
     );
     const erect = meshRef.current.userData.erect ?? 0;
     const t = performance.now() * 0.001;
@@ -734,12 +735,16 @@ function Fly({ spec, index }: { spec: FlySpec; index: number }) {
   );
 }
 
-function Flies() {
+function Flies({ design }: { design: CoreDesignSettings }) {
+  if (design.particles <= 0.05) return null;
+
   return (
     <Suspense fallback={null}>
-      {FLY_SPECS.map((spec, i) => (
-        <Fly key={i} spec={spec} index={i} />
-      ))}
+      <group scale={0.75 + design.particles * 0.25}>
+        {FLY_SPECS.map((spec, i) => (
+          <Fly key={i} spec={spec} index={i} />
+        ))}
+      </group>
     </Suspense>
   );
 }
@@ -765,7 +770,7 @@ function mulberry32(seed: number) {
 // Si el archivo no existe, simplemente no renderiza nada (silencioso).
 // -----------------------------------------------------------------------------
 
-function PoopMeshGLTF({ audioLevel }: { audioLevel: number }) {
+function PoopMeshGLTF({ audioLevel, design }: { audioLevel: number; design: CoreDesignSettings }) {
   const groupRef = useRef<THREE.Group>(null);
   const wrapRef = useRef<THREE.Group>(null);
   const coreState = useAppStore((s) => s.coreState);
@@ -776,9 +781,9 @@ function PoopMeshGLTF({ audioLevel }: { audioLevel: number }) {
   useFrame((_, delta) => {
     const a = AGITATION[coreState];
     if (wrapRef.current) {
-      wrapRef.current.rotation.y += delta * 0.08;
+      wrapRef.current.rotation.y += delta * 0.08 * design.speed;
       // Reactividad: cuando habla, el modelo "respira" mas fuerte
-      const breathe = 1 + Math.sin(performance.now() * 0.001 * a.speed) * a.intensity * 0.4;
+      const breathe = 1 + Math.sin(performance.now() * 0.001 * a.speed * design.speed) * a.intensity * 0.4 * design.energy;
       wrapRef.current.scale.setScalar(breathe);
     }
   });
@@ -800,11 +805,11 @@ function PoopMeshGLTF({ audioLevel }: { audioLevel: number }) {
 // PoopMesh wrapper — elige procedural o GLTF segun USE_GLB
 // -----------------------------------------------------------------------------
 
-function PoopMeshWrapper({ audioLevel }: { audioLevel: number }) {
+function PoopMeshWrapper({ audioLevel, design }: { audioLevel: number; design: CoreDesignSettings }) {
   return USE_GLB ? (
-    <PoopMeshGLTF audioLevel={audioLevel} />
+    <PoopMeshGLTF audioLevel={audioLevel} design={design} />
   ) : (
-    <PoopMesh audioLevel={audioLevel} />
+    <PoopMesh audioLevel={audioLevel} design={design} />
   );
 }
 
@@ -815,20 +820,21 @@ function PoopMeshWrapper({ audioLevel }: { audioLevel: number }) {
 export interface PoopSphereProps {
   size?: number;
   audioLevel?: number;
+  design?: CoreDesignSettings;
 }
 
-export function PoopSphere({ size = 280, audioLevel = 0 }: PoopSphereProps) {
+export function PoopSphere({ size = 280, audioLevel = 0, design = DEFAULT_CORE_DESIGN }: PoopSphereProps) {
   return (
     <div style={{ width: size, height: size }} className="relative mx-auto">
-      <Canvas camera={{ position: [0, 0.15, 3.6] }} gl={{ antialias: true, alpha: true }}>
-        <ambientLight intensity={0.55} />
-        <directionalLight position={[2.2, 3.0, 1.8]} intensity={1.8} color="#ffe6c8" />
-        <directionalLight position={[-2.0, -0.5, -1.0]} intensity={0.4} color="#7c9cff" />
-        <PoopMeshWrapper audioLevel={audioLevel} />
+      <Canvas camera={{ position: [0, 0.15, 3.6] }} dpr={[1, 2]} gl={{ antialias: true, alpha: true }}>
+        <ambientLight intensity={0.55 * design.energy} />
+        <directionalLight position={[2.2, 3.0, 1.8]} intensity={1.8 * design.energy} color="#ffe6c8" />
+        <directionalLight position={[-2.0, -0.5, -1.0]} intensity={0.4 * design.energy} color="#7c9cff" />
+        <PoopMeshWrapper audioLevel={audioLevel} design={design} />
         {/* Pelo viene ya bakeado en el GLB, no hace falta dibujarlo procedural.
             Cuando USE_GLB=false (procedural), si queremos pelo tenemos que anadirlo. */}
-        {!USE_GLB && <HairTufts />}
-        <Flies />
+        {!USE_GLB && <HairTufts design={design} />}
+        <Flies design={design} />
       </Canvas>
     </div>
   );

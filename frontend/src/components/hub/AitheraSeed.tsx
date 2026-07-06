@@ -1,6 +1,7 @@
 import { useMemo, useRef } from "react";
 import { Canvas, useFrame } from "@react-three/fiber";
 import * as THREE from "three";
+import { DEFAULT_CORE_DESIGN, type CoreDesignSettings } from "@/components/hub/coreDesign";
 
 const GOLD_CORE = new THREE.Color("#FFF6D8");
 const GOLD_LIGHT = new THREE.Color("#FFD77A");
@@ -107,13 +108,14 @@ function SeedTube({
   );
 }
 
-function SeedParticles() {
+function SeedParticles({ design }: { design: CoreDesignSettings }) {
   const groupRef = useRef<THREE.Group>(null);
 
   const positions = useMemo(() => {
-    const points = new Float32Array(96 * 3);
-    for (let i = 0; i < 96; i++) {
-      const t = i / 95;
+    const count = Math.max(12, Math.round(96 * design.particles));
+    const points = new Float32Array(count * 3);
+    for (let i = 0; i < count; i++) {
+      const t = count === 1 ? 0 : i / (count - 1);
       const angle = t * Math.PI * 8 + Math.sin(i * 1.7) * 0.35;
       const band = Math.sin(t * Math.PI);
       const radius = 1.15 + band * 0.55 + (i % 5) * 0.03;
@@ -125,25 +127,25 @@ function SeedParticles() {
       points[i * 3 + 2] = z;
     }
     return points;
-  }, []);
+  }, [design.particles]);
 
   useFrame((_, delta) => {
     if (!groupRef.current) return;
-    groupRef.current.rotation.y += delta * 0.08;
-    groupRef.current.rotation.z = Math.sin(performance.now() * 0.00018) * 0.02;
+    groupRef.current.rotation.y += delta * 0.08 * design.speed;
+    groupRef.current.rotation.z = Math.sin(performance.now() * 0.00018 * design.speed) * 0.02;
   });
 
   return (
-    <group ref={groupRef}>
+    <group ref={groupRef} visible={design.particles > 0.05}>
       <points>
         <bufferGeometry>
           <bufferAttribute attach="attributes-position" args={[positions, 3]} />
         </bufferGeometry>
         <pointsMaterial
           color={GOLD_PARTICLE}
-          size={0.035}
+          size={0.026 + design.particles * 0.009}
           transparent
-          opacity={0.76}
+          opacity={Math.min(0.95, 0.76 * design.particles)}
           depthWrite={false}
           sizeAttenuation
         />
@@ -152,7 +154,7 @@ function SeedParticles() {
   );
 }
 
-function SeedCore() {
+function SeedCore({ design }: { design: CoreDesignSettings }) {
   const groupRef = useRef<THREE.Group>(null);
   const glowRef = useRef<THREE.Mesh>(null);
   const flareRef = useRef<THREE.Mesh>(null);
@@ -160,15 +162,15 @@ function SeedCore() {
 
   useFrame((_, delta) => {
     if (groupRef.current) {
-      groupRef.current.rotation.y += delta * 0.09;
-      groupRef.current.rotation.x = Math.sin(performance.now() * 0.00022) * 0.015;
-      groupRef.current.position.y = Math.sin(performance.now() * 0.00045) * 0.03;
+      groupRef.current.rotation.y += delta * 0.09 * design.speed;
+      groupRef.current.rotation.x = Math.sin(performance.now() * 0.00022 * design.speed) * 0.015;
+      groupRef.current.position.y = Math.sin(performance.now() * 0.00045 * design.speed) * 0.03;
     }
 
-    const pulse = 1 + Math.sin(performance.now() * 0.0014) * 0.035;
+    const pulse = 1 + Math.sin(performance.now() * 0.0014 * design.speed) * 0.035 * design.energy;
     if (glowRef.current) glowRef.current.scale.setScalar(pulse);
-    if (flareRef.current) flareRef.current.scale.setScalar(1 + Math.sin(performance.now() * 0.001) * 0.025);
-    if (auraRef.current) auraRef.current.scale.setScalar(1 + Math.sin(performance.now() * 0.0011) * 0.02);
+    if (flareRef.current) flareRef.current.scale.setScalar(1 + Math.sin(performance.now() * 0.001 * design.speed) * 0.025 * design.energy);
+    if (auraRef.current) auraRef.current.scale.setScalar(1 + Math.sin(performance.now() * 0.0011 * design.speed) * 0.02 * design.energy);
   });
 
   return (
@@ -179,7 +181,7 @@ function SeedCore() {
         <meshBasicMaterial
           color={GOLD_MID}
           transparent
-          opacity={0.14}
+          opacity={0.14 * design.glow}
           blending={THREE.AdditiveBlending}
           depthWrite={false}
           toneMapped={false}
@@ -191,7 +193,7 @@ function SeedCore() {
         <meshBasicMaterial
           color={GOLD_CORE}
           transparent
-          opacity={0.95}
+          opacity={Math.min(1, 0.95 * design.energy)}
           blending={THREE.AdditiveBlending}
           depthWrite={false}
           toneMapped={false}
@@ -249,16 +251,17 @@ function SeedCore() {
         />
       </mesh>
 
-      <pointLight color={GOLD_LIGHT} intensity={1.35} distance={7} decay={1.8} />
+      <pointLight color={GOLD_LIGHT} intensity={1.35 * design.energy} distance={7} decay={1.8} />
     </group>
   );
 }
 
 export interface AitheraSeedProps {
   size?: number;
+  design?: CoreDesignSettings;
 }
 
-export function AitheraSeed({ size = 280 }: AitheraSeedProps) {
+export function AitheraSeed({ size = 280, design = DEFAULT_CORE_DESIGN }: AitheraSeedProps) {
   return (
     <div style={{ width: size, height: size }} className="relative mx-auto" aria-label="Semilla de Aithera">
       <Canvas
@@ -267,11 +270,11 @@ export function AitheraSeed({ size = 280 }: AitheraSeedProps) {
         gl={{ antialias: true, alpha: true, powerPreference: "high-performance" }}
         style={{ background: "transparent" }}
       >
-        <ambientLight intensity={0.45} />
-        <directionalLight position={[3.2, 4.2, 4.5]} intensity={0.95} color={"#fff1c9"} />
-        <directionalLight position={[-2.8, -1.8, 3.2]} intensity={0.45} color={"#c97b16"} />
-        <SeedCore />
-        <SeedParticles />
+        <ambientLight intensity={0.45 * design.energy} />
+        <directionalLight position={[3.2, 4.2, 4.5]} intensity={0.95 * design.energy} color={"#fff1c9"} />
+        <directionalLight position={[-2.8, -1.8, 3.2]} intensity={0.45 * design.energy} color={"#c97b16"} />
+        <SeedCore design={design} />
+        <SeedParticles design={design} />
       </Canvas>
     </div>
   );

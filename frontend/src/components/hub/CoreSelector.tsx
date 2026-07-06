@@ -20,9 +20,10 @@ import { AitheraSeed } from "@/components/hub/AitheraSeed";
 import { AICore } from "@/components/hub/AICore";
 import { PoopSphere } from "@/components/hub/PoopSphere";
 import { RasenganSphere } from "@/components/hub/RasenganSphere";
+import { DEFAULT_CORE_DESIGN, type CoreDesignSettings, type CoreModelId } from "@/components/hub/coreDesign";
 import { useAppStore, type AICoreState } from "@/store/useAppStore";
 
-export type CoreModelId = "aithera_seed" | "blue_orb" | "poop_sphere" | "rasengan";
+export type { CoreModelId } from "@/components/hub/coreDesign";
 
 interface CoreModel {
   id: CoreModelId;
@@ -100,6 +101,7 @@ const STATE_GLOW: Record<AICoreState, string> = {
 interface CoreFrameProps {
   coreState: AICoreState;
   size: number;
+  design: CoreDesignSettings;
   children: React.ReactNode;
 }
 
@@ -108,14 +110,21 @@ interface CoreFrameProps {
  * modelo 3D. Antes vivia dentro de AICoreWithRings en Hub.tsx;
  * ahora es reutilizable para cualquier modelo.
  */
-function CoreFrame({ coreState, size, children }: CoreFrameProps) {
+function CoreFrame({ coreState, size, design, children }: CoreFrameProps) {
   const ringColor = STATE_RING_COLOR[coreState];
   const glow = STATE_GLOW[coreState];
+  const designGlow = Math.round(22 * design.glow);
+  const glowAlpha = Math.min(0.28, 0.06 + design.glow * 0.08);
 
   return (
     <div
       className={`relative transition-shadow duration-700 ${glow}`}
-      style={{ width: size, height: size }}
+      style={{
+        width: size,
+        height: size,
+        transform: `scale(${design.scale})`,
+        filter: `brightness(${design.brightness}) drop-shadow(0 0 ${designGlow}px rgba(125, 211, 252, ${glowAlpha}))`,
+      }}
     >
       {/* Anillo exterior */}
       <div
@@ -208,6 +217,8 @@ interface CoreModelViewProps {
   model: CoreModelId;
   /** Tamano del area del modelo 3D en pixeles. */
   size: number;
+  /** Ajustes internos de diseno para el modelo activo. */
+  design?: CoreDesignSettings;
   /**
    * Si true, el area del modelo actua como link al chat (clic = navega
    * a /chat, igual que hacia AICoreWithRings antes).
@@ -224,21 +235,22 @@ interface CoreModelViewProps {
 export function CoreModelView({
   model,
   size,
+  design = DEFAULT_CORE_DESIGN,
   linkToChat = false,
   onNavigateToChat,
 }: CoreModelViewProps) {
   const coreState = useAppStore((s) => s.coreState);
 
   const inner = (
-    <CoreFrame coreState={coreState} size={size}>
+    <CoreFrame coreState={coreState} size={size} design={design}>
       {model === "aithera_seed" ? (
-        <AitheraSeed size={size} />
+        <AitheraSeed size={size} design={design} />
       ) : model === "blue_orb" ? (
-        <AICore size={size} />
+        <AICore size={size} design={design} />
       ) : model === "poop_sphere" ? (
-        <PoopSphere size={size} audioLevel={0} />
+        <PoopSphere size={size} audioLevel={0} design={design} />
       ) : (
-        <RasenganSphere size={size} audioLevel={0} />
+        <RasenganSphere size={size} audioLevel={0} design={design} />
       )}
     </CoreFrame>
   );

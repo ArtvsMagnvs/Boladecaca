@@ -25,6 +25,13 @@ import {
   loadStoredModel,
   type CoreModelId,
 } from "@/components/hub/CoreSelector";
+import { CoreDesignPanel } from "@/components/hub/CoreDesignPanel";
+import {
+  DEFAULT_CORE_DESIGN,
+  loadStoredCoreDesigns,
+  saveStoredCoreDesigns,
+  type CoreDesignSettings,
+} from "@/components/hub/coreDesign";
 
 // Clave de localStorage para persistir el nucleo 3D seleccionado.
 // Compartida con CoreSelector (mismo modulo la define).
@@ -100,6 +107,8 @@ export default function Hub() {
   // Persiste en localStorage (lo hacemos aqui directamente porque el
   // state vive en el Hub, no dentro de CoreSelector wrapper).
   const [coreModel, setCoreModel] = useState<CoreModelId>(loadStoredModel);
+  const [coreDesigns, setCoreDesigns] = useState(loadStoredCoreDesigns);
+  const currentCoreDesign = coreDesigns[coreModel] ?? DEFAULT_CORE_DESIGN;
 
   useEffect(() => {
     try {
@@ -107,6 +116,27 @@ export default function Hub() {
     } catch {
       // localStorage no disponible (modo incognito, etc.) — fallback silencioso.
     }
+  }, [coreModel]);
+
+  useEffect(() => {
+    saveStoredCoreDesigns(coreDesigns);
+  }, [coreDesigns]);
+
+  const updateCurrentCoreDesign = useCallback((patch: Partial<CoreDesignSettings>) => {
+    setCoreDesigns((prev) => ({
+      ...prev,
+      [coreModel]: {
+        ...(prev[coreModel] ?? DEFAULT_CORE_DESIGN),
+        ...patch,
+      },
+    }));
+  }, [coreModel]);
+
+  const resetCurrentCoreDesign = useCallback(() => {
+    setCoreDesigns((prev) => ({
+      ...prev,
+      [coreModel]: { ...DEFAULT_CORE_DESIGN },
+    }));
   }, [coreModel]);
 
   /**
@@ -379,6 +409,7 @@ export default function Hub() {
         <CoreModelView
           model={coreModel}
           size={900}
+          design={currentCoreDesign}
           onNavigateToChat={() => navigate("/chat")}
         />
 
@@ -401,6 +432,15 @@ export default function Hub() {
             </p>
           </motion.div>
         </AnimatePresence>
+
+        {import.meta.env.DEV && (
+          <CoreDesignPanel
+            model={coreModel}
+            value={currentCoreDesign}
+            onChange={updateCurrentCoreDesign}
+            onReset={resetCurrentCoreDesign}
+          />
+        )}
       </div>
 
       {/* DERECHA */}

@@ -21,6 +21,7 @@ import { Canvas, useFrame } from "@react-three/fiber";
 import { useGLTF } from "@/lib/drei-shim";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import * as THREE from "three";
+import { DEFAULT_CORE_DESIGN, type CoreDesignSettings } from "@/components/hub/coreDesign";
 import { useAppStore, type AICoreState } from "@/store/useAppStore";
 
 // Velocidad de rotacion (rad/s) segun estado del core. El Rasengan debe
@@ -41,9 +42,10 @@ const RASENGAN_DEEP = new THREE.Color("#1E3A8A");
 interface RasenganMeshProps {
   /** Audio level 0..1 (placeholder para futura modulacion). */
   audioLevel?: number;
+  design: CoreDesignSettings;
 }
 
-function RasenganMesh({ audioLevel = 0 }: RasenganMeshProps) {
+function RasenganMesh({ audioLevel = 0, design }: RasenganMeshProps) {
   const groupRef = useRef<THREE.Group>(null);
   const haloRef = useRef<THREE.Mesh>(null);
   const haloMatRef = useRef<THREE.MeshBasicMaterial>(null);
@@ -97,23 +99,23 @@ function RasenganMesh({ audioLevel = 0 }: RasenganMeshProps) {
     current.current.haloPulse += (target.current.haloPulse - current.current.haloPulse) * k;
 
     if (groupRef.current) {
-      groupRef.current.rotation.y += current.current.spinY * dt;
-      groupRef.current.rotation.x += current.current.spinX * dt;
+      groupRef.current.rotation.y += current.current.spinY * dt * design.speed;
+      groupRef.current.rotation.x += current.current.spinX * dt * design.speed;
       // Subtle bob vertical cuando esta activo (sensacion de "energia viva").
-      const bob = coreState === "idle" ? 0 : Math.sin(performance.now() * 0.003) * 0.02;
+      const bob = coreState === "idle" ? 0 : Math.sin(performance.now() * 0.003 * design.speed) * 0.02 * design.energy;
       groupRef.current.position.y = bob;
     }
 
     if (haloRef.current) {
       // Pulso del halo: escala oscilante + opacidad variable.
-      const t = performance.now() * 0.002;
-      const pulse = 1.0 + Math.sin(t) * current.current.haloPulse * 0.08;
+      const t = performance.now() * 0.002 * design.speed;
+      const pulse = 1.0 + Math.sin(t) * current.current.haloPulse * 0.08 * design.energy;
       haloRef.current.scale.setScalar(pulse);
     }
 
     if (haloMatRef.current) {
       haloMatRef.current.opacity =
-        0.10 + current.current.haloPulse * 0.12 + audioLevel * 0.15;
+        (0.10 + current.current.haloPulse * 0.12 + audioLevel * 0.15) * design.glow;
     }
   });
 
@@ -151,7 +153,7 @@ function RasenganMesh({ audioLevel = 0 }: RasenganMeshProps) {
 
       {/* Sphere invisible para debug si hicera falta, no se renderiza. */}
       {/* Luz puntual azul que anade "luz desde dentro" al Rasengan. */}
-      <pointLight color={RASENGAN_BLUE} intensity={0.9} distance={6} decay={1.6} />
+      <pointLight color={RASENGAN_BLUE} intensity={0.9 * design.energy} distance={6} decay={1.6} />
     </group>
   );
 }
@@ -161,9 +163,10 @@ export interface RasenganSphereProps {
   size?: number;
   /** Audio level 0..1. */
   audioLevel?: number;
+  design?: CoreDesignSettings;
 }
 
-export function RasenganSphere({ size = 280, audioLevel = 0 }: RasenganSphereProps) {
+export function RasenganSphere({ size = 280, audioLevel = 0, design = DEFAULT_CORE_DESIGN }: RasenganSphereProps) {
   return (
     <div
       style={{ width: size, height: size }}
@@ -177,11 +180,11 @@ export function RasenganSphere({ size = 280, audioLevel = 0 }: RasenganSpherePro
         style={{ background: "transparent" }}
       >
         {/* Iluminacion ambiental para que el modelo no quede totalmente oscuro. */}
-        <ambientLight intensity={0.55} />
-        <directionalLight position={[3, 4, 5]} intensity={0.6} color="#cfeaff" />
-        <directionalLight position={[-3, -2, 3]} intensity={0.25} color={RASENGAN_BLUE} />
+        <ambientLight intensity={0.55 * design.energy} />
+        <directionalLight position={[3, 4, 5]} intensity={0.6 * design.energy} color="#cfeaff" />
+        <directionalLight position={[-3, -2, 3]} intensity={0.25 * design.energy} color={RASENGAN_BLUE} />
 
-        <RasenganMesh audioLevel={audioLevel} />
+        <RasenganMesh audioLevel={audioLevel} design={design} />
       </Canvas>
     </div>
   );
