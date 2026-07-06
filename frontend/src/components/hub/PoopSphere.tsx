@@ -347,6 +347,11 @@ function HairTufts({ design }: { design: CoreDesignSettings }) {
   }, []);
 
   const dummy = useMemo(() => new THREE.Object3D(), []);
+  // V0.8.1 perf (P0, AUDITORIA_HUB_V073 §17 R1): reutilizamos los mismos
+  // Vector3 en cada frame en vez de clonar 4 objetos por cada uno de los
+  // 36 pelos (~8640 allocs/s). El dummy es el unico al que copiamos valores.
+  const _tmpSurface = useMemo(() => new THREE.Vector3(), []);
+  const _tmpLook    = useMemo(() => new THREE.Vector3(), []);
 
   useFrame((_, delta) => {
     if (!meshRef.current) return;
@@ -366,9 +371,11 @@ function HairTufts({ design }: { design: CoreDesignSettings }) {
       const dir = baseDirs[i];
       const len = baseLengths[i] * (1 + erect * 0.8);
 
-      const surfacePos = pos.clone().add(dir.clone().multiplyScalar(0.02));
-      dummy.position.copy(surfacePos);
-      dummy.lookAt(surfacePos.clone().add(dir));
+      // Reusamos _tmpSurface en vez de pos.clone().add(dir.clone().multiplyScalar(0.02)).
+      _tmpSurface.copy(pos).addScaledVector(dir, 0.02);
+      dummy.position.copy(_tmpSurface);
+      _tmpLook.copy(_tmpSurface).add(dir);
+      dummy.lookAt(_tmpLook);
       dummy.rotateX(Math.PI / 2);
       const wobble = Math.sin(t * 1.3 + i * 0.7) * 0.02;
       dummy.scale.set(1, len + wobble, 1);
@@ -512,6 +519,19 @@ function Fly({ spec, index }: { spec: FlySpec; index: number }) {
   // Runtime mutable, inicializado UNA vez por mosca.
   const runtime = useRef<FlyRuntime>(makeRuntime(spec)).current;
 
+  // V0.8.1 perf (P0, AUDITORIA_HUB_V073 §17 R1): todos los Vector3 que el
+  // bucle de useFrame necesitaba clonar cada frame se pre-asignan a nivel
+  // de mosca. Sin esto, 7 moscas * 3-4 allocs/frame * 60fps ~= 1500
+  // objetos/seg tirandose a la basura solo por las moscas.
+  const _radial   = useMemo(() => new THREE.Vector3(), []);
+  const _surface  = useMemo(() => new THREE.Vector3(), []);
+  const _lookAt   = useMemo(() => new THREE.Vector3(), []);
+  const _tangent  = useMemo(() => new THREE.Vector3(), []);
+  const _lifted   = useMemo(() => new THREE.Vector3(), []);
+  const _newPos   = useMemo(() => new THREE.Vector3(), []);
+  const _startV   = useMemo(() => new THREE.Vector3(), []);
+  const _targetV  = useMemo(() => new THREE.Vector3(), []);
+
   useFrame((_, delta) => {
     if (!groupRef.current) return;
     const a = AGITATION[coreState];
@@ -558,21 +578,15 @@ function Fly({ spec, index }: { spec: FlySpec; index: number }) {
         if (runtime.theta < 0) runtime.theta += Math.PI * 2;
 
         const pos = sampleSurface(runtime.theta, runtime.tProfile);
-        const radial = new THREE.Vector3(pos.x, 0, pos.z).normalize();
+        _radial.set(pos.x, 0, pos.z).normalize();
         // Offset hacia afuera para que la mosca "se pose" sobre la superficie.
-        const surfacePos = pos
-          .clone()
-          .add(radial.clone().multiplyScalar(0.025));
-        groupRef.current.position.copy(surfacePos);
+        _surface.copy(pos).addScaledVector(_radial, 0.025);
+        groupRef.current.position.copy(_surface);
 
         // Orientacion: tangente en la direccion de marcha + up radial.
-        const tangent = new THREE.Vector3(
-          -Math.sin(runtime.theta) * runtime.walkDir,
-          0,
-          Math.cos(runtime.theta) * runtime.walkDir,
-        );
-        const lookAt = surfacePos.clone().add(tangent);
-        groupRef.current.lookAt(lookAt);
+        _tangent.set(-Math.sin(runtime.theta) * runtime.walkDir, 0, Math.cos(runtime.theta) * runtime.walkDir);
+        _lookAt.copy(_surface).add(_tangent);
+        groupRef.current.lookAt(_lookAt);
         // Ligero cabeceo al andar.
         bodyShakeZ = Math.sin(performance.now() * 0.012 + index) * 0.06;
         break;
@@ -587,12 +601,11 @@ function Fly({ spec, index }: { spec: FlySpec; index: number }) {
         }
         // Quieto en el sitio, frotando las patas (cuerpo vibra rapido).
         const pos = sampleSurface(runtime.theta, runtime.tProfile);
-        const radial = new THREE.Vector3(pos.x, 0, pos.z).normalize();
-        const surfacePos = pos
-          .clone()
-          .add(radial.clone().multiplyScalar(0.025));
-        groupRef.current.position.copy(surfacePos);
-        groupRef.current.lookAt(surfacePos.clone().add(radial));
+        _radial.set(pos.x, 0, pos.z).normalize();
+        _surface.copy(pos).addScaledVector(_radial, 0.025);
+        groupRef.current.position.copy(_surface);
+        _lookAt.copy(_surface).add(_radial);
+        groupRef.current.lookAt(_lookAt);
 
         // Frotamiento: vibracion lateral rapida + cabeceo vertical sutil.
         bodyShakeX = Math.sin(runtime.stateTime * 38 + index) * 0.10;
@@ -606,20 +619,17 @@ function Fly({ spec, index }: { spec: FlySpec; index: number }) {
           0,
           1,
         );
-        const start = runtime.takeoffPos;
-        const target = sampleSurface(runtime.theta, runtime.tProfile);
-        const radial = new THREE.Vector3(target.x, 0, target.z).normalize();
-        const surfacePos = target
-          .clone()
-          .add(radial.clone().multiplyScalar(0.025));
-        const lifted = surfacePos
-          .clone()
-          .add(new THREE.Vector3(0, 0.55, 0))
-          .add(radial.clone().multiplyScalar(0.30));
-        const newPos = start.clone().lerp(lifted, t);
-        groupRef.current.position.copy(newPos);
+        _startV.copy(runtime.takeoffPos);
+        const targ = sampleSurface(runtime.theta, runtime.tProfile);
+        _radial.set(targ.x, 0, targ.z).normalize();
+        _surface.copy(targ).addScaledVector(_radial, 0.025);
+        // Lifted = surfacePos + (0, 0.55, 0) + radial * 0.30
+        _lifted.copy(_surface).addScaledVector(_radial, 0.30);
+        _lifted.y += 0.55;
+        _newPos.copy(_startV).lerp(_lifted, t);
+        groupRef.current.position.copy(_newPos);
         // Mirar hacia donde va.
-        groupRef.current.lookAt(lifted);
+        groupRef.current.lookAt(_lifted);
         squashY = 0.05; // alas extendidas
         squashX = -0.05;
 
@@ -674,21 +684,16 @@ function Fly({ spec, index }: { spec: FlySpec; index: number }) {
           0,
           1,
         );
-        const start = runtime.takeoffPos;
-        const target = sampleSurface(runtime.targetTheta, runtime.targetT);
-        const radial = new THREE.Vector3(target.x, 0, target.z).normalize();
-        const surfacePos = target
-          .clone()
-          .add(radial.clone().multiplyScalar(0.025));
-        const newPos = start.clone().lerp(surfacePos, t);
-        groupRef.current.position.copy(newPos);
+        _startV.copy(runtime.takeoffPos);
+        const targ = sampleSurface(runtime.targetTheta, runtime.targetT);
+        _radial.set(targ.x, 0, targ.z).normalize();
+        _surface.copy(targ).addScaledVector(_radial, 0.025);
+        _newPos.copy(_startV).lerp(_surface, t);
+        groupRef.current.position.copy(_newPos);
         // Orientacion final: tangente en la nueva theta.
-        const tangent = new THREE.Vector3(
-          -Math.sin(runtime.targetTheta),
-          0,
-          Math.cos(runtime.targetTheta),
-        );
-        groupRef.current.lookAt(newPos.clone().add(tangent));
+        _tangent.set(-Math.sin(runtime.targetTheta), 0, Math.cos(runtime.targetTheta));
+        _lookAt.copy(_newPos).add(_tangent);
+        groupRef.current.lookAt(_lookAt);
         squashY = 0.06 * (1 - t);
         squashX = -0.06 * (1 - t);
 
