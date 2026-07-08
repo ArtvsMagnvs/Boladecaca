@@ -25,7 +25,10 @@ SQLAlchemy==2.0.51
 greenlet==3.5.2
 # V0.4 (Fase 1b PostgreSQL Migration): driver PostgreSQL + sistema de
 # migraciones Alembic para gestionar el esquema de forma reproducible.
-psycopg2-binary==2.9.9
+# FIX (2026-07): 2.9.9 no tiene wheel para Python 3.13 y compilar desde
+# fuente falla en el enlazado (_PyInterpreterState_Get). 2.9.10 añadió
+# wheels cp313 para Windows — se instala precompilado, sin compilar nada.
+psycopg2-binary==2.9.10
 alembic==1.13.1
 
 # --- Memoria semantica (V0.6 Fase 3) ---
@@ -85,18 +88,15 @@ SpeechRecognition==3.17.0
 PyAudio==0.2.14
 comtypes==1.4.16
 pywin32==312
-# faster-whisper NO esta pineado aqui a proposito. Ya esta instalado en el
-# venv (lo demuestra tu propio `pip install -r requirements.txt` con
-# "Requirement already satisfied: faster-whisper==1.2.1"). Pinearlo en este
-# archivo hace que pip revalide todo el grafo de deps cada vez (incluido
-# chromadb y sus transitivas), y eso reventaba la compilacion de
-# psycopg2-binary en Windows. El backend de STT en
-# backend/app/voice/whisper_stt.py hace import lazy y degrada con
-# elegancia si la dep no esta. Si en algun momento necesitas reinstalar
-# desde cero en un venv nuevo, instala faster-whisper aparte:
-#   pip install faster-whisper==1.2.1
-# o usa el requirements como esta (chromadb y el resto ya estan
-# pineados a versiones probadas).
+# faster-whisper: STT local (V0.83). PINEADO (2026-07-08): antes se dejaba
+# fuera porque revalidar el grafo reventaba la compilacion de psycopg2-binary
+# en Windows; eso ya no ocurre desde que psycopg2-binary subio a 2.9.10 (wheel
+# cp313, no compila). Ahora un venv nuevo tiene STT out-of-the-box. El backend
+# (app/voice/whisper_stt.py) sigue con import lazy: si por lo que sea la lib no
+# esta, /transcribe devuelve 503 claro y el resto del backend sigue.
+# NOTA: la primera transcripcion descarga el modelo "base" (~142MB) de
+# HuggingFace; requiere internet UNA vez. Luego funciona offline.
+faster-whisper==1.2.1
 
 # --- Utilidades generales ---
 requests==2.34.2

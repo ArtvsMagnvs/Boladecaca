@@ -30,35 +30,61 @@ from __future__ import annotations
 import os
 from typing import Any
 
-# Default model = "base" (142 MB, 6% WER espanol, ~3x realtime en CPU).
-# Overridable por env var para tests o para usuarios con GPU que quieran
-# "small" (466MB) sin recompilar.
-_DEFAULT_MODEL = os.getenv("WHISPER_MODEL", "base")
+# Default model = "small" (466 MB, ~3-4% WER espanol, mucho mas preciso que
+# "base"). En CPU int8 va ~1-1.5x realtime, de sobra para clips cortos. Cambia
+# con WHISPER_MODEL: "base" (142MB, mas rapido/menos preciso) o "medium"
+# (1.5GB, aun mas preciso pero lento en CPU).
+_DEFAULT_MODEL = os.getenv("WHISPER_MODEL", "small")
 _DEFAULT_LANG = os.getenv("WHISPER_LANGUAGE", "es")
+# Device por defecto CPU. Antes se usaba "auto", que en equipos con GPU NVIDIA
+# intenta CUDA y falla si faltan las libs (cublas64_12.dll / cudnn) — que es lo
+# normal si el usuario no ha montado el toolkit CUDA. En CPU con int8 el modelo
+# "base" va ~3x realtime, de sobra para clips cortos. Quien tenga CUDA montado
+# puede poner WHISPER_DEVICE=cuda en el .env.
+_DEVICE = os.getenv("WHISPER_DEVICE", "cpu")
 
 _model: Any = None
 _model_size: str = _DEFAULT_MODEL
 _load_error: str | None = None
+# Distingue los dos modos de fallo, que necesitan acciones DISTINTAS:
+#   _lib_missing=True  -> falta `pip install faster-whisper`
+#   _lib_missing=False -> la lib esta, pero el modelo no cargo (descarga
+#                         incompleta / sin internet la primera vez).
+_lib_missing: bool = False
 
 
 def _load_model() -> Any:
     """Lazy-load del modelo. Se llama solo la primera vez."""
-    global _model, _load_error
+    global _model, _load_error, _lib_missing
+    # 1) ¿esta la libreria? Import lazy: si no esta, el resto del backend
+    #    (TTS, email...) sigue y /transcribe devuelve 503 claro.
     try:
-        # Import lazy: faster-whisper no es obligatorio para arrancar el
-        # backend. Si el usuario aun no ha hecho pip install, los demas
-        # endpoints (TTS, email, etc.) siguen funcionando y /transcribe
-        # devuelve 503 claro en lugar de romper el arranque.
         from faster_whisper import WhisperModel
-        # device="auto" -> GPU si hay CUDA, si no CPU. compute_type="int8"
-        # es el sweet spot para CPU (skill aithera-voice-stt lo confirma).
-        _model = WhisperModel(
-            _model_size,
-            device="auto",
-            compute_type="int8",
-        )
+    except ImportError as e:
+        _lib_missing = True
+        _load_error = f"faster-whisper no instalado: {e}"
+        return None
+    # 2) La lib esta; intentamos cargar/descargar el modelo. Aqui es donde
+    #    cae el caso tipico: descarga interrumpida por falta de red deja el
+    #    snapshot a medias (falta model.bin) y WhisperModel() revienta.
+    # compute_type="int8" es el sweet spot para CPU (skill aithera-voice-stt).
+    try:
+        _model = WhisperModel(_model_size, device=_DEVICE, compute_type="int8")
+        _lib_missing = False
         return _model
     except Exception as e:
+        # Si se pidio GPU (cuda) y falla por falta de libs CUDA, reintentamos
+        # en CPU en vez de dejar el STT muerto. Solo relanzamos si ya era CPU.
+        if _DEVICE != "cpu":
+            try:
+                _model = WhisperModel(_model_size, device="cpu", compute_type="int8")
+                _lib_missing = False
+                return _model
+            except Exception as e2:
+                _lib_missing = False
+                _load_error = f"{e2}"
+                return None
+        _lib_missing = False
         _load_error = str(e)
         return None
 
@@ -95,6 +121,14 @@ def get_status() -> dict:
         "model": _model_size,
         "language": _DEFAULT_LANG,
         "load_error": _load_error,
+        # reason ayuda a la UI a mostrar el mensaje correcto:
+        #   "lib_missing"  -> pedir pip install
+        #   "model_failed" -> pedir borrar cache + reintentar con internet
+        #   None           -> disponible
+        "reason": (
+            None if loaded is not None
+            else ("lib_missing" if _lib_missing else "model_failed")
+        ),
     }
 
 
@@ -127,9 +161,19 @@ def transcribe(
     """
     model = get_model()
     if model is None:
+        if _lib_missing:
+            raise RuntimeError(
+                "faster-whisper no esta instalado. Instala con "
+                "`pip install faster-whisper==1.2.1`."
+            )
+        # La lib esta pero el modelo no cargo: casi siempre es una descarga
+        # incompleta del modelo "base" de HuggingFace (falta model.bin)
+        # porque la primera vez no habia internet o el DNS fallo.
         raise RuntimeError(
-            f"faster-whisper no esta disponible. Instala con "
-            f"`pip install faster-whisper`. Detalle: {_load_error}"
+            "El modelo de STT no se pudo cargar (probable descarga incompleta "
+            "o sin conexion la primera vez). Con internet, borra la cache "
+            "'~/.cache/huggingface/hub/models--Systran--faster-whisper-base' "
+            f"y reintenta. Detalle: {_load_error}"
         )
 
     lang = language or _DEFAULT_LANG

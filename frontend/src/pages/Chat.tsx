@@ -41,16 +41,19 @@ export default function Chat() {
     };
   }, [setCoreState]);
 
-  const handleSend = async () => {
-    if (!input.trim() || loading) return;
+  // Envío centralizado: recibe el texto explícito (no depende del estado
+  // `input`, que es asíncrono). Así lo pueden llamar tanto el botón Enviar
+  // como el micro (auto-envío) sin bugs de closure.
+  const sendMessage = useCallback(async (text: string) => {
+    const userMessage = text.trim();
+    if (!userMessage || loading) return;
     if (!backendConnected) {
-      setMessages(prev => [...prev, { role: "user", content: input }, { role: "assistant", content: "Error: No hay conexión con el backend." }]);
+      setMessages(prev => [...prev, { role: "user", content: userMessage }, { role: "assistant", content: "Error: No hay conexión con el backend." }]);
       setInput("");
       pulseError();
       return;
     }
 
-    const userMessage = input;
     setInput("");
     setMessages(prev => [...prev, { role: "user", content: userMessage }]);
     setLoading(true);
@@ -68,9 +71,6 @@ export default function Chat() {
       setMessages(prev => [...prev, { role: "assistant", content: accumulatedRef.current || "Sin respuesta" }]);
       setStreamingText("");
       // V0.8.1 (Paso 2): thinking -> idle explicito antes del finally.
-      // Cuando llegue el TTS autoplay (Paso 5), el hook hara
-      // idle -> speaking (nunca thinking -> speaking directo, por la
-      // regla R2 de aithera-hub-corestate).
       setCoreState("idle");
     } catch (error) {
       console.error("Error en streamChat:", error);
@@ -79,18 +79,15 @@ export default function Chat() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [loading, backendConnected, setCoreState, pulseError]);
 
-  // V0.83 (Paso 4): al transcribir, el texto del micro rellena el input.
-  // El usuario puede revisarlo/editarlo antes de pulsar Enviar.
+  const handleSend = () => sendMessage(input);
+
+  // V0.83: al transcribir, el texto del micro se ENVÍA automáticamente.
+  // (Antes solo rellenaba el input; ahora dictar = mandar.)
   const handleTranscript = useCallback((text: string) => {
-    setInput((prev) => {
-      // Si ya hay texto en el input, lo concatenamos con un espacio.
-      // Asi puedes dictar encima de algo que ya escribiste a mano.
-      if (prev.trim()) return `${prev.trim()} ${text}`;
-      return text;
-    });
-  }, []);
+    sendMessage(text);
+  }, [sendMessage]);
 
   return (
     <div className="h-full flex flex-col gap-4">

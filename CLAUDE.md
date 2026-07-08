@@ -104,7 +104,7 @@ Ejecutar: `cd backend && python -m pytest tests/ -v`.
 - **Alembic 1.13** para migraciones (`backend/alembic/`)
 - **ChromaDB** + **sentence-transformers** (memoria semántica, ~80MB descarga inicial)
 - **python-dotenv**, **httpx**, **uvicorn**
-- **psycopg2-binary 2.9.9** (driver PostgreSQL)
+- **psycopg2-binary 2.9.10** (driver PostgreSQL; 2.9.10 trae wheels para Python 3.13, la 2.9.9 no compilaba)
 - 8 proveedores IA vía `httpx` y SDKs nativos (Anthropic, Gemini)
 
 ### Empaquetado
@@ -220,7 +220,9 @@ Cambios ya aplicados (ver `Actualizacion_V0.2.txt` sección 3):
   - `0840fe70d5ce_v07_meeting_proposals.py` (V0.7)
   - `48b15869c4e3_v07_extra_redesign_auto_reply_rules.py` (V0.7)
   - `bff7a3fd8d7d_v07_extra_email_activity_log_and_.py` (V0.7)
-- `psycopg2-binary==2.9.9` y `alembic==1.13.1` añadidos a `requirements.txt`
+- `psycopg2-binary==2.9.10` y `alembic==1.13.1` añadidos a `requirements.txt`
+  (bump de 2.9.9 → 2.9.10 en 2026-07: la 2.9.9 no tiene wheel cp313 y compilar
+  fallaba en Python 3.13; la 2.9.10 instala precompilada)
 - Backup SQLite conservado en `%APPDATA%/Aithera/aithera.db` como fallback
 
 ### ✅ V0.5 — AgentManager + ExecutionEngine + ToolManager
