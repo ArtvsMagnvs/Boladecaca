@@ -103,13 +103,63 @@ PROFESSIONAL_VOICES = {
 }
 
 
+def resolve_elevenlabs_key() -> str:
+    """Devuelve la API key de ElevenLabs con prioridad:
+    1) Config en BD (`elevenlabs_api_key`, CIFRADA con DPAPI/secrets), que es
+       lo que el usuario mete desde Ajustes.
+    2) variable de entorno ELEVENLABS_API_KEY (compatibilidad).
+    Se consulta en cada acceso (SQLite local, coste despreciable) para que un
+    cambio desde Ajustes surta efecto sin reiniciar el backend."""
+    try:
+        from app.db.database import SessionLocal
+        from app.db.models import Config
+        from app.core import secrets
+
+        db = SessionLocal()
+        try:
+            row = db.query(Config).filter(Config.key == "elevenlabs_api_key").first()
+        finally:
+            db.close()
+        if row and row.value:
+            return secrets.decrypt(row.value)
+    except Exception:
+        pass
+    return os.environ.get("ELEVENLABS_API_KEY", "")
+
+
+def _format_el_error(status: int, body: str) -> str:
+    """Traduce la respuesta de error de ElevenLabs a un mensaje util.
+    ElevenLabs suele devolver {'detail': {'status': ..., 'message': ...}}.
+    402 con 'detected_unusual_activity' = plan gratuito bloqueado por uso via
+    API/VPN (NO es cuota). 401 = key invalida. 429 = rate limit."""
+    try:
+        data = json.loads(body)
+        d = data.get("detail")
+        if isinstance(d, dict):
+            st = d.get("status", "")
+            msg = d.get("message", "")
+            return f"ElevenLabs HTTP {status} · {st}: {msg}"[:400]
+        return f"ElevenLabs HTTP {status}: {str(d or body)}"[:400]
+    except Exception:
+        return f"ElevenLabs HTTP {status}: {body}"[:400]
+
+
 class ElevenLabsVoice:
     """ElevenLabs TTS client with professional voices."""
-    
+
     def __init__(self, api_key: Optional[str] = None):
-        self.api_key = api_key or ELEVENLABS_API_KEY
+        # Si se pasa una key explicita (tests), se respeta; si no, se resuelve
+        # dinamicamente desde Config/env via la property `api_key`.
+        self._explicit_key = api_key
         self.base_url = ELEVENLABS_BASE_URL
         self.client = httpx.AsyncClient(timeout=30.0)
+        # Ultimo error real de la API (para que el endpoint lo muestre en vez
+        # de un generico "audio vacio"). None si la ultima llamada fue OK.
+        self.last_error: Optional[str] = None
+
+    @property
+    def api_key(self) -> str:
+        return self._explicit_key or resolve_elevenlabs_key()
     
     async def synthesize(
         self,
@@ -154,13 +204,15 @@ class ElevenLabsVoice:
             )
             
             if response.status_code == 200:
+                self.last_error = None
                 return response.content
-            else:
-                print(f"ElevenLabs API error: {response.status_code} - {response.text}")
-                return None
-                
+            self.last_error = _format_el_error(response.status_code, response.text)
+            print(self.last_error)
+            return None
+
         except Exception as e:
-            print(f"ElevenLabs synthesis error: {e}")
+            self.last_error = f"ElevenLabs error de red: {e}"
+            print(self.last_error)
             return None
     
     async def synthesize_stream(
@@ -195,11 +247,12 @@ class ElevenLabsVoice:
             )
             
             if response.status_code == 200:
+                self.last_error = None
                 return response.content
-            else:
-                print(f"ElevenLabs stream error: {response.status_code}")
-                return None
-                
+            self.last_error = _format_el_error(response.status_code, response.text)
+            print(self.last_error)
+            return None
+
         except Exception as e:
             print(f"ElevenLabs streaming error: {e}")
             return None

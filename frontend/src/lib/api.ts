@@ -288,6 +288,12 @@ export interface TelegramStatus {
   token_masked: string;
 }
 
+export interface ElevenLabsCfgStatus {
+  configured: boolean;
+  source: "config" | "env" | "none";
+  key_masked: string;
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${API_URL}${path}`, {
     headers: { "Content-Type": "application/json" },
@@ -367,6 +373,17 @@ export const api = {
     request<{ tools: ToolInfo[]; count: number }>("/tools/"),
   getExecutionLog: (limit = 50) =>
     request<{ log: ExecutionLogEntry[] }>(`/tools/execution-log?limit=${limit}`),
+
+  // --- ElevenLabs (V0.83) ---
+  getElevenLabsConfig: () =>
+    request<ElevenLabsCfgStatus>("/voice/elevenlabs/config"),
+  setElevenLabsKey: (api_key: string) =>
+    request<ElevenLabsCfgStatus>("/voice/elevenlabs/config", {
+      method: "POST",
+      body: JSON.stringify({ api_key }),
+    }),
+  deleteElevenLabsKey: () =>
+    request<ElevenLabsCfgStatus>("/voice/elevenlabs/config", { method: "DELETE" }),
 
   // --- Telegram (V0.8 Fase 5) ---
   getTelegramStatus: () =>
@@ -758,13 +775,28 @@ export const api = {
     return response.arrayBuffer();
   },
 
-  async synthesizeVoiceBase64(text: string, voiceId: string): Promise<{ audio: string; voice_id: string }> {
+  async synthesizeVoiceBase64(
+    text: string,
+    voiceId: string,
+    provider?: "espeak",
+  ): Promise<{ audio: string; voice_id: string; source?: string }> {
     const response = await fetch(`${API_URL}/voice/synthesize/base64`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text, voice_id: voiceId }),
+      body: JSON.stringify({ text, voice_id: voiceId, provider }),
     });
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    if (!response.ok) {
+      // Propagamos el MOTIVO real del backend (ej. "ElevenLabs HTTP 402 ·
+      // detected_unusual_activity: ...") en vez de un genérico HTTP nnn.
+      let detail = `HTTP ${response.status}`;
+      try {
+        const j = await response.json();
+        if (j?.detail) detail = typeof j.detail === "string" ? j.detail : JSON.stringify(j.detail);
+      } catch {
+        /* sin cuerpo JSON */
+      }
+      throw new Error(detail);
+    }
     return response.json();
   },
 

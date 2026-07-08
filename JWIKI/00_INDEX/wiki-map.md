@@ -24,12 +24,12 @@
 | JWIKI-009 | 01_LANDSCAPE/superpowers.md | Superpowers Skill framework | B | ✅ verified | (tick A-20260708-1955 audit independiente — 4082 palabras, 8 snippets, GitHub API 2026-07-08 confirma 249642★, v6.1.1, MIT, multi-language; 6/6 criterios OK) |
 | JWIKI-010 | 01_LANDSCAPE/agent-frameworks.md | Comparativa frameworks agentes | A | ✅ verified | (tick A-20260707-0904, orquestador JWIKI single-team — 4140 palabras, 6/6 criterios OK, 9 frameworks × 11 criterios) |
 | JWIKI-011 | 01_LANDSCAPE/langgraph.md | LangGraph overview | B | ✅ verified | (escriba 2026-07-01 12:20 — 16 fuentes, 5 snippets, 3 tablas, 78% confianza; auditado independiente 2026-07-01) |
-| JWIKI-012 | 01_LANDSCAPE/crewai.md | CrewAI overview | A | 🔴 pending |
+| JWIKI-012 | 01_LANDSCAPE/crewai.md | CrewAI overview | A | 🟢 verified |
 | JWIKI-013 | 01_LANDSCAPE/autogen.md | AutoGen Microsoft overview | B | ✅ verified | (Mavis self-audit 2026-07-02 15:00 — 58KB, 6/6 criterios ✅ en substance pero criterio 6 estricto no cumplido; 4 freezes en pipeline; pendiente user review) |
 | JWIKI-013 | 01_LANDSCAPE/autogen.md | AutoGen Microsoft overview | B | 🔴 pending |
-| JWIKI-014 | 01_LANDSCAPE/google-adk.md | Google ADK overview | A | 🔴 pending |
-| JWIKI-015 | 01_LANDSCAPE/openai-agents-sdk.md | OpenAI Agents SDK | B | 🔴 pending |
-| JWIKI-016 | 01_LANDSCAPE/licenses.md | Licencias comparativa | A | 🔴 pending |
+| JWIKI-014 | 01_LANDSCAPE/google-adk.md | Google ADK overview | A | 🟢 verified | (tick A-20260708-2032 — orquestador JWIKI single-team; recovery + completion del subagente previo que se quedó sin tool calls; branch main @ v2.4.0 contrastado 2026-07-08: 35 path:line snippets, 6/6 criterios CONSTITUTION §8, 88% confianza) |
+| JWIKI-015 | 01_LANDSCAPE/openai-agents-sdk.md | OpenAI Agents SDK | B | 🟢 verified | (tick A-20260708-2040 — orquestador JWIKI single-team; generado desde cero P1; v0.18.0 + 28k stars + MIT; 5148 palabras, 23 secciones, 18 snippets, 35 fuentes URL+fecha; tabla 5 frameworks × 17 criterios; 88% confianza; 6/6 criterios CONSTITUTION §8) |
+| JWIKI-016 | 01_LANDSCAPE/licenses.md | Licencias comparativa | A | 🟢 verified | (tick A-20260708-21XX — orquestador JWIKI single-team; production-tick desde cero P1; 6302 palabras, 23 secciones TEMPLATE.md, 16 fenced code blocks, 12 snippets verbatim de LICENSE files reales (MIT/Apache-2.0/GPL-3.0/AGPL-3.0/BSD-3-Clause/MPL-2.0/ISC/Unlicense/AutoGen dual), tabla 15 licencias × 13 criterios, tabla 11 proyectos OSS del landscape con 5 conflictos resueltos, 62 fuentes Tier-1 con URL+fecha, 6/6 criterios CONSTITUTION §8, 88% confianza) |
 | JWIKI-017 | 01_LANDSCAPE/evolution.md | De JARVIS clásico a LLM agents | B | 🔴 pending |
 | JWIKI-018 | 01_LANDSCAPE/tier-list.md | Tier list proyectos OSS 2026 | A | 🔴 pending |
 

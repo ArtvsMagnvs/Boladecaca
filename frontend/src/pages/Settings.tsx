@@ -4,7 +4,7 @@
 // V0.6 (Fase 3 Memory System): nueva seccion "Memoria" con stats, gestion
 // de preferencias del usuario y borrado del historial de ChromaDB.
 import { useState, useEffect } from "react";
-import { api, type AIProviderEntry, type ContextItem, type MemoryStats, type TelegramStatus } from "@/lib/api";
+import { api, type AIProviderEntry, type ContextItem, type MemoryStats, type TelegramStatus, type ElevenLabsCfgStatus } from "@/lib/api";
 import { useAppStore } from "@/store/useAppStore";
 
 
@@ -486,6 +486,142 @@ function TelegramSettings() {
   );
 }
 
+/**
+ * V0.83: configuración de la API key de ElevenLabs desde Ajustes. La key se
+ * guarda CIFRADA en el backend (secrets.py) y nunca se devuelve; aquí solo se
+ * ve una máscara. Con la key puesta, las voces profesionales aparecen en el
+ * Centro de Voz. Sin key, Aithera usa eSpeak (offline).
+ */
+function ElevenLabsSettings() {
+  const [status, setStatus] = useState<ElevenLabsCfgStatus | null>(null);
+  const [key, setKey] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
+
+  const refresh = async () => {
+    try {
+      setStatus(await api.getElevenLabsConfig());
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  useEffect(() => {
+    refresh();
+  }, []);
+
+  const save = async () => {
+    if (!key.trim()) {
+      setMsg({ kind: "err", text: "Pega tu API key de ElevenLabs." });
+      return;
+    }
+    setSaving(true);
+    setMsg(null);
+    try {
+      await api.setElevenLabsKey(key.trim());
+      setKey("");
+      setMsg({ kind: "ok", text: "Guardada y cifrada. Ya puedes elegir voces en el Centro de Voz." });
+      refresh();
+    } catch (e) {
+      setMsg({ kind: "err", text: `Error guardando: ${(e as Error).message}` });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const remove = async () => {
+    if (!confirm("¿Borrar la API key de ElevenLabs?")) return;
+    try {
+      await api.deleteElevenLabsKey();
+      setKey("");
+      setMsg({ kind: "ok", text: "API key borrada." });
+      refresh();
+    } catch (e) {
+      setMsg({ kind: "err", text: `Error borrando: ${(e as Error).message}` });
+    }
+  };
+
+  return (
+    <div className="space-y-3">
+      <div className="text-xs text-ink-dim">
+        {status?.configured ? (
+          <>
+            <span className="text-signal-ok">●</span> Configurada{" "}
+            <span className="text-ink-faint">
+              ({status.key_masked}
+              {status.source === "env" ? ", desde .env" : ""})
+            </span>
+          </>
+        ) : (
+          <>
+            <span className="text-ink-faint">●</span> Sin configurar. Pega tu API key de
+            ElevenLabs para usar voces profesionales.
+          </>
+        )}
+      </div>
+
+      <div className="space-y-2">
+        <input
+          value={key}
+          onChange={(e) => setKey(e.target.value)}
+          type="password"
+          placeholder={status?.configured ? "Nueva key (dejar vacío para conservar)" : "API key de ElevenLabs"}
+          className="w-full bg-base-700 border border-base-600 rounded-lg px-3 py-1.5 text-xs text-ink placeholder:text-ink-faint focus:outline-none focus:border-accent/50"
+        />
+        <div className="flex gap-2">
+          <button
+            onClick={save}
+            disabled={saving}
+            className="text-xs px-3 py-1.5 rounded-lg bg-accent text-base-950 font-medium hover:bg-accent-glow disabled:opacity-50"
+          >
+            {saving ? "Guardando..." : "Guardar"}
+          </button>
+          {status?.configured && status.source === "config" && (
+            <button
+              onClick={remove}
+              className="text-xs px-3 py-1.5 rounded-lg bg-signal-error/15 text-signal-error border border-signal-error/30 hover:bg-signal-error/25"
+            >
+              Borrar
+            </button>
+          )}
+        </div>
+      </div>
+
+      {msg && (
+        <p className={`text-xs ${msg.kind === "ok" ? "text-signal-ok" : "text-signal-error"}`}>
+          {msg.text}
+        </p>
+      )}
+
+      <details className="text-[11px] text-ink-dim">
+        <summary className="cursor-pointer hover:text-ink select-none">
+          <span className="text-accent">▸</span> Cómo obtener tu API key de ElevenLabs
+        </summary>
+        <ol className="mt-2 space-y-1.5 pl-5 list-decimal text-ink-faint">
+          <li>
+            Entra en{" "}
+            <a href="https://elevenlabs.io" target="_blank" rel="noreferrer" className="text-accent underline">
+              elevenlabs.io
+            </a>{" "}
+            y crea una cuenta (el plan gratuito ya trae voces).
+          </li>
+          <li>
+            Arriba a la derecha, abre tu perfil → <span className="text-ink">API Keys</span> (o
+            ve directo a <span className="text-ink">elevenlabs.io/app/settings/api-keys</span>).
+          </li>
+          <li>
+            Pulsa <span className="text-ink">Create API Key</span>, cópiala y pégala aquí arriba.
+            Guarda: se cifra en local. Luego elige tu voz en el Centro de Voz.
+          </li>
+        </ol>
+        <p className="mt-2 text-ink-faint text-[10px] italic">
+          Seguridad: la key se guarda cifrada (DPAPI) en la BD local, nunca en texto plano.
+        </p>
+      </details>
+    </div>
+  );
+}
+
 interface EditState {
   provider: string;
   api_key: string;
@@ -785,6 +921,18 @@ export default function Settings() {
                 la lectura/envio de emails reales lo requiere.
               </p>
               <EmailGoogleStatus />
+            </div>
+
+            {/* V0.83: seccion ElevenLabs (API key para voces profesionales) */}
+            <div className="glass-surface rounded-2xl p-4">
+              <h3 className="text-sm font-medium text-ink mb-3">
+                ElevenLabs (voz)
+              </h3>
+              <p className="text-xs text-ink-dim mb-3">
+                API key para las voces profesionales de Aithera. Se guarda cifrada. Sin
+                key, la voz usa eSpeak (offline).
+              </p>
+              <ElevenLabsSettings />
             </div>
 
             {/* V0.8 (Fase 5 Clientes): seccion Telegram */}

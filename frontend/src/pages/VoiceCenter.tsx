@@ -552,6 +552,19 @@ export default function VoiceCenter() {
                   <p className="text-xs text-ink-dim line-clamp-2 italic">
                     "{voice.previewText}"
                   </p>
+
+                  {/* Estado de selección: clic en la tarjeta = fijarla como voz
+                      PRINCIPAL (la que usa Aithera al hablar). Distinto de la
+                      estrella ☆, que solo marca favorita. */}
+                  {selectedVoice?.voice_id === voice.voice_id ? (
+                    <div className="mt-3 flex items-center gap-1.5 text-[11px] font-medium text-accent">
+                      <span>✓</span> Voz principal
+                    </div>
+                  ) : (
+                    <div className="mt-3 text-[11px] text-ink-faint">
+                      Clic para usar como principal
+                    </div>
+                  )}
                 </div>
               );
             })}
@@ -561,8 +574,8 @@ export default function VoiceCenter() {
 
       {/* Controles de volumen */}
       <div className="glass-surface rounded-2xl p-4 shrink-0">
-        <div className="flex items-center gap-4">
-          <span className="text-xs text-ink-faint w-16">Volumen</span>
+        <div className="flex items-center gap-3">
+          <span className="text-xs text-ink-faint w-16 shrink-0">Volumen</span>
           <input
             type="range"
             min="0"
@@ -570,9 +583,9 @@ export default function VoiceCenter() {
             step="0.05"
             value={volume}
             onChange={e => setVolume(parseFloat(e.target.value))}
-            className="flex-1 accent-accent"
+            className="w-1/3 accent-accent"
           />
-          <span className="text-xs text-ink w-12 text-right">{Math.round(volume * 100)}%</span>
+          <span className="text-xs text-ink w-12 text-right shrink-0">{Math.round(volume * 100)}%</span>
         </div>
       </div>
     </div>

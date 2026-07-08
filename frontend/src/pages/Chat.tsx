@@ -25,6 +25,58 @@ export default function Chat() {
   const setCoreState     = useAppStore((s) => s.setCoreState);
   const pulseError       = useAppStore((s) => s.pulseError);
 
+  // V0.83 (voz): voz principal elegida en el Centro de Voz (persistida en
+  // Config) + reproductor de la respuesta hablada.
+  const selectedVoiceRef = useRef<string>("XB0fDUnXU5powGXd8GSW");
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+
+  useEffect(() => {
+    api
+      .getConfig()
+      .then((rows) => {
+        const row = rows.find((r) => r.key === "tts_selected_voice");
+        if (row?.value) selectedVoiceRef.current = row.value;
+      })
+      .catch(() => {});
+  }, []);
+
+  // Reproduce `text` con la voz seleccionada. Si ElevenLabs falla (p.ej. 402
+  // del plan gratuito por uso via API/VPN), reintenta con eSpeak para que
+  // Aithera responda igualmente en voz.
+  const speak = useCallback(
+    async (text: string) => {
+      const clean = text.trim();
+      if (!clean) return;
+      const voiceId = selectedVoiceRef.current;
+      const play = (dataUrl: string) =>
+        new Promise<void>((resolve) => {
+          try {
+            audioRef.current?.pause();
+          } catch {
+            /* noop */
+          }
+          const audio = new Audio(dataUrl);
+          audioRef.current = audio;
+          setCoreState("speaking");
+          audio.onended = () => { setCoreState("idle"); resolve(); };
+          audio.onerror = () => { setCoreState("idle"); resolve(); };
+          audio.play().catch(() => { setCoreState("idle"); resolve(); });
+        });
+      try {
+        const r = await api.synthesizeVoiceBase64(clean, voiceId);
+        await play(r.audio);
+      } catch (e) {
+        try {
+          const r = await api.synthesizeVoiceBase64(clean, voiceId, "espeak");
+          await play(r.audio);
+        } catch (e2) {
+          console.error("TTS falló (ElevenLabs y eSpeak):", e, e2);
+        }
+      }
+    },
+    [setCoreState],
+  );
+
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, streamingText]);
@@ -44,7 +96,7 @@ export default function Chat() {
   // Envío centralizado: recibe el texto explícito (no depende del estado
   // `input`, que es asíncrono). Así lo pueden llamar tanto el botón Enviar
   // como el micro (auto-envío) sin bugs de closure.
-  const sendMessage = useCallback(async (text: string) => {
+  const sendMessage = useCallback(async (text: string, opts?: { voiceReply?: boolean }) => {
     const userMessage = text.trim();
     if (!userMessage || loading) return;
     if (!backendConnected) {
@@ -68,10 +120,15 @@ export default function Chat() {
         accumulatedRef.current += chunk;
         setStreamingText(accumulatedRef.current);
       });
-      setMessages(prev => [...prev, { role: "assistant", content: accumulatedRef.current || "Sin respuesta" }]);
+      const reply = accumulatedRef.current || "Sin respuesta";
+      setMessages(prev => [...prev, { role: "assistant", content: reply }]);
       setStreamingText("");
       // V0.8.1 (Paso 2): thinking -> idle explicito antes del finally.
       setCoreState("idle");
+      // V0.83: si el mensaje vino por voz, responder TAMBIÉN en voz.
+      if (opts?.voiceReply && reply.trim()) {
+        void speak(reply);
+      }
     } catch (error) {
       console.error("Error en streamChat:", error);
       setMessages(prev => [...prev, { role: "assistant", content: "Lo siento, hubo un error al procesar tu mensaje." }]);
@@ -79,14 +136,14 @@ export default function Chat() {
     } finally {
       setLoading(false);
     }
-  }, [loading, backendConnected, setCoreState, pulseError]);
+  }, [loading, backendConnected, setCoreState, pulseError, speak]);
 
   const handleSend = () => sendMessage(input);
 
-  // V0.83: al transcribir, el texto del micro se ENVÍA automáticamente.
-  // (Antes solo rellenaba el input; ahora dictar = mandar.)
+  // V0.83: al transcribir, el texto del micro se ENVÍA automáticamente y la
+  // respuesta se reproduce en voz (voiceReply).
   const handleTranscript = useCallback((text: string) => {
-    sendMessage(text);
+    sendMessage(text, { voiceReply: true });
   }, [sendMessage]);
 
   return (

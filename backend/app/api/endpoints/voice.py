@@ -32,6 +32,9 @@ class SynthesizeRequest(BaseModel):
     text: str
     voice_id: Optional[str] = "XB0fDUnXU5powGXd8GSW"  # Default: Spanish female
     use_stream: Optional[bool] = True
+    # V0.83: "espeak" fuerza el fallback offline (lo usa la conversación por voz
+    # cuando ElevenLabs falla, para que Aithera siga hablando).
+    provider: Optional[str] = None
 
 
 @router.get("/voices")
@@ -155,8 +158,8 @@ async def synthesize(request: SynthesizeRequest) -> Response:
     if not request.text.strip():
         raise HTTPException(status_code=400, detail="Text cannot be empty")
     
-    # Try ElevenLabs first
-    if elevenlabs_client.api_key:
+    # Try ElevenLabs first — salvo que se fuerce eSpeak con provider="espeak".
+    if elevenlabs_client.api_key and request.provider != "espeak":
         try:
             audio_data = await elevenlabs_synthesize(
                 text=request.text,
@@ -169,14 +172,14 @@ async def synthesize(request: SynthesizeRequest) -> Response:
                     media_type="audio/mpeg",
                     headers={"Content-Disposition": 'inline; filename="speech.mp3"'}
                 )
-            # elevenlabs_synthesize devolvio None (fallo silencioso en el
-            # cliente). V0.83 (fix): no seguimos al fallback sin avisar
-            # porque el usuario queda colgado sin saber que ElevenLabs fallo.
-            # Levantamos 502 con detalle del problema y el codigo HTTP.
-            raise HTTPException(
-                status_code=502,
-                detail="ElevenLabs devolvio audio vacio. Revisa la API key, el voice_id, o si tu cuenta tiene cuota.",
+            # elevenlabs_synthesize devolvio None: mostramos el MOTIVO REAL que
+            # guardo el cliente (ej. "HTTP 402 · detected_unusual_activity:
+            # ..."), no un generico. Asi el usuario sabe si es la key, cuota,
+            # o el bloqueo del plan gratuito por uso via API/VPN.
+            detail = elevenlabs_client.last_error or (
+                "ElevenLabs devolvio audio vacio (sin detalle)."
             )
+            raise HTTPException(status_code=502, detail=detail)
         except HTTPException:
             raise
         except Exception as e:
@@ -227,8 +230,8 @@ async def synthesize_base64(request: SynthesizeRequest) -> JSONResponse:
     if not request.text.strip():
         raise HTTPException(status_code=400, detail="Text cannot be empty")
     
-    # Try ElevenLabs first
-    if elevenlabs_client.api_key:
+    # Try ElevenLabs first — salvo que se fuerce eSpeak con provider="espeak".
+    if elevenlabs_client.api_key and request.provider != "espeak":
         try:
             audio_data = await elevenlabs_synthesize(
                 text=request.text,
@@ -243,10 +246,8 @@ async def synthesize_base64(request: SynthesizeRequest) -> JSONResponse:
                     "format": "mp3",
                     "source": "elevenlabs"
                 })
-            raise HTTPException(
-                status_code=502,
-                detail="ElevenLabs devolvio audio vacio.",
-            )
+            detail = elevenlabs_client.last_error or "ElevenLabs devolvio audio vacio."
+            raise HTTPException(status_code=502, detail=detail)
         except HTTPException:
             raise
         except Exception as e:
@@ -383,3 +384,94 @@ async def transcribe_endpoint(
             os.unlink(tmp_path)
         except OSError:
             pass
+
+
+# ----------------------------------------------------------------------
+# V0.83: configuracion de la API key de ElevenLabs desde Ajustes.
+# La key se guarda CIFRADA (secrets.py, DPAPI) en la tabla Config bajo
+# `elevenlabs_api_key`. El cliente TTS la lee dinamicamente (property
+# api_key -> resolve_elevenlabs_key), asi que aplica sin reiniciar. NUNCA
+# se devuelve la key entera: solo una mascara.
+# ----------------------------------------------------------------------
+
+_EL_KEY = "elevenlabs_api_key"
+
+
+class ElevenLabsKeyIn(BaseModel):
+    api_key: str
+
+
+class ElevenLabsCfgStatus(BaseModel):
+    configured: bool
+    source: str          # "config" | "env" | "none"
+    key_masked: str
+
+
+def _el_status() -> dict:
+    from app.core import secrets
+    cfg_key = None
+    try:
+        from app.db.database import SessionLocal
+        from app.db.models import Config
+        db = SessionLocal()
+        try:
+            row = db.query(Config).filter(Config.key == _EL_KEY).first()
+        finally:
+            db.close()
+        if row and row.value:
+            cfg_key = secrets.decrypt(row.value)
+    except Exception:
+        cfg_key = None
+    env_key = os.environ.get("ELEVENLABS_API_KEY", "")
+    if cfg_key:
+        return {"configured": True, "source": "config", "key_masked": secrets.mask(cfg_key)}
+    if env_key:
+        return {"configured": True, "source": "env", "key_masked": secrets.mask(env_key)}
+    return {"configured": False, "source": "none", "key_masked": ""}
+
+
+@router.get("/elevenlabs/config", response_model=ElevenLabsCfgStatus)
+def elevenlabs_get_config():
+    """Estado de la API key de ElevenLabs (nunca devuelve la key entera)."""
+    return _el_status()
+
+
+@router.post("/elevenlabs/config", response_model=ElevenLabsCfgStatus)
+def elevenlabs_set_config(payload: ElevenLabsKeyIn):
+    """Guarda la API key CIFRADA en Config. Aplica sin reiniciar."""
+    from app.core import secrets
+    from app.db.database import SessionLocal
+    from app.db.models import Config
+
+    key = (payload.api_key or "").strip()
+    if not key:
+        raise HTTPException(status_code=400, detail="La API key no puede estar vacia.")
+    db = SessionLocal()
+    try:
+        row = db.query(Config).filter(Config.key == _EL_KEY).first()
+        enc = secrets.encrypt(key)
+        if row:
+            row.value = enc
+        else:
+            db.add(Config(key=_EL_KEY, value=enc))
+        db.commit()
+    finally:
+        db.close()
+    return _el_status()
+
+
+@router.delete("/elevenlabs/config", response_model=ElevenLabsCfgStatus)
+def elevenlabs_delete_config():
+    """Borra la API key guardada en Config (vuelve a env si lo hubiera)."""
+    from app.db.database import SessionLocal
+    from app.db.models import Config
+
+    db = SessionLocal()
+    try:
+        row = db.query(Config).filter(Config.key == _EL_KEY).first()
+        if row:
+            db.delete(row)
+            db.commit()
+    finally:
+        db.close()
+    return _el_status()

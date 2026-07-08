@@ -48,3 +48,22 @@ Thumbs.db
 
 # --- Repos de terceros anidados (no versionar) ---
 TripoSR/
+
+# --- Morralla de experimentos CrewAI / volcados sueltos en la raiz ---
+# (2026-07-08: se colaron en un commit; se sacan del repo y se ignoran)
+/crew.py
+/crew_agent_executor.py
+/process.py
+/task.py
+/version.py
+/pyproject.toml
+/agent_tools.json
+/agents_dir.json
+/tools_dir.json
+/lib_crewai.json
+/libcrewai_src.json
+/root.json
+/src.json
+/src_root.json
+# .bat temporales que NO son los lanzadores (iniciar_*, install_*, migrar_*)
+/_commit_voz.bat
