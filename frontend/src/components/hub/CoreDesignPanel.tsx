@@ -1,3 +1,4 @@
+import { useState } from "react";
 import type { CoreDesignSettings, CoreModelId } from "@/components/hub/coreDesign";
 import { CORE_MODEL_LABELS, DEFAULT_CORE_DESIGN } from "@/components/hub/coreDesign";
 
@@ -30,6 +31,24 @@ function formatValue(value: number) {
 }
 
 export function CoreDesignPanel({ model, value, onChange, onReset }: CoreDesignPanelProps) {
+  // Arranca minimizado: en el Hub solo se ve un botón pequeño y discreto; el
+  // panel completo (dev-only) se despliega al pulsarlo.
+  const [open, setOpen] = useState(false);
+
+  if (!open) {
+    return (
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        aria-label="Abrir Design Lab (herramienta de desarrollo)"
+        title="Design Lab · dev only"
+        className="rounded-full border border-amber-300/25 bg-base-900/70 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.2em] text-amber-200/80 shadow-lg backdrop-blur-md transition-colors hover:border-amber-300/50 hover:text-amber-100"
+      >
+        ⚙ Design Lab
+      </button>
+    );
+  }
+
   return (
     <section
       className="w-full max-w-[520px] rounded-2xl border border-amber-300/15 bg-base-900/70 px-4 py-3 shadow-2xl backdrop-blur-md"
@@ -44,13 +63,24 @@ export function CoreDesignPanel({ model, value, onChange, onReset }: CoreDesignP
             Ajustando: <span className="text-ink">{CORE_MODEL_LABELS[model]}</span>
           </p>
         </div>
-        <button
-          type="button"
-          onClick={onReset}
-          className="rounded-full border border-base-700/80 px-3 py-1 text-[10px] uppercase tracking-wider text-ink-dim transition-colors hover:border-amber-300/40 hover:text-amber-100"
-        >
-          Reset
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={onReset}
+            className="rounded-full border border-base-700/80 px-3 py-1 text-[10px] uppercase tracking-wider text-ink-dim transition-colors hover:border-amber-300/40 hover:text-amber-100"
+          >
+            Reset
+          </button>
+          <button
+            type="button"
+            onClick={() => setOpen(false)}
+            aria-label="Minimizar Design Lab"
+            title="Minimizar"
+            className="rounded-full border border-base-700/80 px-2.5 py-1 text-sm leading-none text-ink-dim transition-colors hover:border-amber-300/40 hover:text-amber-100"
+          >
+            —
+          </button>
+        </div>
       </div>
 
       <div className="grid gap-x-4 gap-y-2 sm:grid-cols-2">

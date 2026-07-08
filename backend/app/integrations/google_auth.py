@@ -161,12 +161,48 @@ def is_connected() -> bool:
 
 
 def get_connected_email() -> Optional[str]:
-    """Devuelve el email de la cuenta Google conectada, o None."""
+    """Devuelve el EMAIL de la cuenta Google conectada (nunca el client_id).
+
+    El token de OAuth no trae el email (los scopes no incluyen `openid`), asi
+    que la primera vez lo pedimos al perfil de Gmail (`getProfile`, permitido
+    por el scope gmail.readonly) y lo cacheamos en el propio token json para
+    no repetir la llamada en cada /email/status.
+    """
     if not TOKEN_PATH.exists():
         return None
     try:
         data = json.loads(TOKEN_PATH.read_text())
-        return data.get("client_id") or data.get("email")
+    except Exception:
+        return None
+
+    cached = data.get("email")
+    if cached:
+        return cached
+
+    email = _fetch_email_via_gmail()
+    if email:
+        try:  # cachear en el token json (best-effort)
+            data["email"] = email
+            TOKEN_PATH.write_text(json.dumps(data))
+        except Exception:
+            pass
+    return email
+
+
+def _fetch_email_via_gmail() -> Optional[str]:
+    """Obtiene el email de la cuenta llamando a Gmail users.getProfile.
+    Usa el scope gmail.readonly que ya tenemos; no requiere reconectar."""
+    try:
+        from google.oauth2.credentials import Credentials
+        from google.auth.transport.requests import Request
+        from googleapiclient.discovery import build
+
+        creds = Credentials.from_authorized_user_file(str(TOKEN_PATH), GOOGLE_SCOPES)
+        if creds and creds.expired and creds.refresh_token:
+            creds.refresh(Request())
+        service = build("gmail", "v1", credentials=creds)
+        profile = service.users().getProfile(userId="me").execute()
+        return profile.get("emailAddress")
     except Exception:
         return None
 
@@ -212,9 +248,19 @@ def start_oauth_flow() -> Dict[str, Any]:
             )
             TOKEN_PATH.parent.mkdir(parents=True, exist_ok=True)
             TOKEN_PATH.write_text(creds.to_json())
+            # El email real: primero intentamos el id_token, si no via Gmail.
+            # Lo cacheamos en el token json para /email/status posterior.
+            email = _extract_email_from_token(creds) or _fetch_email_via_gmail()
+            if email:
+                try:
+                    data = json.loads(TOKEN_PATH.read_text())
+                    data["email"] = email
+                    TOKEN_PATH.write_text(json.dumps(data))
+                except Exception:
+                    pass
             return {
                 "success": True,
-                "email": _extract_email_from_token(creds),
+                "email": email,
             }
         except Exception as e:
             return {

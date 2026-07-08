@@ -1,0 +1,178 @@
+[
+  {
+    "name": "__init__.py",
+    "path": "lib/crewai/src/crewai/tools/__init__.py",
+    "sha": "a2415b1b2a638fcfd46a7724f588359e934a34fa",
+    "size": 116,
+    "url": "https://api.github.com/repos/crewAIInc/crewAI/contents/lib/crewai/src/crewai/tools/__init__.py?ref=main",
+    "html_url": "https://github.com/crewAIInc/crewAI/blob/main/lib/crewai/src/crewai/tools/__init__.py",
+    "git_url": "https://api.github.com/repos/crewAIInc/crewAI/git/blobs/a2415b1b2a638fcfd46a7724f588359e934a34fa",
+    "download_url": "https://raw.githubusercontent.com/crewAIInc/crewAI/main/lib/crewai/src/crewai/tools/__init__.py",
+    "type": "file",
+    "_links": {
+      "self": "https://api.github.com/repos/crewAIInc/crewAI/contents/lib/crewai/src/crewai/tools/__init__.py?ref=main",
+      "git": "https://api.github.com/repos/crewAIInc/crewAI/git/blobs/a2415b1b2a638fcfd46a7724f588359e934a34fa",
+      "html": "https://github.com/crewAIInc/crewAI/blob/main/lib/crewai/src/crewai/tools/__init__.py"
+    }
+  },
+  {
+    "name": "agent_tools",
+    "path": "lib/crewai/src/crewai/tools/agent_tools",
+    "sha": "21a33059849d09b6f48acd375e3d8afe97e15a0f",
+    "size": 0,
+    "url": "https://api.github.com/repos/crewAIInc/crewAI/contents/lib/crewai/src/crewai/tools/agent_tools?ref=main",
+    "html_url": "https://github.com/crewAIInc/crewAI/tree/main/lib/crewai/src/crewai/tools/agent_tools",
+    "git_url": "https://api.github.com/repos/crewAIInc/crewAI/git/trees/21a33059849d09b6f48acd375e3d8afe97e15a0f",
+    "download_url": null,
+    "type": "dir",
+    "_links": {
+      "self": "https://api.github.com/repos/crewAIInc/crewAI/contents/lib/crewai/src/crewai/tools/agent_tools?ref=main",
+      "git": "https://api.github.com/repos/crewAIInc/crewAI/git/trees/21a33059849d09b6f48acd375e3d8afe97e15a0f",
+      "html": "https://github.com/crewAIInc/crewAI/tree/main/lib/crewai/src/crewai/tools/agent_tools"
+    }
+  },
+  {
+    "name": "base_tool.py",
+    "path": "lib/crewai/src/crewai/tools/base_tool.py",
+    "sha": "c6c3dba15bd13226b6935a3f21c052295923b212",
+    "size": 25750,
+    "url": "https://api.github.com/repos/crewAIInc/crewAI/contents/lib/crewai/src/crewai/tools/base_tool.py?ref=main",
+    "html_url": "https://github.com/crewAIInc/crewAI/blob/main/lib/crewai/src/crewai/tools/base_tool.py",
+    "git_url": "https://api.github.com/repos/crewAIInc/crewAI/git/blobs/c6c3dba15bd13226b6935a3f21c052295923b212",
+    "download_url": "https://raw.githubusercontent.com/crewAIInc/crewAI/main/lib/crewai/src/crewai/tools/base_tool.py",
+    "type": "file",
+    "_links": {
+      "self": "https://api.github.com/repos/crewAIInc/crewAI/contents/lib/crewai/src/crewai/tools/base_tool.py?ref=main",
+      "git": "https://api.github.com/repos/crewAIInc/crewAI/git/blobs/c6c3dba15bd13226b6935a3f21c052295923b212",
+      "html": "https://github.com/crewAIInc/crewAI/blob/main/lib/crewai/src/crewai/tools/base_tool.py"
+    }
+  },
+  {
+    "name": "cache_tools",
+    "path": "lib/crewai/src/crewai/tools/cache_tools",
+    "sha": "36cd8cb9de9d75613c2e3b094a5be54a1a446b0b",
+    "size": 0,
+    "url": "https://api.github.com/repos/crewAIInc/crewAI/contents/lib/crewai/src/crewai/tools/cache_tools?ref=main",
+    "html_url": "https://github.com/crewAIInc/crewAI/tree/main/lib/crewai/src/crewai/tools/cache_tools",
+    "git_url": "https://api.github.com/repos/crewAIInc/crewAI/git/trees/36cd8cb9de9d75613c2e3b094a5be54a1a446b0b",
+    "download_url": null,
+    "type": "dir",
+    "_links": {
+      "self": "https://api.github.com/repos/crewAIInc/crewAI/contents/lib/crewai/src/crewai/tools/cache_tools?ref=main",
+      "git": "https://api.github.com/repos/crewAIInc/crewAI/git/trees/36cd8cb9de9d75613c2e3b094a5be54a1a446b0b",
+      "html": "https://github.com/crewAIInc/crewAI/tree/main/lib/crewai/src/crewai/tools/cache_tools"
+    }
+  },
+  {
+    "name": "mcp_native_tool.py",
+    "path": "lib/crewai/src/crewai/tools/mcp_native_tool.py",
+    "sha": "94bff3993f65550e6b17a910ef9d80265a9ee59b",
+    "size": 4243,
+    "url": "https://api.github.com/repos/crewAIInc/crewAI/contents/lib/crewai/src/crewai/tools/mcp_native_tool.py?ref=main",
+    "html_url": "https://github.com/crewAIInc/crewAI/blob/main/lib/crewai/src/crewai/tools/mcp_native_tool.py",
+    "git_url": "https://api.github.com/repos/crewAIInc/crewAI/git/blobs/94bff3993f65550e6b17a910ef9d80265a9ee59b",
+    "download_url": "https://raw.githubusercontent.com/crewAIInc/crewAI/main/lib/crewai/src/crewai/tools/mcp_native_tool.py",
+    "type": "file",
+    "_links": {
+      "self": "https://api.github.com/repos/crewAIInc/crewAI/contents/lib/crewai/src/crewai/tools/mcp_native_tool.py?ref=main",
+      "git": "https://api.github.com/repos/crewAIInc/crewAI/git/blobs/94bff3993f65550e6b17a910ef9d80265a9ee59b",
+      "html": "https://github.com/crewAIInc/crewAI/blob/main/lib/crewai/src/crewai/tools/mcp_native_tool.py"
+    }
+  },
+  {
+    "name": "mcp_tool_wrapper.py",
+    "path": "lib/crewai/src/crewai/tools/mcp_tool_wrapper.py",
+    "sha": "87867b4651554557e105b4359c3030208167421c",
+    "size": 7108,
+    "url": "https://api.github.com/repos/crewAIInc/crewAI/contents/lib/crewai/src/crewai/tools/mcp_tool_wrapper.py?ref=main",
+    "html_url": "https://github.com/crewAIInc/crewAI/blob/main/lib/crewai/src/crewai/tools/mcp_tool_wrapper.py",
+    "git_url": "https://api.github.com/repos/crewAIInc/crewAI/git/blobs/87867b4651554557e105b4359c3030208167421c",
+    "download_url": "https://raw.githubusercontent.com/crewAIInc/crewAI/main/lib/crewai/src/crewai/tools/mcp_tool_wrapper.py",
+    "type": "file",
+    "_links": {
+      "self": "https://api.github.com/repos/crewAIInc/crewAI/contents/lib/crewai/src/crewai/tools/mcp_tool_wrapper.py?ref=main",
+      "git": "https://api.github.com/repos/crewAIInc/crewAI/git/blobs/87867b4651554557e105b4359c3030208167421c",
+      "html": "https://github.com/crewAIInc/crewAI/blob/main/lib/crewai/src/crewai/tools/mcp_tool_wrapper.py"
+    }
+  },
+  {
+    "name": "memory_tools.py",
+    "path": "lib/crewai/src/crewai/tools/memory_tools.py",
+    "sha": "e790c93f1ea6075125434e643a254b5d2b4c33ec",
+    "size": 3950,
+    "url": "https://api.github.com/repos/crewAIInc/crewAI/contents/lib/crewai/src/crewai/tools/memory_tools.py?ref=main",
+    "html_url": "https://github.com/crewAIInc/crewAI/blob/main/lib/crewai/src/crewai/tools/memory_tools.py",
+    "git_url": "https://api.github.com/repos/crewAIInc/crewAI/git/blobs/e790c93f1ea6075125434e643a254b5d2b4c33ec",
+    "download_url": "https://raw.githubusercontent.com/crewAIInc/crewAI/main/lib/crewai/src/crewai/tools/memory_tools.py",
+    "type": "file",
+    "_links": {
+      "self": "https://api.github.com/repos/crewAIInc/crewAI/contents/lib/crewai/src/crewai/tools/memory_tools.py?ref=main",
+      "git": "https://api.github.com/repos/crewAIInc/crewAI/git/blobs/e790c93f1ea6075125434e643a254b5d2b4c33ec",
+      "html": "https://github.com/crewAIInc/crewAI/blob/main/lib/crewai/src/crewai/tools/memory_tools.py"
+    }
+  },
+  {
+    "name": "structured_tool.py",
+    "path": "lib/crewai/src/crewai/tools/structured_tool.py",
+    "sha": "8ecba85496575cc64de1aed7112f6d6479c5e85f",
+    "size": 13120,
+    "url": "https://api.github.com/repos/crewAIInc/crewAI/contents/lib/crewai/src/crewai/tools/structured_tool.py?ref=main",
+    "html_url": "https://github.com/crewAIInc/crewAI/blob/main/lib/crewai/src/crewai/tools/structured_tool.py",
+    "git_url": "https://api.github.com/repos/crewAIInc/crewAI/git/blobs/8ecba85496575cc64de1aed7112f6d6479c5e85f",
+    "download_url": "https://raw.githubusercontent.com/crewAIInc/crewAI/main/lib/crewai/src/crewai/tools/structured_tool.py",
+    "type": "file",
+    "_links": {
+      "self": "https://api.github.com/repos/crewAIInc/crewAI/contents/lib/crewai/src/crewai/tools/structured_tool.py?ref=main",
+      "git": "https://api.github.com/repos/crewAIInc/crewAI/git/blobs/8ecba85496575cc64de1aed7112f6d6479c5e85f",
+      "html": "https://github.com/crewAIInc/crewAI/blob/main/lib/crewai/src/crewai/tools/structured_tool.py"
+    }
+  },
+  {
+    "name": "tool_calling.py",
+    "path": "lib/crewai/src/crewai/tools/tool_calling.py",
+    "sha": "333c37fec9012df220c8edbc615b6cb88fd37d94",
+    "size": 677,
+    "url": "https://api.github.com/repos/crewAIInc/crewAI/contents/lib/crewai/src/crewai/tools/tool_calling.py?ref=main",
+    "html_url": "https://github.com/crewAIInc/crewAI/blob/main/lib/crewai/src/crewai/tools/tool_calling.py",
+    "git_url": "https://api.github.com/repos/crewAIInc/crewAI/git/blobs/333c37fec9012df220c8edbc615b6cb88fd37d94",
+    "download_url": "https://raw.githubusercontent.com/crewAIInc/crewAI/main/lib/crewai/src/crewai/tools/tool_calling.py",
+    "type": "file",
+    "_links": {
+      "self": "https://api.github.com/repos/crewAIInc/crewAI/contents/lib/crewai/src/crewai/tools/tool_calling.py?ref=main",
+      "git": "https://api.github.com/repos/crewAIInc/crewAI/git/blobs/333c37fec9012df220c8edbc615b6cb88fd37d94",
+      "html": "https://github.com/crewAIInc/crewAI/blob/main/lib/crewai/src/crewai/tools/tool_calling.py"
+    }
+  },
+  {
+    "name": "tool_types.py",
+    "path": "lib/crewai/src/crewai/tools/tool_types.py",
+    "sha": "3e37fed2f6c503e90acb6d36e836b9e398c6ba13",
+    "size": 153,
+    "url": "https://api.github.com/repos/crewAIInc/crewAI/contents/lib/crewai/src/crewai/tools/tool_types.py?ref=main",
+    "html_url": "https://github.com/crewAIInc/crewAI/blob/main/lib/crewai/src/crewai/tools/tool_types.py",
+    "git_url": "https://api.github.com/repos/crewAIInc/crewAI/git/blobs/3e37fed2f6c503e90acb6d36e836b9e398c6ba13",
+    "download_url": "https://raw.githubusercontent.com/crewAIInc/crewAI/main/lib/crewai/src/crewai/tools/tool_types.py",
+    "type": "file",
+    "_links": {
+      "self": "https://api.github.com/repos/crewAIInc/crewAI/contents/lib/crewai/src/crewai/tools/tool_types.py?ref=main",
+      "git": "https://api.github.com/repos/crewAIInc/crewAI/git/blobs/3e37fed2f6c503e90acb6d36e836b9e398c6ba13",
+      "html": "https://github.com/crewAIInc/crewAI/blob/main/lib/crewai/src/crewai/tools/tool_types.py"
+    }
+  },
+  {
+    "name": "tool_usage.py",
+    "path": "lib/crewai/src/crewai/tools/tool_usage.py",
+    "sha": "e92ba03eed339ada10117027297239de737dd479",
+    "size": 42109,
+    "url": "https://api.github.com/repos/crewAIInc/crewAI/contents/lib/crewai/src/crewai/tools/tool_usage.py?ref=main",
+    "html_url": "https://github.com/crewAIInc/crewAI/blob/main/lib/crewai/src/crewai/tools/tool_usage.py",
+    "git_url": "https://api.github.com/repos/crewAIInc/crewAI/git/blobs/e92ba03eed339ada10117027297239de737dd479",
+    "download_url": "https://raw.githubusercontent.com/crewAIInc/crewAI/main/lib/crewai/src/crewai/tools/tool_usage.py",
+    "type": "file",
+    "_links": {
+      "self": "https://api.github.com/repos/crewAIInc/crewAI/contents/lib/crewai/src/crewai/tools/tool_usage.py?ref=main",
+      "git": "https://api.github.com/repos/crewAIInc/crewAI/git/blobs/e92ba03eed339ada10117027297239de737dd479",
+      "html": "https://github.com/crewAIInc/crewAI/blob/main/lib/crewai/src/crewai/tools/tool_usage.py"
+    }
+  }
+]

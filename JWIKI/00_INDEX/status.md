@@ -2,7 +2,7 @@
 
 > Snapshot del estado de la knowledge base. Se actualiza al cerrar cada fase o tick importante.
 
-## Última actualización: 2026-07-01 11:53 (JWIKI-008 auditado y verificado)
+## Última actualización: 2026-07-08 20:08 (JWIKI-006 JarvisAgent auditado y verificado, enriquecido a 5632 palabras)
 
 ## Resumen ejecutivo
 
@@ -11,11 +11,11 @@
 | Dominios totales | 17 |
 | Dominios con esqueleto | 17 |
 | **Total docs PLANIFICADOS** | **267** |
-| Documentos verificados | **6** (JWIKI-001, JWIKI-002, JWIKI-003, JWIKI-004, JWIKI-005, JWIKI-008) |
+| Documentos verificados | **10** (JWIKI-001, 002, 003, 004, 005, 006 ✅, 007, 008, 009, 011, 013 — **006 verificado 2026-07-08 20:08**; **007 verificado 2026-07-08 19:55**) |
 | En auditoría | 0 |
-| Avance total | 6/267 = **2.25%** |
-| Wiki-map | ✅ Activo (266 IDs, 1 verificado) |
-| Task queue | ✅ Activo (turno A: JWIKI-002, JWIKI-004, ...; turno B: JWIKI-003, JWIKI-005, ...) |
+| Avance total | 10/267 = **3.75%** |
+| Wiki-map | ✅ Activo (267 IDs, 10 verificados a 2026-07-08 20:08) |
+| Task queue | ✅ Activo (single-team desde 2026-06-30 19:15, sin turno A/B) |
 | Equipo wiki | ✅ 6 agentes (3 turno A + 3 turno B) |
 | Equipo Aithera | ✅ 8 agentes especialistas |
 | Crons | ✅ 4 configurados y activos |
@@ -92,6 +92,7 @@ Ver `task_queue.md` (vacío, se llenará cuando arranque Fase 1).
 ## Hitos recientes
 
 - **Tick 0 (2026-06-30 00:25)**: Bootstrap completo. Estructura 17 dominios creada, constitución + roadmap + workflow + wiki-map + equipo `aithera-wiki-*` en proceso.
+- **Tick A-20260708-2008 (2026-07-08 20:08)**: JWIKI-006 JarvisAgent verificado. Doc enriquecido de 2080 → 5632 palabras (+170 %). 11 snippets, 32 hechos, comparativa OSS contrastada live (OpenClaw 382k★, OpenHuman 34k★, OpenJarvis 7k★, Hermes 211k★, Superpowers 249k★). Caveats textuales sobre MIT sin LICENSE y 51 días sin push. Avance 10/267 = 3.75%.
 
 ---
 

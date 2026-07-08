@@ -161,3 +161,27 @@ input[type="range"]::-moz-range-thumb {
 ::-webkit-scrollbar-track {
   background: transparent;
 }
+
+/* Hub: grid responsivo. Las columnas laterales usan minmax(0, X): se ENCOGEN
+   cuando falta espacio en vez de desbordar, así la barra derecha (Próximos
+   eventos / Chat reciente / Email) nunca se sale de pantalla, ni en ventana
+   pequeña ni a pantalla completa. El minmax(0,...) es lo que garantiza que
+   siempre quepa; los breakpoints solo ajustan el ancho "preferido". */
+.hub-grid {
+  grid-template-columns: minmax(0, 280px) minmax(0, 1fr) minmax(0, 280px);
+  width: 100%;
+  max-width: 100%;
+}
+.hub-grid > * {
+  min-width: 0; /* permite que el contenido (con truncate) se encoja */
+}
+@media (max-width: 1200px) {
+  .hub-grid {
+    grid-template-columns: minmax(0, 240px) minmax(0, 1fr) minmax(0, 240px);
+  }
+}
+@media (max-width: 980px) {
+  .hub-grid {
+    grid-template-columns: minmax(0, 190px) minmax(0, 1fr) minmax(0, 190px);
+  }
+}

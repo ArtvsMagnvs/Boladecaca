@@ -18,11 +18,11 @@
 | JWIKI-003 | 01_LANDSCAPE/openclaw.md | OpenClaw (376k stars) | B | ✅ verified |
 | JWIKI-004 | 01_LANDSCAPE/openhuman.md | OpenHuman desktop-first Rust+TS | A | ✅ verified |
 | JWIKI-005 | 01_LANDSCAPE/openjarvis.md | OpenJarvis Stanford local-first | B | ✅ verified | (auditado 2026-07-01 11:51 independiente — 26 fuentes contrastadas, 5 snippets codigo, 12 refs cruzadas, 7 correcciones al briefing, contradiccion projects.md (v0.5.x vs v1.0.2) marcada para corregir)
-| JWIKI-006 | 01_LANDSCAPE/jarvisagent.md | JarvisAgent Tauri Vue 3 | A | 🟡 in_progress | (post-crash, re-despach 18:30)
-| JWIKI-007 | 01_LANDSCAPE/hermes-agent.md | Hermes Agent Nous Research | B | 🟡 in_progress | (re-despach turno B tick 6 18:45 post-crash) |
+| JWIKI-006 | 01_LANDSCAPE/jarvisagent.md | JarvisAgent Tauri Vue 3 | A | 🟢 verified | tick A-20260708-2008 (enrich+audit, 5632 palabras, 11 snippets, 32 hechos) |
+| JWIKI-007 | 01_LANDSCAPE/hermes-agent.md | Hermes Agent Nous Research | B | ✅ verified | (tick A-20260708-1955 audit independiente — 67379 bytes, 7859 palabras, 22 secciones TEMPLATE, 11 snippets, GitHub API 2026-07-08T19:55Z confirma 211474★ (+1.139 en 24h), v0.18.2 v2026.7.7.2 publicado HOY 03:11 UTC, Python 84.3% + TypeScript 14.2%, 22+ plataformas de mensajería, 6 backends con Daytona, MoA first-class, native desktop apps, 8 CVEs explícitos en pyproject; 5 conflictos vs doc previo resueltos; 6/6 criterios OK) |
 | JWIKI-008 | 01_LANDSCAPE/clawdbot.md | Clawdbot (rename OpenClaw Jan-2026) | A | ✅ verified | (auditor A 2026-07-01 11:53 — 6/6 criterios, 28 fuentes, 78% confianza) |
-| JWIKI-009 | 01_LANDSCAPE/superpowers.md | Superpowers Skill framework | B | 🟡 in_progress | (tick 7 19:00 dispatch turno B, slot 009) |
-| JWIKI-010 | 01_LANDSCAPE/agent-frameworks.md | Comparativa frameworks agentes | A | 🟡 in_progress | (tick 7 19:00 dispatch turno A) |
+| JWIKI-009 | 01_LANDSCAPE/superpowers.md | Superpowers Skill framework | B | ✅ verified | (tick A-20260708-1955 audit independiente — 4082 palabras, 8 snippets, GitHub API 2026-07-08 confirma 249642★, v6.1.1, MIT, multi-language; 6/6 criterios OK) |
+| JWIKI-010 | 01_LANDSCAPE/agent-frameworks.md | Comparativa frameworks agentes | A | ✅ verified | (tick A-20260707-0904, orquestador JWIKI single-team — 4140 palabras, 6/6 criterios OK, 9 frameworks × 11 criterios) |
 | JWIKI-011 | 01_LANDSCAPE/langgraph.md | LangGraph overview | B | ✅ verified | (escriba 2026-07-01 12:20 — 16 fuentes, 5 snippets, 3 tablas, 78% confianza; auditado independiente 2026-07-01) |
 | JWIKI-012 | 01_LANDSCAPE/crewai.md | CrewAI overview | A | 🔴 pending |
 | JWIKI-013 | 01_LANDSCAPE/autogen.md | AutoGen Microsoft overview | B | ✅ verified | (Mavis self-audit 2026-07-02 15:00 — 58KB, 6/6 criterios ✅ en substance pero criterio 6 estricto no cumplido; 4 freezes en pipeline; pendiente user review) |

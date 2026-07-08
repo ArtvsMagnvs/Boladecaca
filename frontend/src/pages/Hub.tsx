@@ -266,9 +266,13 @@ export default function Hub() {
       className="hub-grid relative h-full gap-4"
       style={{
         display: "grid",
-        gridTemplateColumns: "280px 1fr 280px",
+        // gridTemplateColumns se define en index.css (.hub-grid) con
+        // minmax(0,...) + breakpoints para que las columnas se encojan en vez
+        // de desbordar (la barra derecha ya no se sale de pantalla).
         gridTemplateRows: "1fr auto",
         minHeight: "100%",
+        width: "100%",
+        maxWidth: "100%",
       }}
     >
       {/* CABECERA FLOTANTE — boton discreto para cambiar el nucleo 3D.

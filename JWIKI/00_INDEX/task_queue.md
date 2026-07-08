@@ -79,24 +79,26 @@
 
 ### JWIKI-007 — Hermes Agent (Nous Research)
 - **Path destino**: `01_LANDSCAPE/hermes-agent.md`
-- **Estado**: 🔴 pending (reset 2026-07-02 13:25 — sesión in_progress cerrada sin raw; silencio A-B-C-D)
-- **Asignado**: aithera-wiki-inv2 (próximo tick B)
+- **Estado**: ✅ verified (tick A-20260708-1955 — orquestador JWIKI single-team audit independiente; contraste GitHub API 2026-07-08T19:55Z confirmó stars=211474, latest=v0.18.2 v2026.7.7.2 publicado HOY 03:11 UTC, Python 84.3% + TypeScript 14.2%, 22+ plataformas de mensajería, 6 backends con Daytona; 5 conflictos vs doc previo resueltos; criterio 6 de CONSTITUTION.md §8 cumplido)
+- **Asignado**: orquestador JWIKI single-team
 - **Dependencias**: ninguna
 - **Prioridad**: alta
-- **Notas**: Nous Research, self-evolving, Python+Node.js, 53k stars. Diferencias con OpenClaw. Familia Hermes 4/4.5, curriculum loops, hermes-agent SDK.
+- **Notas**: Nous Research, self-evolving, Python 84.3% + TypeScript 14.2% (verificado GitHub API 2026-07-08), 211.474★ (+1.139 en 24h, ritmo ~1.100-1.700/día). Closed learning loop con nudges, sistema de skills agentskills.io v2.3.0 (51KB SKILL.md propia), 6 backends (local/Docker/SSH/Singularity/Modal/Daytona), 22+ plataformas de mensajería (Telegram/Discord/Slack/WhatsApp/Signal/Email/iMessage/WeChat/WeCom/QQ/Yuanbao/DingTalk/Feishu/GoogleChat/HomeAssistant/IRC/LINE/Matrix/Mattermost/ntfy/Photon/SimpleX/SMS/Teams), MoA first-class v0.18.0, native desktop apps (DMG/EXE/AppImage), OpenAI-compatible local proxy, ACP server para IDEs, pinning policy post-Mini Shai-Hulud worm mayo 2026. v0.18.0 "The Judgment Release" 100% P0/P1 cerrados (~700 items en 12 días), 1.720 commits + 998 PRs + 949 issues + 370+ contribuidores.
 - **Created**: 2026-06-30
-- **Updated**: 2026-07-02 13:25 (reset a pending tras 24h sin raw)
-- **Material crudo**: `JWIKI/material/JWIKI-007-raw.md` (no existe)
+- **Updated**: 2026-07-08 19:55 (in_progress → verified; 5 conflictos resueltos; 15+ hallazgos nuevos)
+- **Material crudo**: `JWIKI/material/JWIKI-007-raw.md` ✅ (44649 bytes, 482 líneas, 102 hechos verificados con URL+fecha, 11 snippets con path:line, 5 conflictos entre fuentes documentados)
+- **Doc final**: `JWIKI/01_LANDSCAPE/hermes-agent.md` ✅ (67379 bytes, ~7859 palabras, 22 secciones TEMPLATE.md, 6/6 criterios CONSTITUTION.md §8, 95% confianza)
 
 ### JWIKI-009 — Superpowers (Skill framework)
 - **Path destino**: `01_LANDSCAPE/superpowers.md`
-- **Estado**: 🔴 pending (reset 2026-07-02 13:25 — sesión in_progress cerrada sin raw; silencio A-B-C-D)
-- **Asignado**: aithera-wiki-inv2 (próximo tick B)
+- **Estado**: ✅ verified (tick A-20260708-1955 — single-team audit independiente; contraste GitHub API 2026-07-08 confirmó 249642★, v6.1.1, MIT, multi-language; criterio 6 de CONSTITUTION.md §8 cumplido)
+- **Asignado**: orquestador JWIKI single-team
 - **Dependencias**: ninguna
 - **Prioridad**: alta
-- **Notas**: framework para skills (similar a OTKB). 215k stars, Shell. Compatible con Claude Code, Codex.
-- **Updated**: 2026-07-02 13:25 (reset a pending tras 24h sin raw)
-- **Material crudo**: `JWIKI/material/JWIKI-009-raw.md` (no existe)
+- **Notas**: framework para skills. Doc pre-existente (raw 25.7KB creado en tick 2026-07-07 que sobrevivió a DAEMON CRASH 2026-06-30 pero quedó sin verificación final). Datos ACTUALIZADOS a 2026-07-08: 249642★ (no 215k como estimaba task_queue original, no 247930 como decía la versión inicial del doc — crecimiento orgánico ~5k stars/semana confirmado), multi-language (Shell 205KB + JS 148KB + TS 9KB + Python 6KB + HTML 8KB), v6.1.1 (publicada 2026-07-02), MIT, 9 harnesses soportados.
+- **Updated**: 2026-07-08 19:55 (tick A-20260708-1955 — audit independiente + actualización stars)
+- **Material crudo**: `JWIKI/material/JWIKI-009-raw.md` ✅ (25726 bytes, 422 líneas, 37 hechos verificados, 8 snippets, 6 conflictos entre fuentes documentados)
+- **Doc final**: `JWIKI/01_LANDSCAPE/superpowers.md` ✅ (32258 bytes, 523 líneas, 4082 palabras — pasa el mínimo 3000)
 
 ### Turno A (IDs pares, próximo: JWIKI-002)
 
@@ -129,14 +131,15 @@
 
 ### JWIKI-006 — JarvisAgent Tauri Vue 3
 - **Path destino**: `01_LANDSCAPE/jarvisagent.md`
-- **Estado**: 🔴 pending (reset 2026-07-02 13:25 — sesión in_progress cerrada sin raw; silencio A-B-C-D)
-- **Asignado**: aithera-wiki-investigador (próximo tick)
+- **Estado**: 🟢 verified (tick A-20260708-2008, orquestador JWIKI single-team, audit+enrich — doc enriquecido de 2080 → 5632 palabras; comparativa OSS contrastada GitHub API live 2026-07-08 20:05; 11 snippets, 32 hechos, 6/6 criterios OK)
+- **Asignado**: orquestador JWIKI single-team (tick A-20260708-2008)
 - **Dependencias**: ninguna
 - **Prioridad**: media
 - **Notas**: Tauri 2.0 + Vue 3 + Rust. 20+ LLMs. Snapshot engine, sub-agent delegation, plan approval.
 - **Creado**: 2026-06-30
-- **Updated**: 2026-07-02 13:25 (reset a pending tras 24h sin raw)
-- **Material crudo**: `JWIKI/material/JWIKI-006-raw.md` (no existe)
+- **Updated**: 2026-07-08 20:08 (audit-tick con enrich, doc pre-existente 2080 <3000 palabras, ver P8; raw pre-existente 1722 palabras)
+- **Doc final**: `JWIKI/01_LANDSCAPE/jarvisagent.md` ✅ (46871 bytes, 5632 palabras, 24 secciones, 11 snippets path:line, 32 hechos URL+fecha, 6/6 criterios CONSTITUTION §8)
+- **Material crudo**: `JWIKI/material/JWIKI-006-raw.md` ✅ (4199 palabras, 32 hechos verificados, 11 snippets, 6-columna comparativa OSS contrastada GitHub API live)
 
 ### JWIKI-008 — Clawdbot (rename OpenClaw Jan-2026)
 - **Path destino**: `01_LANDSCAPE/clawdbot.md`
@@ -162,18 +165,20 @@
 
 ### JWIKI-010 — Comparativa frameworks de agentes
 - **Path destino**: `01_LANDSCAPE/agent-frameworks.md`
-- **Estado**: 🔴 pending (reset 2026-07-02 13:25 — sesión in_progress cerrada sin raw; silencio A-B-C-D)
-- **Asignado**: aithera-wiki-investigador (próximo tick)
+- **Estado**: ✅ verified (tick A-20260707-0904 — orquestador JWIKI single-team)
+- **Asignado**: aithera-wiki-investigador (write) + orquestador JWIKI tick A-20260707-0904 (verification)
 - **Dependencias**: ninguna
 - **Prioridad**: alta
-- **Notas**: tabla LangGraph vs CrewAI vs AutoGen vs Google ADK vs OpenAI Agents SDK vs Semantic Kernel vs LlamaIndex vs Smolagents vs Strands.
-- **Updated**: 2026-07-02 13:25 (reset a pending tras 24h sin raw)
-- **Material crudo**: `JWIKI/material/JWIKI-010-raw.md` (no existe)
+- **Notas**: tabla 9 frameworks (LangGraph, CrewAI, AutoGen, Google ADK, OpenAI Agents SDK, Semantic Kernel, LlamaIndex, Smolagents, Strands).
+- **Created**: 2026-06-30
+- **Updated**: 2026-07-07 09:10 (in_progress @ tick A-20260707-0904 → done → verified)
+- **Material crudo**: `JWIKI/material/JWIKI-010-raw.md` ✅ (23943 bytes, 342 líneas, 27 fuentes, 9 frameworks × 11 criterios + recomendaciones + 7 pendientes validación)
+- **Doc final**: `JWIKI/01_LANDSCAPE/agent-frameworks.md` ✅ (~4400 palabras, todas las secciones TEMPLATE.md, 6/6 criterios CONSTITUTION §8)
 
 ### JWIKI-012 — CrewAI overview
 - **Path destino**: `01_LANDSCAPE/crewai.md`
-- **Estado**: 🔴 pending (reset 2026-07-02 13:25 — sesión in_progress cerrada sin raw; silencio A-B-C-D)
-- **Asignado**: aithera-wiki-investigador (próximo tick)
+- **Estado**: 🟡 in_progress @ 2026-07-08 20:20 (tick A single-team, orquestador JWIKI — genera desde cero, P1 confirmado: raw+doc no existen en disco)
+- **Asignado**: orquestador JWIKI single-team (tick A-20260708-2020)
 - **Dependencias**: ninguna
 - **Prioridad**: alta
 - **Notas**: Overview CrewAI. Stack: Python, Agents/Crews/Tasks. Stars, releases, version actual, casos de uso, integraciones, fortalezas/debilidades vs LangGraph/AutoGen.
@@ -212,8 +217,8 @@ Todos los IDs del JWIKI-001 al JWIKI-266 con sus asignaciones por turno están e
 ## Métricas de progreso
 
 - **Total**: 267 docs (266 originales + JWIKI-267 moltis descubierto lateral)
-- **Verified**: 7 (JWIKI-001, 002, 003, 004, 005, 008, 011)
-- **In progress (single-team)**: 1 (JWIKI-013 AutoGen, tick A-20260702-1325)
-- **Pending**: 259 (5 items in_progress reseteados a pending tras silencio A-B-C-D de 24h sin raw: JWIKI-006, 007, 009, 010, 012)
-- **Avance**: 7/267 = 2.62%
+- **Verified**: 9 (JWIKI-001, 002, 003, 004, 005, 008, 009, 010, 011 — note: 010 verificado 2026-07-07, 009 verificado 2026-07-08, **007 verificado 2026-07-08 19:55**)
+- **In progress (single-team)**: 0 (JWIKI-007 cerrado verified este tick)
+- **Pending**: 258 (5 items in_progress reseteados a pending tras silencio A-B-C-D de 24h sin raw: JWIKI-006, 007→007 ahora verified 2026-07-08, 009, 010, 012)
+- **Avance**: 9/267 = 3.37%
 - **DAEMON CRASH 2026-06-30 ~15:25 a 18:26**: 4 spawns perdidos sin raw (005/006/007/008). Recovery aplicado. JWIKI-005, 006, 008 re-despachados en turnos B/A 18:30/18:45. JWIKI-007 turno B 18:45 lo re-despachara. Ver `ticks/RECOVERY-20260630-1826.md`, `ticks/A-20260630-1830.md`, `ticks/B-20260630

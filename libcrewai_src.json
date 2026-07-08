@@ -1,0 +1,642 @@
+[
+  {
+    "name": "__init__.py",
+    "path": "lib/crewai/src/crewai/__init__.py",
+    "sha": "399750459593e6bf72c3bac749838ee90000dd97",
+    "size": 6398,
+    "url": "https://api.github.com/repos/crewAIInc/crewAI/contents/lib/crewai/src/crewai/__init__.py?ref=main",
+    "html_url": "https://github.com/crewAIInc/crewAI/blob/main/lib/crewai/src/crewai/__init__.py",
+    "git_url": "https://api.github.com/repos/crewAIInc/crewAI/git/blobs/399750459593e6bf72c3bac749838ee90000dd97",
+    "download_url": "https://raw.githubusercontent.com/crewAIInc/crewAI/main/lib/crewai/src/crewai/__init__.py",
+    "type": "file",
+    "_links": {
+      "self": "https://api.github.com/repos/crewAIInc/crewAI/contents/lib/crewai/src/crewai/__init__.py?ref=main",
+      "git": "https://api.github.com/repos/crewAIInc/crewAI/git/blobs/399750459593e6bf72c3bac749838ee90000dd97",
+      "html": "https://github.com/crewAIInc/crewAI/blob/main/lib/crewai/src/crewai/__init__.py"
+    }
+  },
+  {
+    "name": "a2a",
+    "path": "lib/crewai/src/crewai/a2a",
+    "sha": "38d6a404ddc1a87538318baf68dfd8171bc9ba48",
+    "size": 0,
+    "url": "https://api.github.com/repos/crewAIInc/crewAI/contents/lib/crewai/src/crewai/a2a?ref=main",
+    "html_url": "https://github.com/crewAIInc/crewAI/tree/main/lib/crewai/src/crewai/a2a",
+    "git_url": "https://api.github.com/repos/crewAIInc/crewAI/git/trees/38d6a404ddc1a87538318baf68dfd8171bc9ba48",
+    "download_url": null,
+    "type": "dir",
+    "_links": {
+      "self": "https://api.github.com/repos/crewAIInc/crewAI/contents/lib/crewai/src/crewai/a2a?ref=main",
+      "git": "https://api.github.com/repos/crewAIInc/crewAI/git/trees/38d6a404ddc1a87538318baf68dfd8171bc9ba48",
+      "html": "https://github.com/crewAIInc/crewAI/tree/main/lib/crewai/src/crewai/a2a"
+    }
+  },
+  {
+    "name": "agent",
+    "path": "lib/crewai/src/crewai/agent",
+    "sha": "e3d6024c6f20baa57075cbbc076bc363d6c33586",
+    "size": 0,
+    "url": "https://api.github.com/repos/crewAIInc/crewAI/contents/lib/crewai/src/crewai/agent?ref=main",
+    "html_url": "https://github.com/crewAIInc/crewAI/tree/main/lib/crewai/src/crewai/agent",
+    "git_url": "https://api.github.com/repos/crewAIInc/crewAI/git/trees/e3d6024c6f20baa57075cbbc076bc363d6c33586",
+    "download_url": null,
+    "type": "dir",
+    "_links": {
+      "self": "https://api.github.com/repos/crewAIInc/crewAI/contents/lib/crewai/src/crewai/agent?ref=main",
+      "git": "https://api.github.com/repos/crewAIInc/crewAI/git/trees/e3d6024c6f20baa57075cbbc076bc363d6c33586",
+      "html": "https://github.com/crewAIInc/crewAI/tree/main/lib/crewai/src/crewai/agent"
+    }
+  },
+  {
+    "name": "agents",
+    "path": "lib/crewai/src/crewai/agents",
+    "sha": "120bcc25c8bab1dc65c25e39e517cae696344fcb",
+    "size": 0,
+    "url": "https://api.github.com/repos/crewAIInc/crewAI/contents/lib/crewai/src/crewai/agents?ref=main",
+    "html_url": "https://github.com/crewAIInc/crewAI/tree/main/lib/crewai/src/crewai/agents",
+    "git_url": "https://api.github.com/repos/crewAIInc/crewAI/git/trees/120bcc25c8bab1dc65c25e39e517cae696344fcb",
+    "download_url": null,
+    "type": "dir",
+    "_links": {
+      "self": "https://api.github.com/repos/crewAIInc/crewAI/contents/lib/crewai/src/crewai/agents?ref=main",
+      "git": "https://api.github.com/repos/crewAIInc/crewAI/git/trees/120bcc25c8bab1dc65c25e39e517cae696344fcb",
+      "html": "https://github.com/crewAIInc/crewAI/tree/main/lib/crewai/src/crewai/agents"
+    }
+  },
+  {
+    "name": "auth",
+    "path": "lib/crewai/src/crewai/auth",
+    "sha": "12bdd68c966d1407ce7c7530fc2a7461b765eb51",
+    "size": 0,
+    "url": "https://api.github.com/repos/crewAIInc/crewAI/contents/lib/crewai/src/crewai/auth?ref=main",
+    "html_url": "https://github.com/crewAIInc/crewAI/tree/main/lib/crewai/src/crewai/auth",
+    "git_url": "https://api.github.com/repos/crewAIInc/crewAI/git/trees/12bdd68c966d1407ce7c7530fc2a7461b765eb51",
+    "download_url": null,
+    "type": "dir",
+    "_links": {
+      "self": "https://api.github.com/repos/crewAIInc/crewAI/contents/lib/crewai/src/crewai/auth?ref=main",
+      "git": "https://api.github.com/repos/crewAIInc/crewAI/git/trees/12bdd68c966d1407ce7c7530fc2a7461b765eb51",
+      "html": "https://github.com/crewAIInc/crewAI/tree/main/lib/crewai/src/crewai/auth"
+    }
+  },
+  {
+    "name": "cli",
+    "path": "lib/crewai/src/crewai/cli",
+    "sha": "fba70d0b55d945d981830600a1f1ee8b030e1a96",
+    "size": 0,
+    "url": "https://api.github.com/repos/crewAIInc/crewAI/contents/lib/crewai/src/crewai/cli?ref=main",
+    "html_url": "https://github.com/crewAIInc/crewAI/tree/main/lib/crewai/src/crewai/cli",
+    "git_url": "https://api.github.com/repos/crewAIInc/crewAI/git/trees/fba70d0b55d945d981830600a1f1ee8b030e1a96",
+    "download_url": null,
+    "type": "dir",
+    "_links": {
+      "self": "https://api.github.com/repos/crewAIInc/crewAI/contents/lib/crewai/src/crewai/cli?ref=main",
+      "git": "https://api.github.com/repos/crewAIInc/crewAI/git/trees/fba70d0b55d945d981830600a1f1ee8b030e1a96",
+      "html": "https://github.com/crewAIInc/crewAI/tree/main/lib/crewai/src/crewai/cli"
+    }
+  },
+  {
+    "name": "constants.py",
+    "path": "lib/crewai/src/crewai/constants.py",
+    "sha": "4c9db2665d14aa87575dc6bd7d4693527aca08c8",
+    "size": 13122,
+    "url": "https://api.github.com/repos/crewAIInc/crewAI/contents/lib/crewai/src/crewai/constants.py?ref=main",
+    "html_url": "https://github.com/crewAIInc/crewAI/blob/main/lib/crewai/src/crewai/constants.py",
+    "git_url": "https://api.github.com/repos/crewAIInc/crewAI/git/blobs/4c9db2665d14aa87575dc6bd7d4693527aca08c8",
+    "download_url": "https://raw.githubusercontent.com/crewAIInc/crewAI/main/lib/crewai/src/crewai/constants.py",
+    "type": "file",
+    "_links": {
+      "self": "https://api.github.com/repos/crewAIInc/crewAI/contents/lib/crewai/src/crewai/constants.py?ref=main",
+      "git": "https://api.github.com/repos/crewAIInc/crewAI/git/blobs/4c9db2665d14aa87575dc6bd7d4693527aca08c8",
+      "html": "https://github.com/crewAIInc/crewAI/blob/main/lib/crewai/src/crewai/constants.py"
+    }
+  },
+  {
+    "name": "context.py",
+    "path": "lib/crewai/src/crewai/context.py",
+    "sha": "27ecb1c4da7bd8e4a4304e77bd0b6b74e43b6961",
+    "size": 4326,
+    "url": "https://api.github.com/repos/crewAIInc/crewAI/contents/lib/crewai/src/crewai/context.py?ref=main",
+    "html_url": "https://github.com/crewAIInc/crewAI/blob/main/lib/crewai/src/crewai/context.py",
+    "git_url": "https://api.github.com/repos/crewAIInc/crewAI/git/blobs/27ecb1c4da7bd8e4a4304e77bd0b6b74e43b6961",
+    "download_url": "https://raw.githubusercontent.com/crewAIInc/crewAI/main/lib/crewai/src/crewai/context.py",
+    "type": "file",
+    "_links": {
+      "self": "https://api.github.com/repos/crewAIInc/crewAI/contents/lib/crewai/src/crewai/context.py?ref=main",
+      "git": "https://api.github.com/repos/crewAIInc/crewAI/git/blobs/27ecb1c4da7bd8e4a4304e77bd0b6b74e43b6961",
+      "html": "https://github.com/crewAIInc/crewAI/blob/main/lib/crewai/src/crewai/context.py"
+    }
+  },
+  {
+    "name": "core",
+    "path": "lib/crewai/src/crewai/core",
+    "sha": "73b7bb9523e25989891bdb4f7f6f8bee1379f5d3",
+    "size": 0,
+    "url": "https://api.github.com/repos/crewAIInc/crewAI/contents/lib/crewai/src/crewai/core?ref=main",
+    "html_url": "https://github.com/crewAIInc/crewAI/tree/main/lib/crewai/src/crewai/core",
+    "git_url": "https://api.github.com/repos/crewAIInc/crewAI/git/trees/73b7bb9523e25989891bdb4f7f6f8bee1379f5d3",
+    "download_url": null,
+    "type": "dir",
+    "_links": {
+      "self": "https://api.github.com/repos/crewAIInc/crewAI/contents/lib/crewai/src/crewai/core?ref=main",
+      "git": "https://api.github.com/repos/crewAIInc/crewAI/git/trees/73b7bb9523e25989891bdb4f7f6f8bee1379f5d3",
+      "html": "https://github.com/crewAIInc/crewAI/tree/main/lib/crewai/src/crewai/core"
+    }
+  },
+  {
+    "name": "crew.py",
+    "path": "lib/crewai/src/crewai/crew.py",
+    "sha": "fda456be404f67614597019594ab9ecf9f6ed66a",
+    "size": 88306,
+    "url": "https://api.github.com/repos/crewAIInc/crewAI/contents/lib/crewai/src/crewai/crew.py?ref=main",
+    "html_url": "https://github.com/crewAIInc/crewAI/blob/main/lib/crewai/src/crewai/crew.py",
+    "git_url": "https://api.github.com/repos/crewAIInc/crewAI/git/blobs/fda456be404f67614597019594ab9ecf9f6ed66a",
+    "download_url": "https://raw.githubusercontent.com/crewAIInc/crewAI/main/lib/crewai/src/crewai/crew.py",
+    "type": "file",
+    "_links": {
+      "self": "https://api.github.com/repos/crewAIInc/crewAI/contents/lib/crewai/src/crewai/crew.py?ref=main",
+      "git": "https://api.github.com/repos/crewAIInc/crewAI/git/blobs/fda456be404f67614597019594ab9ecf9f6ed66a",
+      "html": "https://github.com/crewAIInc/crewAI/blob/main/lib/crewai/src/crewai/crew.py"
+    }
+  },
+  {
+    "name": "crews",
+    "path": "lib/crewai/src/crewai/crews",
+    "sha": "bb023edd86ac3eb368a3d2bce011e4ef3661c2b0",
+    "size": 0,
+    "url": "https://api.github.com/repos/crewAIInc/crewAI/contents/lib/crewai/src/crewai/crews?ref=main",
+    "html_url": "https://github.com/crewAIInc/crewAI/tree/main/lib/crewai/src/crewai/crews",
+    "git_url": "https://api.github.com/repos/crewAIInc/crewAI/git/trees/bb023edd86ac3eb368a3d2bce011e4ef3661c2b0",
+    "download_url": null,
+    "type": "dir",
+    "_links": {
+      "self": "https://api.github.com/repos/crewAIInc/crewAI/contents/lib/crewai/src/crewai/crews?ref=main",
+      "git": "https://api.github.com/repos/crewAIInc/crewAI/git/trees/bb023edd86ac3eb368a3d2bce011e4ef3661c2b0",
+      "html": "https://github.com/crewAIInc/crewAI/tree/main/lib/crewai/src/crewai/crews"
+    }
+  },
+  {
+    "name": "events",
+    "path": "lib/crewai/src/crewai/events",
+    "sha": "63526547b7396db276fc5fed9c6bc7bc4d8ef99c",
+    "size": 0,
+    "url": "https://api.github.com/repos/crewAIInc/crewAI/contents/lib/crewai/src/crewai/events?ref=main",
+    "html_url": "https://github.com/crewAIInc/crewAI/tree/main/lib/crewai/src/crewai/events",
+    "git_url": "https://api.github.com/repos/crewAIInc/crewAI/git/trees/63526547b7396db276fc5fed9c6bc7bc4d8ef99c",
+    "download_url": null,
+    "type": "dir",
+    "_links": {
+      "self": "https://api.github.com/repos/crewAIInc/crewAI/contents/lib/crewai/src/crewai/events?ref=main",
+      "git": "https://api.github.com/repos/crewAIInc/crewAI/git/trees/63526547b7396db276fc5fed9c6bc7bc4d8ef99c",
+      "html": "https://github.com/crewAIInc/crewAI/tree/main/lib/crewai/src/crewai/events"
+    }
+  },
+  {
+    "name": "experimental",
+    "path": "lib/crewai/src/crewai/experimental",
+    "sha": "a8dca8630b5381d6f46b72311d2f24584bebcf3e",
+    "size": 0,
+    "url": "https://api.github.com/repos/crewAIInc/crewAI/contents/lib/crewai/src/crewai/experimental?ref=main",
+    "html_url": "https://github.com/crewAIInc/crewAI/tree/main/lib/crewai/src/crewai/experimental",
+    "git_url": "https://api.github.com/repos/crewAIInc/crewAI/git/trees/a8dca8630b5381d6f46b72311d2f24584bebcf3e",
+    "download_url": null,
+    "type": "dir",
+    "_links": {
+      "self": "https://api.github.com/repos/crewAIInc/crewAI/contents/lib/crewai/src/crewai/experimental?ref=main",
+      "git": "https://api.github.com/repos/crewAIInc/crewAI/git/trees/a8dca8630b5381d6f46b72311d2f24584bebcf3e",
+      "html": "https://github.com/crewAIInc/crewAI/tree/main/lib/crewai/src/crewai/experimental"
+    }
+  },
+  {
+    "name": "flow",
+    "path": "lib/crewai/src/crewai/flow",
+    "sha": "30d5d07c2e2974bfe44e2cbe24d43a106d6d0438",
+    "size": 0,
+    "url": "https://api.github.com/repos/crewAIInc/crewAI/contents/lib/crewai/src/crewai/flow?ref=main",
+    "html_url": "https://github.com/crewAIInc/crewAI/tree/main/lib/crewai/src/crewai/flow",
+    "git_url": "https://api.github.com/repos/crewAIInc/crewAI/git/trees/30d5d07c2e2974bfe44e2cbe24d43a106d6d0438",
+    "download_url": null,
+    "type": "dir",
+    "_links": {
+      "self": "https://api.github.com/repos/crewAIInc/crewAI/contents/lib/crewai/src/crewai/flow?ref=main",
+      "git": "https://api.github.com/repos/crewAIInc/crewAI/git/trees/30d5d07c2e2974bfe44e2cbe24d43a106d6d0438",
+      "html": "https://github.com/crewAIInc/crewAI/tree/main/lib/crewai/src/crewai/flow"
+    }
+  },
+  {
+    "name": "hooks",
+    "path": "lib/crewai/src/crewai/hooks",
+    "sha": "0d7e69f4d7a34a613d88534662ec2cb4d685ce49",
+    "size": 0,
+    "url": "https://api.github.com/repos/crewAIInc/crewAI/contents/lib/crewai/src/crewai/hooks?ref=main",
+    "html_url": "https://github.com/crewAIInc/crewAI/tree/main/lib/crewai/src/crewai/hooks",
+    "git_url": "https://api.github.com/repos/crewAIInc/crewAI/git/trees/0d7e69f4d7a34a613d88534662ec2cb4d685ce49",
+    "download_url": null,
+    "type": "dir",
+    "_links": {
+      "self": "https://api.github.com/repos/crewAIInc/crewAI/contents/lib/crewai/src/crewai/hooks?ref=main",
+      "git": "https://api.github.com/repos/crewAIInc/crewAI/git/trees/0d7e69f4d7a34a613d88534662ec2cb4d685ce49",
+      "html": "https://github.com/crewAIInc/crewAI/tree/main/lib/crewai/src/crewai/hooks"
+    }
+  },
+  {
+    "name": "knowledge",
+    "path": "lib/crewai/src/crewai/knowledge",
+    "sha": "0e882f1c0ccbc533cbe31092f6615e6b5c78701f",
+    "size": 0,
+    "url": "https://api.github.com/repos/crewAIInc/crewAI/contents/lib/crewai/src/crewai/knowledge?ref=main",
+    "html_url": "https://github.com/crewAIInc/crewAI/tree/main/lib/crewai/src/crewai/knowledge",
+    "git_url": "https://api.github.com/repos/crewAIInc/crewAI/git/trees/0e882f1c0ccbc533cbe31092f6615e6b5c78701f",
+    "download_url": null,
+    "type": "dir",
+    "_links": {
+      "self": "https://api.github.com/repos/crewAIInc/crewAI/contents/lib/crewai/src/crewai/knowledge?ref=main",
+      "git": "https://api.github.com/repos/crewAIInc/crewAI/git/trees/0e882f1c0ccbc533cbe31092f6615e6b5c78701f",
+      "html": "https://github.com/crewAIInc/crewAI/tree/main/lib/crewai/src/crewai/knowledge"
+    }
+  },
+  {
+    "name": "lite_agent.py",
+    "path": "lib/crewai/src/crewai/lite_agent.py",
+    "sha": "bc79c590c6edd62b18476c538432d8c5960d3ccf",
+    "size": 37489,
+    "url": "https://api.github.com/repos/crewAIInc/crewAI/contents/lib/crewai/src/crewai/lite_agent.py?ref=main",
+    "html_url": "https://github.com/crewAIInc/crewAI/blob/main/lib/crewai/src/crewai/lite_agent.py",
+    "git_url": "https://api.github.com/repos/crewAIInc/crewAI/git/blobs/bc79c590c6edd62b18476c538432d8c5960d3ccf",
+    "download_url": "https://raw.githubusercontent.com/crewAIInc/crewAI/main/lib/crewai/src/crewai/lite_agent.py",
+    "type": "file",
+    "_links": {
+      "self": "https://api.github.com/repos/crewAIInc/crewAI/contents/lib/crewai/src/crewai/lite_agent.py?ref=main",
+      "git": "https://api.github.com/repos/crewAIInc/crewAI/git/blobs/bc79c590c6edd62b18476c538432d8c5960d3ccf",
+      "html": "https://github.com/crewAIInc/crewAI/blob/main/lib/crewai/src/crewai/lite_agent.py"
+    }
+  },
+  {
+    "name": "lite_agent_output.py",
+    "path": "lib/crewai/src/crewai/lite_agent_output.py",
+    "sha": "1ac79d422f2dc59dbf8cda0e7724ca2363122e17",
+    "size": 4083,
+    "url": "https://api.github.com/repos/crewAIInc/crewAI/contents/lib/crewai/src/crewai/lite_agent_output.py?ref=main",
+    "html_url": "https://github.com/crewAIInc/crewAI/blob/main/lib/crewai/src/crewai/lite_agent_output.py",
+    "git_url": "https://api.github.com/repos/crewAIInc/crewAI/git/blobs/1ac79d422f2dc59dbf8cda0e7724ca2363122e17",
+    "download_url": "https://raw.githubusercontent.com/crewAIInc/crewAI/main/lib/crewai/src/crewai/lite_agent_output.py",
+    "type": "file",
+    "_links": {
+      "self": "https://api.github.com/repos/crewAIInc/crewAI/contents/lib/crewai/src/crewai/lite_agent_output.py?ref=main",
+      "git": "https://api.github.com/repos/crewAIInc/crewAI/git/blobs/1ac79d422f2dc59dbf8cda0e7724ca2363122e17",
+      "html": "https://github.com/crewAIInc/crewAI/blob/main/lib/crewai/src/crewai/lite_agent_output.py"
+    }
+  },
+  {
+    "name": "llm.py",
+    "path": "lib/crewai/src/crewai/llm.py",
+    "sha": "5db0d300bd2f0b7b9537b151d54588676b1595f2",
+    "size": 104284,
+    "url": "https://api.github.com/repos/crewAIInc/crewAI/contents/lib/crewai/src/crewai/llm.py?ref=main",
+    "html_url": "https://github.com/crewAIInc/crewAI/blob/main/lib/crewai/src/crewai/llm.py",
+    "git_url": "https://api.github.com/repos/crewAIInc/crewAI/git/blobs/5db0d300bd2f0b7b9537b151d54588676b1595f2",
+    "download_url": "https://raw.githubusercontent.com/crewAIInc/crewAI/main/lib/crewai/src/crewai/llm.py",
+    "type": "file",
+    "_links": {
+      "self": "https://api.github.com/repos/crewAIInc/crewAI/contents/lib/crewai/src/crewai/llm.py?ref=main",
+      "git": "https://api.github.com/repos/crewAIInc/crewAI/git/blobs/5db0d300bd2f0b7b9537b151d54588676b1595f2",
+      "html": "https://github.com/crewAIInc/crewAI/blob/main/lib/crewai/src/crewai/llm.py"
+    }
+  },
+  {
+    "name": "llms",
+    "path": "lib/crewai/src/crewai/llms",
+    "sha": "6aa1f5a1d4bdfa6ac78b303dffc394a109302b91",
+    "size": 0,
+    "url": "https://api.github.com/repos/crewAIInc/crewAI/contents/lib/crewai/src/crewai/llms?ref=main",
+    "html_url": "https://github.com/crewAIInc/crewAI/tree/main/lib/crewai/src/crewai/llms",
+    "git_url": "https://api.github.com/repos/crewAIInc/crewAI/git/trees/6aa1f5a1d4bdfa6ac78b303dffc394a109302b91",
+    "download_url": null,
+    "type": "dir",
+    "_links": {
+      "self": "https://api.github.com/repos/crewAIInc/crewAI/contents/lib/crewai/src/crewai/llms?ref=main",
+      "git": "https://api.github.com/repos/crewAIInc/crewAI/git/trees/6aa1f5a1d4bdfa6ac78b303dffc394a109302b91",
+      "html": "https://github.com/crewAIInc/crewAI/tree/main/lib/crewai/src/crewai/llms"
+    }
+  },
+  {
+    "name": "mcp",
+    "path": "lib/crewai/src/crewai/mcp",
+    "sha": "7142d1789de4fcf74486abfc4c34f75f2d5b5213",
+    "size": 0,
+    "url": "https://api.github.com/repos/crewAIInc/crewAI/contents/lib/crewai/src/crewai/mcp?ref=main",
+    "html_url": "https://github.com/crewAIInc/crewAI/tree/main/lib/crewai/src/crewai/mcp",
+    "git_url": "https://api.github.com/repos/crewAIInc/crewAI/git/trees/7142d1789de4fcf74486abfc4c34f75f2d5b5213",
+    "download_url": null,
+    "type": "dir",
+    "_links": {
+      "self": "https://api.github.com/repos/crewAIInc/crewAI/contents/lib/crewai/src/crewai/mcp?ref=main",
+      "git": "https://api.github.com/repos/crewAIInc/crewAI/git/trees/7142d1789de4fcf74486abfc4c34f75f2d5b5213",
+      "html": "https://github.com/crewAIInc/crewAI/tree/main/lib/crewai/src/crewai/mcp"
+    }
+  },
+  {
+    "name": "memory",
+    "path": "lib/crewai/src/crewai/memory",
+    "sha": "0fa0a9cf9ca6381517098752eb782d51250a737f",
+    "size": 0,
+    "url": "https://api.github.com/repos/crewAIInc/crewAI/contents/lib/crewai/src/crewai/memory?ref=main",
+    "html_url": "https://github.com/crewAIInc/crewAI/tree/main/lib/crewai/src/crewai/memory",
+    "git_url": "https://api.github.com/repos/crewAIInc/crewAI/git/trees/0fa0a9cf9ca6381517098752eb782d51250a737f",
+    "download_url": null,
+    "type": "dir",
+    "_links": {
+      "self": "https://api.github.com/repos/crewAIInc/crewAI/contents/lib/crewai/src/crewai/memory?ref=main",
+      "git": "https://api.github.com/repos/crewAIInc/crewAI/git/trees/0fa0a9cf9ca6381517098752eb782d51250a737f",
+      "html": "https://github.com/crewAIInc/crewAI/tree/main/lib/crewai/src/crewai/memory"
+    }
+  },
+  {
+    "name": "mypy.py",
+    "path": "lib/crewai/src/crewai/mypy.py",
+    "sha": "009a868b5c39913f2b68b37aa8e4a97c14fb4176",
+    "size": 2034,
+    "url": "https://api.github.com/repos/crewAIInc/crewAI/contents/lib/crewai/src/crewai/mypy.py?ref=main",
+    "html_url": "https://github.com/crewAIInc/crewAI/blob/main/lib/crewai/src/crewai/mypy.py",
+    "git_url": "https://api.github.com/repos/crewAIInc/crewAI/git/blobs/009a868b5c39913f2b68b37aa8e4a97c14fb4176",
+    "download_url": "https://raw.githubusercontent.com/crewAIInc/crewAI/main/lib/crewai/src/crewai/mypy.py",
+    "type": "file",
+    "_links": {
+      "self": "https://api.github.com/repos/crewAIInc/crewAI/contents/lib/crewai/src/crewai/mypy.py?ref=main",
+      "git": "https://api.github.com/repos/crewAIInc/crewAI/git/blobs/009a868b5c39913f2b68b37aa8e4a97c14fb4176",
+      "html": "https://github.com/crewAIInc/crewAI/blob/main/lib/crewai/src/crewai/mypy.py"
+    }
+  },
+  {
+    "name": "plus_api.py",
+    "path": "lib/crewai/src/crewai/plus_api.py",
+    "sha": "e8e1722e7b120b65030a368ee1de8e97a59eea39",
+    "size": 279,
+    "url": "https://api.github.com/repos/crewAIInc/crewAI/contents/lib/crewai/src/crewai/plus_api.py?ref=main",
+    "html_url": "https://github.com/crewAIInc/crewAI/blob/main/lib/crewai/src/crewai/plus_api.py",
+    "git_url": "https://api.github.com/repos/crewAIInc/crewAI/git/blobs/e8e1722e7b120b65030a368ee1de8e97a59eea39",
+    "download_url": "https://raw.githubusercontent.com/crewAIInc/crewAI/main/lib/crewai/src/crewai/plus_api.py",
+    "type": "file",
+    "_links": {
+      "self": "https://api.github.com/repos/crewAIInc/crewAI/contents/lib/crewai/src/crewai/plus_api.py?ref=main",
+      "git": "https://api.github.com/repos/crewAIInc/crewAI/git/blobs/e8e1722e7b120b65030a368ee1de8e97a59eea39",
+      "html": "https://github.com/crewAIInc/crewAI/blob/main/lib/crewai/src/crewai/plus_api.py"
+    }
+  },
+  {
+    "name": "process.py",
+    "path": "lib/crewai/src/crewai/process.py",
+    "sha": "2311c0e45bd7d27ad4828193ab87297249d6c3c7",
+    "size": 249,
+    "url": "https://api.github.com/repos/crewAIInc/crewAI/contents/lib/crewai/src/crewai/process.py?ref=main",
+    "html_url": "https://github.com/crewAIInc/crewAI/blob/main/lib/crewai/src/crewai/process.py",
+    "git_url": "https://api.github.com/repos/crewAIInc/crewAI/git/blobs/2311c0e45bd7d27ad4828193ab87297249d6c3c7",
+    "download_url": "https://raw.githubusercontent.com/crewAIInc/crewAI/main/lib/crewai/src/crewai/process.py",
+    "type": "file",
+    "_links": {
+      "self": "https://api.github.com/repos/crewAIInc/crewAI/contents/lib/crewai/src/crewai/process.py?ref=main",
+      "git": "https://api.github.com/repos/crewAIInc/crewAI/git/blobs/2311c0e45bd7d27ad4828193ab87297249d6c3c7",
+      "html": "https://github.com/crewAIInc/crewAI/blob/main/lib/crewai/src/crewai/process.py"
+    }
+  },
+  {
+    "name": "project",
+    "path": "lib/crewai/src/crewai/project",
+    "sha": "a67211246c553e2d703389a79ac386da3828e575",
+    "size": 0,
+    "url": "https://api.github.com/repos/crewAIInc/crewAI/contents/lib/crewai/src/crewai/project?ref=main",
+    "html_url": "https://github.com/crewAIInc/crewAI/tree/main/lib/crewai/src/crewai/project",
+    "git_url": "https://api.github.com/repos/crewAIInc/crewAI/git/trees/a67211246c553e2d703389a79ac386da3828e575",
+    "download_url": null,
+    "type": "dir",
+    "_links": {
+      "self": "https://api.github.com/repos/crewAIInc/crewAI/contents/lib/crewai/src/crewai/project?ref=main",
+      "git": "https://api.github.com/repos/crewAIInc/crewAI/git/trees/a67211246c553e2d703389a79ac386da3828e575",
+      "html": "https://github.com/crewAIInc/crewAI/tree/main/lib/crewai/src/crewai/project"
+    }
+  },
+  {
+    "name": "py.typed",
+    "path": "lib/crewai/src/crewai/py.typed",
+    "sha": "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391",
+    "size": 0,
+    "url": "https://api.github.com/repos/crewAIInc/crewAI/contents/lib/crewai/src/crewai/py.typed?ref=main",
+    "html_url": "https://github.com/crewAIInc/crewAI/blob/main/lib/crewai/src/crewai/py.typed",
+    "git_url": "https://api.github.com/repos/crewAIInc/crewAI/git/blobs/e69de29bb2d1d6434b8b29ae775ad8c2e48c5391",
+    "download_url": "https://raw.githubusercontent.com/crewAIInc/crewAI/main/lib/crewai/src/crewai/py.typed",
+    "type": "file",
+    "_links": {
+      "self": "https://api.github.com/repos/crewAIInc/crewAI/contents/lib/crewai/src/crewai/py.typed?ref=main",
+      "git": "https://api.github.com/repos/crewAIInc/crewAI/git/blobs/e69de29bb2d1d6434b8b29ae775ad8c2e48c5391",
+      "html": "https://github.com/crewAIInc/crewAI/blob/main/lib/crewai/src/crewai/py.typed"
+    }
+  },
+  {
+    "name": "rag",
+    "path": "lib/crewai/src/crewai/rag",
+    "sha": "401aacfa4c7bf59a4fb0820ddd136015922a48ba",
+    "size": 0,
+    "url": "https://api.github.com/repos/crewAIInc/crewAI/contents/lib/crewai/src/crewai/rag?ref=main",
+    "html_url": "https://github.com/crewAIInc/crewAI/tree/main/lib/crewai/src/crewai/rag",
+    "git_url": "https://api.github.com/repos/crewAIInc/crewAI/git/trees/401aacfa4c7bf59a4fb0820ddd136015922a48ba",
+    "download_url": null,
+    "type": "dir",
+    "_links": {
+      "self": "https://api.github.com/repos/crewAIInc/crewAI/contents/lib/crewai/src/crewai/rag?ref=main",
+      "git": "https://api.github.com/repos/crewAIInc/crewAI/git/trees/401aacfa4c7bf59a4fb0820ddd136015922a48ba",
+      "html": "https://github.com/crewAIInc/crewAI/tree/main/lib/crewai/src/crewai/rag"
+    }
+  },
+  {
+    "name": "security",
+    "path": "lib/crewai/src/crewai/security",
+    "sha": "2c7634cbeb680b54947cf6ebec09ea8d6052f7c5",
+    "size": 0,
+    "url": "https://api.github.com/repos/crewAIInc/crewAI/contents/lib/crewai/src/crewai/security?ref=main",
+    "html_url": "https://github.com/crewAIInc/crewAI/tree/main/lib/crewai/src/crewai/security",
+    "git_url": "https://api.github.com/repos/crewAIInc/crewAI/git/trees/2c7634cbeb680b54947cf6ebec09ea8d6052f7c5",
+    "download_url": null,
+    "type": "dir",
+    "_links": {
+      "self": "https://api.github.com/repos/crewAIInc/crewAI/contents/lib/crewai/src/crewai/security?ref=main",
+      "git": "https://api.github.com/repos/crewAIInc/crewAI/git/trees/2c7634cbeb680b54947cf6ebec09ea8d6052f7c5",
+      "html": "https://github.com/crewAIInc/crewAI/tree/main/lib/crewai/src/crewai/security"
+    }
+  },
+  {
+    "name": "settings.py",
+    "path": "lib/crewai/src/crewai/settings.py",
+    "sha": "e9d41243e8cc8cc464268dc3b5003166701ef32d",
+    "size": 870,
+    "url": "https://api.github.com/repos/crewAIInc/crewAI/contents/lib/crewai/src/crewai/settings.py?ref=main",
+    "html_url": "https://github.com/crewAIInc/crewAI/blob/main/lib/crewai/src/crewai/settings.py",
+    "git_url": "https://api.github.com/repos/crewAIInc/crewAI/git/blobs/e9d41243e8cc8cc464268dc3b5003166701ef32d",
+    "download_url": "https://raw.githubusercontent.com/crewAIInc/crewAI/main/lib/crewai/src/crewai/settings.py",
+    "type": "file",
+    "_links": {
+      "self": "https://api.github.com/repos/crewAIInc/crewAI/contents/lib/crewai/src/crewai/settings.py?ref=main",
+      "git": "https://api.github.com/repos/crewAIInc/crewAI/git/blobs/e9d41243e8cc8cc464268dc3b5003166701ef32d",
+      "html": "https://github.com/crewAIInc/crewAI/blob/main/lib/crewai/src/crewai/settings.py"
+    }
+  },
+  {
+    "name": "skills",
+    "path": "lib/crewai/src/crewai/skills",
+    "sha": "157903d121eeebacf0c2d52a6c12954e2fe4374a",
+    "size": 0,
+    "url": "https://api.github.com/repos/crewAIInc/crewAI/contents/lib/crewai/src/crewai/skills?ref=main",
+    "html_url": "https://github.com/crewAIInc/crewAI/tree/main/lib/crewai/src/crewai/skills",
+    "git_url": "https://api.github.com/repos/crewAIInc/crewAI/git/trees/157903d121eeebacf0c2d52a6c12954e2fe4374a",
+    "download_url": null,
+    "type": "dir",
+    "_links": {
+      "self": "https://api.github.com/repos/crewAIInc/crewAI/contents/lib/crewai/src/crewai/skills?ref=main",
+      "git": "https://api.github.com/repos/crewAIInc/crewAI/git/trees/157903d121eeebacf0c2d52a6c12954e2fe4374a",
+      "html": "https://github.com/crewAIInc/crewAI/tree/main/lib/crewai/src/crewai/skills"
+    }
+  },
+  {
+    "name": "state",
+    "path": "lib/crewai/src/crewai/state",
+    "sha": "556862b44fccbb62d515d78bbba5d0d176f67898",
+    "size": 0,
+    "url": "https://api.github.com/repos/crewAIInc/crewAI/contents/lib/crewai/src/crewai/state?ref=main",
+    "html_url": "https://github.com/crewAIInc/crewAI/tree/main/lib/crewai/src/crewai/state",
+    "git_url": "https://api.github.com/repos/crewAIInc/crewAI/git/trees/556862b44fccbb62d515d78bbba5d0d176f67898",
+    "download_url": null,
+    "type": "dir",
+    "_links": {
+      "self": "https://api.github.com/repos/crewAIInc/crewAI/contents/lib/crewai/src/crewai/state?ref=main",
+      "git": "https://api.github.com/repos/crewAIInc/crewAI/git/trees/556862b44fccbb62d515d78bbba5d0d176f67898",
+      "html": "https://github.com/crewAIInc/crewAI/tree/main/lib/crewai/src/crewai/state"
+    }
+  },
+  {
+    "name": "task.py",
+    "path": "lib/crewai/src/crewai/task.py",
+    "sha": "c63cfe866603cd91751468da3b076597363dba5e",
+    "size": 55703,
+    "url": "https://api.github.com/repos/crewAIInc/crewAI/contents/lib/crewai/src/crewai/task.py?ref=main",
+    "html_url": "https://github.com/crewAIInc/crewAI/blob/main/lib/crewai/src/crewai/task.py",
+    "git_url": "https://api.github.com/repos/crewAIInc/crewAI/git/blobs/c63cfe866603cd91751468da3b076597363dba5e",
+    "download_url": "https://raw.githubusercontent.com/crewAIInc/crewAI/main/lib/crewai/src/crewai/task.py",
+    "type": "file",
+    "_links": {
+      "self": "https://api.github.com/repos/crewAIInc/crewAI/contents/lib/crewai/src/crewai/task.py?ref=main",
+      "git": "https://api.github.com/repos/crewAIInc/crewAI/git/blobs/c63cfe866603cd91751468da3b076597363dba5e",
+      "html": "https://github.com/crewAIInc/crewAI/blob/main/lib/crewai/src/crewai/task.py"
+    }
+  },
+  {
+    "name": "tasks",
+    "path": "lib/crewai/src/crewai/tasks",
+    "sha": "8e247dc8fcc62947b491e40a6aa1b57976db4fd9",
+    "size": 0,
+    "url": "https://api.github.com/repos/crewAIInc/crewAI/contents/lib/crewai/src/crewai/tasks?ref=main",
+    "html_url": "https://github.com/crewAIInc/crewAI/tree/main/lib/crewai/src/crewai/tasks",
+    "git_url": "https://api.github.com/repos/crewAIInc/crewAI/git/trees/8e247dc8fcc62947b491e40a6aa1b57976db4fd9",
+    "download_url": null,
+    "type": "dir",
+    "_links": {
+      "self": "https://api.github.com/repos/crewAIInc/crewAI/contents/lib/crewai/src/crewai/tasks?ref=main",
+      "git": "https://api.github.com/repos/crewAIInc/crewAI/git/trees/8e247dc8fcc62947b491e40a6aa1b57976db4fd9",
+      "html": "https://github.com/crewAIInc/crewAI/tree/main/lib/crewai/src/crewai/tasks"
+    }
+  },
+  {
+    "name": "telemetry",
+    "path": "lib/crewai/src/crewai/telemetry",
+    "sha": "3f14ec2a86d435951a10177bb87f09d4a637459f",
+    "size": 0,
+    "url": "https://api.github.com/repos/crewAIInc/crewAI/contents/lib/crewai/src/crewai/telemetry?ref=main",
+    "html_url": "https://github.com/crewAIInc/crewAI/tree/main/lib/crewai/src/crewai/telemetry",
+    "git_url": "https://api.github.com/repos/crewAIInc/crewAI/git/trees/3f14ec2a86d435951a10177bb87f09d4a637459f",
+    "download_url": null,
+    "type": "dir",
+    "_links": {
+      "self": "https://api.github.com/repos/crewAIInc/crewAI/contents/lib/crewai/src/crewai/telemetry?ref=main",
+      "git": "https://api.github.com/repos/crewAIInc/crewAI/git/trees/3f14ec2a86d435951a10177bb87f09d4a637459f",
+      "html": "https://github.com/crewAIInc/crewAI/tree/main/lib/crewai/src/crewai/telemetry"
+    }
+  },
+  {
+    "name": "tools",
+    "path": "lib/crewai/src/crewai/tools",
+    "sha": "d61fffd45ca7377cacb3df8e583e06f430b88817",
+    "size": 0,
+    "url": "https://api.github.com/repos/crewAIInc/crewAI/contents/lib/crewai/src/crewai/tools?ref=main",
+    "html_url": "https://github.com/crewAIInc/crewAI/tree/main/lib/crewai/src/crewai/tools",
+    "git_url": "https://api.github.com/repos/crewAIInc/crewAI/git/trees/d61fffd45ca7377cacb3df8e583e06f430b88817",
+    "download_url": null,
+    "type": "dir",
+    "_links": {
+      "self": "https://api.github.com/repos/crewAIInc/crewAI/contents/lib/crewai/src/crewai/tools?ref=main",
+      "git": "https://api.github.com/repos/crewAIInc/crewAI/git/trees/d61fffd45ca7377cacb3df8e583e06f430b88817",
+      "html": "https://github.com/crewAIInc/crewAI/tree/main/lib/crewai/src/crewai/tools"
+    }
+  },
+  {
+    "name": "translations",
+    "path": "lib/crewai/src/crewai/translations",
+    "sha": "0ae135303bfc45c4bab324222896f7071c044326",
+    "size": 0,
+    "url": "https://api.github.com/repos/crewAIInc/crewAI/contents/lib/crewai/src/crewai/translations?ref=main",
+    "html_url": "https://github.com/crewAIInc/crewAI/tree/main/lib/crewai/src/crewai/translations",
+    "git_url": "https://api.github.com/repos/crewAIInc/crewAI/git/trees/0ae135303bfc45c4bab324222896f7071c044326",
+    "download_url": null,
+    "type": "dir",
+    "_links": {
+      "self": "https://api.github.com/repos/crewAIInc/crewAI/contents/lib/crewai/src/crewai/translations?ref=main",
+      "git": "https://api.github.com/repos/crewAIInc/crewAI/git/trees/0ae135303bfc45c4bab324222896f7071c044326",
+      "html": "https://github.com/crewAIInc/crewAI/tree/main/lib/crewai/src/crewai/translations"
+    }
+  },
+  {
+    "name": "types",
+    "path": "lib/crewai/src/crewai/types",
+    "sha": "86c8f2ca9e1e08e359b20ac1d11c455c9fcdaefa",
+    "size": 0,
+    "url": "https://api.github.com/repos/crewAIInc/crewAI/contents/lib/crewai/src/crewai/types?ref=main",
+    "html_url": "https://github.com/crewAIInc/crewAI/tree/main/lib/crewai/src/crewai/types",
+    "git_url": "https://api.github.com/repos/crewAIInc/crewAI/git/trees/86c8f2ca9e1e08e359b20ac1d11c455c9fcdaefa",
+    "download_url": null,
+    "type": "dir",
+    "_links": {
+      "self": "https://api.github.com/repos/crewAIInc/crewAI/contents/lib/crewai/src/crewai/types?ref=main",
+      "git": "https://api.github.com/repos/crewAIInc/crewAI/git/trees/86c8f2ca9e1e08e359b20ac1d11c455c9fcdaefa",
+      "html": "https://github.com/crewAIInc/crewAI/tree/main/lib/crewai/src/crewai/types"
+    }
+  },
+  {
+    "name": "utilities",
+    "path": "lib/crewai/src/crewai/utilities",
+    "sha": "655f228100957d947b53b08e6da6b81414f8f5fd",
+    "size": 0,
+    "url": "https://api.github.com/repos/crewAIInc/crewAI/contents/lib/crewai/src/crewai/utilities?ref=main",
+    "html_url": "https://github.com/crewAIInc/crewAI/tree/main/lib/crewai/src/crewai/utilities",
+    "git_url": "https://api.github.com/repos/crewAIInc/crewAI/git/trees/655f228100957d947b53b08e6da6b81414f8f5fd",
+    "download_url": null,
+    "type": "dir",
+    "_links": {
+      "self": "https://api.github.com/repos/crewAIInc/crewAI/contents/lib/crewai/src/crewai/utilities?ref=main",
+      "git": "https://api.github.com/repos/crewAIInc/crewAI/git/trees/655f228100957d947b53b08e6da6b81414f8f5fd",
+      "html": "https://github.com/crewAIInc/crewAI/tree/main/lib/crewai/src/crewai/utilities"
+    }
+  },
+  {
+    "name": "version.py",
+    "path": "lib/crewai/src/crewai/version.py",
+    "sha": "2016621b54866da1b4423c4aa1b0bf2b1d03af07",
+    "size": 689,
+    "url": "https://api.github.com/repos/crewAIInc/crewAI/contents/lib/crewai/src/crewai/version.py?ref=main",
+    "html_url": "https://github.com/crewAIInc/crewAI/blob/main/lib/crewai/src/crewai/version.py",
+    "git_url": "https://api.github.com/repos/crewAIInc/crewAI/git/blobs/2016621b54866da1b4423c4aa1b0bf2b1d03af07",
+    "download_url": "https://raw.githubusercontent.com/crewAIInc/crewAI/main/lib/crewai/src/crewai/version.py",
+    "type": "file",
+    "_links": {
+      "self": "https://api.github.com/repos/crewAIInc/crewAI/contents/lib/crewai/src/crewai/version.py?ref=main",
+      "git": "https://api.github.com/repos/crewAIInc/crewAI/git/blobs/2016621b54866da1b4423c4aa1b0bf2b1d03af07",
+      "html": "https://github.com/crewAIInc/crewAI/blob/main/lib/crewai/src/crewai/version.py"
+    }
+  }
+]

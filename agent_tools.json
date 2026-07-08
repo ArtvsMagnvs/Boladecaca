@@ -1,0 +1,114 @@
+[
+  {
+    "name": "__init__.py",
+    "path": "lib/crewai/src/crewai/tools/agent_tools/__init__.py",
+    "sha": "53c47739b443b2c1c9491905be18e905e8140535",
+    "size": 30,
+    "url": "https://api.github.com/repos/crewAIInc/crewAI/contents/lib/crewai/src/crewai/tools/agent_tools/__init__.py?ref=main",
+    "html_url": "https://github.com/crewAIInc/crewAI/blob/main/lib/crewai/src/crewai/tools/agent_tools/__init__.py",
+    "git_url": "https://api.github.com/repos/crewAIInc/crewAI/git/blobs/53c47739b443b2c1c9491905be18e905e8140535",
+    "download_url": "https://raw.githubusercontent.com/crewAIInc/crewAI/main/lib/crewai/src/crewai/tools/agent_tools/__init__.py",
+    "type": "file",
+    "_links": {
+      "self": "https://api.github.com/repos/crewAIInc/crewAI/contents/lib/crewai/src/crewai/tools/agent_tools/__init__.py?ref=main",
+      "git": "https://api.github.com/repos/crewAIInc/crewAI/git/blobs/53c47739b443b2c1c9491905be18e905e8140535",
+      "html": "https://github.com/crewAIInc/crewAI/blob/main/lib/crewai/src/crewai/tools/agent_tools/__init__.py"
+    }
+  },
+  {
+    "name": "add_image_tool.py",
+    "path": "lib/crewai/src/crewai/tools/agent_tools/add_image_tool.py",
+    "sha": "8191144d989a10d9f715ebe953f7c26e5b2e9619",
+    "size": 1290,
+    "url": "https://api.github.com/repos/crewAIInc/crewAI/contents/lib/crewai/src/crewai/tools/agent_tools/add_image_tool.py?ref=main",
+    "html_url": "https://github.com/crewAIInc/crewAI/blob/main/lib/crewai/src/crewai/tools/agent_tools/add_image_tool.py",
+    "git_url": "https://api.github.com/repos/crewAIInc/crewAI/git/blobs/8191144d989a10d9f715ebe953f7c26e5b2e9619",
+    "download_url": "https://raw.githubusercontent.com/crewAIInc/crewAI/main/lib/crewai/src/crewai/tools/agent_tools/add_image_tool.py",
+    "type": "file",
+    "_links": {
+      "self": "https://api.github.com/repos/crewAIInc/crewAI/contents/lib/crewai/src/crewai/tools/agent_tools/add_image_tool.py?ref=main",
+      "git": "https://api.github.com/repos/crewAIInc/crewAI/git/blobs/8191144d989a10d9f715ebe953f7c26e5b2e9619",
+      "html": "https://github.com/crewAIInc/crewAI/blob/main/lib/crewai/src/crewai/tools/agent_tools/add_image_tool.py"
+    }
+  },
+  {
+    "name": "agent_tools.py",
+    "path": "lib/crewai/src/crewai/tools/agent_tools/agent_tools.py",
+    "sha": "53321745636f39b9e2cdc4129030e55c2e042208",
+    "size": 1163,
+    "url": "https://api.github.com/repos/crewAIInc/crewAI/contents/lib/crewai/src/crewai/tools/agent_tools/agent_tools.py?ref=main",
+    "html_url": "https://github.com/crewAIInc/crewAI/blob/main/lib/crewai/src/crewai/tools/agent_tools/agent_tools.py",
+    "git_url": "https://api.github.com/repos/crewAIInc/crewAI/git/blobs/53321745636f39b9e2cdc4129030e55c2e042208",
+    "download_url": "https://raw.githubusercontent.com/crewAIInc/crewAI/main/lib/crewai/src/crewai/tools/agent_tools/agent_tools.py",
+    "type": "file",
+    "_links": {
+      "self": "https://api.github.com/repos/crewAIInc/crewAI/contents/lib/crewai/src/crewai/tools/agent_tools/agent_tools.py?ref=main",
+      "git": "https://api.github.com/repos/crewAIInc/crewAI/git/blobs/53321745636f39b9e2cdc4129030e55c2e042208",
+      "html": "https://github.com/crewAIInc/crewAI/blob/main/lib/crewai/src/crewai/tools/agent_tools/agent_tools.py"
+    }
+  },
+  {
+    "name": "ask_question_tool.py",
+    "path": "lib/crewai/src/crewai/tools/agent_tools/ask_question_tool.py",
+    "sha": "bad4a08d3cb708e67828a2133965d80bc0b53562",
+    "size": 850,
+    "url": "https://api.github.com/repos/crewAIInc/crewAI/contents/lib/crewai/src/crewai/tools/agent_tools/ask_question_tool.py?ref=main",
+    "html_url": "https://github.com/crewAIInc/crewAI/blob/main/lib/crewai/src/crewai/tools/agent_tools/ask_question_tool.py",
+    "git_url": "https://api.github.com/repos/crewAIInc/crewAI/git/blobs/bad4a08d3cb708e67828a2133965d80bc0b53562",
+    "download_url": "https://raw.githubusercontent.com/crewAIInc/crewAI/main/lib/crewai/src/crewai/tools/agent_tools/ask_question_tool.py",
+    "type": "file",
+    "_links": {
+      "self": "https://api.github.com/repos/crewAIInc/crewAI/contents/lib/crewai/src/crewai/tools/agent_tools/ask_question_tool.py?ref=main",
+      "git": "https://api.github.com/repos/crewAIInc/crewAI/git/blobs/bad4a08d3cb708e67828a2133965d80bc0b53562",
+      "html": "https://github.com/crewAIInc/crewAI/blob/main/lib/crewai/src/crewai/tools/agent_tools/ask_question_tool.py"
+    }
+  },
+  {
+    "name": "base_agent_tools.py",
+    "path": "lib/crewai/src/crewai/tools/agent_tools/base_agent_tools.py",
+    "sha": "19c19914c9db2f2e1913e230ef932d33398fff1d",
+    "size": 4704,
+    "url": "https://api.github.com/repos/crewAIInc/crewAI/contents/lib/crewai/src/crewai/tools/agent_tools/base_agent_tools.py?ref=main",
+    "html_url": "https://github.com/crewAIInc/crewAI/blob/main/lib/crewai/src/crewai/tools/agent_tools/base_agent_tools.py",
+    "git_url": "https://api.github.com/repos/crewAIInc/crewAI/git/blobs/19c19914c9db2f2e1913e230ef932d33398fff1d",
+    "download_url": "https://raw.githubusercontent.com/crewAIInc/crewAI/main/lib/crewai/src/crewai/tools/agent_tools/base_agent_tools.py",
+    "type": "file",
+    "_links": {
+      "self": "https://api.github.com/repos/crewAIInc/crewAI/contents/lib/crewai/src/crewai/tools/agent_tools/base_agent_tools.py?ref=main",
+      "git": "https://api.github.com/repos/crewAIInc/crewAI/git/blobs/19c19914c9db2f2e1913e230ef932d33398fff1d",
+      "html": "https://github.com/crewAIInc/crewAI/blob/main/lib/crewai/src/crewai/tools/agent_tools/base_agent_tools.py"
+    }
+  },
+  {
+    "name": "delegate_work_tool.py",
+    "path": "lib/crewai/src/crewai/tools/agent_tools/delegate_work_tool.py",
+    "sha": "933925e02c282211ef23dd27b772fc3ebc929086",
+    "size": 860,
+    "url": "https://api.github.com/repos/crewAIInc/crewAI/contents/lib/crewai/src/crewai/tools/agent_tools/delegate_work_tool.py?ref=main",
+    "html_url": "https://github.com/crewAIInc/crewAI/blob/main/lib/crewai/src/crewai/tools/agent_tools/delegate_work_tool.py",
+    "git_url": "https://api.github.com/repos/crewAIInc/crewAI/git/blobs/933925e02c282211ef23dd27b772fc3ebc929086",
+    "download_url": "https://raw.githubusercontent.com/crewAIInc/crewAI/main/lib/crewai/src/crewai/tools/agent_tools/delegate_work_tool.py",
+    "type": "file",
+    "_links": {
+      "self": "https://api.github.com/repos/crewAIInc/crewAI/contents/lib/crewai/src/crewai/tools/agent_tools/delegate_work_tool.py?ref=main",
+      "git": "https://api.github.com/repos/crewAIInc/crewAI/git/blobs/933925e02c282211ef23dd27b772fc3ebc929086",
+      "html": "https://github.com/crewAIInc/crewAI/blob/main/lib/crewai/src/crewai/tools/agent_tools/delegate_work_tool.py"
+    }
+  },
+  {
+    "name": "read_file_tool.py",
+    "path": "lib/crewai/src/crewai/tools/agent_tools/read_file_tool.py",
+    "sha": "048552748617569256ab35812581f722188ed532",
+    "size": 3193,
+    "url": "https://api.github.com/repos/crewAIInc/crewAI/contents/lib/crewai/src/crewai/tools/agent_tools/read_file_tool.py?ref=main",
+    "html_url": "https://github.com/crewAIInc/crewAI/blob/main/lib/crewai/src/crewai/tools/agent_tools/read_file_tool.py",
+    "git_url": "https://api.github.com/repos/crewAIInc/crewAI/git/blobs/048552748617569256ab35812581f722188ed532",
+    "download_url": "https://raw.githubusercontent.com/crewAIInc/crewAI/main/lib/crewai/src/crewai/tools/agent_tools/read_file_tool.py",
+    "type": "file",
+    "_links": {
+      "self": "https://api.github.com/repos/crewAIInc/crewAI/contents/lib/crewai/src/crewai/tools/agent_tools/read_file_tool.py?ref=main",
+      "git": "https://api.github.com/repos/crewAIInc/crewAI/git/blobs/048552748617569256ab35812581f722188ed532",
+      "html": "https://github.com/crewAIInc/crewAI/blob/main/lib/crewai/src/crewai/tools/agent_tools/read_file_tool.py"
+    }
+  }
+]
