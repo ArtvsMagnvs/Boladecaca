@@ -54,6 +54,33 @@ function langFromVoice(v: { labels?: Record<string, string>; available_languages
   return "other";
 }
 
+// V0.83: 4 proveedores TTS seleccionables. EdgeTTS por defecto (gratis, sin key,
+// funciona en Python 3.13; Kokoro no soporta 3.13 -> queda como "no disponible").
+type Provider = "edgetts" | "elevenlabs" | "kokoro" | "espeak";
+const PROVIDERS: Provider[] = ["edgetts", "elevenlabs", "kokoro", "espeak"];
+const PROVIDER_LABELS: Record<Provider, string> = {
+  edgetts: "EdgeTTS",
+  elevenlabs: "ElevenLabs",
+  kokoro: "Kokoro",
+  espeak: "eSpeak",
+};
+
+// Voces "simples" (EdgeTTS / Kokoro vienen como {id, name, lang}) -> VoiceConfig.
+function mapSimpleVoice(v: { id: string; name: string; lang: string }): VoiceConfig {
+  const n = v.name || v.id;
+  const gender: VoiceConfig["gender"] =
+    n.includes("♀") ? "female" : n.includes("♂") ? "male" : "unknown";
+  return {
+    voice_id: v.id,
+    name: n,
+    category: "premade",
+    lang: v.lang || "es",
+    gender,
+    description: "",
+    previewText: DEFAULT_PREVIEW,
+  };
+}
+
 export default function VoiceCenter() {
   // V0.83 (Paso 3): arrancamos con [], no con hardcoded. Las voces reales
   // llegan del backend en useEffect. selectedVoice arranca null y se elige
@@ -61,7 +88,7 @@ export default function VoiceCenter() {
   const [voices, setVoices] = useState<VoiceConfig[]>([]);
   const [selectedVoice, setSelectedVoice] = useState<VoiceConfig | null>(null);
   const [favorites, setFavorites] = useState<Set<string>>(new Set());
-  const [activeProvider, setActiveProvider] = useState<"elevenlabs" | "espeak">("elevenlabs");
+  const [activeProvider, setActiveProvider] = useState<Provider>("edgetts");
   const [loadingVoices, setLoadingVoices] = useState(true);
   const [voiceLoadError, setVoiceLoadError] = useState<string | null>(null);
   const [elevenlabsConfigured, setElevenlabsConfigured] = useState(false);
@@ -90,46 +117,38 @@ export default function VoiceCenter() {
     };
   }, [setCoreState]);
 
-  // V0.83 (Paso 3): carga las voces de la cuenta + preferencias persistidas
-  // en Config. Patron paralelo al que ya usa el frontend con el token de
-  // Telegram (api.getConfig devuelve todos los pares clave/valor).
-  useEffect(() => {
-    let cancelled = false;
-    const safeSet = <T,>(setter: (v: T) => void, v: T) => {
-      if (!cancelled) setter(v);
-    };
-
-    // 1) Lee la config persistida (tts_selected_voice, tts_active_provider,
-    // tts_favorite_voice_ids). Toleramos 404: clave no existe, es normal
-    // en el primer arranque.
-    (async () => {
-      let persistedId: string | null = null;
-      let persistedProvider: "elevenlabs" | "espeak" = "elevenlabs";
-      let persistedFavs: string[] = [];
-      try {
-        const all = await api.getConfig();
-        for (const row of all) {
-          if (row.key === CFG_KEY_SELECTED_VOICE) persistedId = row.value;
-          else if (row.key === CFG_KEY_ACTIVE_PROVIDER) {
-            if (row.value === "espeak") persistedProvider = "espeak";
-          } else if (row.key === CFG_KEY_FAVORITE_VOICES) {
-            persistedFavs = row.value.split(",").map((s) => s.trim()).filter(Boolean);
-          }
-        }
-      } catch {
-        // Sin config accesible = sin preferencias, defaults
+  // V0.83: carga las voces del proveedor dado y elige la voz inicial. Fuente
+  // única, usada tanto en el arranque como al cambiar de proveedor en vivo.
+  const loadVoicesFor = useCallback(async (provider: Provider, preferId?: string | null) => {
+    setLoadingVoices(true);
+    setVoiceLoadError(null);
+    try {
+      if (provider === "espeak") {
+        setVoices([]);
+        setSelectedVoice(null);
+        setLoadingVoices(false);
+        return;
       }
-      safeSet<"elevenlabs" | "espeak">(setActiveProvider, persistedProvider);
-      safeSet<Set<string>>(setFavorites, new Set(persistedFavs));
-
-      // 2) Trae las voces de la cuenta ElevenLabs.
-      let accountVoices: VoiceConfig[] = [];
-      try {
+      let list: VoiceConfig[] = [];
+      if (provider === "edgetts") {
+        const r = await api.getEdgeVoices();
+        list = (r.voices || []).map(mapSimpleVoice);
+      } else if (provider === "kokoro") {
+        try {
+          const st = await api.getKokoroStatus();
+          if (!st.available) setVoiceLoadError(st.message);
+        } catch {
+          /* status opcional */
+        }
+        const r = await api.getKokoroVoices();
+        list = (r.voices || []).map(mapSimpleVoice);
+      } else {
+        // elevenlabs
         const status = await api.getVoiceStatus();
         if (status.configured) {
           setElevenlabsConfigured(true);
           const r = await api.getAccountVoices();
-          accountVoices = (r.voices || []).map((v) => ({
+          list = (r.voices || []).map((v) => ({
             voice_id: v.voice_id,
             name: v.name,
             category: (v.category as VoiceConfig["category"]) || "premade",
@@ -139,49 +158,48 @@ export default function VoiceCenter() {
             previewText: DEFAULT_PREVIEW,
           }));
         } else {
-          setVoiceLoadError(
-            "ElevenLabs no configurado. Define la API key en Ajustes para ver tus voces.",
-          );
+          setVoiceLoadError("ElevenLabs no configurado. Define la API key en Ajustes.");
         }
-      } catch (e: unknown) {
-        const msg = e instanceof Error ? e.message : String(e);
-        safeSet<string | null>(setVoiceLoadError, msg);
       }
-
-      // Si el provider activo es eSpeak, no mostramos voces de ElevenLabs;
-      // dejamos la lista vacia (la UI mostrara el fallback abajo).
-      if (persistedProvider === "espeak") {
-        safeSet<VoiceConfig[]>(setVoices, []);
-        safeSet<VoiceConfig | null>(setSelectedVoice, null);
-        safeSet<boolean>(setLoadingVoices, false);
-        return;
-      }
-
-      // Si no hay voces de ElevenLabs, fallback a lista vacia.
-      if (accountVoices.length === 0) {
-        safeSet<VoiceConfig[]>(setVoices, []);
-        safeSet<VoiceConfig | null>(setSelectedVoice, null);
-        safeSet<boolean>(setLoadingVoices, false);
-        return;
-      }
-
-      // Selecciona la voz persistida si existe; si no, la primera
-      // (que tras la API de ElevenLabs suele venir ya ordenada por defecto).
       let initial: VoiceConfig | null = null;
-      if (persistedId) {
-        initial = accountVoices.find((v) => v.voice_id === persistedId) ?? null;
-      }
-      if (!initial) initial = accountVoices[0];
-
-      safeSet<VoiceConfig[]>(setVoices, accountVoices);
-      safeSet<VoiceConfig | null>(setSelectedVoice, initial);
-      safeSet<boolean>(setLoadingVoices, false);
-    })();
-
-    return () => {
-      cancelled = true;
-    };
+      if (preferId) initial = list.find((v) => v.voice_id === preferId) ?? null;
+      if (!initial) initial = list[0] ?? null;
+      setVoices(list);
+      setSelectedVoice(initial);
+    } catch (e: unknown) {
+      setVoiceLoadError(e instanceof Error ? e.message : String(e));
+      setVoices([]);
+      setSelectedVoice(null);
+    } finally {
+      setLoadingVoices(false);
+    }
   }, []);
+
+  // Arranque: lee preferencias persistidas (proveedor por defecto EdgeTTS) y
+  // carga las voces de ese proveedor.
+  useEffect(() => {
+    (async () => {
+      let persistedId: string | null = null;
+      let persistedProvider: Provider = "edgetts";
+      let persistedFavs: string[] = [];
+      try {
+        const all = await api.getConfig();
+        for (const row of all) {
+          if (row.key === CFG_KEY_SELECTED_VOICE) persistedId = row.value;
+          else if (row.key === CFG_KEY_ACTIVE_PROVIDER) {
+            if ((PROVIDERS as string[]).includes(row.value)) persistedProvider = row.value as Provider;
+          } else if (row.key === CFG_KEY_FAVORITE_VOICES) {
+            persistedFavs = row.value.split(",").map((s) => s.trim()).filter(Boolean);
+          }
+        }
+      } catch {
+        /* sin config = defaults */
+      }
+      setActiveProvider(persistedProvider);
+      setFavorites(new Set(persistedFavs));
+      loadVoicesFor(persistedProvider, persistedId);
+    })();
+  }, [loadVoicesFor]);
 
   // V0.83 (Paso 3): persistir voz seleccionada al cambiar.
   const persistSelected = useCallback((voice: VoiceConfig) => {
@@ -193,7 +211,7 @@ export default function VoiceCenter() {
   }, []);
 
   // V0.83 (Paso 3): persistir provider al cambiar.
-  const persistProvider = useCallback((p: "elevenlabs" | "espeak") => {
+  const persistProvider = useCallback((p: Provider) => {
     api.setConfig(CFG_KEY_ACTIVE_PROVIDER, p).catch(() => {
       // idem
     });
@@ -232,16 +250,17 @@ export default function VoiceCenter() {
     setError(null);
 
     try {
-      // Obtener audio del backend (ElevenLabs).
-      // V0.83 (Paso 3): usamos voice_id (no id), y si el provider activo
-      // es eSpeak, el backend ya enruta al fallback via /voice/synthesize.
-      const audioBuffer = await api.synthesizeVoice(
+      // Obtener audio del backend con el proveedor ACTIVO. ElevenLabs va por
+      // el camino por defecto (provider undefined); el resto explícito.
+      const prov = activeProvider === "elevenlabs" ? undefined : activeProvider;
+      const { buffer, mime } = await api.synthesizeVoice(
         selectedVoice.previewText,
         selectedVoice.voice_id,
+        prov,
       );
 
-      // Crear blob y audio
-      const blob = new Blob([audioBuffer], { type: "audio/mpeg" });
+      // Crear blob y audio con el tipo real (Kokoro=wav, resto=mpeg)
+      const blob = new Blob([buffer], { type: mime });
       const url = URL.createObjectURL(blob);
 
       // Detener anterior si existe
@@ -285,7 +304,7 @@ export default function VoiceCenter() {
     } finally {
       setIsLoading(false);
     }
-  }, [selectedVoice, volume, isPlaying, isLoading, setCoreState]);
+  }, [selectedVoice, volume, isPlaying, isLoading, setCoreState, activeProvider]);
 
   // V0.83 (Paso 3): handler de seleccion de voz. Ademas de cambiar el
   // state local, persiste en Config para que sobreviva a recargas.
@@ -294,18 +313,13 @@ export default function VoiceCenter() {
     persistSelected(voice);
   }, [persistSelected]);
 
-  // V0.83 (Paso 3): handler de cambio de provider. Persiste en Config.
-  // Al cambiar a eSpeak, vaciamos la lista de voces de ElevenLabs.
-  const handleProviderChange = useCallback((p: "elevenlabs" | "espeak") => {
+  // V0.83: cambio de provider EN VIVO. Persiste y recarga las voces del nuevo
+  // proveedor al instante (sin re-montar el componente).
+  const handleProviderChange = useCallback((p: Provider) => {
     setActiveProvider(p);
     persistProvider(p);
-    if (p === "espeak") {
-      setVoices([]);
-      setSelectedVoice(null);
-    }
-    // Si pasamos a elevenlabs, las voces se recargan en el siguiente
-    // mount del componente (no es habitual recargar el provider en vivo).
-  }, [persistProvider]);
+    loadVoicesFor(p);
+  }, [persistProvider, loadVoicesFor]);
 
   const handleStop = () => {
     if (audioRef.current) {
@@ -375,24 +389,26 @@ export default function VoiceCenter() {
           <p className="text-xs mt-0.5">
             <span
               className={`inline-block w-2 h-2 rounded-full mr-1 ${
-                elevenlabsReady ? "bg-signal-ok" : "bg-signal-warn"
+                voices.length > 0 || activeProvider === "espeak" ? "bg-signal-ok" : "bg-signal-warn"
               }`}
             />
             <span className="text-ink-faint">
               {loadingVoices
-                ? "Cargando voces de tu cuenta..."
-                : voiceLoadError
-                  ? voiceLoadError
-                  : elevenlabsReady
-                    ? `${voices.length} voces en tu cuenta ElevenLabs`
-                    : "ElevenLabs no configurado"}
+                ? "Cargando voces..."
+                : activeProvider === "espeak"
+                  ? "eSpeak (offline)"
+                  : voiceLoadError
+                    ? voiceLoadError
+                    : voices.length > 0
+                      ? `${voices.length} voces · ${PROVIDER_LABELS[activeProvider]}`
+                      : `Sin voces (${PROVIDER_LABELS[activeProvider]})`}
             </span>
           </p>
         </div>
         <div className="flex items-center gap-3">
           {/* V0.83 (Paso 3): switch de provider. Persiste en Config. */}
           <div className="flex bg-base-900/60 rounded-xl p-0.5 border border-base-700/60">
-            {(["elevenlabs", "espeak"] as const).map((p) => (
+            {PROVIDERS.map((p) => (
               <button
                 key={p}
                 type="button"
@@ -403,12 +419,16 @@ export default function VoiceCenter() {
                     : "text-ink-faint hover:text-ink"
                 }`}
                 title={
-                  p === "elevenlabs"
-                    ? "Voces profesionales (requiere API key)"
-                    : "Fallback offline (eSpeak NG)"
+                  p === "edgetts"
+                    ? "Microsoft EdgeTTS (gratis, sin key, requiere internet)"
+                    : p === "elevenlabs"
+                      ? "Voces profesionales (requiere API key)"
+                      : p === "kokoro"
+                        ? "TTS local offline (no soportado en Python 3.13)"
+                        : "Fallback offline (eSpeak NG)"
                 }
               >
-                {p === "elevenlabs" ? "ElevenLabs" : "eSpeak"}
+                {PROVIDER_LABELS[p]}
               </button>
             ))}
           </div>
@@ -438,7 +458,7 @@ export default function VoiceCenter() {
       )}
 
       {/* Filtros */}
-      {activeProvider === "elevenlabs" && voices.length > 0 && (
+      {activeProvider !== "espeak" && voices.length > 0 && (
         <div className="flex items-center gap-4 shrink-0 flex-wrap">
           <div className="flex gap-2">
             {(["all", "female", "male"] as const).map(g => (
@@ -483,7 +503,11 @@ export default function VoiceCenter() {
         ) : filteredVoices.length === 0 ? (
           <p className="text-sm text-ink-faint">
             {voices.length === 0
-              ? "No hay voces para mostrar. Configura la API key de ElevenLabs en Ajustes."
+              ? (activeProvider === "elevenlabs"
+                  ? "No hay voces. Configura la API key de ElevenLabs en Ajustes."
+                  : activeProvider === "kokoro"
+                    ? "Kokoro no disponible en este equipo (necesita Python 3.12 o Docker)."
+                    : (voiceLoadError || "No hay voces para mostrar."))
               : "Ninguna voz coincide con los filtros."}
           </p>
         ) : (

@@ -197,6 +197,18 @@
 - **Notas**: Overview OpenAI Agents SDK (`openai/openai-agents-python`). SDK oficial OpenAI Python. v0.18.0 publicada 2026-07-08 (PyPI+shields), MIT (Copyright 2025 OpenAI), Python >=3.10 (clasificadores 3.10/3.11/3.12/3.13/3.14), **28k stars** (shields.io 2026-07-08 18:46 UTC; brief decía ~27.7k → +1.1% stale dentro de margen), monorepo UV workspace `members=["agents"]` con layout `src/agents/` (P20 confirmado). Default model **`gpt-5.4-mini`** con `reasoning.effort="none"` + `verbosity="low"` (verificado en `docs/models/index.md`); modelo recomendado `gpt-5.5` con `effort="high"`. **Sister SDK JS/TS** `openai/openai-agents-js`. Sucesor oficial de Swarm (deprecado). 9 conceptos core: Agents, Sandbox Agents (beta new in 0.14.0), Tools (function/MCP/hosted), Handoffs, Guardrails (input/output/tool), Human-in-the-loop, Sessions, Tracing (OpenTelemetry-like + OpenAI Traces dashboard), Realtime Agents (`gpt-realtime-2.1`, server-side WebSocket only — NO WebRTC). 8 sandboxes oficiales (Docker/Blaxel/Daytona/Cloudflare/E2B/Modal/Runloop/Vercel + UnixLocal built-in), 3 session stores (SQLite built-in / Redis / MongoDB / SQLAlchemy / OpenAI Conversations API nativa). MCP como dep core (`mcp>=1.19.0`). **NO A2A nativo** (a diferencia de Google ADK y CrewAI v1.x). Voice pipeline 3-step (STT → code → TTS) via `VoicePipeline`. Tracing jerárquico: Trace → Task → Turn → Agent → Generation/Function/Guardrail/Handoff/MCP/Response/Speech/Transcription/Custom spans. Comparativa con LangGraph (37k★), AutoGen (60k★), Google ADK (~21k★), CrewAI (55k★). **Aithera借鉴**: patrón handoffs es directo借鉴 para V1.0 Orchestrator (handoff como tool callable; tool name `transfer_to_<agent_name>`; input_type BaseModel para metadata; on_handoff callback; nest_handoff_history; input_filter).
 - **Pendiente cross-doc**: JWIKI-002 projects.md debe actualizar fila OpenAI Agents SDK (28k★, MIT, v0.18.0); JWIKI-010 agent-frameworks.md debe actualizar fila OpenAI Agents SDK con datos v0.18.0; JWIKI-014 google-adk.md debe contrastar Realtime OpenAI vs Gemini Live.
 
+### JWIKI-020 — OpenAI GPT 5.x (provider Tier 1, estándar de facto)
+- **Path destino**: `05_AI_PROVIDERS/openai.md`
+- **Estado**: 🟢 verified (tick A-20260709-0835 — orquestador JWIKI single-team; RECOVERY+COMPLETION del subagente previo que agotó tool calls antes de persistir; contraste live GitHub API 2026-07-09 (31.121★ + 4.873 forks + 561 issues + Apache-2.0 LICENSE file) + raw SDK README (httpx default, retry 408/409/429/5xx, Stainless gen) + OpenAI models page (14 modelos GPT 5.x con pricing verificado); 4301 palabras, 34 hechos verificados con URL+fecha 2026-07-09, 7 snippets con path:line del código Aithera real, tabla comparativa 14 modelos × 8 campos, comparativa Tier 1 vs Anthropic/Google/DeepSeek en 14 criterios, 3 conflictos materiales resueltos (license MIT→Apache-2.0, default_model gpt-5.1→gpt-5, pricing gpt-5.4 output ~$10→$15); 6/6 criterios CONSTITUTION §8 OK; 85% confianza; 1er doc verificado en 05_AI_PROVIDERS/)
+- **Asignado**: orquestador JWIKI single-team (tick A-20260709-0835)
+- **Dependencias**: ninguna
+- **Prioridad**: alta (Tier 1, doc matriz del dominio AI Providers)
+- **Notas**: SDK openai-python Apache-2.0 (NO MIT), 31.121★, httpx default, generado con Stainless desde openai-openapi. Familia GPT 5.x jul-2026: gpt-5.5 flagship ($5/$30 por MTok, 1M context), gpt-5.4 ($2.50/$15, 400K), gpt-5.4-mini ($0.75/$4.50, sweet spot), gpt-5.4-nano (clasificación barata), gpt-realtime-2.1 (audio bidireccional WebSocket <300ms), gpt-image-2, gpt-oss (open weights jul 2026). Reasoning levels (none/low/medium/high/xhigh). State en Aithera V0.7.3: `backend/app/ai/providers/openai_provider.py:9` tiene `default_model_name="gpt-5"` (stale vs borrador `gpt-5.1`); usa `/chat/completions` (no Responses API); hereda de `OpenAICompatibleProvider`. **Pendiente cross-doc**: actualizar `openai_provider.py:9` a `gpt-5.5` o `gpt-5.4-mini`; actualizar CLAUDE.md §10 default `gpt-5.1`; actualizar `05_AI_PROVIDERS/README.md:374` pricing gpt-5.4 output `~$10` → `$15`. Estos 3 fixes son para un tick posterior (no en este).
+- **Created**: 2026-07-07
+- **Updated**: 2026-07-09 08:50 (RECOVERY+COMPLETION → verified; 3 conflictos resueltos)
+- **Material crudo**: `JWIKI/material/JWIKI-020-raw.md` ✅ (14035 bytes, 34 hechos F1-F34 con URL+fecha 2026-07-09, 6 snippets path:line, 3 conflictos documentados, 16 fuentes Tier-1)
+- **Doc final**: `JWIKI/05_AI_PROVIDERS/openai.md` ✅ (34479 bytes, 4301 palabras, 23 secciones TEMPLATE.md, 7 snippets con path:line, tabla 14 modelos × 8 campos, comparativa 14 criterios Tier 1, 16 fuentes URL+fecha, 3 conflictos resueltos, 6/6 criterios CONSTITUTION §8, 85% confianza)
+
 ### JWIKI-016 — Licencias comparativa (OSS licenses)
 - **Path destino**: `01_LANDSCAPE/licenses.md`
 - **Estado**: 🟢 verified (tick A-20260708-21XX — orquestador JWIKI single-team, production-tick desde cero P1; 55 hechos verificados URL+fecha 2026-07-08, 12 snippets verbatim de LICENSE files reales con path:line, tabla 15 licencias × 13 criterios, tabla 11 proyectos OSS del landscape con 5 conflictos resueltos, 23 secciones TEMPLATE.md, 6/6 criterios CONSTITUTION §8, 88% confianza; contraste GitHub API live 2026-07-08 + raw GitHub LICENSE files + SPDX license-list-data + choosealicense.com como Tier-1 independientes)
@@ -211,15 +223,27 @@
 
 ### JWIKI-017 — De JARVIS clásico a LLM agents (evolución histórica)
 - **Path destino**: `01_LANDSCAPE/evolution.md`
-- **Estado**: 🟡 in_progress @ 2026-07-08 21:XX (tick A-20260708-21XX — orquestador JWIKI single-team, production-tick desde cero P1; brief del parent delega ID que NO existía en task_queue pero SÍ en wiki-map.md:33 → P30 aplica, entry creada canónica; raw skeleton 1500 bytes confirmado en disco)
+- **Estado**: 🟢 verified (tick A-20260708-21XX — orquestador JWIKI single-team, production-tick desde cero P1 tras recovery del subagente previo bloqueado por HTTP 429 token plan limit; contraste Tier-1: Wikipedia infoboxes + arXiv IDs + shields.io GitHub API 2026-07-08 + raw README files + git log/tags + CLAUDE.md)
 - **Asignado**: orquestador JWIKI single-team
 - **Dependencias**: ninguna
 - **Prioridad**: alta
 - **Notas**: Doc cronológico de la evolución de asistentes personales AI desde años 90 hasta 2026. Cubre 7 eras: (1) Pre-LLM 1990-2010 (Clippy 1996/97, SmarterChild 2001, Siri 2011, Google Now 2012, Alexa 2014, Cortana 2014), (2) Transformers 2017-2020 (Attention is All You Need arXiv 1706.03762 12-jun-2017, BERT 2018, GPT-2 feb-2019, T5 2019), (3) LLM 2020-2022 (GPT-3 jun-2020, Codex jul-2021, ChatGPT 30-nov-2022), (4) Agents 2022-2024 (LangChain oct-2022, AutoGPT 30-mar-2023, BabyAGI abr-2023, LangGraph 2024, CrewAI 2023, AutoGen nov-2023, GPTs nov-2023), (5) Coding agents 2024-2026 (Claude Code 2024, Aider, Cursor, Devin 12-mar-2024, SWE-Agent, SWE-Bench), (6) Skill frameworks 2025-2026 (obra/superpowers oct-2025, agentskills.io, Hermes Agent 2025), (7) JARVIS-like personales 2024-2026 (OpenClaw, OpenHuman, OpenJarvis, Aithera V0.2-V0.7). Tabla cronológica completa, comparativa por era, citas a papers seminales, controversias (OpenAI board crisis nov-2023, Anthropic safety, etc.).
 - **Created**: 2026-07-08
-- **Updated**: 2026-07-08 21:XX (pending → in_progress; entry creada desde wiki-map.md:33 por P30)
-- **Material crudo**: `JWIKI/material/JWIKI-017-raw.md` 🟡 (skeleton placeholder, ~1.5KB; poblar durante research)
-- **Doc final**: `JWIKI/01_LANDSCAPE/evolution.md` 🔴 (vacío)
+- **Updated**: 2026-07-08 21:XX (pending → in_progress → verified; generado desde cero P1; raw 23.1KB / 289 líneas; doc 36.1KB / 4812 palabras; 12 snippets Tier-1; 47 fuentes con URL+fecha)
+- **Material crudo**: `JWIKI/material/JWIKI-017-raw.md` ✅ (23113 bytes, 289 líneas, 69 hechos verificados con URL+fecha, 12 snippets Tier-1 con path:line/URL, 5 conflictos documentados, 47 fuentes Tier-1)
+- **Doc final**: `JWIKI/01_LANDSCAPE/evolution.md` ✅ (36077 bytes, 438 líneas, 4812 palabras, 23 secciones TEMPLATE.md, 12 snippets, 47 fuentes URL+fecha, tabla cronológica 7 eras, tabla comparativa 8 proyectos JARVIS-like, conflictos resueltos, 6/6 criterios CONSTITUTION §8, 88% confianza)
+
+### JWIKI-018 — Tier list proyectos OSS 2026
+- **Path destino**: `01_LANDSCAPE/tier-list.md`
+- **Estado**: 🟢 verified (tick A-20260708-2255 — orquestador JWIKI single-team; recovery del subagente previo bloqueado por 429/timeout; generado desde cero P1 con datos shields.io, sin tocar GitHub API REST; 17 repos × 4 endpoints = 68 queries <30s)
+- **Asignado**: orquestador JWIKI single-team
+- **Dependencias**: ninguna
+- **Prioridad**: alta
+- **Notas**: doc horizontal — tier list ecosistema JARVIS-like + frameworks agente OSS jul-2026. Ranking 5 ejes (tracción 25% + frescura 25% + madurez 25% + licencia 15% + ecosistema 10%); umbrales Tier S≥0.85, A 0.70-0.84, B 0.55-0.69, C 0.40-0.54, D <0.40. Resultado: **6 Tier S** (OpenClaw 382k★ / Superpowers 250k★ MIT / Hermes 212k★ MIT / AutoGPT 185k★ / LangChain 141k★ MIT / Claude Code 137k★) + **8 Tier A** (AutoGen 60k★ CC-BY-4.0⚠️ / CrewAI 55k★ MIT / Aider 47k★ Apache-2.0 / LangGraph 37k★ MIT / OpenHuman 35k★ GPL-3.0⚠️ / OpenAI Agents SDK 28k★ MIT / Google ADK 21k★ Apache-2.0 / SWE-agent 20k★ MIT) + **1 Tier B** (OpenJarvis 7.4k★ Apache-2.0) + **2 Tier D** (JarvisAgent 4★ sin LICENSE formal ⚠️ / Devin repo not found producto cerrado). Hallazgo clave: **AutoGen cambió de MIT a CC-BY-4.0 en 2025** — impacto material si se integrara a Aithera V1.0.
+- **Created**: 2026-07-08
+- **Updated**: 2026-07-08 23:XX (pending → in_progress → verified; recovery tick del subagente bloqueado; raw 8182 bytes / 154 líneas / 35 hechos verificados shields.io + URL fecha / 4 snippets verbatim stars+last-commit+license+release; doc 37121 bytes / 4718 palabras / 25 secciones TEMPLATE.md / 6 tablas / 17 proyectos / 7 conflictos / 17 refs JWIKI-001..017 / 6/6 criterios CONSTITUTION §8 / **85% confianza**)
+- **Material crudo**: `JWIKI/material/JWIKI-018-raw.md` ✅ (8182 bytes, 154 líneas, 35 hechos verificados shields.io con URL+fecha, 4 snippets verbatim Tier-1, 7 conflictos documentados, 17 fuentes Tier-1 cross-ref JWIKI-001..017)
+- **Doc final**: `JWIKI/01_LANDSCAPE/tier-list.md` ✅ (37121 bytes, 464 líneas, 4718 palabras, 25 secciones TEMPLATE.md, 6 tablas (versiones + criterios + tier S/A/B/D + breaking changes + evolución + ideas移植 ables), 4 snippets verbatim shields.io stars/last-commit/license/release, 7 conflictos documentados, refs cruzadas JWIKI-001..017, 6/6 criterios CONSTITUTION §8, 85% confianza)
 
 ### JWIKI-012 — CrewAI overview
 - **Path destino**: `01_LANDSCAPE/crewai.md`
@@ -263,9 +287,9 @@ Todos los IDs del JWIKI-001 al JWIKI-266 con sus asignaciones por turno están e
 
 ## Métricas de progreso
 
-- **Total**: 267 docs (266 originales + JWIKI-267 moltis descubierto lateral)
-- **Verified**: 12 (JWIKI-001, 002, 003, 004, 005, 006, 007, 008, 009, 010, 011, **014 verificado 2026-07-08 20:38**) — note: 010 verificado 2026-07-07, 009 verificado 2026-07-08, **007 verificado 2026-07-08 19:55**, **012 verificado 2026-07-08 20:20**, **006 verificado 2026-07-08 20:08**, **014 verificado 2026-07-08 20:38** (esta continuación)
-- **In progress (single-team)**: 0
-- **Pending**: 255 (5 items in_progress reseteados a pending tras silencio A-B-C-D de 24h sin raw: JWIKI-006, 007→007 ahora verified 2026-07-08, 009, 010, 012)
-- **Avance**: 12/267 = 4.49%
+ - **Total**: 267 docs (266 originales + JWIKI-267 moltis descubierto lateral)
+ - **Verified**: 17 (JWIKI-001, 002, 003, 004, 005, 006, 007, 008, 009, 010, 011, 012, 013, 014 verificado 2026-07-08 20:38, 015 verificado 2026-07-08 20:55, 016 verificado 2026-07-08 21:XX, **020 verificado 2026-07-09 08:50**) — note: 010 verificado 2026-07-07, 009 verificado 2026-07-08, 007 verificado 2026-07-08 19:55, 012 verificado 2026-07-08 20:20, 006 verificado 2026-07-08 20:08, 014 verificado 2026-07-08 20:38, 016 verificado 2026-07-08 21:XX, 020 verificado 2026-07-09 08:50
+ - **In progress (single-team)**: 0
+ - **Pending**: 250 (5 items in_progress reseteados a pending tras silencio A-B-C-D de 24h sin raw: JWIKI-006, 007→007 ahora verified 2026-07-08, 009, 010, 012)
+ - **Avance**: 17/267 = 6.37%
 - **DAEMON CRASH 2026-06-30 ~15:25 a 18:26**: 4 spawns perdidos sin raw (005/006/007/008). Recovery aplicado. JWIKI-005, 006, 008 re-despachados en turnos B/A 18:30/18:45. JWIKI-007 turno B 18:45 lo re-despachara. Ver `ticks/RECOVERY-20260630-1826.md`, `ticks/A-20260630-1830.md`, `ticks/B-20260630

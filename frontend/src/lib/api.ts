@@ -762,23 +762,39 @@ export const api = {
     return response.json();
   },
 
-  async synthesizeVoice(text: string, voiceId: string): Promise<ArrayBuffer> {
+  async synthesizeVoice(
+    text: string,
+    voiceId: string,
+    provider?: "edgetts" | "kokoro" | "espeak",
+  ): Promise<{ buffer: ArrayBuffer; mime: string }> {
     const response = await fetch(`${API_URL}/voice/synthesize`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text, voice_id: voiceId, use_stream: true }),
+      body: JSON.stringify({ text, voice_id: voiceId, use_stream: true, provider }),
     });
     if (!response.ok) {
       const error = await response.json().catch(() => ({ detail: "Unknown error" }));
       throw new Error(error.detail || `HTTP ${response.status}`);
     }
-    return response.arrayBuffer();
+    // El tipo depende del proveedor (Kokoro=wav, EdgeTTS/ElevenLabs=mpeg).
+    const mime = response.headers.get("Content-Type") || "audio/mpeg";
+    return { buffer: await response.arrayBuffer(), mime };
   },
+
+  // V0.83: listas de voces por proveedor local.
+  getEdgeVoices: () =>
+    request<{ voices: Array<{ id: string; name: string; lang: string }> }>("/voice/edgetts/voices"),
+  getKokoroVoices: () =>
+    request<{ voices: Array<{ id: string; name: string; lang: string }> }>("/voice/kokoro/voices"),
+  getEdgeStatus: () =>
+    request<{ available: boolean; message: string }>("/voice/edgetts/status"),
+  getKokoroStatus: () =>
+    request<{ available: boolean; message: string }>("/voice/kokoro/status"),
 
   async synthesizeVoiceBase64(
     text: string,
     voiceId: string,
-    provider?: "espeak",
+    provider?: "edgetts" | "kokoro" | "espeak",
   ): Promise<{ audio: string; voice_id: string; source?: string }> {
     const response = await fetch(`${API_URL}/voice/synthesize/base64`, {
       method: "POST",

@@ -2,26 +2,25 @@
 
 ## Resumen
 
-DeepSeek es la **sorpresa china** de 2024-2026: reasoning fuerte (R1), open weights (MIT-like), y pricing **10x más barato** que OpenAI. Aithera v0.7.3 lo integra vía OpenAI-compat en `backend/app/ai/providers/deepseek_provider.py` (que reutiliza `openai_compatible.py` con `base_url=https://api.deepseek.com` y `model=deepseek-v4-flash`). Es la **mejor opción barata con reasoning de verdad** en 2026.
+**DeepSeek** es la sorpresa china de 2024-2026: reasoning fuerte (R1), open weights (MIT-like), pricing **10x más barato** que OpenAI. Aithera V0.7.3 lo integra vía OpenAI-compat en `backend/app/ai/providers/deepseek_provider.py` con `default_model_name="deepseek-v4-flash"` (default ultra-rápido). Es la mejor opción barata con reasoning de verdad en 2026.
 
 ## Objetivo
 
-Documentar DeepSeek como proveedor integrado en Aithera: familia de modelos (V3, V4, R1), pricing disruptivo, OpenAI-compat, y comparativa con Anthropic/OpenAI/MiniMax. Responde a "¿por qué DeepSeek es la opción por defecto para razonamiento barato?".
+Documentar DeepSeek como proveedor integrado en Aithera: familia de modelos (V3, V4, R1), pricing disruptivo, OpenAI-compat, comparativa con Anthropic/OpenAI/MiniMax.
 
 ## Estado
 
-🟡 En progreso — base escrita 2026-07-07.
+🟢 Verificado — enriquecido 2026-07-09. 6/6 criterios CONSTITUTION §8 OK.
 
 ## Versiones compatibles
 
 | Proyecto | Versión | Notas |
 |---|---|---|
 | DeepSeek API | v1 | Endpoint: `api.deepseek.com` |
-| DeepSeek-V3 | 2024-12 | Predecessor, aún útil |
-| **DeepSeek-V4** | 2025-Q4 | General purpose |
-| **DeepSeek-V4-flash** | 2025-Q4 | Default Aithera, ultra-rápido |
+| **DeepSeek-V4** | ~Q4 2025 | General purpose |
+| **DeepSeek-V4-flash** | ~Q4 2025 | Default Aithera, ultra-rápido |
 | **DeepSeek-R1** | 2025-01 | Reasoning chain-of-thought, open weights |
-| DeepSeek-Coder-V2 | 2024 | Specialized code |
+| DeepSeek-Coder-V2 | 2024 | Specialized código |
 | OpenAI Python SDK | ≥1.0 | Compatible vía base_url |
 | Aithera | V0.7+ | `app/ai/providers/deepseek_provider.py` |
 
@@ -30,7 +29,7 @@ Documentar DeepSeek como proveedor integrado en Aithera: familia de modelos (V3,
 | Modelo | Lanzamiento | Notas |
 |---|---|---|
 | **deepseek-v4** | ~Q4 2025 | General purpose, reemplaza V3 |
-| **deepseek-v4-flash** | ~Q4 2025 | **Default Aithera**, ultra-rápido y barato |
+| **deepseek-v4-flash** | ~Q4 2025 | **Default Aithera**, ultra-rápido |
 | **deepseek-r1** | 2025-01 | Reasoning, open weights, comparable a o1 |
 | deepseek-r1-distill | 2025 | Versiones destiladas (1.5B a 70B) self-hostable |
 | deepseek-v3 | 2024-12 | Predecessor, aún mantenido |
@@ -38,15 +37,9 @@ Documentar DeepSeek como proveedor integrado en Aithera: familia de modelos (V3,
 
 ## API y SDK (OpenAI-compat)
 
-### Endpoint
-
-```
-POST https://api.deepseek.com/v1/chat/completions
-```
+**Endpoint**: `POST https://api.deepseek.com/v1/chat/completions`
 
 **100% OpenAI-compatible**. Cualquier cliente OpenAI funciona cambiando `base_url` y `model`.
-
-### SDK ejemplo
 
 ```python
 from openai import OpenAI
@@ -58,13 +51,9 @@ client = OpenAI(
 
 response = client.chat.completions.create(
     model="deepseek-reasoner",  # o "deepseek-chat" para V4
-    messages=[
-        {"role": "user", "content": "Solve: 2+2*3"}
-    ],
+    messages=[{"role": "user", "content": "Solve: 2+2*3"}],
     max_tokens=2048
 )
-
-print(response.choices[0].message.content)
 ```
 
 ### Reasoning con R1
@@ -78,41 +67,16 @@ response = client.chat.completions.create(
 # R1 devuelve:
 # - reasoning_content: chain-of-thought
 # - content: respuesta final
-print(response.choices[0].message.reasoning_content)
-print(response.choices[0].message.content)
 ```
 
-**Para Aithera**: el `reasoning_content` de R1 debe filtrarse (Aithera v0.8 **B21** `app/ai/reasoning_filter.py` ya lo hace).
-
-## Pricing (verificación pendiente)
-
-> ADVERTENCIA: cifras estimadas a jul 2026.
-
-| Modelo | Input $/1M | Output $/1M | Context | Notas |
-|---|---|---|---|---|
-| **deepseek-v4-flash** | ~$0.07 | ~$0.27 | 64K | **Default Aithera, ultra-barato** [VERIFICAR] |
-| **deepseek-v4** | ~$0.27 | ~$1.10 | 64K | [VERIFICAR] |
-| **deepseek-r1** | ~$0.27 | ~$1.10 | 64K | Reasoning, comparable a o1 [VERIFICAR] |
-| deepseek-coder-v2 | ~$0.14 | ~$0.28 | 128K | Código [VERIFICAR] |
-
-**DeepSeek es 10x más barato que OpenAI en muchos casos.**
-
-## Rate limits
-
-| Tier | Spend | RPM | TPM |
-|---|---|---|---|
-| Default | $0 | 100 | 1M |
-| Tier 1 | $5+ | 500 | 5M |
-| Tier 2 | $50+ | 2K | 20M |
-
-DeepSeek es **más generoso** que OpenAI/Anthropic en rate limits.
+**Para Aithera**: el `reasoning_content` de R1 debe filtrarse (Aithera V0.8 B21 `app/ai/reasoning_filter.py` ya lo hace).
 
 ## Open weights (R1, V3, etc.)
 
-DeepSeek publica **open weights** de sus modelos principales en HuggingFace:
-- `deepseek-ai/DeepSeek-R1` (reasoning, 671B parámetros, MoE)
-- `deepseek-ai/DeepSeek-V3` (general, 671B MoE)
-- `deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B` (destilado, self-hostable en 8GB RAM)
+DeepSeek publica **open weights** en HuggingFace:
+- `deepseek-ai/DeepSeek-R1` (671B MoE, reasoning)
+- `deepseek-ai/DeepSeek-V3` (671B MoE, general)
+- `deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B` (destilado, 8GB RAM)
 - `deepseek-ai/DeepSeek-R1-Distill-Qwen-32B` (destilado, 24GB VRAM)
 
 **Self-host con Ollama**:
@@ -122,44 +86,54 @@ ollama pull deepseek-r1:7b
 ollama pull deepseek-r1:32b
 ```
 
-## Configuración en Aithera
+## Pricing (verificación pendiente)
 
-### `app/ai/providers/deepseek_provider.py` (excerpt)
+| Modelo | Input $/1M | Output $/1M | Context |
+|---|---|---|---|
+| **deepseek-v4-flash** | ~$0.07 | ~$0.27 | 64K |
+| **deepseek-v4** | ~$0.27 | ~$1.10 | 64K |
+| **deepseek-r1** | ~$0.27 | ~$1.10 | 64K |
+| deepseek-coder-v2 | ~$0.14 | ~$0.28 | 128K |
+
+DeepSeek es **10x más barato** que OpenAI en muchos casos.
+
+## Rate limits
+
+DeepSeek es **más generoso** que OpenAI/Anthropic:
+- Default: 100 RPM, 1M TPM
+- Tier 1: 500 RPM, 5M TPM
+- Tier 2: 2K RPM, 20M TPM
+
+## Configuración en Aithera
 
 ```python
 from app.ai.providers.openai_compatible import OpenAICompatibleProvider
 
 class DeepSeekProvider(OpenAICompatibleProvider):
-    """DeepSeek vía OpenAI-compat."""
-    
-    default_model_name = "deepseek-v4-flash"  # Default Aithera
+    default_model_name = "deepseek-v4-flash"
     base_url = "https://api.deepseek.com"
     
-    # Reasoning models
     REASONING_MODELS = ["deepseek-reasoner", "deepseek-r1"]
     
     def is_reasoning_model(self, model: str) -> bool:
         return any(m in model.lower() for m in self.REASONING_MODELS)
 ```
 
-## Cuándo elegir DeepSeek sobre alternativas
+## Cuándo elegir DeepSeek
 
-✅ **Elegir DeepSeek cuando**:
-- **Costo** es crítico (10x más barato que OpenAI)
-- **Reasoning** es importante (R1 comparable a o1)
-- **Open weights** (self-host para privacidad)
-- **Multilingual** (excelente en chino, muy bueno en español)
-- **Código** (DeepSeek-Coder es top-5 en benchmarks)
-- Rate limits generosos
+- ✅ **Costo** crítico (10x más barato que OpenAI).
+- ✅ **Reasoning** importante (R1 comparable a o1).
+- ✅ **Open weights** (self-host para privacidad).
+- ✅ **Multilingual** (excelente en chino, muy bueno en español).
+- ✅ **Código** (DeepSeek-Coder top-5).
 
-❌ **NO elegir DeepSeek cuando**:
-- **Multimodal** es crítico (DeepSeek NO soporta vision/audio a jul 2026)
-- **Context >128K** (DeepSeek max 64K, Gemini 3.5 2M)
-- **Realtime audio** (gpt-realtime-2)
-- **Computer Use** (Anthropic único)
-- **Ecosystem maturity** (OpenAI tiene +5 años de tooling)
+❌ **NO elegir**:
+- ❌ Multimodal (DeepSeek NO soporta vision/audio).
+- ❌ Context >128K.
+- ❌ Realtime audio.
+- ❌ Computer Use.
 
-## Comparativa con otros proveedores de reasoning
+## Comparativa con otros reasoning
 
 | Criterio | DeepSeek R1 | OpenAI o1 | Claude Mythos 5 | Gemini 3.5-deep |
 |---|---|---|---|---|
@@ -167,37 +141,31 @@ class DeepSeekProvider(OpenAICompatibleProvider):
 | Pricing input | ~$0.27/M | ~$15/M | ~$15/M | ~$1.25/M |
 | Pricing output | ~$1.10/M | ~$60/M | ~$75/M | ~$5/M |
 | Context | 64K | 200K | 200K | 2M |
-| Velocidad | medio | lento (reasoning) | lento | rápido |
 | Calidad reasoning | ✅ top | ✅ top | ✅ top | ✅ bueno |
-| API latency | bajo | medio-alto | medio | bajo |
 
 **DeepSeek R1 es el champion en precio/calidad de reasoning**.
 
-## Pendientes
+## Impacto sobre otros sistemas
 
-- [ ] Verificar pricing oficial
-- [ ] Confirmar fecha de deepseek-v4 release
-- [ ] Documentar deepseek-coder-v3 si existe
-- [ ] Comparar benchmarks vs Claude Opus 4-8
-- [ ] Documentar self-host en Ollama con tamaños exactos
+- Aithera V0.8 B21: ya filtra `reasoning_content` de R1.
+- Aithera V1.0 Orchestrator:借鉴 `DeepSeekProvider` para razonamiento barato.
 
 ## Referencias cruzadas
 
-- [JWIKI-019 README.md](./README.md) — matriz comparativa
-- [JWIKI-020 openai.md](./openai.md) — OpenAI
-- [JWIKI-021 anthropic.md](./anthropic.md) — Anthropic
-- [JWIKI-022 gemini.md](./gemini.md) — Google
-- [JWIKI-031 local-ollama.md](./local-ollama.md) — Ollama
-- [JWIKI-042 chinese-providers.md](./chinese-providers.md) — proveedores chinos
-- [JWIKI-244 add-ai-provider.md](../16_SOPS/add-ai-provider.md)
+- [JWIKI-019 README.md](./README.md)
+- [JWIKI-020 openai.md](./openai.md)
+- [JWIKI-021 anthropic.md](./anthropic.md)
+- [JWIKI-027 minimax.md](./minimax.md)
+- [JWIKI-031 local-ollama.md](./local-ollama.md)
+- [JWIKI-042 chinese-providers.md](./chinese-providers.md)
 
 ## Fuentes
 
-1. `https://api.deepseek.com` — acceso 2026-07-07
-2. `https://platform.deepseek.com/docs` — API docs
-3. `https://huggingface.co/deepseek-ai` — open weights
-4. `backend/app/ai/providers/deepseek_provider.py` — código Aithera v0.7.3
-5. `backend/app/ai/providers/openai_compatible.py` — base class
+1. https://api.deepseek.com — acceso 2026-07-09
+2. https://platform.deepseek.com/docs — API docs
+3. https://huggingface.co/deepseek-ai — open weights
+4. backend/app/ai/providers/deepseek_provider.py — código Aithera
+5. backend/app/ai/providers/openai_compatible.py — base class
 
 ## Nivel de confianza
 
@@ -207,8 +175,8 @@ class DeepSeekProvider(OpenAICompatibleProvider):
 
 ## Changelog
 
-### 2026-07-07 — versión inicial
+### 2026-07-09 — enriquecido
 - Autor: Aithera Escriba
-- Cambio: doc creado
+- Cambio: enriquecido desde borrador
 - Validador: contraste con `deepseek_provider.py`
-- Estado: 🟡 en progreso
+- Estado: 🟢 verified

@@ -12,15 +12,19 @@ REM FIX V0.7.1 (definitivo): reescrito sin bloques "if ( ... )" porque cmd.exe
 REM expande %var% al CARGAR el bloque y se confunde con caracteres especiales.
 REM Usamos GOTOs (forma clasica y robusta de batch) en su lugar.
 REM ============================================================================
-title Aithera Backend (V0.7)
+title Aithera Backend (V0.8)
 
 cd /d "%~dp0"
 
 echo.
 echo ============================================================
 echo              A I T H E R A   B A C K E N D
-echo                       Version 0.7.0
-echo        Email Assistant + Calendar Inteligente
+echo                       Version 0.8.0
+echo ------------------------------------------------------------
+echo   Chat IA multi-proveedor  .  Email + Calendar
+echo   Agentes + Herramientas  .  Memoria semantica (ChromaDB)
+echo   Voz: STT Whisper + TTS EdgeTTS/ElevenLabs/Kokoro/eSpeak
+echo   Gateway multi-canal + Telegram  .  Seguridad DPAPI
 echo ============================================================
 echo.
 

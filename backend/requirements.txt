@@ -97,6 +97,19 @@ pywin32==312
 # NOTA: la primera transcripcion descarga el modelo "base" (~142MB) de
 # HuggingFace; requiere internet UNA vez. Luego funciona offline.
 faster-whisper==1.2.1
+# --- TTS multi-proveedor (V0.83) ---
+# EdgeTTS: voces de Microsoft, GRATIS, sin API key, requiere internet. Ligero
+# (no descarga modelos) -> buen "por defecto" para distribuir.
+edge-tts
+# Kokoro (TTS local en proceso): NO se pinea aquí a propósito. En Python 3.13
+# su cadena de deps (misaki[en] -> spacy -> thinc -> blis) NO compila (Cython),
+# y pina numpy==1.26.4 chocando con el numpy 2.x del resto del stack. Instalarlo
+# rompería el entorno. El proveedor Kokoro del backend es import-lazy y degrada
+# con error claro si la lib no está. Si algún día se quiere Kokoro:
+#   - opción robusta: correrlo aislado vía Docker (Kokoro-FastAPI), o
+#   - en un venv de Python 3.11 (donde sí hay wheels de spacy/blis).
+# De momento el proveedor de voz recomendado es EdgeTTS (arriba): gratis, sin
+# key, sin modelos ni compilación.
 
 # --- Utilidades generales ---
 requests==2.34.2

@@ -25,17 +25,21 @@ export default function Chat() {
   const setCoreState     = useAppStore((s) => s.setCoreState);
   const pulseError       = useAppStore((s) => s.pulseError);
 
-  // V0.83 (voz): voz principal elegida en el Centro de Voz (persistida en
-  // Config) + reproductor de la respuesta hablada.
-  const selectedVoiceRef = useRef<string>("XB0fDUnXU5powGXd8GSW");
+  // V0.83 (voz): proveedor activo + voz principal elegidos en el Centro de Voz
+  // (persistidos en Config). Por defecto EdgeTTS + Elvira (español), que es lo
+  // que funciona sin key ni Docker.
+  const providerRef = useRef<string>("edgetts");
+  const selectedVoiceRef = useRef<string>("es-ES-ElviraNeural");
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
   useEffect(() => {
     api
       .getConfig()
       .then((rows) => {
-        const row = rows.find((r) => r.key === "tts_selected_voice");
-        if (row?.value) selectedVoiceRef.current = row.value;
+        const prov = rows.find((r) => r.key === "tts_active_provider")?.value;
+        if (prov) providerRef.current = prov;
+        const voice = rows.find((r) => r.key === "tts_selected_voice")?.value;
+        if (voice) selectedVoiceRef.current = voice;
       })
       .catch(() => {});
   }, []);
@@ -62,15 +66,20 @@ export default function Chat() {
           audio.onerror = () => { setCoreState("idle"); resolve(); };
           audio.play().catch(() => { setCoreState("idle"); resolve(); });
         });
+      const provRaw = providerRef.current;
+      // ElevenLabs va por el camino por defecto (sin provider); el resto explícito.
+      const provider =
+        provRaw === "elevenlabs" ? undefined : (provRaw as "edgetts" | "kokoro" | "espeak");
       try {
-        const r = await api.synthesizeVoiceBase64(clean, voiceId);
+        const r = await api.synthesizeVoiceBase64(clean, voiceId, provider);
         await play(r.audio);
       } catch (e) {
+        // Si el proveedor activo falla, último recurso: eSpeak offline.
         try {
           const r = await api.synthesizeVoiceBase64(clean, voiceId, "espeak");
           await play(r.audio);
         } catch (e2) {
-          console.error("TTS falló (ElevenLabs y eSpeak):", e, e2);
+          console.error("TTS falló (proveedor activo y eSpeak):", e, e2);
         }
       }
     },
@@ -96,14 +105,14 @@ export default function Chat() {
   // Envío centralizado: recibe el texto explícito (no depende del estado
   // `input`, que es asíncrono). Así lo pueden llamar tanto el botón Enviar
   // como el micro (auto-envío) sin bugs de closure.
-  const sendMessage = useCallback(async (text: string, opts?: { voiceReply?: boolean }) => {
+  const sendMessage = useCallback(async (text: string): Promise<string | null> => {
     const userMessage = text.trim();
-    if (!userMessage || loading) return;
+    if (!userMessage || loading) return null;
     if (!backendConnected) {
       setMessages(prev => [...prev, { role: "user", content: userMessage }, { role: "assistant", content: "Error: No hay conexión con el backend." }]);
       setInput("");
       pulseError();
-      return;
+      return null;
     }
 
     setInput("");
@@ -125,26 +134,133 @@ export default function Chat() {
       setStreamingText("");
       // V0.8.1 (Paso 2): thinking -> idle explicito antes del finally.
       setCoreState("idle");
-      // V0.83: si el mensaje vino por voz, responder TAMBIÉN en voz.
-      if (opts?.voiceReply && reply.trim()) {
-        void speak(reply);
-      }
+      // El caller decide si habla la respuesta (voz / conversación).
+      return reply;
     } catch (error) {
       console.error("Error en streamChat:", error);
       setMessages(prev => [...prev, { role: "assistant", content: "Lo siento, hubo un error al procesar tu mensaje." }]);
       pulseError();
+      return null;
     } finally {
       setLoading(false);
     }
-  }, [loading, backendConnected, setCoreState, pulseError, speak]);
+  }, [loading, backendConnected, setCoreState, pulseError]);
 
-  const handleSend = () => sendMessage(input);
+  const handleSend = () => { void sendMessage(input); };
 
-  // V0.83: al transcribir, el texto del micro se ENVÍA automáticamente y la
-  // respuesta se reproduce en voz (voiceReply).
-  const handleTranscript = useCallback((text: string) => {
-    sendMessage(text, { voiceReply: true });
-  }, [sendMessage]);
+  // V0.83: al transcribir por micro, se envía y se responde EN VOZ.
+  const handleTranscript = useCallback(async (text: string) => {
+    const reply = await sendMessage(text);
+    if (reply) await speak(reply);
+  }, [sendMessage, speak]);
+
+  // ── V0.83: Modo Conversación (escucha continua) ─────────────────────────
+  // Bucle: escuchar (con detección de silencio) → transcribir → responder en
+  // voz → volver a escuchar, hasta que el usuario lo apaga.
+  const [conversation, setConversation] = useState(false);
+  const conversationRef = useRef(false);
+
+  // Graba una intervención y la corta sola cuando detecta ~1.2s de silencio
+  // tras haber hablado (VAD por RMS con AnalyserNode). Devuelve el blob webm.
+  const listenOnce = useCallback(async (): Promise<Blob | null> => {
+    let stream: MediaStream;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    } catch {
+      return null;
+    }
+    return new Promise<Blob | null>((resolve) => {
+      const mimeType = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
+        ? "audio/webm;codecs=opus"
+        : "audio/webm";
+      const recorder = new MediaRecorder(stream, { mimeType });
+      const chunks: BlobPart[] = [];
+      const ac = new AudioContext();
+      const analyser = ac.createAnalyser();
+      analyser.fftSize = 512;
+      ac.createMediaStreamSource(stream).connect(analyser);
+      const buf = new Uint8Array(analyser.fftSize);
+
+      let stopped = false;
+      const cleanup = () => {
+        if (stopped) return;
+        stopped = true;
+        try { if (recorder.state !== "inactive") recorder.stop(); } catch { /* noop */ }
+      };
+      recorder.ondataavailable = (e) => { if (e.data.size) chunks.push(e.data); };
+      recorder.onstop = () => {
+        stream.getTracks().forEach((t) => t.stop());
+        ac.close().catch(() => {});
+        resolve(chunks.length ? new Blob(chunks, { type: mimeType }) : null);
+      };
+
+      const SILENCE = 0.012;      // umbral RMS de silencio
+      const SILENCE_MS = 1200;    // corta tras este silencio (habiendo hablado)
+      const MAX_MS = 15000;       // tope duro por intervención
+      let spoke = false;
+      let silentSince = 0;
+      const t0 = performance.now();
+      recorder.start();
+
+      const tick = () => {
+        if (stopped) return;
+        if (!conversationRef.current) { cleanup(); return; }
+        analyser.getByteTimeDomainData(buf);
+        let sum = 0;
+        for (let i = 0; i < buf.length; i++) { const v = (buf[i] - 128) / 128; sum += v * v; }
+        const rms = Math.sqrt(sum / buf.length);
+        const now = performance.now();
+        if (rms > SILENCE) { spoke = true; silentSince = 0; }
+        else if (spoke) {
+          if (!silentSince) silentSince = now;
+          else if (now - silentSince > SILENCE_MS) { cleanup(); return; }
+        }
+        if (now - t0 > MAX_MS) { cleanup(); return; }
+        requestAnimationFrame(tick);
+      };
+      requestAnimationFrame(tick);
+    });
+  }, []);
+
+  const conversationLoop = useCallback(async () => {
+    while (conversationRef.current) {
+      setCoreState("listening");
+      const blob = await listenOnce();
+      if (!conversationRef.current) break;
+      if (!blob) { await new Promise((r) => setTimeout(r, 300)); continue; }
+      let text = "";
+      try {
+        setCoreState("thinking");
+        const r = await api.transcribeVoice(blob, "es");
+        text = (r.text || "").trim();
+      } catch { text = ""; }
+      if (!conversationRef.current) break;
+      if (!text) continue;
+      const reply = await sendMessage(text);
+      if (!conversationRef.current) break;
+      if (reply) await speak(reply);   // espera a que termine de hablar
+    }
+    setCoreState("idle");
+  }, [listenOnce, sendMessage, speak, setCoreState]);
+
+  const toggleConversation = useCallback(() => {
+    setConversation((prev) => {
+      const next = !prev;
+      conversationRef.current = next;
+      if (next) {
+        void conversationLoop();
+      } else {
+        try { audioRef.current?.pause(); } catch { /* noop */ }
+        setCoreState("idle");
+      }
+      return next;
+    });
+  }, [conversationLoop, setCoreState]);
+
+  // Al desmontar, cortar la conversación.
+  useEffect(() => {
+    return () => { conversationRef.current = false; };
+  }, []);
 
   return (
     <div className="h-full flex flex-col gap-4">
@@ -190,6 +306,23 @@ export default function Chat() {
         />
         {/* V0.83 (Paso 4): boton de micro al lado del input. */}
         <MicButton onTranscript={handleTranscript} language="es" />
+        {/* V0.83: Modo Conversación (escucha continua). Verde = activo. */}
+        <button
+          type="button"
+          onClick={toggleConversation}
+          title={conversation ? "Conversación activa — pulsa para parar" : "Conversación continua (habla y te responde en bucle)"}
+          aria-label="Modo conversación"
+          className={`shrink-0 w-12 h-12 rounded-xl flex items-center justify-center border transition-all ${
+            conversation
+              ? "bg-signal-ok/20 text-signal-ok border-signal-ok/40 animate-pulse"
+              : "bg-base-800 text-ink-dim border-base-700 hover:text-ink hover:border-base-600"
+          }`}
+        >
+          {/* icono de conversación (dos bocadillos) */}
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M8 10h.01M12 10h.01M16 10h.01M21 12a8 8 0 0 1-11.6 7.1L3 21l1.9-6.4A8 8 0 1 1 21 12z" />
+          </svg>
+        </button>
         <button
           onClick={handleSend}
           disabled={loading || !input.trim()}

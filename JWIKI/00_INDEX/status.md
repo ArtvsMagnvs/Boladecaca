@@ -1,7 +1,7 @@
 # STATUS — Estado actual de la JWIKI
 
 > Snapshot del estado de la knowledge base. Se actualiza al cerrar cada fase o tick importante.
-## Última actualización: 2026-07-08 21:XX (JWIKI-016 Licencias comparativa generado y verificado, 6302 palabras — single-team tick A-20260708-21XX, production-tick desde cero P1; contraste GitHub API live 2026-07-08 11 proyectos + raw GitHub LICENSE files + SPDX license-list-data + choosealicense.com como Tier-1 independientes; 23 secciones TEMPLATE.md, 16 fenced code blocks, 12 snippets verbatim de LICENSE files reales, tabla 15 licencias × 13 criterios, tabla 11 proyectos OSS con 5 conflictos resueltos, 62 fuentes URL+fecha, 88% confianza)
+## Última actualización: 2026-07-09 08:50 (JWIKI-020 OpenAI GPT 5.x verificado, 4301 palabras — single-team tick A-20260709-0835, RECOVERY+COMPLETION del subagente previo que agotó tool calls antes de persistir; contraste live GitHub API 2026-07-09 (31.121★ + Apache-2.0 verificado raw LICENSE file) + raw SDK README + OpenAI models page (familia 14 modelos GPT 5.x con pricing); 34 hechos verificados con URL+fecha 2026-07-09, 7 snippets con path:line del código Aithera real, tabla comparativa 14 modelos × 8 campos, comparativa Tier 1 vs Anthropic/Google/DeepSeek en 14 criterios, 3 conflictos materiales resueltos vs borrador previo (license MIT→Apache-2.0, default_model gpt-5.1→gpt-5, pricing gpt-5.4 output ~$10→$15); 6/6 criterios CONSTITUTION §8 OK; 85% confianza)
 
 ## Resumen ejecutivo
 
@@ -10,10 +10,10 @@
 | Dominios totales | 17 |
 | Dominios con esqueleto | 17 |
 | **Total docs PLANIFICADOS** | **267** |
-| **Documentos verificados** | **14** (JWIKI-001, 002, 003, 004, 005, 006, 007, 008, 009, 010, 011, 012 ✅, 013, 014 verificado 2026-07-08 20:38, 015 verificado 2026-07-08 20:55, **016 verificado 2026-07-08 21:XX**) |
+| **Documentos verificados** | **17** (JWIKI-001, 002, 003, 004, 005, 006, 007, 008, 009, 010, 011, 012 ✅, 013, 014 verificado 2026-07-08 20:38, 015 verificado 2026-07-08 20:55, 016 verificado 2026-07-08 21:XX, **020 verificado 2026-07-09 08:50**) |
 | En auditoría | 0 |
-| Avance total | 14/267 = **5.24%** |
-| Wiki-map | ✅ Activo (267 IDs, 14 verificados a 2026-07-08 21:XX) |
+| **Avance total** | 17/267 = **6.37%** |
+| **Wiki-map** | ✅ Activo (267 IDs, 17 verificados a 2026-07-09 08:50) |
 | Task queue | ✅ Activo (single-team desde 2026-06-30 19:15, sin turno A/B) |
 | Equipo wiki | ✅ 6 agentes (3 turno A + 3 turno B) |
 | Equipo Aithera | ✅ 8 agentes especialistas |
@@ -42,7 +42,7 @@
 | 02_ARCHITECTURE/ | 12 | 0 | 0% |
 | 03_BACKEND/ | 22 | 0 | 0% |
 | 04_FRONTEND/ | 22 | 0 | 0% |
-| 05_AI_PROVIDERS/ | 26 | 0 | 0% |
+| 05_AI_PROVIDERS/ | 26 | 1 | **3.85%** |
 | 06_AGENTS/ | 18 | 0 | 0% |
 | 07_MEMORY/ | 16 | 0 | 0% |
 | 08_VOICE/ | 16 | 0 | 0% |
@@ -54,7 +54,7 @@
 | 14_BEST_PRACTICES/ | 12 | 0 | 0% |
 | 15_KNOWN_PITFALLS/ | 14 | 0 | 0% |
 | 16_SOPS/ | 24 | 0 | 0% |
-| **TOTAL** | **266** | **0** | **0.00%** |
+| **TOTAL** | **266** | **1** | **0.38%** |
 
 ## Sistema wiki-map (activo desde tick 0)
 
@@ -89,6 +89,7 @@
 Ver `task_queue.md` (vacío, se llenará cuando arranque Fase 1).
 
 ## Hitos recientes
+- **Tick A-20260709-0835 (2026-07-09 08:50)**: **JWIKI-020 OpenAI GPT 5.x verificado** (RECOVERY+COMPLETION del subagente previo que agotó tool calls antes de persistir). Contraste live GitHub API 2026-07-09 (31.121★ + 4.873 forks + 561 issues + Apache-2.0 verificado LICENSE file raw) + raw SDK README (httpx default, retry 408/409/429/5xx, Stainless code-gen desde openai-openapi) + OpenAI models page (familia 14 modelos GPT 5.x con pricing verificado). 4301 palabras, 34 hechos verificados con URL+fecha 2026-07-09, 7 snippets con path:line del código Aithera real (`openai_provider.py:1-10` + 6 snippets de `openai_compatible.py`), tabla comparativa 14 modelos × 8 campos (gpt-5.5 flagship $5/$30 a gpt-5.4-nano cheap), comparativa Tier 1 vs Anthropic/Google/DeepSeek en 14 criterios (multimodal, contexto, pricing, tool calling, realtime, open weights). **3 conflictos materiales resueltos vs borrador previo**: (1) license SDK MIT→Apache-2.0 (verificado LICENSE file raw); (2) default_model_name gpt-5.1→gpt-5 (real en `openai_provider.py:9`); (3) pricing gpt-5.4 output ~$10→$15 (verificado models page oficial). 6/6 criterios CONSTITUTION §8 OK; 85% confianza. Avance 17/267 = 6.37% (1er doc verificado en 05_AI_PROVIDERS/).
 
 - **Tick 0 (2026-06-30 00:25)**: Bootstrap completo. Estructura 17 dominios creada, constitución + roadmap + workflow + wiki-map + equipo `aithera-wiki-*` en proceso.
 - **Tick A-20260708-21XX (2026-07-08 21:XX)**: JWIKI-016 Licencias comparativa generado desde cero (P1). 11 proyectos OSS verificados GitHub API live 2026-07-08 (OpenClaw MIT 382k★ con API NOASSERTION por regex copyright, OpenHuman GPL-3.0 34k★, OpenJarvis Apache 2.0 7k★, Hermes MIT 211k★, Superpowers MIT 249k★, AutoGen dual MIT+CC-BY-4.0 60k★, LangGraph MIT 36k★, CrewAI MIT 55k★, Google ADK Apache 2.0 20k★, OpenAI Agents SDK MIT 27k★, JarvisAgent MIT declarado en README con LICENSE file null). 5 conflictos entre fuentes resueltos (OpenClaw NOASSERTION vs MIT file, AutoGen dual MIT/CC-BY-4.0, JarvisAgent LICENSE file null, AutoGen pushed_at stale abril 2026, GitHub API NOASSERTION vs Other). 12 snippets verbatim de LICENSE files reales con path:line. Tabla 15 licencias OSS × 13 criterios (MIT, Apache-2.0, BSD-2/3, ISC, Unlicense, CC0-1.0, GPL-2.0, GPL-3.0, LGPL-2.1, LGPL-3.0, AGPL-3.0, MPL-2.0, EPL-2.0, BSL-1.1). 5 riesgos legales comunes (GPL contamination, AGPL en SaaS, BSD vs Apache patent grant, GPL-2.0 vs 3.0, MIT sin LICENSE file). Casos prácticos Aithera: core→MIT/Apache-2.0, datasets→CC0-1.0, skills→MPL-2.0, trading→BSL-1.1. 6302 palabras, 23 secciones TEMPLATE, 16 fenced code blocks, 62 fuentes Tier-1 con URL+fecha, 88% confianza, 6/6 criterios CONSTITUTION §8. Avance 14/267 = 5.24%.

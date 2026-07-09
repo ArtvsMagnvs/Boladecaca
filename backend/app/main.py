@@ -124,7 +124,7 @@ app = FastAPI(
     description="Sistema Operativo de IA - Backend API",
     # V0.7.3 (Sprint 4 cierre fase Email Assistant - bump sincronizado
     # con root(), core/config.py y frontend/package.json).
-    version="0.7.3",
+    version="0.8.0",
     lifespan=lifespan
 )
 
@@ -182,7 +182,7 @@ def root():
     app.version y core/config.py (VERSION = 0.7.1))."""
     return {
         "name": "Aithera",
-        "version": "0.7.3",
+        "version": "0.8.0",
         "status": "running"
     }
 

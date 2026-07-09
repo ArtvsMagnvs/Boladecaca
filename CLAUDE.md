@@ -9,8 +9,12 @@
 
 ## 1. Estado actual del proyecto
 
-**Versión real**: `0.7.3` (consistente en `backend/app/main.py`,
-`backend/app/core/config.py` y `frontend/package.json`).
+**Versión real**: `0.8.0` (consistente en `backend/app/main.py`,
+`backend/app/core/config.py` y `frontend/package.json`). Bump 0.7.3 → 0.8.0
+(2026-07-09) al cerrar el grueso de V0.8: Gateway + Telegram + hardening
+(CORS/DPAPI) + voz (STT Whisper, TTS multi-proveedor EdgeTTS/ElevenLabs/Kokoro/
+eSpeak, conversación continua) + Hub responsivo. Banners de los `.bat` de
+arranque actualizados a 0.8.0 con la lista de funciones reales.
 
 **Fases completadas**: V0.2 (base) → V0.3 (Hub) → V0.4 (PostgreSQL + Alembic) →
 V0.5 (AgentManager + ToolManager) → V0.6 (Memory ChromaDB) → V0.7 (Email + Calendar) →

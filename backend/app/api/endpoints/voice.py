@@ -16,6 +16,9 @@ from app.voice.elevenlabs_voice import (
     get_all_voices as get_elevenlabs_voices,
     PROFESSIONAL_VOICES
 )
+import asyncio
+from app.voice.kokoro_voice import kokoro_client, KOKORO_VOICES
+from app.voice.edge_tts_voice import edgetts_client, EDGE_VOICES
 from app.voice.espeak_voice import (
     espeak_client,
     synthesize_offline,
@@ -158,6 +161,38 @@ async def synthesize(request: SynthesizeRequest) -> Response:
     if not request.text.strip():
         raise HTTPException(status_code=400, detail="Text cannot be empty")
     
+    # V0.83: Kokoro (TTS local EN PROCESO, devuelve WAV). Bloqueante -> to_thread.
+    if request.provider == "kokoro":
+        audio_data = await asyncio.to_thread(
+            kokoro_client.synthesize_wav, request.text, request.voice_id or "ef_dora"
+        )
+        if audio_data:
+            return Response(
+                content=audio_data,
+                media_type="audio/wav",
+                headers={"Content-Disposition": 'inline; filename="speech.wav"'},
+            )
+        raise HTTPException(
+            status_code=502,
+            detail=kokoro_client.last_error or "Kokoro no devolvio audio.",
+        )
+
+    # V0.83: EdgeTTS (Microsoft, gratis, sin key; devuelve MP3).
+    if request.provider == "edgetts":
+        audio_data = await edgetts_client.synthesize_mp3(
+            request.text, request.voice_id or "es-ES-ElviraNeural"
+        )
+        if audio_data:
+            return Response(
+                content=audio_data,
+                media_type="audio/mpeg",
+                headers={"Content-Disposition": 'inline; filename="speech.mp3"'},
+            )
+        raise HTTPException(
+            status_code=502,
+            detail=edgetts_client.last_error or "EdgeTTS no devolvio audio.",
+        )
+
     # Try ElevenLabs first — salvo que se fuerce eSpeak con provider="espeak".
     if elevenlabs_client.api_key and request.provider != "espeak":
         try:
@@ -230,6 +265,42 @@ async def synthesize_base64(request: SynthesizeRequest) -> JSONResponse:
     if not request.text.strip():
         raise HTTPException(status_code=400, detail="Text cannot be empty")
     
+    # V0.83: Kokoro (TTS local en proceso, WAV).
+    if request.provider == "kokoro":
+        audio_data = await asyncio.to_thread(
+            kokoro_client.synthesize_wav, request.text, request.voice_id or "ef_dora"
+        )
+        if audio_data:
+            audio_b64 = base64.b64encode(audio_data).decode("utf-8")
+            return JSONResponse(content={
+                "audio": f"data:audio/wav;base64,{audio_b64}",
+                "voice_id": request.voice_id,
+                "format": "wav",
+                "source": "kokoro",
+            })
+        raise HTTPException(
+            status_code=502,
+            detail=kokoro_client.last_error or "Kokoro no devolvio audio.",
+        )
+
+    # V0.83: EdgeTTS (MP3).
+    if request.provider == "edgetts":
+        audio_data = await edgetts_client.synthesize_mp3(
+            request.text, request.voice_id or "es-ES-ElviraNeural"
+        )
+        if audio_data:
+            audio_b64 = base64.b64encode(audio_data).decode("utf-8")
+            return JSONResponse(content={
+                "audio": f"data:audio/mpeg;base64,{audio_b64}",
+                "voice_id": request.voice_id,
+                "format": "mp3",
+                "source": "edgetts",
+            })
+        raise HTTPException(
+            status_code=502,
+            detail=edgetts_client.last_error or "EdgeTTS no devolvio audio.",
+        )
+
     # Try ElevenLabs first — salvo que se fuerce eSpeak con provider="espeak".
     if elevenlabs_client.api_key and request.provider != "espeak":
         try:
@@ -475,3 +546,72 @@ def elevenlabs_delete_config():
     finally:
         db.close()
     return _el_status()
+
+
+# ----------------------------------------------------------------------
+# V0.83: proveedores Kokoro (TTS local en proceso) y EdgeTTS (Microsoft,
+# gratis). Se añaden junto a ElevenLabs y eSpeak; no sustituyen a ninguno.
+# ----------------------------------------------------------------------
+
+@router.get("/kokoro/status")
+def kokoro_status() -> JSONResponse:
+    """¿Está la librería Kokoro instalada (in-process, sin Docker)?"""
+    available = kokoro_client.is_available()
+    return JSONResponse(content={
+        "available": available,
+        "message": (
+            "Kokoro instalado (voz local offline)." if available
+            else "Kokoro no instalado. Pulsa 'Instalar Kokoro' o: pip install kokoro"
+        ),
+    })
+
+
+@router.get("/kokoro/voices")
+def kokoro_voices() -> JSONResponse:
+    """Lista curada de voces de Kokoro (español primero)."""
+    return JSONResponse(content={"voices": KOKORO_VOICES})
+
+
+@router.post("/kokoro/install")
+def kokoro_install() -> JSONResponse:
+    """Instala la librería `kokoro` con pip (in-process, sin Docker). Descarga
+    en segundo plano; puede tardar. El modelo (~330MB) se baja al primer uso."""
+    import subprocess
+    import sys
+
+    if kokoro_client.is_available():
+        return JSONResponse(content={"installed": True, "message": "Kokoro ya está instalado."})
+    try:
+        subprocess.Popen(
+            [sys.executable, "-m", "pip", "install", "kokoro",
+             "--disable-pip-version-check"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        return JSONResponse(content={
+            "installed": False,
+            "message": "Instalando Kokoro (pip) en segundo plano. Tarda unos "
+                       "minutos; cuando termine, reinicia el backend y ya podrás "
+                       "seleccionarlo. El modelo se descarga al primer uso.",
+        })
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"No se pudo lanzar la instalación: {e}")
+
+
+@router.get("/edgetts/status")
+def edgetts_status() -> JSONResponse:
+    """¿Está edge-tts instalado? (voces de Microsoft, gratis, requiere internet)."""
+    available = edgetts_client.is_available()
+    return JSONResponse(content={
+        "available": available,
+        "message": (
+            "EdgeTTS listo (gratis, requiere internet)." if available
+            else "edge-tts no instalado: pip install edge-tts"
+        ),
+    })
+
+
+@router.get("/edgetts/voices")
+def edgetts_voices() -> JSONResponse:
+    """Lista curada de voces EdgeTTS (español + inglés)."""
+    return JSONResponse(content={"voices": EDGE_VOICES})
