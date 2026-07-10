@@ -1,7 +1,18 @@
 import { create } from "zustand";
 import { api, type AIStatus } from "@/lib/api";
 
-export type AICoreState = "idle" | "listening" | "thinking" | "speaking" | "processing" | "error";
+// AVCS S1: se añaden 'action' (Acción) y 'recovering' (Recuperación) para
+// completar los 7 ritmos del doc 13 §4. Los ritmos reales de esos estados
+// llegan en MVP1; el store ya expone el vocabulario.
+export type AICoreState =
+  | "idle"
+  | "listening"
+  | "thinking"
+  | "speaking"
+  | "processing"
+  | "error"
+  | "action"
+  | "recovering";
 
 interface AppState {
   backendConnected: boolean;

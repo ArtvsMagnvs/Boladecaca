@@ -1,6 +1,7 @@
 import { Outlet } from "react-router-dom";
 import { useLocation } from "react-router-dom";
 import { Sidebar } from "./Sidebar";
+import { AitheraPresence } from "@/avcs";
 
 // Navegación simple sin animaciones de transición que pueden causar pantallas en negro.
 // FIX V0.3 (Fase 1 Estabilizacion Hub V03): el Hub quiere llenar toda la
@@ -16,7 +17,12 @@ export function AppLayout() {
     <div className="flex h-screen w-screen overflow-hidden bg-base-950 text-ink">
       <Sidebar />
       <main className="flex-1 overflow-hidden relative">
-        <div className="h-full p-6" key={location.pathname}>
+        {/* AVCS S1 (doc 13 §13.1): el Canvas de la presencia vive AQUI, hermano
+            del div con key=pathname y FUERA de el, para que NO se remonte al
+            navegar (una sola instancia, el contexto WebGL y las FBO persisten).
+            pointer-events-none: los clics atraviesan a la UI. */}
+        <AitheraPresence className="absolute inset-0 z-0 pointer-events-none" />
+        <div className="h-full p-6 relative z-10" key={location.pathname}>
           <Outlet />
         </div>
       </main>

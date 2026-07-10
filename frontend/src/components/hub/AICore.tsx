@@ -17,6 +17,9 @@ const STATE_CONFIG: Record<AICoreState, { color: string; intensity: number; spee
   speaking: { color: "#5EA8FF", intensity: 0.5, speed: 1.5, rotationBoost: 1.6 },
   processing: { color: "#7C9CFF", intensity: 0.7, speed: 1.15, rotationBoost: 3 },
   error: { color: "#D9756F", intensity: 0.4, speed: 0.5, rotationBoost: 1 },
+  // AVCS S1: estados nuevos (componente congelado; mapeo conservador).
+  action: { color: "#7FE0C3", intensity: 0.72, speed: 1.3, rotationBoost: 3.5 },
+  recovering: { color: "#5EA8FF", intensity: 0.2, speed: 0.3, rotationBoost: 1.2 },
 };
 
 const vertexShader = `

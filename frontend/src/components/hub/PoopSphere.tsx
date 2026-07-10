@@ -59,6 +59,9 @@ const AGITATION: Record<AICoreState, Agitation> = {
   speaking:   { intensity: 0.35, speed: 1.5,  flyRadius: 1.45, flySpeed: 1.40, wingHz: 44, hairErect: 0.25 },
   processing: { intensity: 0.40, speed: 1.15, flyRadius: 1.20, flySpeed: 1.10, wingHz: 36, hairErect: 0.45 },
   error:      { intensity: 0.25, speed: 0.50, flyRadius: 1.0, flySpeed: 0.20, wingHz: 14, hairErect: 0.0 },
+  // AVCS S1: estados nuevos (componente congelado; mapeo conservador).
+  action:     { intensity: 0.42, speed: 1.30, flyRadius: 1.25, flySpeed: 1.20, wingHz: 40, hairErect: 0.50 },
+  recovering: { intensity: 0.14, speed: 0.25, flyRadius: 1.02, flySpeed: 0.35, wingHz: 20, hairErect: 0.05 },
 };
 
 // -----------------------------------------------------------------------------

@@ -15,11 +15,13 @@
   "dependencies": {
     "@react-three/drei": "^9.96.0",
     "@react-three/fiber": "^8.15.0",
+    "@react-three/postprocessing": "^2.19.1",
     "framer-motion": "^11.0.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "react-router-dom": "^6.21.3",
     "three": "^0.160.0",
+    "three-stdlib": "^2.36.1",
     "zustand": "^4.5.0"
   },
   "devDependencies": {

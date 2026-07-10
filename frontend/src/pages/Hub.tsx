@@ -19,23 +19,11 @@
 import { useEffect, useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import {
-  CoreSelectorButton,
-  CoreModelView,
-  loadStoredModel,
-  type CoreModelId,
-} from "@/components/hub/CoreSelector";
-import { CoreDesignPanel } from "@/components/hub/CoreDesignPanel";
-import {
-  DEFAULT_CORE_DESIGN,
-  loadStoredCoreDesigns,
-  saveStoredCoreDesigns,
-  type CoreDesignSettings,
-} from "@/components/hub/coreDesign";
-
-// Clave de localStorage para persistir el nucleo 3D seleccionado.
-// Compartida con CoreSelector (mismo modulo la define).
-const CORE_MODEL_STORAGE_KEY = "aithera.coreModel";
+// AVCS S1 (doc 13): el núcleo 3D del centro lo sustituye la <AitheraPresence/>,
+// montada persistentemente en AppLayout (full-bleed, detrás de la UI). Los 6
+// juguetes viejos (CoreSelector/AICore/AitheraSeed/PoopSphere/RasenganSphere/
+// CoreDesignPanel) quedan en disco pero desconectados del árbol (recuperables
+// por git; tree-shaking los excluye del bundle).
 import { HubPanel } from "@/components/hub/HubPanel";
 import { api, type Project, type Task, type CalendarEvent } from "@/lib/api";
 import { useAppStore } from "@/store/useAppStore";
@@ -103,42 +91,6 @@ export default function Hub() {
   const [proposalsCount, setProposalsCount] = useState<{ pending: number; counter_sent: number; confirmed: number }>({
     pending: 0, counter_sent: 0, confirmed: 0,
   });
-  // Nucleo 3D seleccionable desde la cabecera del Hub.
-  // Persiste en localStorage (lo hacemos aqui directamente porque el
-  // state vive en el Hub, no dentro de CoreSelector wrapper).
-  const [coreModel, setCoreModel] = useState<CoreModelId>(loadStoredModel);
-  const [coreDesigns, setCoreDesigns] = useState(loadStoredCoreDesigns);
-  const currentCoreDesign = coreDesigns[coreModel] ?? DEFAULT_CORE_DESIGN;
-
-  useEffect(() => {
-    try {
-      window.localStorage.setItem(CORE_MODEL_STORAGE_KEY, coreModel);
-    } catch {
-      // localStorage no disponible (modo incognito, etc.) — fallback silencioso.
-    }
-  }, [coreModel]);
-
-  useEffect(() => {
-    saveStoredCoreDesigns(coreDesigns);
-  }, [coreDesigns]);
-
-  const updateCurrentCoreDesign = useCallback((patch: Partial<CoreDesignSettings>) => {
-    setCoreDesigns((prev) => ({
-      ...prev,
-      [coreModel]: {
-        ...(prev[coreModel] ?? DEFAULT_CORE_DESIGN),
-        ...patch,
-      },
-    }));
-  }, [coreModel]);
-
-  const resetCurrentCoreDesign = useCallback(() => {
-    setCoreDesigns((prev) => ({
-      ...prev,
-      [coreModel]: { ...DEFAULT_CORE_DESIGN },
-    }));
-  }, [coreModel]);
-
   /**
    * Carga simultánea de los datos del Hub. Centralizado en una sola
    * función para que el efecto inicial y el intervalo de 30s compartan
@@ -275,12 +227,6 @@ export default function Hub() {
         maxWidth: "100%",
       }}
     >
-      {/* CABECERA FLOTANTE — boton discreto para cambiar el nucleo 3D.
-          Posicion absoluta en la parte superior del Hub, centrado. */}
-      <div className="absolute top-3 left-1/2 -translate-x-1/2 z-20">
-        <CoreSelectorButton value={coreModel} onChange={setCoreModel} />
-      </div>
-
       {/* IZQUIERDA */}
       <div className="flex flex-col gap-4 min-h-0 overflow-y-auto pr-1">
         <HubPanel
@@ -408,15 +354,17 @@ export default function Hub() {
         </HubPanel>
       </div>
 
-      {/* CENTRO — Nucleo 3D seleccionable (Orbe azul / Bola de caca) */}
-      <div className="flex flex-col items-center justify-center gap-3 min-h-0">
-        <CoreModelView
-          model={coreModel}
-          size={900}
-          design={currentCoreDesign}
-          onNavigateToChat={() => navigate("/chat")}
-        />
-
+      {/* CENTRO — zona de la presencia (AVCS). La <AitheraPresence/> se
+          renderiza full-bleed DETRAS (en AppLayout); esta columna solo deja el
+          espacio libre y flota la etiqueta de estado + proveedor. Clic → chat. */}
+      <div
+        className="flex flex-col items-center justify-end gap-3 min-h-0 pb-6 cursor-pointer"
+        onClick={() => navigate("/chat")}
+        role="button"
+        tabIndex={0}
+        onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") navigate("/chat"); }}
+        aria-label="Abrir chat"
+      >
         <AnimatePresence mode="wait">
           <motion.div
             key={coreState}
@@ -436,15 +384,6 @@ export default function Hub() {
             </p>
           </motion.div>
         </AnimatePresence>
-
-        {import.meta.env.DEV && (
-          <CoreDesignPanel
-            model={coreModel}
-            value={currentCoreDesign}
-            onChange={updateCurrentCoreDesign}
-            onReset={resetCurrentCoreDesign}
-          />
-        )}
       </div>
 
       {/* DERECHA */}

@@ -87,6 +87,9 @@ const STATE_RING_COLOR: Record<AICoreState, string> = {
   speaking: "border-accent/55",
   processing: "border-accent-soft/45",
   error: "border-signal-error/50",
+  // AVCS S1: estados nuevos (componente congelado).
+  action: "border-accent-soft/50",
+  recovering: "border-accent/25",
 };
 
 const STATE_GLOW: Record<AICoreState, string> = {
@@ -96,6 +99,9 @@ const STATE_GLOW: Record<AICoreState, string> = {
   speaking: "shadow-[0_0_45px_rgba(94,168,255,0.25)]",
   processing: "shadow-[0_0_50px_rgba(124,156,255,0.2)]",
   error: "shadow-[0_0_40px_rgba(224,113,110,0.2)]",
+  // AVCS S1: estados nuevos (componente congelado).
+  action: "shadow-[0_0_50px_rgba(127,224,195,0.2)]",
+  recovering: "shadow-[0_0_35px_rgba(94,168,255,0.12)]",
 };
 
 interface CoreFrameProps {

@@ -33,6 +33,9 @@ const STATE_SPIN: Record<AICoreState, { spinY: number; spinX: number; haloPulse:
   speaking:   { spinY: 11.0, spinX: 1.6,  haloPulse: 0.65 },
   processing: { spinY: 13.0, spinX: 2.0,  haloPulse: 0.80 },
   error:      { spinY: 4.0,  spinX: 0.4,  haloPulse: 0.30 },
+  // AVCS S1: estados nuevos (componente congelado; mapeo conservador).
+  action:     { spinY: 13.5, spinX: 2.1,  haloPulse: 0.82 },
+  recovering: { spinY: 6.0,  spinX: 0.9,  haloPulse: 0.40 },
 };
 
 // Color base del Rasengan (azul cian brillante, tipo "chakra de Naruto").
