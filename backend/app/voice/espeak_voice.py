@@ -190,11 +190,19 @@ class eSpeakVoice:
         
         voice = ESPEAK_VOICES.get(voice_key, ESPEAK_VOICES["es_female"])
         
+        # FIX (audit): antes, output_path solo se borraba en el camino feliz.
+        # Cualquier fallo (returncode != 0, timeout, excepcion) dejaba el
+        # .wav temporal huerfano en disco para siempre — y eSpeak es
+        # precisamente el fallback que se dispara a menudo cuando ElevenLabs
+        # falla, asi que estos archivos se podian acumular con el tiempo.
+        # output_path se declara None hasta que el NamedTemporaryFile lo crea,
+        # asi el finally no intenta borrar algo que nunca se llego a crear.
+        output_path: Optional[str] = None
         try:
             # Create temp file for output
             with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
                 output_path = tmp.name
-            
+
             # Build command
             cmd = [
                 self.espeak_path,
@@ -204,32 +212,32 @@ class eSpeakVoice:
                 "-p", str(pitch),
                 text
             ]
-            
+
             # Run synthesis
             result = subprocess.run(cmd, capture_output=True, timeout=30)
-            
+
             if result.returncode != 0:
                 print(f"eSpeak error: {result.stderr}")
                 return None
-            
+
             # Read output
             with open(output_path, "rb") as f:
                 audio_data = f.read()
-            
-            # Cleanup
-            try:
-                os.unlink(output_path)
-            except:
-                pass
-            
+
             return audio_data
-            
+
         except subprocess.TimeoutExpired:
             print("eSpeak synthesis timeout")
             return None
         except Exception as e:
             print(f"eSpeak synthesis error: {e}")
             return None
+        finally:
+            if output_path:
+                try:
+                    os.unlink(output_path)
+                except OSError:
+                    pass
     
     def synthesize_to_mp3(self, text: str, voice_key: str = "es_female",
                         speed: int = 175, pitch: int = 50) -> Optional[bytes]:

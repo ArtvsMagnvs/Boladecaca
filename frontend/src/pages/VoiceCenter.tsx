@@ -234,9 +234,13 @@ export default function VoiceCenter() {
 
   const handlePreview = useCallback(async () => {
     if (isPlaying || isLoading) {
-      // Detener reproducción actual
+      // Detener reproducción actual.
+      // FIX (audit): antes se ponia audioRef.current = null SIN revocar el
+      // blob URL antes — la referencia se perdia y el blob quedaba en
+      // memoria hasta recargar la pagina (fuga). Revocamos primero.
       if (audioRef.current) {
         audioRef.current.pause();
+        try { URL.revokeObjectURL(audioRef.current.src); } catch { /* noop */ }
         audioRef.current = null;
       }
       setIsPlaying(false);
@@ -289,6 +293,9 @@ export default function VoiceCenter() {
       audio.onerror = () => {
         setIsPlaying(false);
         setError("Error al reproducir audio");
+        // FIX (audit): esta rama no revocaba el blob URL (fuga si el audio
+        // falla al cargar/reproducir, ej. formato no soportado).
+        URL.revokeObjectURL(url);
         // V0.8.1 (Paso 2): error de reproduccion -> nucleo a idle
         setCoreState("idle");
       };
@@ -322,8 +329,10 @@ export default function VoiceCenter() {
   }, [persistProvider, loadVoicesFor]);
 
   const handleStop = () => {
+    // FIX (audit): idem handlePreview — revocar antes de soltar la referencia.
     if (audioRef.current) {
       audioRef.current.pause();
+      try { URL.revokeObjectURL(audioRef.current.src); } catch { /* noop */ }
       audioRef.current = null;
     }
     setIsPlaying(false);
@@ -336,6 +345,7 @@ export default function VoiceCenter() {
     return () => {
       if (audioRef.current) {
         audioRef.current.pause();
+        try { URL.revokeObjectURL(audioRef.current.src); } catch { /* noop */ }
       }
     };
   }, []);

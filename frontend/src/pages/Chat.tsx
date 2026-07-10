@@ -18,6 +18,12 @@ export default function Chat() {
   // FIX V0.2: ref para acumular el texto del stream sin depender del closure
   // de estado (que capturaría siempre el valor inicial "").
   const accumulatedRef = useRef("");
+  // Guard sincrono de re-entrancia: `loading` (estado) llega con un render
+  // de retraso, asi que dos eventos disparados casi a la vez (doble keydown
+  // de Enter por prediccion de texto de Windows, doble click, etc.) pueden
+  // leer loading=false en ambos y colarse los dos. El ref se lee/escribe en
+  // el mismo tick, sin depender de un re-render.
+  const sendingRef = useRef(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   // V0.8.1 (Paso 2): selector granular para no re-renderizar el componente
   // en cada cambio de coreState/aiStatus (pitfall #4 de aithera-hub-corestate).
@@ -107,7 +113,7 @@ export default function Chat() {
   // como el micro (auto-envío) sin bugs de closure.
   const sendMessage = useCallback(async (text: string): Promise<string | null> => {
     const userMessage = text.trim();
-    if (!userMessage || loading) return null;
+    if (!userMessage || sendingRef.current) return null;
     if (!backendConnected) {
       setMessages(prev => [...prev, { role: "user", content: userMessage }, { role: "assistant", content: "Error: No hay conexión con el backend." }]);
       setInput("");
@@ -115,6 +121,7 @@ export default function Chat() {
       return null;
     }
 
+    sendingRef.current = true;
     setInput("");
     setMessages(prev => [...prev, { role: "user", content: userMessage }]);
     setLoading(true);
@@ -142,9 +149,10 @@ export default function Chat() {
       pulseError();
       return null;
     } finally {
+      sendingRef.current = false;
       setLoading(false);
     }
-  }, [loading, backendConnected, setCoreState, pulseError]);
+  }, [backendConnected, setCoreState, pulseError]);
 
   const handleSend = () => { void sendMessage(input); };
 
@@ -181,12 +189,27 @@ export default function Chat() {
       ac.createMediaStreamSource(stream).connect(analyser);
       const buf = new Uint8Array(analyser.fftSize);
 
+      const SILENCE = 0.012;      // umbral RMS de silencio
+      const SILENCE_MS = 1200;    // corta tras este silencio (habiendo hablado)
+      const MAX_MS = 15000;       // tope duro por intervención
+
       let stopped = false;
       const cleanup = () => {
         if (stopped) return;
         stopped = true;
+        clearTimeout(hardStop);
         try { if (recorder.state !== "inactive") recorder.stop(); } catch { /* noop */ }
       };
+      // FIX (audit): requestAnimationFrame se PAUSA cuando la ventana pierde
+      // foco/se minimiza (comportamiento estandar del navegador/Electron).
+      // Como el corte por MAX_MS solo se evaluaba dentro de tick(), si el
+      // usuario minimizaba Aithera durante "Modo Conversación" el rAF dejaba
+      // de dispararse y el corte de los 15s nunca llegaba: el microfono
+      // podia quedarse abierto indefinidamente. setTimeout SI sigue
+      // disparando en segundo plano, asi que actua de red de seguridad real
+      // independiente del rAF.
+      const hardStop = setTimeout(cleanup, MAX_MS);
+
       recorder.ondataavailable = (e) => { if (e.data.size) chunks.push(e.data); };
       recorder.onstop = () => {
         stream.getTracks().forEach((t) => t.stop());
@@ -194,9 +217,6 @@ export default function Chat() {
         resolve(chunks.length ? new Blob(chunks, { type: mimeType }) : null);
       };
 
-      const SILENCE = 0.012;      // umbral RMS de silencio
-      const SILENCE_MS = 1200;    // corta tras este silencio (habiendo hablado)
-      const MAX_MS = 15000;       // tope duro por intervención
       let spoke = false;
       let silentSince = 0;
       const t0 = performance.now();
@@ -243,18 +263,25 @@ export default function Chat() {
     setCoreState("idle");
   }, [listenOnce, sendMessage, speak, setCoreState]);
 
+  // FIX: antes este toggle pasaba una funcion updater a setConversation con
+  // efectos secundarios dentro (arrancar conversationLoop, pausar audio...).
+  // React.StrictMode (activo en main.tsx) invoca los updaters DOS VECES en
+  // desarrollo para detectar impurezas, asi que conversationLoop() se
+  // disparaba dos veces por cada clic -> dos bucles de escucha concurrentes
+  // -> Aithera respondia dos veces por cada intervencion de voz. El updater
+  // de un useState debe ser puro; los efectos van fuera, en el propio
+  // manejador del evento, leyendo el valor actual desde el ref (no del
+  // estado, que llega con un render de retraso).
   const toggleConversation = useCallback(() => {
-    setConversation((prev) => {
-      const next = !prev;
-      conversationRef.current = next;
-      if (next) {
-        void conversationLoop();
-      } else {
-        try { audioRef.current?.pause(); } catch { /* noop */ }
-        setCoreState("idle");
-      }
-      return next;
-    });
+    const next = !conversationRef.current;
+    conversationRef.current = next;
+    setConversation(next);
+    if (next) {
+      void conversationLoop();
+    } else {
+      try { audioRef.current?.pause(); } catch { /* noop */ }
+      setCoreState("idle");
+    }
   }, [conversationLoop, setCoreState]);
 
   // Al desmontar, cortar la conversación.
@@ -304,8 +331,12 @@ export default function Chat() {
           className="flex-1 bg-base-800 border border-base-700 rounded-xl px-4 py-3 text-sm text-ink placeholder:text-ink-faint focus:outline-none focus:border-accent/40"
           disabled={loading}
         />
-        {/* V0.83 (Paso 4): boton de micro al lado del input. */}
-        <MicButton onTranscript={handleTranscript} language="es" />
+        {/* V0.83 (Paso 4): boton de micro al lado del input. FIX (audit):
+            deshabilitado durante "Modo Conversación" — antes se podian usar
+            los dos a la vez, abriendo dos capturas de microfono
+            concurrentes que transcribian y enviaban la misma intervencion
+            por separado (doble respuesta). */}
+        <MicButton onTranscript={handleTranscript} language="es" disabled={conversation} />
         {/* V0.83: Modo Conversación (escucha continua). Verde = activo. */}
         <button
           type="button"

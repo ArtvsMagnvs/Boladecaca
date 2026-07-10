@@ -254,7 +254,14 @@ class ElevenLabsVoice:
             return None
 
         except Exception as e:
-            print(f"ElevenLabs streaming error: {e}")
+            # FIX (audit): a diferencia de synthesize(), esta rama no
+            # actualizaba self.last_error. Como synthesize_stream() es el
+            # camino POR DEFECTO (use_stream=True), un fallo de red aqui
+            # dejaba last_error con el valor de una llamada anterior (o
+            # None), y el endpoint acababa mostrando un error generico o
+            # desactualizado en vez del motivo real de este fallo.
+            self.last_error = f"ElevenLabs error de red (stream): {e}"
+            print(self.last_error)
             return None
     
     async def get_available_voices(self) -> List[Dict[str, Any]]:

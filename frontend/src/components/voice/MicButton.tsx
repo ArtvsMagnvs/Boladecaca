@@ -34,6 +34,8 @@ interface MicButtonProps {
   className?: string;
   /** Tooltip custom. */
   title?: string;
+  /** Deshabilita el boton (ej. mientras "Modo Conversación" ya usa el micro). */
+  disabled?: boolean;
 }
 
 export default function MicButton({
@@ -42,6 +44,7 @@ export default function MicButton({
   size = 18,
   className = "",
   title,
+  disabled = false,
 }: MicButtonProps) {
   const [recording, setRecording] = useState(false);
   const [transcribing, setTranscribing] = useState(false);
@@ -50,6 +53,13 @@ export default function MicButton({
   const recorderRef = useRef<MediaRecorder | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const chunksRef = useRef<Blob[]>([]);
+  // FIX (audit): el "breath" de 80ms en transcribe() (idle -> thinking) usa
+  // un setTimeout sin cancelar. Si la transcripcion termina (o el
+  // componente se desmonta) antes de esos 80ms, el timeout diferido
+  // sobreescribe coreState a "thinking" DESPUES de que ya se puso en
+  // "idle", dejando el nucleo 3D visualmente atascado. Lo trackeamos para
+  // poder cancelarlo.
+  const breathTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Granular selector (pitfall #4 skill aithera-hub-corestate).
   const setCoreState = useAppStore((s) => s.setCoreState);
@@ -68,6 +78,12 @@ export default function MicButton({
       if (streamRef.current) {
         streamRef.current.getTracks().forEach((t) => t.stop());
         streamRef.current = null;
+      }
+      // FIX (audit): cancelar el "breath" pendiente para que no dispare
+      // setCoreState("thinking") despues de desmontado.
+      if (breathTimeoutRef.current) {
+        clearTimeout(breathTimeoutRef.current);
+        breathTimeoutRef.current = null;
       }
       // Si el nucleo estaba en "listening" o "thinking" por nuestra culpa,
       // lo devolvemos a idle. Si lo puso otro componente (chat, voice
@@ -181,8 +197,15 @@ export default function MicButton({
     async (blob: Blob) => {
       setTranscribing(true);
       // Breve transicion listening -> thinking (regla R2: 80ms breath).
+      // FIX (audit): trackeamos el timeout para poder cancelarlo si la
+      // transcripcion ya termino (o el componente se desmonto) antes de que
+      // dispare — si no, sobreescribe un coreState="idle" ya correcto con
+      // "thinking" y lo deja atascado.
       setCoreState("idle");
-      setTimeout(() => setCoreState("thinking"), 80);
+      breathTimeoutRef.current = setTimeout(() => {
+        breathTimeoutRef.current = null;
+        setCoreState("thinking");
+      }, 80);
 
       try {
         const result = await api.transcribeVoice(blob, language);
@@ -191,14 +214,17 @@ export default function MicButton({
         } else {
           setError("No se detecto habla. Intentalo de nuevo.");
         }
-        setCoreState("idle");
       } catch (e: unknown) {
         const msg = e instanceof Error ? e.message : String(e);
         console.error("Transcription failed:", msg);
         setError(msg);
         pulseError();
-        setCoreState("idle");
       } finally {
+        if (breathTimeoutRef.current) {
+          clearTimeout(breathTimeoutRef.current);
+          breathTimeoutRef.current = null;
+        }
+        setCoreState("idle");
         setTranscribing(false);
         setRecording(false);
       }
@@ -213,18 +239,20 @@ export default function MicButton({
       ? "bg-signal-warn/15 border-signal-warn/40 text-signal-warn"
       : "bg-base-800 border-base-700 text-ink-dim hover:border-accent/40 hover:text-ink";
 
-  const label = recording
-    ? "Detener grabacion"
-    : transcribing
-      ? "Transcribiendo..."
-      : title ?? "Dictar al chat";
+  const label = disabled
+    ? "Modo Conversación activo — el micro ya está escuchando"
+    : recording
+      ? "Detener grabacion"
+      : transcribing
+        ? "Transcribiendo..."
+        : title ?? "Dictar al chat";
 
   return (
     <div className="flex flex-col items-end gap-1">
       <button
         type="button"
         onClick={recording ? stop : start}
-        disabled={transcribing}
+        disabled={transcribing || disabled}
         title={label}
         aria-label={label}
         className={`p-3 rounded-xl border transition-all disabled:opacity-50 ${stateClass} ${className}`}

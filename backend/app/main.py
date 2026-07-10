@@ -117,6 +117,16 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         log_error("shutdown", e, "Error deteniendo los canales del Gateway")
 
+    # FIX (audit sistema de audio): el httpx.AsyncClient de ElevenLabs
+    # (creado una vez al importar app.voice.elevenlabs_voice) nunca se
+    # cerraba en shutdown. En un solo proceso de desarrollo no se nota, pero
+    # es la limpieza correcta de un cliente HTTP con conexiones persistentes.
+    try:
+        from app.voice.elevenlabs_voice import voice_client as _el_client
+        await _el_client.close()
+    except Exception as e:
+        log_error("shutdown", e, "Error cerrando el cliente HTTP de ElevenLabs")
+
 
 # Create FastAPI app
 app = FastAPI(

@@ -27,6 +27,7 @@ from app.voice.espeak_voice import (
     ESPEAK_VOICES
 )
 from app.voice.whisper_stt import transcribe, get_status as stt_status
+from app.voice.text_clean import strip_emojis
 
 router = APIRouter(prefix="/voice", tags=["Voice"])
 
@@ -160,11 +161,21 @@ async def synthesize(request: SynthesizeRequest) -> Response:
     """
     if not request.text.strip():
         raise HTTPException(status_code=400, detail="Text cannot be empty")
-    
+
+    # El TTS no debe leer ni describir emoticonos (ej. decir "carita
+    # sonriente" al llegar a un 😊). Se quitan SOLO para la voz; el texto que
+    # ve el usuario en el chat no pasa por aqui y conserva los emoticonos.
+    text = strip_emojis(request.text)
+    if not text:
+        raise HTTPException(
+            status_code=422,
+            detail="El texto solo contenia emoticonos; no hay nada que sintetizar en voz.",
+        )
+
     # V0.83: Kokoro (TTS local EN PROCESO, devuelve WAV). Bloqueante -> to_thread.
     if request.provider == "kokoro":
         audio_data = await asyncio.to_thread(
-            kokoro_client.synthesize_wav, request.text, request.voice_id or "ef_dora"
+            kokoro_client.synthesize_wav, text, request.voice_id or "ef_dora"
         )
         if audio_data:
             return Response(
@@ -180,7 +191,7 @@ async def synthesize(request: SynthesizeRequest) -> Response:
     # V0.83: EdgeTTS (Microsoft, gratis, sin key; devuelve MP3).
     if request.provider == "edgetts":
         audio_data = await edgetts_client.synthesize_mp3(
-            request.text, request.voice_id or "es-ES-ElviraNeural"
+            text, request.voice_id or "es-ES-ElviraNeural"
         )
         if audio_data:
             return Response(
@@ -197,7 +208,7 @@ async def synthesize(request: SynthesizeRequest) -> Response:
     if elevenlabs_client.api_key and request.provider != "espeak":
         try:
             audio_data = await elevenlabs_synthesize(
-                text=request.text,
+                text=text,
                 voice_id=request.voice_id,
                 use_stream=request.use_stream
             )
@@ -241,10 +252,14 @@ async def synthesize(request: SynthesizeRequest) -> Response:
             "GMwe3DBXQwAEkbqiQDhK": "fr_male",  # French
             "TxhqxN7eKXvBdrCDK0Kz": "zh_female",  # Chinese
         }
-        
+
         espeak_key = espeak_voice_map.get(request.voice_id, "es_female")
-        audio_data = synthesize_offline(request.text, espeak_key)
-        
+        # FIX (audit): synthesize_offline() llama a subprocess.run() de forma
+        # SINCRONA. Sin to_thread, bloquea el event loop entero (todas las
+        # demas peticiones concurrentes: chat, email, agentes...) durante la
+        # sintesis — justo en el camino que se activa cuando ElevenLabs falla.
+        audio_data = await asyncio.to_thread(synthesize_offline, text, espeak_key)
+
         if audio_data:
             return Response(
                 content=audio_data,
@@ -264,11 +279,19 @@ async def synthesize_base64(request: SynthesizeRequest) -> JSONResponse:
     """Synthesize speech and return as base64-encoded audio."""
     if not request.text.strip():
         raise HTTPException(status_code=400, detail="Text cannot be empty")
-    
+
+    # El TTS no debe leer ni describir emoticonos (ver text_clean.py).
+    text = strip_emojis(request.text)
+    if not text:
+        raise HTTPException(
+            status_code=422,
+            detail="El texto solo contenia emoticonos; no hay nada que sintetizar en voz.",
+        )
+
     # V0.83: Kokoro (TTS local en proceso, WAV).
     if request.provider == "kokoro":
         audio_data = await asyncio.to_thread(
-            kokoro_client.synthesize_wav, request.text, request.voice_id or "ef_dora"
+            kokoro_client.synthesize_wav, text, request.voice_id or "ef_dora"
         )
         if audio_data:
             audio_b64 = base64.b64encode(audio_data).decode("utf-8")
@@ -286,7 +309,7 @@ async def synthesize_base64(request: SynthesizeRequest) -> JSONResponse:
     # V0.83: EdgeTTS (MP3).
     if request.provider == "edgetts":
         audio_data = await edgetts_client.synthesize_mp3(
-            request.text, request.voice_id or "es-ES-ElviraNeural"
+            text, request.voice_id or "es-ES-ElviraNeural"
         )
         if audio_data:
             audio_b64 = base64.b64encode(audio_data).decode("utf-8")
@@ -305,7 +328,7 @@ async def synthesize_base64(request: SynthesizeRequest) -> JSONResponse:
     if elevenlabs_client.api_key and request.provider != "espeak":
         try:
             audio_data = await elevenlabs_synthesize(
-                text=request.text,
+                text=text,
                 voice_id=request.voice_id,
                 use_stream=request.use_stream
             )
@@ -335,8 +358,9 @@ async def synthesize_base64(request: SynthesizeRequest) -> JSONResponse:
             "M0XMcJl3aMSh0bL3V0tX": "ja_female",
         }
         espeak_key = espeak_voice_map.get(request.voice_id, "es_female")
-        audio_data = synthesize_offline(request.text, espeak_key)
-        
+        # FIX (audit): idem /synthesize — evitar bloquear el event loop.
+        audio_data = await asyncio.to_thread(synthesize_offline, text, espeak_key)
+
         if audio_data:
             audio_b64 = base64.b64encode(audio_data).decode("utf-8")
             return JSONResponse(content={
