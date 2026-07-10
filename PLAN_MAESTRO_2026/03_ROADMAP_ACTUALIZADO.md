@@ -1,165 +1,207 @@
-# Roadmap actualizado — V0.7.2 → V1.2
+# Roadmap definitivo — V0.8 → V2.0+ (Plan Maestro 2.0)
 
-> Evolución del roadmap de `AOS_Arquitectura_y_Roadmap.md` incorporando los patrones
-> del benchmark (`01_BENCHMARK_JARVIS_OSS.md`). Los principios 1-8 del AOS siguen
-> vigentes e inviolables. Cambios respecto al roadmap anterior marcados con 🆕.
+> Reescrito 2026-07-09 (Fable 5) integrando los diseños de `FABLE5_PROMPTS/` 01-07.
+> Los principios 1-8 del AOS siguen vigentes e inviolables. Documentos de diseño:
+> **07** MOS V0.85 · **08** MOS arquitectura completa · **09** LSL/LLL · **10** Hermes
+> · **11** Automation+Orchestrator · **12** Auditoría/optimización · **13** AVCS (sistema visual).
+>
+> **La estrella polar**: V1.0 es un **MVP bien hecho — completamente autónomo y
+> distribuible a usuarios BETA** — alcanzable en semanas, no meses. Todo lo que no
+> sea necesario para eso se diseña hoy (contratos/stubs) y se implementa después.
 
 ---
 
-## V0.7.2 – V0.7.3 — Email Assistant FINAL + Fundamentos
+## 0. Filosofía ACI (la capa por encima del roadmap)
 
-Ver `02_FASE_EMAIL_ASSISTANT_FINAL.md`. Resumen: commit inicial + pytest baseline +
-auditoría legacy → split god-endpoint → triaje Inbox-Zero + autonomía gradual +
-digest → pulido y release. 🆕 respecto al plan anterior: triaje por categorías,
-autonomía gradual por regla, digest, y la red de seguridad (git/tests) como sesión 0.
+- **ACI (Aithera Cognitive Infrastructure)**: memoria + skills + tools +
+  automatización + orquestación. Diseñada para sobrevivir a cualquier LLM o runtime.
+- **MOS (Memory Operating System)**: el subsistema de memoria de la ACI (docs 07/08).
+  **La memoria pertenece a Aithera, nunca al runtime.**
+- **`AgentRuntime`** (doc 10): el mecanismo de extensión para motores de agentes —
+  Hermes, futuros runtimes o uno nativo son implementaciones intercambiables, igual
+  que los 8 proveedores del AIManager.
+- **Autosuficiencia local** (doc 09): Aithera sin red = completa. La red (GSN/CIE,
+  V2.0+) amplifica; jamás es prerrequisito.
+- **Adaptabilidad tecnológica** (08 RFC-006): toda capa de memoria puede cambiar de
+  motor (Chroma→Qdrant→lo que venga) con dual-write + tests de contrato, sin tocar
+  a los consumidores. **Compactación** (08 RFC-007): la memoria se destila, no crece
+  sin límite.
 
-## V0.8 — Clientes: Gateway + Telegram + Web + PWA + Seguridad
+## 1. ✅ HECHO — V0.7.x y V0.8 (estado real del código)
 
-Base: `Fase_5_Clients_Telegram_Web_V08.md`, con dos adiciones estructurales.
+- **V0.7.3 Email Assistant TERMINADO**: 7 routers, triaje 2 etapas, autonomía
+  gradual, ai_prompt, digest, responder desde alertas, 120+ tests.
+- **V0.8**: Gateway + MessageEnvelope (patrón OpenClaw) · canal Telegram ·
+  hardening (CORS, DPAPI para API keys y token TG) · B21 (reasoning filter) ·
+  voz (STT Whisper, TTS multi-proveedor, conversación continua) · Hub responsivo.
+- Pendientes menores heredados: PIN/token de red y cliente Web+PWA → **post-V1.0**.
 
-🆕 **Gateway con message envelope único (patrón OpenClaw).** Antes de escribir el bot:
-`app/gateway/` con `MessageEnvelope {channel, user_ref, text, attachments, reply_to,
-metadata}` y `ChannelAdapter` base. El bot de Telegram y el chat web son adapters
-finos que convierten su formato al envelope y entregan la respuesta. La lógica de
-negocio no sabe qué canal la llamó. Coste: ~1 sesión extra. Beneficio: cualquier
-canal futuro (Discord, WhatsApp) es solo un adapter.
+## 2. V0.82 / V0.83 — Voz + Hub: **AVCS Fase 0 "Génesis"** (diseño: doc 13)
 
-🆕 **Security hardening (bloqueante para exponer la red):**
-- ✅ CORS restringido a orígenes conocidos (localhost + `null` de Electron +
-  `CORS_ALLOWED_ORIGINS` para IPs de LAN). Ya NO `allow_origins=['*']`.
-- ✅ Cifrado de API keys en BD: DPAPI de Windows (`app/core/secrets.py`), cifrado
-  al escribir / descifrado al instanciar en el `AIManager`; migración Alembic
-  `d4e5f6a7b8c9_v08_encrypt_api_keys` re-cifra las existentes (idempotente).
-- ✅ Autenticación del bot de Telegram por `chat_id` whitelist.
-- ⏳ PIN/token de sesión para origen no-localhost — se implementa junto al
-  cliente Web (post-V1.0), que es cuando hace falta exponer a la red.
-- ⏳ Rate limiting básico (slowapi) — opcional, con el cliente Web.
+Última puesta a punto de voz y Hub, con el nacimiento del **Aithera Visual
+Consciousness System** (especificación completa en `13_AVCS_DISENO_MAESTRO.md`):
 
-**Estado V0.8**: ✅ Gateway + Telegram (adapter, comandos, chat natural,
-config desde Ajustes) + Security Hardening (CORS + API keys cifradas) HECHOS.
-⏳ **Cliente Web (`/app`) + PWA APLAZADOS a post-V1.0** (decisión 2026-07-04):
-no bloquean Hub Visual, Voz, Memory, Automation ni Orchestrator.
+1. **Semilla + Ondas de Sincronía** con el motor de partículas real (ParticleEngine
+   GPGPU mínimo + ShaderSystem + RhythmEngine) — sustituye a la esfera `AICore.tsx`.
+2. Ritmos iniciales: **Reposo** (respiración orgánica nunca idéntica), **Escucha**
+   simple (el campo se hunde, primeras raíces insinuadas) y **Comunicación** simple
+   (la energía asciende y late con la voz de Aithera vía audioLevel).
+3. **Sin clipping**: canvas full-bleed, cámara fit-contain +12% de margen y falloff
+   de borde — la energía nunca queda cortada por arriba/abajo/laterales (13 §13.3).
+4. **Modo Presencia**: botón (+ tecla) que pliega TODA la UI y deja solo el
+   organismo visual; segundo clic/Esc restaura (13 §13.4).
+5. **Chat limpio**: presencia central + panel lateral flotante (~380 px) con
+   historial, input y botones de voz/conversación (13 §13.5).
+6. PerformanceManager v0 (tiers Q1-Q3 manuales + escalado dinámico básico).
 
-## V0.82 — Hub Visual (pulido de UI, 🆕 2026-07-04)
+Se mantiene: remate de voces ElevenLabs + STT (V0.83), quitar `PROFESSIONAL_VOICES`
+hardcodeadas (doc 12 A6) y el sprint perf-front (lazy Three.js/code-splitting) —
+misma zona de código, mismo momento.
+**Cierre**: test de presencia superado (13 §21.1). ~3-4 sesiones.
 
-Tras el hardening, mejora visual del Hub:
-- Animación de conversación (el chat cobra vida en el Hub).
-- Modo pantalla completa con botones para desplegar/plegar las barras laterales
-  (tareas, proyectos, funcionalidades, etc.).
+## 3. V0.85 — MOS Skeleton (diseño completo: doc 07)
 
-## V0.83 — Voz completa (🆕 2026-07-04)
+**Opción B**: arquitectura definitiva, implementación mínima. En una frase: se
+construye la columna vertebral de la memoria (interfaces `IMemoryStore`/`MemoryRouter`
++ 5 tipos de memoria + tabla `decisions`) y sobre ella la funcionalidad: ingesta de
+email/calendario cada 20 min, resumen nocturno Ollama-first, contexto con atribución
+de fuente en el chat, `GET /api/memory/briefing`, compactación mínima (dedup +
+presupuesto), vault opcional.
 
-- Terminar de configurar las voces principales de ElevenLabs.
-- STT (speech-to-text) con reconocimiento de voz. (Adelanta parte de la antigua
-  "Voice 2.0" de Post-V1.1.)
+- Sprints M1-M5 (5-6 sesiones), criterios de cierre por sprint en doc 07 §10.
+- Incluye las optimizaciones P1 de doc 12 (init de ChromaDB en background, índices).
+- **Cierre de fase**: "¿qué me ha llegado importante hoy?" responde desde memoria
+  local con Gmail desconectado. Tag `v0.8.5`.
+- Handoff garantizado a V0.9: briefing estable, `context()` ≤ 300 ms, `decisions`
+  lista, jobs asyncio migrables a APScheduler.
 
-## V0.85 — Memory & Context (ANTES del Automation Engine)
+## 4. V0.9 — Automation Engine + ApprovalGate (diseño completo: doc 11 parte A)
 
-Salto de memoria de verdad, previo a la automatización y al orchestrator
-(decisión 2026-07-04). Objetivo: un sistema de memoria realmente bueno con
-**captura automática de skills, contexto de proyectos, briefings ricos y
-detección de patrones de trabajo**. Sobre esa base (patrón OpenHuman):
+Arquitectura de 4 capas (Triggers/Conditions/Actions/Learner) con MVP funcional:
 
-1. **Ingesta en background**: job asyncio (no APScheduler aún) cada 20 min que trae emails nuevos y eventos próximos y los indexa en ChromaDB con su categoría de triaje.
-2. **Summary trees**: resúmenes jerárquicos email→hilo→día→semana, generados en batch nocturno con modelo local (Ollama) para coste cero.
-3. **Contexto en el chat**: el endpoint de chat inyecta top-k de memoria relevante (ya existe RAG; ahora tendrá material fresco de verdad).
-4. 🆕 opcional: **vault legible** — espejo en Markdown de lo que el asistente recuerda (`%APPDATA%/Aithera/vault/`), inspirado en OpenHuman/Obsidian. Transparencia total; borrar un .md = olvidar.
+- **ApprovalGate genérico** persistente y reanudable — EL primitivo que reusan
+  Orchestrator, Hermes y skills. La confirmación de email migra a él.
+- Triggers Schedule+Event (reactivos sobre la ingesta del MOS — cero polling
+  propio), condiciones composables con cooldown/ventana horaria, 4 acciones.
+- **Integración MOS obligatoria**: `daily_briefing` consume `/api/memory/briefing`
+  (sin Gmail en caliente); resultados → Automation Memory; aprobaciones → Decision
+  API; errores → Error Memory. APScheduler entra aquí y absorbe los jobs de V0.85.
+- Reglas predefinidas (off por defecto): daily_briefing, system_monitor,
+  urgent_email_alert, email_summary, agent_task. UI de reglas + aprobaciones.
+- Sprints A1-A4 (4-5 sesiones). Stubs listos para V1.2: PatternTrigger,
+  MemoryTrigger, AutomationLearner, ChainedRuleAction. Tag `v0.9`.
 
-Criterio de cierre: preguntar "¿qué me ha llegado importante hoy?" responde desde
-memoria sin llamar a Gmail en caliente.
+## 5. V1.0 — Orchestrator + **MVP BETA distribuible** (diseño: doc 11 parte B)
 
-## V0.9 — Automation Engine + Approval Gates
+El cerebro: 6 componentes (Intent Classifier barato-siempre → Context Enricher con
+pre-fetch/caché → Task Planner potente-solo-si-hace-falta → Executor secuencial con
+gates → Response Builder → Tracer con Decision API). `AgentRuntime` + `NullRuntime`
+(doc 10) — V1.0 es completo SIN Hermes. LLL básico (doc 09): detección de tareas
+repetidas → propuesta de skills. Enganche: `gateway.set_handler(orchestrator)`.
 
-Base: `Fase_6_Automation_V08.md` (APScheduler, `AutomationRule`,
-`AutomationExecution`, tipos de acción, UI). Adiciones:
+**Definición de "MVP beta" (criterios de release, sprint O5)**:
 
-🆕 **Approval gates genéricos (patrón LangGraph `interrupt()`).** Primitivo del
-ExecutionEngine: cualquier tool puede declararse `requires_approval`. La ejecución
-se pausa en estado `waiting_approval` (persistida en BD), notifica por el canal que
-originó la acción (Hub toast / Telegram) y se reanuda o cancela con la respuesta.
-La confirmación de envío de email se migra a este mecanismo — deja de ser caso especial.
+1. Instalador NSIS con **auto-start del backend desde Electron** (doc 12 B6) —
+   un beta tester hace doble clic y funciona.
+2. Onboarding mínimo: primer arranque guía API keys/Ollama, Google OAuth opcional,
+   Telegram opcional. Sin `.env` manual.
+3. Autonomía real: briefing matinal + reglas de email + automatizaciones con
+   aprobaciones + chat con memoria — sin intervención técnica.
+4. Robustez: suite completa verde (contratos + perf), degradación graceful de cada
+   subsistema, logs útiles, deudas P3 de doc 12 saldadas.
+5. Seguridad local: todo cifrado DPAPI, CORS cerrado, sin exposición de red
+   (el cliente Web/PWA con PIN llega post-V1.0 a propósito).
 
-🆕 **Checkpointing.** `agent_executions.checkpoint_data` (JSON) actualizado por paso.
-Tras un crash, las ejecuciones `running` se recuperan o se marcan `interrupted` con
-diagnóstico. Suficiente para un usuario; nada de Redis.
+Sprints O1-O5 (5-6 sesiones). Tag `v1.0.0-beta`.
 
-🆕 **Reglas predefinidas estilo Mark-XLVII** (desactivadas por defecto, principio HITL):
-- `daily_briefing` — briefing matinal: digest de email (V0.7.3) + agenda + tareas del día, entregado en Hub y/o Telegram.
-- `system_monitor` — chequeo de backend/BD/proveedores con aviso si algo cae (cooldown 5 min).
-- `email_summary` y `agent_task` como estaban previstas.
+## 6. V1.1 — Hermes Runtime (diseño completo: doc 10)
 
-## V1.0 — Orchestrator
+Sprint H0 de **investigación GO/NO-GO** (API real, licencia, huella) → HermesRuntime
++ 4 adapters (Memory/Skill/Tool/Context Provider): Hermes piensa, todo lo aprendido
+vive en el MOS, toda tool pasa por whitelist+gate. LSL completa + LLL completo +
+panel "lo que Aithera ha aprendido" (doc 09). Working Memory (Letta) como detalle
+interno del runtime. **Contingencia definida** si NO-GO (wrapper de proceso /
+runtime nativo / otro OSS) — V1.0 ya es producto completo sin él.
+Cierre: Hermes ejecuta una tarea usando memoria de Aithera sin escribir un solo
+archivo propio; 0 menciones a "Hermes" en la UI. (4-5 sesiones + H0.)
 
-Base: `Fase_8_Orchestrator_V10.md` (Intent Analyzer, Task Planner, Response Builder,
-Claude Code Agent, UI de aprobación de planes). Adiciones:
+## 7. V1.2 — MCP Interop + potenciación
 
-🆕 **Routing por complejidad (patrón OpenJarvis).** El Intent Analyzer corre SIEMPRE
-en el modelo más barato disponible (Ollama local > MiniMax highspeed). Solo si la
-intención requiere planificación multi-paso se invoca el modelo potente. Config de
-routing en Settings (`fast_model`, `smart_model`).
+- **MCP server**: ToolManager expuesto (whitelist + gates intactos). **MCP client**:
+  `MCPToolProxy` — tools externas con las mismas validaciones; Hermes las ve vía
+  `AitheraToolProvider` sin cambios.
+- Orchestrator: paralelismo por olas, plan backtracking, plan negotiation.
+- Automation: PatternTrigger/MemoryTrigger (alimentados por el LLL) + AutomationLearner.
+- MOS: Project Memory (Capa 2) activa; candidatos Qdrant/KuzuDB/Graphiti/Cognee
+  entran AQUÍ como muy pronto, uno por vez, con el protocolo de migración RFC-006.
 
-🆕 **Traces first-class.** Tabla `orchestrator_traces`: intent detectado, modelo
-usado, plan, tools ejecutadas, resultado, latencia, tokens. Sin loop de optimización
-todavía — solo capturar. Es la materia prima del futuro learning loop (Hermes/
-OpenJarvis) y del debugging.
+## 8. Post-V1.0 paralelo — Cliente Web + PWA + PIN de red
 
-Sin cambios en la decisión clave: orchestrator custom (~200 líneas), sin LangChain/
-LangGraph/CrewAI como dependencia.
+Mismo build React servido por FastAPI en `/app`, PIN/token para orígenes
+no-localhost, rate limiting (slowapi), PWA. No bloquea V1.1/V1.2.
 
-## V1.1 — Hermes como sistema de agentes principal (🆕 2026-07-04)
+## 9. V1.5 — **AVCS MVP1 "Lenguaje completo"** + Hub avanzado (13 §20)
 
-Integrar **Hermes** (Nous Research, https://hermes-agent.nousresearch.com/) POR
-DEBAJO del Orchestrator, como motor de agentes principal. La idea: el Orchestrator
-(V1.0) sigue decidiendo intención y plan, pero delega la EJECUCIÓN de agentes en
-Hermes, de forma que los agentes guiados por Hermes usen su propio sistema de
-**skills, memoria y aprendizaje de trabajo**.
+La actualización mayor del Hub (importante, no definitiva): los **7 ritmos
+biológicos completos** sobre campos de fuerza componibles; raíces y ramas maduras;
+patrones de Comprensión (mandalas/redes n-fold); factor de sincronía (el Error
+como pérdida de cooperación, nunca "rojo"); AudioReactor completo (bandas);
+PerformanceManager íntegro (escalera de degradación + invariantes de identidad);
+**rediseño general de la UI** alrededor de la presencia y salto de animaciones →
+comportamiento. (5-7 sesiones.)
 
-Trabajo de esta fase:
-1. **Investigar la vía de integración**: cómo se invoca Hermes (API/SDK/local),
-   qué contrato expone, y cómo encaja con el `AgentManager`/`ExecutionEngine`
-   actuales sin romper la whitelist ni los approval gates (principio 5).
-2. **Puente Orchestrator → Hermes**: el Orchestrator delega tareas de agente en
-   Hermes y recibe resultados; Aithera conserva el control de ejecución.
-3. **Skills/memoria de Hermes ↔ memoria de Aithera (V0.85)**: decidir qué es la
-   fuente de verdad y cómo se sincronizan.
-- **Estado**: idea de roadmap, pendiente de diseño.
+También en esta era: Hermes Desktop deja de usarse; multi-instancia de runtimes
+por perfil (research/coding/calendar) compartiendo el MOS; panel de memoria/skills
+rico en el Hub.
 
-## V1.2 — MCP Interop (antes V1.1, desplazada por Hermes)
+**AVCS MVP2 "Organismo" (V1.6+/era V2.0)**: UI viva (paneles que se FORMAN de
+partículas y se disuelven), vida procedural en momentos especiales (luciérnagas,
+semillas, mariposas — jamás constantes), memoria visual (el Hub madura con las
+horas de uso; crecimiento imperceptible, nunca desbloqueos), preparación WebGPU.
+(6-8 sesiones.) La detección de hardware del instalador (13 §19) se integra con
+el onboarding del MVP beta: el PerformanceManager ya lee su tier de Settings —
+cero refactor.
 
-MCP es el estándar de facto 2026 (OpenClaw, OpenJarvis, moltis). Dos mitades:
+## 10. V2.0+ — La capa de red (opcional por diseño)
 
-1. **Aithera como servidor MCP**: exponer el ToolManager (las 8 tools con sus schemas ya validados) vía MCP. Claude Code, Claude Desktop o cualquier cliente MCP podrán usar las tools de Aithera con la misma whitelist y los mismos approval gates.
-2. **Aithera como cliente MCP**: `MCPToolProxy` que registra tools de servidores MCP externos en el ToolManager, pasando por las mismas validaciones que las tools nativas (principio 5: ejecución controlada — una tool MCP externa nunca se salta el gate).
+GSN (red de skills, 08 RFC-004) + CIE (inteligencia colectiva, RFC-005) + Guardians
+(RFC-003), con aislamiento estructural de la Private Memory (RFC-001) y PrivacyFilter
+tipado. Sincronización LSL↔GSN siempre con confirmación explícita (09 §3).
 
-Preparación barata antes de llegar: al tocar `tool_manager.py` en fases previas,
-mantener los schemas de parámetros en JSON Schema puro (ya casi lo son).
+## 11. Mapa de evolución del MOS
 
-## Post-V1.2 (sin comprometer)
+(Tabla completa en 08 — resumen)
 
-- Voice 2.0: wake word / push-to-talk global, STT Whisper local (JWIKI 08_VOICE).
-- Learning loop sobre `orchestrator_traces` (ajuste de prompts/routing).
-- Auto-start del backend desde Electron + auto-update (deuda §16.5 — puede adelantarse a cualquier fase si molesta en el día a día).
-- Skills SKILL.md para definir comportamiento de agentes (formato OpenClaw/agentskills.io).
+| Capa/componente | V0.85 | V0.9 | V1.0 | V1.1 | V1.2 | V2.0+ |
+|---|---|---|---|---|---|---|
+| Private Memory + Conversational + Decision | ✅ | ✅ uso real | ✅ | ✅ | ✅ | ✅ |
+| Error/Automation Memory | contrato | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Skill Memory → LSL | stub | stub | básico | ✅ completa | ✅ | ✅ +GSN |
+| LLL (Capa 4 local) | — | — | ✅ básico | ✅ completo | ✅ predictivo | ✅ |
+| Working/Episodic/Knowledge/Graph | — | — | — | Letta | Graphiti/Cognee/Kuzu | ✅ |
+| Project Memory (Capa 2) | stub | — | — | — | ✅ | ✅ |
+| Compactación (RFC-007) | mínima | prune | ✅ | ✅ | ✅ | ✅ |
+| GSN/CIE/Guardians | — | — | — | — | — | ✅ opcional |
 
-## Tabla resumen
+## 12. Tabla resumen
 
-| Versión | Nombre | Estado | Entregable usable |
+| Versión | Nombre | Sesiones (Opus 4.8) | Entregable usable |
 |---|---|---|---|
-| V0.7.2-3 | Email FINAL + fundamentos | ✅ hecho | Email assistant terminado, repo con git+tests |
-| V0.8 | Gateway + Telegram + Hardening | ✅ hecho | Aithera desde Telegram, CORS restringido, API keys cifradas |
-| V0.82 | Hub Visual | ⏳ | Animación de conversación + modo pantalla completa con toggles laterales |
-| V0.83 | Voz completa | ⏳ | Voces ElevenLabs principales + STT |
-| V0.85 | Memory & Context | ⏳ | Skills auto-capturadas, contexto de proyectos, briefings ricos, patrones |
-| V0.9 | Automation + approvals | ⏳ | Briefing matinal, reglas, aprobaciones |
-| V1.0 | Orchestrator | ⏳ | Chat que decide, planifica y ejecuta |
-| V1.1 | Hermes | ⏳ | Agentes con skills/memoria/aprendizaje de Hermes bajo el Orchestrator |
-| V1.2 | MCP Interop | ⏳ | Interop con ecosistema MCP |
-| post-V1.0 | Cliente Web + PWA | ⏳ aplazado | Web servida por FastAPI + PWA + PIN de red |
+| V0.82/0.83 | Voz + **AVCS Fase 0** (semilla+ondas, 3 ritmos, modo presencia, chat limpio) | 3-4 | una presencia viva en el Hub |
+| V0.85 | MOS Skeleton | 5-6 | memoria viva: ingesta, briefing, contexto con fuentes |
+| V0.9 | Automation + Gates | 4-5 | briefing matinal automático, reglas, aprobaciones |
+| V1.0 | Orchestrator + **MVP BETA** | 5-6 | **instalable y autónomo para beta testers** |
+| V1.1 | Hermes Runtime | 4-5 (+H0) | agente que aprende; skills en la LSL |
+| V1.2 | MCP + potenciación | 4-5 | interop total, paralelismo, Project Memory |
+| V1.5 | **AVCS MVP1** + Hub avanzado | 5-7 | los 7 ritmos, UI rediseñada |
+| V1.6+ | **AVCS MVP2** (UI viva, vida, memoria visual) | 6-8 | el Hub como organismo |
+| V2.0+ | Red (GSN/CIE/Guardians) | — | inteligencia colectiva opcional |
 
-Regla de siempre: si una fase crece, se parte en dos (principio 7).
+**Total hasta V1.0 beta: ~16-20 sesiones.** Regla de siempre: si una fase crece, se
+parte en dos (principio 7); si algo amenaza la fecha de V1.0, se recorta alcance de
+la fase, nunca se aplaza V1.0.
 
 ---
-*Creado: 2026-07-02. Reordenado 2026-07-04: V0.8 (Gateway+Telegram+Hardening) cerrado;
-añadidas V0.82 Hub Visual y V0.83 Voz; V0.85 Memory & Context antes de V0.9; V1.1 pasa
-a ser Hermes (Nous Research) y MCP Interop se desplaza a V1.2; Cliente Web + PWA aplazados
-a post-V1.0. Complementa a `AOS_Arquitectura_y_Roadmap.md` y a los docs Fase_5/6/8.*
+*Roadmap definitivo 2026-07-09 (Fable 5). Sustituye a la versión V0.7.2→V1.2.
+Cambios clave: V0.85 = MOS Skeleton con contratos definitivos; V0.9/V1.0 integrados
+con el MOS; 

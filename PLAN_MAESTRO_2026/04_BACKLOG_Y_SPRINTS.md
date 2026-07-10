@@ -72,5 +72,23 @@ Sprint 4: autonomía gradual + digest + panel Hub + B8 (cierre de fase, tag v0.7
 | 3 | 2026-07-02 | B5 | ✅ Completado (triaje 7 categorías 2 etapas, 81 tests) |
 | 4 | 2026-07-02 | B6, B7, B8 | ✅ Completado (tag v0.7.3 — **FASE EMAIL ASSISTANT CERRADA**, 97 tests) |
 
+## Backlog Plan Maestro 2.0 (2026-07-09 — sustituye a B9-B19 en lo no hecho)
+
+Los sprints de cada fase están definidos en sus docs de diseño; este es el índice:
+
+| Fase | Sprints | Doc |
+|---|---|---|
+| V0.82/83 | **AVCS Fase 0**: S1 motor+semilla+ondas+reposo · S2 escucha+habla+sin-clipping · S3 modo presencia+chat limpio+perf v0 — incluye perf-front (lazy Three) y voz (A6) | 13 §20, 12 §1-3 |
+| V0.85 | M1 contratos+router · M2 ingesta · M3 briefing · M4 contexto+chat_service · M5 hardening+perf (tag v0.8.5) | 07 §10 |
+| V0.9 | A1 ApprovalGate · A2 engine+APScheduler · A3 acciones+UI · A4 integración MOS (tag v0.9) | 11 |
+| V1.0 | O1 intents+traces · O2 enricher+planner · O3 executor+gateway handler · O4 responder+LLL+UI · O5 **cierre MVP beta** (auto-start, instalador, onboarding; tag v1.0.0-beta) | 11, 12 §3 |
+| V1.1 | H0 investigación GO/NO-GO · H1-H4 runtime+adapters+LSL | 10 |
+| V1.5 | AVCS MVP1 (7 ritmos + campos componibles + perf íntegro + UI rediseñada) | 13 §20 |
+| V1.6+ | AVCS MVP2 (UI viva + vida procedural + memoria visual) | 13 §20 |
+| Flotantes vigentes | B20 auto-start (→ absorbido por O5) · B21 ✅ hecho (reasoning filter) · A2 httpx persistente · A5 split processing · limpieza scripts debug | 12 |
+
+Regla de oro del plan: **nada amenaza la fecha de V1.0** — si una fase crece, se
+recorta su alcance, no se aplaza la siguiente.
+
 ---
-*Creado: 2026-07-02. Actualizar el registro al cerrar cada sprint.*
+*Creado: 2026-07-02. Backlog 2.0 añadido 2026-07-09. Actualizar el registro al cerrar cada sprint.*

@@ -12,7 +12,7 @@
 | **Total docs PLANIFICADOS** | **267** |
 | **Documentos verificados** | **17** (JWIKI-001, 002, 003, 004, 005, 006, 007, 008, 009, 010, 011, 012 ✅, 013, 014 verificado 2026-07-08 20:38, 015 verificado 2026-07-08 20:55, 016 verificado 2026-07-08 21:XX, **020 verificado 2026-07-09 08:50**) |
 | En auditoría | 0 |
-| **Avance total** | 17/267 = **6.37%** |
+| Avance total | 99/267 = **37.08%** |
 | **Wiki-map** | ✅ Activo (267 IDs, 17 verificados a 2026-07-09 08:50) |
 | Task queue | ✅ Activo (single-team desde 2026-06-30 19:15, sin turno A/B) |
 | Equipo wiki | ✅ 6 agentes (3 turno A + 3 turno B) |

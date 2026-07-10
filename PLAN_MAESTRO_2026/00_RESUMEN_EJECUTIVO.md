@@ -57,17 +57,32 @@ del ToolManager compatible (no bloquea nada antes).
 ## 5. Secuencia de fases actualizada
 
 ```
-V0.7.2  Email Assistant FINAL      ← EMPEZAMOS AQUÍ (doc 02)
-V0.7.3  Fundamentos: git + tests + limpieza docs (entrelazado con V0.7.2)
-V0.8    Clientes: Gateway envelope + Telegram + Web + PWA + Security hardening
-V0.8.5  Memory 2.0: ingesta proactiva + summary trees + briefing diario
-V0.9    Automation Engine: APScheduler + approval gates + checkpointing
-V1.0    Orchestrator: intent routing por complejidad + planner + traces
-V1.1    MCP: exponer tools como MCP server + consumir MCP externos
+✅ V0.7.3  Email Assistant TERMINADO (doc 02)
+✅ V0.8    Gateway + Telegram + hardening + voz + B21
+   V0.82/83  Voz remate + AVCS Fase 0: semilla+ondas+modo presencia (doc 13)
+   V0.85   MOS Skeleton — la memoria definitiva (docs 07/08)
+   V0.9    Automation Engine + ApprovalGate (doc 11-A)
+   V1.0    Orchestrator + MVP BETA distribuible (docs 11-B, 10, 12)
+   V1.1    Hermes Runtime + LSL/LLL completos (docs 10, 09)
+   V1.2    MCP + potenciación · post-V1.0: Web+PWA+PIN
+   V1.5    AVCS MVP1: 7 ritmos + UI rediseñada (doc 13)
+   V2.0+   GSN + CIE + Guardians (doc 08)
 ```
 
-Detalle por fase en `03_ROADMAP_ACTUALIZADO.md`. Backlog priorizado y primer
-sprint en `04_BACKLOG_Y_SPRINTS.md`.
+Detalle por fase en `03_ROADMAP_ACTUALIZADO.md` (reescrito 2026-07-09).
+
+### Índice del Plan Maestro 2.0 (diseños Fable 5, 2026-07-09)
+
+| Doc | Contenido |
+|---|---|
+| `07_MOS_V085_DISENO.md` | implementación V0.85 (opción B): contratos, ingesta, briefing, sprints M1-M5 |
+| `08_MOS_ARQUITECTURA_COMPLETA.md` | visión MOS completa: RFC-001..005 + RFC-006 intercambio tecnológico + RFC-007 compactación |
+| `09_LSL_LLL_RFC.md` | Local Skill Library + Local Learning Loop (capas 3/4 locales) |
+| `10_HERMES_INTEGRATION_RFC.md` | AgentRuntime + 4 adapters + investigación H0 + contingencia |
+| `11_AUTOMATION_ORCHESTRATOR_RFC.md` | Automation Engine (4 capas) + Orchestrator (6 componentes) + sprints A1-A4/O1-O5 |
+| `12_AUDITORIA_OPTIMIZACION.md` | hallazgos verificados, plan de optimización P1-P3, estándares de rendimiento, tests |
+| `13_AVCS_DISENO_MAESTRO.md` | AVCS — sistema visual: identidad, 7 ritmos, motor de partículas, performance, Fase 0/MVP1/MVP2 |
+| `FABLE5_PROMPTS/` | los 7 briefings de origen |
 
 ## 6. Fuentes
 

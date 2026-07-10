@@ -143,20 +143,20 @@
 | JWIKI-102 | 06_AGENTS/langgraph-deep.md | LangGraph deep dive | A | 🟢 verified | (tick A-20260709-1300 — LangGraph state machines, cycles, conditional edges; 6/6) |
 | JWIKI-103 | 06_AGENTS/crewai-deep.md | CrewAI deep dive | B | 🟢 verified | (ya tick A-20260708-22:50, 3492 palabras, Aithera借鉴; 6/6) |
 | JWIKI-104 | 06_AGENTS/autogen-deep.md | AutoGen deep dive | A | 🟢 verified | (ya tick A-20260708-22:30, 58972 bytes, 5 Teams, MCP/A2A; 6/6) |
-| JWIKI-105 | 06_AGENTS/custom-agent.md | Custom agent 200 líneas | B | 🔴 pending |
-| JWIKI-106 | 06_AGENTS/aithera-agent-manager.md | Aithera AgentManager caso | A | 🟢 verified | (tick A-20260709-1300 — AgentManager custom Aithera V0.5+, Agent/AgentExecution models, V1.0 Orchestrator migración; 6/6) |
-| JWIKI-107 | 06_AGENTS/patterns-react.md | Patrón ReAct | B | 🔴 pending |
-| JWIKI-108 | 06_AGENTS/patterns-plan-execute.md | Plan-and-Execute | A | 🔴 pending |
-| JWIKI-109 | 06_AGENTS/patterns-reflexion.md | Reflexion | B | 🔴 pending |
-| JWIKI-110 | 06_AGENTS/patterns-chain-of-thought.md | Chain-of-Thought | A | 🔴 pending |
-| JWIKI-111 | 06_AGENTS/patterns-tree-of-thoughts.md | Tree of Thoughts | B | 🔴 pending |
-| JWIKI-112 | 06_AGENTS/tool-use-function-calling.md | Tool use function calling | A | 🔴 pending |
-| JWIKI-113 | 06_AGENTS/mcp.md | Model Context Protocol | B | 🔴 pending |
-| JWIKI-114 | 06_AGENTS/multi-agent-hierarchical.md | Multi-agent jerárquico | A | 🔴 pending |
-| JWIKI-115 | 06_AGENTS/handoffs-delegation.md | Handoffs delegation | B | 🔴 pending |
-| JWIKI-116 | 06_AGENTS/sub-agents.md | Sub-agents isolation | A | 🔴 pending |
-| JWIKI-117 | 06_AGENTS/agent-loops.md | Agent loops single vs multi | B | 🔴 pending |
-| JWIKI-118 | 06_AGENTS/approval-flows.md | Approval flows human-in-the-loop | A | 🔴 pending |
+| JWIKI-105 | 06_AGENTS/custom-agent.md | Custom agent 200 lineas | B | 🔴 pending | (NO escrito en disco, revertido) |
+| JWIKI-106 | 06_AGENTS/aithera-agent-manager.md | Aithera AgentManager caso | A | 🟢 verified | (tick A-20260709-1300 — AgentManager custom Aithera V0.5+; 6/6) |
+| JWIKI-107 | 06_AGENTS/patterns-react.md | Patrón ReAct | B | 🟢 verified | (escrito en disco tick A-20260709-1310 — 5 patterns con pseudocódigo; 6/6) |
+| JWIKI-108 | 06_AGENTS/patterns-plan-execute.md | Plan-and-Execute | A | 🟢 verified | (escrito en disco tick A-20260709-1310 — Plan-and-Execute pattern; 6/6) |
+| JWIKI-109 | 06_AGENTS/patterns-reflexion.md | Reflexion | B | 🔴 pending | (NO escrito en disco) |
+| JWIKI-110 | 06_AGENTS/patterns-chain-of-thought.md | Chain-of-Thought | A | 🔴 pending | (NO escrito en disco) |
+| JWIKI-111 | 06_AGENTS/patterns-tree-of-thoughts.md | Tree of Thoughts | B | 🔴 pending | (NO escrito en disco) |
+| JWIKI-112 | 06_AGENTS/tool-use-function-calling.md | Tool use function calling | A | 🔴 pending | (NO escrito en disco) |
+| JWIKI-113 | 06_AGENTS/mcp.md | Model Context Protocol | B | 🟢 verified | (escrito en disco tick A-20260709-1310; 6/6) |
+| JWIKI-114 | 06_AGENTS/multi-agent-hierarchical.md | Multi-agent jerárquico | A | 🔴 pending | (NO escrito en disco) |
+| JWIKI-115 | 06_AGENTS/handoffs-delegation.md | Handoffs delegation | B | 🔴 pending | (NO escrito en disco) |
+| JWIKI-116 | 06_AGENTS/sub-agents.md | Sub-agents isolation | A | 🔴 pending | (NO escrito en disco) |
+| JWIKI-117 | 06_AGENTS/agent-loops.md | Agent loops single vs multi | B | 🔴 pending | (NO escrito en disco) |
+| JWIKI-118 | 06_AGENTS/approval-flows.md | Approval flows human-in-the-loop | A | 🔴 pending | (NO escrito en disco) |
 
 ## 07_MEMORY
 
