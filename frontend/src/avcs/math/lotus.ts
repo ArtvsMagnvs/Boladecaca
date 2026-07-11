@@ -44,24 +44,27 @@ export const ROLE = {
 // ============================================================================
 // MEDIDAS DEL LOGO (calibrables ±10%). CORE_Y debe coincidir con CORE_CY del shader.
 // ============================================================================
-const TOP_Y = 1.4;
+// Escala ×1.30 (punto 3): todas las medidas espaciales de la semilla escaladas
+// sobre el centro CORE_Y (los valores 'y' = CORE_Y + (base-CORE_Y)*1.3; W/thick/
+// radios/halfH = base*1.3). La 2ª capa (ondas de sincronía) NO se escala.
+const TOP_Y = 1.835;
 const CORE_Y = -0.05;
-const AXIS_TOP = 1.52;
-const AXIS_BOTTOM = -1.16;
+const AXIS_TOP = 1.99;
+const AXIS_BOTTOM = -1.49;
 
-// Contornos ojivales: perfil beta (pico en a/(a+b)). thick ×1.25; grosor asimétrico
-// (topFloor/botFloor) aplicado en contour(): punta superior fina, inferior media.
-const OUTER = { yEnd: -1.05, W: 0.84, a: 1.86, b: 1.14, thick: 0.062, bright: 0.9, topFloor: 0.1, botFloor: 0.32 };
-const INNER = { yTop: 1.36, yEnd: -0.9, W: 0.56, a: 1.8, b: 1.2, thick: 0.046, bright: 0.8, topFloor: 0.13, botFloor: 0.32 };
+// Contornos ojivales: perfil beta (pico en a/(a+b)). Grosor asimétrico
+// (topFloor/botFloor): punta superior fina, inferior media.
+const OUTER = { yEnd: -1.35, W: 1.092, a: 1.86, b: 1.14, thick: 0.081, bright: 0.9, topFloor: 0.1, botFloor: 0.32 };
+const INNER = { yTop: 1.783, yEnd: -1.155, W: 0.728, a: 1.8, b: 1.2, thick: 0.06, bright: 0.8, topFloor: 0.13, botFloor: 0.32 };
 
 // Ojo/almendra: SIMÉTRICO alrededor del núcleo.
-const ALMOND = { halfH: 0.5, W: 0.28, pow: 1.15, thick: 0.037 };
+const ALMOND = { halfH: 0.65, W: 0.364, pow: 1.15, thick: 0.048 };
 
 // Núcleo.
-const CORE_HOT_R = 0.045;
-const CORE_GLOW_R = 0.155;
-const CORE_RING_R = 0.23;
-const CORE_ARC_R = 0.285;
+const CORE_HOT_R = 0.0585;
+const CORE_GLOW_R = 0.2015;
+const CORE_RING_R = 0.299;
+const CORE_ARC_R = 0.3705;
 
 // Reparto del pool (densidad de líneas +1/3; anillo del núcleo más denso; sin salpicadura).
 const FRAC = {
@@ -220,16 +223,17 @@ export function buildSceneGeometry(
     // ANILLO fino nítido — DENSO, más brillante, tamaños variados (gira en su plano).
     const nR = n(FRAC.coreRing);
     for (let k = 0; k < nR; k++) {
-      const a = (k / nR) * Math.PI * 2 + jit(0.03);
-      const arcGlow = 0.55 + 0.45 * Math.sin(a * 2 + 0.7); // arcos brillantes que circulan al girar
-      const bigp = rand() < 0.25;
+      const a = (k / nR) * Math.PI * 2 + jit(0.02);
+      const arcGlow = 0.6 + 0.4 * Math.sin(a * 2 + 0.7); // arcos brillantes que circulan al girar
+      const bigp = rand() < 0.42; // más partículas grandes
+      const rr = CORE_RING_R + jit(0.004); // banda ESTRECHA (fino/concentrado)
       put(
-        Math.cos(a) * (CORE_RING_R + jit(0.006)),
-        CORE_Y + Math.sin(a) * (CORE_RING_R + jit(0.006)),
-        jit(0.01),
+        Math.cos(a) * rr,
+        CORE_Y + Math.sin(a) * rr,
+        jit(0.008),
         ROLE.CORERING,
-        bigp ? 0.42 + 0.26 * rand() : 0.14 + 0.16 * rand(),
-        (0.72 + 0.28 * rand()) * arcGlow,
+        bigp ? 0.5 + 0.3 * rand() : 0.22 + 0.2 * rand(),
+        (0.85 + 0.15 * rand()) * arcGlow,
         1.0,
       );
     }
