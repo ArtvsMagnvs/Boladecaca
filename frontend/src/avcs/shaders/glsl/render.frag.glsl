@@ -18,13 +18,18 @@ void main() {
 
   vec3 col;
   if (vRole > 0.95) {
-    col = uHeart; // núcleo
+    // Núcleo con PROFUNDIDAD (referencia: sol diminuto): el brillo del genoma
+    // codifica la profundidad radial → centro blanco-cálido, borde ámbar hondo.
+    vec3 deepAmber = uHeart * vec3(0.95, 0.52, 0.24);
+    vec3 hotWhite = mix(uHeart, vec3(1.0), 0.55);
+    col = mix(deepAmber, hotWhite, smoothstep(0.2, 0.95, vBright));
   } else if (vRole > 0.85) {
-    col = mix(uHeart, uAura, 0.3); // anillo del núcleo
+    col = mix(uHeart, uAura, 0.45); // anillo fino del núcleo (oro nítido)
   } else if (vRole > 0.73) {
-    col = mix(uAura, uHeart, 0.3 + 0.25 * vSeed); // pétalo (oro cálido)
+    col = mix(uAura, uHeart, 0.3 + 0.25 * vSeed); // contornos/almendra/eje (oro cálido)
   } else if (vRole > 0.59) {
-    col = uAura * 0.92; // sub-línea (oro)
+    // tendrils/polvo: oro, con chispas teal ocasionales en las puntas (constelación)
+    col = mix(uAura * 0.92, uField, step(0.82, vSeed) * 0.55);
   } else if (vRole > 0.45) {
     col = mix(uField, uAura, step(0.65, vSeed)); // banda: mayoría teal, algunas oro
   } else if (vRole > 0.31) {

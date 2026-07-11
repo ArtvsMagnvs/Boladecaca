@@ -32,8 +32,9 @@ void main() {
   // parpadeo estelar por partícula (twinkle)
   float tw = 0.6 + 0.4 * sin(uTime * (0.5 + vSeed * 2.2) + vSeed * 55.0);
 
+  // El tamaño del núcleo lo gobierna el genoma (polvo finísimo + centro denso);
+  // sin multiplicador extra — la referencia es dust diminuto, no puntos gordos.
   float sizeMul = sizeClass * mix(0.32, 1.0, closeness) * tw;
-  sizeMul *= mix(1.0, 1.5, step(0.95, vRole)); // núcleo algo mayor
 
   vec4 mv = modelViewMatrix * vec4(P.xyz, 1.0);
   gl_PointSize = clamp(uPointSize * sizeMul * uDpr / max(0.1, -mv.z), 1.0, 70.0);
