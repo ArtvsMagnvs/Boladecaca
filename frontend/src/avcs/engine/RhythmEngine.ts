@@ -40,12 +40,12 @@ export class RhythmEngine {
   private crossfadeSpeed = 1 / 3; // 3s por defecto (2-4s doc 13)
   private targetSync = 0.9;
 
-  // Respiración
+  // Respiración (forma preservada): escala global + giro del núcleo + latido
   private breathPhase = 0; // acumulador (rad) — velocidad angular variable
   private breathTime = 0;
-  private cyclesSinceDeep = 0;
-  private nextDeepCycles: number;
-  private deepEnv = 0; // 0-1 envolvente de respiración profunda
+  private coreSpinAngle = 0;
+  private pulseEnv = 0; // 0-1 envolvente del latido (decae)
+  private nextPulseIn: number;
 
   // Ondas
   private waves: Wave[] = [];
@@ -61,7 +61,7 @@ export class RhythmEngine {
     this.rand = mulberry32((opts.sessionSeed | 0) ^ 0x9e37);
     this.seedA = (opts.sessionSeed % 1000) * 0.001 * 7.0;
     this.seedB = ((opts.sessionSeed * 31) % 1000) * 0.001 * 11.0;
-    this.nextDeepCycles = 6 + Math.floor(this.rand() * 6); // 6-12
+    this.nextPulseIn = poissonInterval(6.5, this.rand);
     this.nextWaveIn = poissonInterval(RHYTHM_BREATH_PERIOD.repose, this.rand);
     weightsToArray(RHYTHM_WEIGHTS.repose, this.targetWeights);
     weightsToArray(RHYTHM_WEIGHTS.repose, this.curWeights);
@@ -95,7 +95,7 @@ export class RhythmEngine {
   /** Escribe todo el bus para este frame. Llamado por HubEngine.frame. */
   update(dt: number, _time: number, lifePhase: number): void {
     this.updateWeights(dt);
-    this.updateBreath(dt, lifePhase);
+    this.updateBreathAndPulse(dt, lifePhase);
     this.updateWaves(dt);
   }
 
@@ -110,39 +110,34 @@ export class RhythmEngine {
     this.bus.uSync.value += (this.targetSync - this.bus.uSync.value) * k;
   }
 
-  private updateBreath(dt: number, lifePhase: number): void {
+  private updateBreathAndPulse(dt: number, lifePhase: number): void {
     this.breathTime += dt;
     const P = RHYTHM_BREATH_PERIOD[this.rhythm];
-    // (1) periodo modulado por noise 1D lento (±15%) — desplazado por sessionSeed+lifePhase
+
+    // (1) ESCALA GLOBAL del logo (respira sin deformarse). Periodo variable +
+    // micro-fluctuación → nunca sin(t) puro. Amplitud pequeña (±~5%).
     const period = P * (1 + 0.15 * noise1D(lifePhase * 0.05 + this.seedA));
-    const omega = TWO_PI / period;
-    const prevCycle = Math.floor(this.breathPhase / TWO_PI);
-    this.breathPhase += omega * dt; // velocidad angular NO constante → ceros irregulares
-    const cycle = Math.floor(this.breathPhase / TWO_PI);
-
-    // (2) conteo de ciclos + respiración profunda Poisson cada 6-12
-    if (cycle !== prevCycle) {
-      this.cyclesSinceDeep++;
-      if (this.cyclesSinceDeep >= this.nextDeepCycles) {
-        this.deepEnv = 1;
-        this.cyclesSinceDeep = 0;
-        this.nextDeepCycles = 6 + Math.floor(this.rand() * 6);
-      }
-    }
-    this.deepEnv = Math.max(0, this.deepEnv - dt / 4.5); // decae ~4.5s
-
-    // (3) amplitud: jitter 8% + boost profundo hasta 1.4x
-    const jitter = 1 + 0.08 * noise1D(this.breathTime * 0.3 + this.seedB);
-    const deep = 1 + 0.4 * smooth01(this.deepEnv);
-    const amp = 0.065 * jitter * deep;
-
-    // (4) señal: sin() de una FASE YA DEFORMADA (no de t) + micro-fluctuación
+    this.breathPhase += (TWO_PI / period) * dt;
     const raw = Math.sin(this.breathPhase);
-    const ripple = 0.06 * noise1D(this.breathPhase * 1.7 + 3.1 + this.seedA);
-    const signal = raw + ripple;
+    const ripple = 0.06 * noise1D(this.breathPhase * 1.7 + 3.1 + this.seedB);
+    const jitter = 1 + 0.1 * noise1D(this.breathTime * 0.3 + this.seedB);
+    this.bus.uBreathScale.value = 1 + 0.05 * (raw + ripple) * jitter;
 
-    this.bus.uBreath.value = amp * signal; // drive radial (fuerza)
-    this.bus.uBreathScale.value = 1 + amp * signal * 0.5; // escala/glow del núcleo
+    // (2) GIRO del núcleo como un sol: velocidad variable (a veces lenta, a
+    // veces invierte el patrón) modulada por noise → nunca mecánico.
+    const spinMod = noise1D(this.breathTime * 0.07 + this.seedA * 2.0); // -1..1
+    const spinRate = 0.16 + 0.22 * spinMod; // rad/s (puede ir muy lento)
+    this.coreSpinAngle += spinRate * dt;
+    this.bus.uCoreSpin.value = this.coreSpinAngle;
+
+    // (3) LATIDO (Poisson): un pulso que decae y se propaga (fPulse).
+    this.nextPulseIn -= dt;
+    if (this.nextPulseIn <= 0) {
+      this.pulseEnv = 1;
+      this.nextPulseIn = poissonInterval(6.5, this.rand);
+    }
+    this.pulseEnv = Math.max(0, this.pulseEnv - dt / 1.6); // decae en ~1.6s
+    this.bus.uPulse.value = this.pulseEnv;
   }
 
   private updateWaves(dt: number): void {

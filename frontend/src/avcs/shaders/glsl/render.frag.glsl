@@ -1,14 +1,14 @@
-// Fragment de RENDER: glow radial por punto + color doble capa (doc 13 §7.1).
-// Blending aditivo (glow por acumulación). Núcleo = Ámbar constante (uHeart);
-// cáscara/pétalo = mezcla Ámbar↔aura; campo = uField.
+// Fragment de RENDER: glow radial + color por ROL (doc 13 §7.1 + feedback).
+// Blending aditivo (glow por acumulación). Núcleo = Ámbar; pétalos = oro cálido;
+// sub-líneas = oro; bandas/anillos = teal (con nodos oro); starfield = teal→blanco.
 
-uniform vec3 uHeart;
-uniform vec3 uAura;
-uniform vec3 uField;
-uniform float uBreathScale;
+uniform vec3 uHeart; // Ámbar (núcleo)
+uniform vec3 uAura;  // oro cálido (aura/pétalos)
+uniform vec3 uField; // teal (Savia)
 
 varying float vRole;
 varying float vSeed;
+varying float vBright;
 
 void main() {
   vec2 c = gl_PointCoord - 0.5;
@@ -17,24 +17,23 @@ void main() {
   float glow = smoothstep(0.5, 0.0, d);
 
   vec3 col;
-  float bright;
-  float alpha;
-  if (vRole > 0.75) {
-    // Núcleo Ámbar cálido, pulsa con la respiración.
-    col = uHeart;
-    bright = 0.85 + 3.0 * (uBreathScale - 1.0);
-    alpha = glow * 0.5;
-  } else if (vRole > 0.25) {
-    // Cáscara / pétalo: aura del ritmo con corazón cálido asomando.
-    col = mix(uAura, uHeart, 0.35 + 0.25 * vSeed);
-    bright = 0.75;
-    alpha = glow * 0.42;
+  if (vRole > 0.95) {
+    col = uHeart; // núcleo
+  } else if (vRole > 0.85) {
+    col = mix(uHeart, uAura, 0.3); // anillo del núcleo
+  } else if (vRole > 0.73) {
+    col = mix(uAura, uHeart, 0.3 + 0.25 * vSeed); // pétalo (oro cálido)
+  } else if (vRole > 0.59) {
+    col = uAura * 0.92; // sub-línea (oro)
+  } else if (vRole > 0.45) {
+    col = mix(uField, uAura, step(0.65, vSeed)); // banda: mayoría teal, algunas oro
+  } else if (vRole > 0.31) {
+    col = uField; // anillo (teal)
+  } else if (vRole > 0.18) {
+    col = uField * 0.9; // campo (teal tenue)
   } else {
-    // Campo: color de campo, más tenue.
-    col = uField;
-    bright = 0.5;
-    alpha = glow * 0.22;
+    col = mix(uField, vec3(1.0), 0.35 * vSeed); // estrella: teal→blanca
   }
 
-  gl_FragColor = vec4(col * bright, alpha);
+  gl_FragColor = vec4(col * (0.35 + 0.9 * vBright), glow * vBright * 0.85);
 }

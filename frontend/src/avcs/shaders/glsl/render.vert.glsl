@@ -1,28 +1,42 @@
-// Vertex de RENDER (ShaderMaterial normal, NO envuelto por GPGPU).
-// AQUÍ SÍ se declara texturePosition (es la textura de salida del GPGPU que
-// muestreamos por 'aRef' — el uv del texel de cada partícula).
+// Vertex de RENDER (ShaderMaterial normal). Tamaño y brillo POR PARTÍCULA
+// (genome.b/.a), parpadeo estelar (twinkle), y atenuación/encogimiento cuando la
+// partícula "viaja" lejos de su ancla (closeness) — así una partícula que se
+// libera del logo se hace pequeña/tenue y al volver recupera su tamaño.
 
 uniform sampler2D texturePosition;
 uniform sampler2D uGenome;
+uniform sampler2D uAnchor;
 uniform float uPointSize;
-uniform float uBreathScale;
 uniform float uDpr;
+uniform float uTime;
 
-attribute vec2 aRef; // uv del texel de esta partícula en la textura de simulación
+attribute vec2 aRef;
 
 varying float vRole;
 varying float vSeed;
+varying float vBright;
 
 void main() {
   vec4 P = texture2D(texturePosition, aRef);
   vec4 G = texture2D(uGenome, aRef);
+  vec4 A = texture2D(uAnchor, aRef);
   vRole = G.g;
   vSeed = G.r;
+  float sizeClass = G.b;
+  float brightClass = G.a;
+
+  // closeness: 1 en el ancla, →0 al viajar (encoge/atenúa)
+  float dist = length(P.xyz - A.xyz);
+  float closeness = 1.0 - smoothstep(0.06, 0.7, dist);
+
+  // parpadeo estelar por partícula (twinkle)
+  float tw = 0.6 + 0.4 * sin(uTime * (0.5 + vSeed * 2.2) + vSeed * 55.0);
+
+  float sizeMul = sizeClass * mix(0.32, 1.0, closeness) * tw;
+  sizeMul *= mix(1.0, 1.5, step(0.95, vRole)); // núcleo algo mayor
 
   vec4 mv = modelViewMatrix * vec4(P.xyz, 1.0);
-  // El núcleo (role~1) es algo más grande y pulsa con la respiración.
-  float base = mix(uPointSize, uPointSize * 1.5, step(0.75, vRole));
-  base *= mix(1.0, uBreathScale, step(0.25, vRole));
-  gl_PointSize = clamp(base * uDpr / max(0.1, -mv.z), 1.0, 64.0);
+  gl_PointSize = clamp(uPointSize * sizeMul * uDpr / max(0.1, -mv.z), 1.0, 70.0);
+  vBright = brightClass * mix(0.35, 1.0, closeness) * tw;
   gl_Position = projectionMatrix * mv;
 }

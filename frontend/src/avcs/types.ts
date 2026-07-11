@@ -95,9 +95,10 @@ export interface UniformBus {
   uSeedCenter: THREE.IUniform<THREE.Vector3>;
   uBounds: THREE.IUniform<number>;
   uDamping: THREE.IUniform<number>;
-  // Respiración (§8)
-  uBreath: THREE.IUniform<number>; // drive radial con signo
-  uBreathScale: THREE.IUniform<number>; // escala/glow del núcleo
+  // Respiración (§8) — forma preservada: escala global + giro del núcleo + latido
+  uBreathScale: THREE.IUniform<number>; // escala global del logo (no deforma)
+  uCoreSpin: THREE.IUniform<number>; // ángulo de giro acumulado del núcleo
+  uPulse: THREE.IUniform<number>; // vibración/latido 0-1 (decae tras cada pulso)
   // Ondas (§7)
   uWaveCount: THREE.IUniform<number>;
   uWaveR: THREE.IUniform<Float32Array>; // length 6

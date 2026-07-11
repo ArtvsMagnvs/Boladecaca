@@ -162,22 +162,25 @@
 
 | ID | Path | Título | Turno | Estado |
 |---|---|---|---|---|
-| JWIKI-119 | 07_MEMORY/README.md | Comparativa vector stores | B | 🔴 pending |
-| JWIKI-120 | 07_MEMORY/chromadb.md | ChromaDB - en uso | A | 🔴 pending |
-| JWIKI-121 | 07_MEMORY/pinecone.md | Pinecone | B | 🔴 pending |
-| JWIKI-122 | 07_MEMORY/qdrant.md | Qdrant | A | 🔴 pending |
-| JWIKI-123 | 07_MEMORY/weaviate.md | Weaviate | B | 🔴 pending |
-| JWIKI-124 | 07_MEMORY/milvus.md | Milvus | A | 🔴 pending |
-| JWIKI-125 | 07_MEMORY/embeddings-sentence-transformers.md | sentence-transformers | B | 🔴 pending |
-| JWIKI-126 | 07_MEMORY/embeddings-openai.md | OpenAI embeddings | A | 🔴 pending |
-| JWIKI-127 | 07_MEMORY/rag-patterns-naive.md | RAG naive retrieval | B | 🔴 pending |
-| JWIKI-128 | 07_MEMORY/rag-hybrid-search.md | RAG hybrid search | A | 🔴 pending |
-| JWIKI-129 | 07_MEMORY/rag-reranking.md | RAG reranking | B | 🔴 pending |
-| JWIKI-130 | 07_MEMORY/rag-hyde.md | HyDE | A | 🔴 pending |
-| JWIKI-131 | 07_MEMORY/conversation-memory.md | Conversation memory | B | 🔴 pending |
-| JWIKI-132 | 07_MEMORY/user-context.md | User context persistente | A | 🔴 pending |
-| JWIKI-133 | 07_MEMORY/document-indexing.md | Document indexing chunking | B | 🔴 pending |
-| JWIKI-134 | 07_MEMORY/memory-degradation.md | Graceful degradation Aithera | A | 🔴 pending |
+| JWIKI-119 | 07_MEMORY/README.md | Comparativa vector stores | B | 🟢 verified | (escrito en disco — vector stores comparativa, ChromaDB elegido; 6/6) |
+| JWIKI-120 | 07_MEMORY/chromadb.md | ChromaDB - en uso | A | 🟢 verified | (escrito en disco — ChromaDB en Aithera V0.6+, 3 collections, sentence-transformers; 6/6) |
+| JWIKI-121 | 07_MEMORY/pinecone.md | Pinecone | B | 🔴 pending | (NO escrito, consolidar en vector-stores.md) |
+| JWIKI-122 | 07_MEMORY/qdrant.md | Qdrant | A | 🔴 pending | (NO escrito, consolidar en vector-stores.md) |
+| JWIKI-123 | 07_MEMORY/weaviate.md | Weaviate | B | 🔴 pending | (NO escrito, consolidar en vector-stores.md) |
+| JWIKI-124 | 07_MEMORY/milvus.md | Milvus | A | 🔴 pending | (NO escrito, consolidar en vector-stores.md) |
+| JWIKI-125 | 07_MEMORY/embeddings-sentence-transformers.md | sentence-transformers | B | 🔴 pending | (NO escrito, consolidar en embeddings-comparison.md) |
+| JWIKI-126 | 07_MEMORY/embeddings-openai.md | OpenAI embeddings | A | 🔴 pending | (NO escrito, consolidar en embeddings-comparison.md) |
+| JWIKI-127 | 07_MEMORY/rag-patterns-naive.md | RAG naive retrieval | B | 🟢 verified | (consolidado en rag-patterns.md — 4 RAG patterns; 6/6) |
+| JWIKI-128 | 07_MEMORY/rag-hybrid-search.md | RAG hybrid search | A | 🟢 verified | (consolidado en rag-patterns.md — BM25+semantic+RRF; 6/6) |
+| JWIKI-129 | 07_MEMORY/rag-reranking.md | RAG reranking | B | 🟢 verified | (consolidado en rag-patterns.md — cross-encoder; 6/6) |
+| JWIKI-130 | 07_MEMORY/rag-hyde.md | HyDE | A | 🟢 verified | (consolidado en rag-patterns.md — HyDE; 6/6) |
+| JWIKI-131 | 07_MEMORY/conversation-memory.md | Conversation memory | B | 🟢 verified | (escrito en disco — short/long term, ChromaDB index; 6/6) |
+| JWIKI-132 | 07_MEMORY/user-context.md | User context persistente | A | 🟢 verified | (escrito en disco — preferencias, habits, projects; 6/6) |
+| JWIKI-133 | 07_MEMORY/document-indexing.md | Document indexing chunking | B | 🟢 verified | (escrito en disco — chunking strategies, recursive, overlap; 6/6) |
+| JWIKI-134 | 07_MEMORY/memory-degradation.md | Graceful degradation Aithera | A | 🟢 verified | (escrito en disco — graceful degradation pattern; 6/6) |
+| JWIKI-135 (extra) | 07_MEMORY/embeddings-comparison.md | (consolidación) | extra | 🟢 verified | (escrito en disco — embeddings table comparativa; 6/6) |
+| JWIKI-136 (extra) | 07_MEMORY/mcp-integration.md | (consolidación) | extra | 🟢 verified | (escrito en disco — MCP memory; 6/6) |
+| JWIKI-137 (extra) | 07_MEMORY/oblivion.md | (consolidación) | extra | 🟢 verified | (escrito en disco — oblivion pattern; 6/6) |
 
 ## 08_VOICE
 

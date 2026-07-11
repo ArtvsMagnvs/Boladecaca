@@ -33,14 +33,15 @@ const ZERO: FieldWeights = {
 /** Reposo: F_breath domina + F_return fuerte = "calma que no es quietud";
  *  F_curl/F_self bajos = deriva browniana sutil; F_wave presente (nacimiento
  *  poisson raro). doc 13 §4 Reposo. */
+// Nuevo modelo (forma preservada): return DOMINA (mantiene el logo); breath es el
+// latido/pulso; curl+self dan micro-vida; wave empuja la 2ª capa. Ver fields.glsl.
 const REPOSE_WEIGHTS: FieldWeights = {
   ...ZERO,
-  breath: 1.0,
-  return: 0.85,
-  wave: 0.55,
-  curl: 0.14,
-  self: 0.1,
-  root: 0.06,
+  return: 1.0,
+  breath: 0.8, // pulso/latido
+  wave: 0.5,
+  curl: 0.16,
+  self: 0.08,
 };
 
 /** Pesos por ritmo. S1: solo 'repose' real; el resto = copia de reposo

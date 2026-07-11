@@ -10,7 +10,7 @@ import * as THREE from "three";
 import { GPUComputationRenderer } from "three/examples/jsm/misc/GPUComputationRenderer.js";
 import { ShaderSystem } from "../shaders/ShaderSystem";
 import { createUniformBus } from "./UniformBus";
-import { buildSeedGeometry } from "../math/lotus";
+import { buildSceneGeometry } from "../math/lotus";
 import { TIERS, REST_RADIUS, weightsToArray } from "../constants";
 import type { FieldWeights, Palette, QualityTier, StructureHandle, StructureSpec, UniformBus } from "../types";
 
@@ -60,8 +60,8 @@ export class ParticleEngine {
 
     const gpu = new GPUComputationRenderer(this.sim, this.sim, this.renderer);
 
-    // --- Geometría de la semilla (anclas + genoma) ---
-    const { genome, anchor } = buildSeedGeometry(N, REST_RADIUS, spec.seedFraction, this.sessionSeed);
+    // --- Geometría de la escena (semilla-logo + 2ª capa: anillos/bandas/starfield) ---
+    const { genome, anchor } = buildSceneGeometry(N, REST_RADIUS, spec.seedFraction, this.sessionSeed);
 
     // Textura de posición inicial = anclas (+ jitter mínimo) → la forma nace visible.
     const posTex = gpu.createTexture();
@@ -105,7 +105,9 @@ export class ParticleEngine {
       uSeedCenter: this.bus.uSeedCenter,
       uGravityDir: this.bus.uGravityDir,
       uWeights: this.bus.uWeights,
-      uBreath: this.bus.uBreath,
+      uBreathScale: this.bus.uBreathScale,
+      uCoreSpin: this.bus.uCoreSpin,
+      uPulse: this.bus.uPulse,
       uCurlFreq: this.bus.uCurlFreq,
       uCurlFlow: this.bus.uCurlFlow,
       uWaveCount: this.bus.uWaveCount,
@@ -151,9 +153,10 @@ export class ParticleEngine {
       uniforms: {
         texturePosition: { value: null },
         uGenome: { value: this.genomeTex },
+        uAnchor: { value: this.anchorTex },
         uPointSize: this.bus.uPointSize,
-        uBreathScale: this.bus.uBreathScale,
         uDpr: { value: Math.min(2, this.renderer.getPixelRatio()) },
+        uTime: this.bus.uTime,
         uHeart: this.bus.uHeart,
         uAura: this.bus.uAura,
         uField: this.bus.uField,
