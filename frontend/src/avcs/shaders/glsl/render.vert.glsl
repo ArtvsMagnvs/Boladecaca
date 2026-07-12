@@ -15,6 +15,7 @@ attribute vec2 aRef;
 varying float vRole;
 varying float vSeed;
 varying float vBright;
+varying vec2 vNdc; // posición en NDC (-1..1), para el falloff de borde (sin clipping)
 
 void main() {
   vec4 P = texture2D(texturePosition, aRef);
@@ -40,4 +41,5 @@ void main() {
   gl_PointSize = clamp(uPointSize * sizeMul * uDpr / max(0.1, -mv.z), 1.0, 70.0);
   vBright = brightClass * mix(0.35, 1.0, closeness) * tw;
   gl_Position = projectionMatrix * mv;
+  vNdc = gl_Position.xy / max(1e-4, gl_Position.w);
 }

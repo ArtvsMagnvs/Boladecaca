@@ -42,6 +42,17 @@ export class PerformanceManager {
     return this.level >= 3 ? Math.max(64, SIM_LADDER[base]) : base;
   }
 
+  /** Tier efectivo (escalón 3: baja un nivel de calidad completo — menos
+   *  partículas, no solo menos resolución de textura — nunca por debajo de Q1,
+   *  §16.4). HubEngine lo usa para re-inicializar el ParticleEngine SIN pasar
+   *  por setTier() (que resetearía la propia escalera). */
+  get effectiveTier(): QualityTier {
+    if (this.level < 3) return this.baseTier;
+    const LADDER: QualityTier[] = ["Q1", "Q2", "Q3", "Q4"];
+    const idx = LADDER.indexOf(this.baseTier);
+    return LADDER[Math.max(0, idx - 1)];
+  }
+
   get renderConfig(): RenderConfig {
     const spec = TIERS[this.baseTier];
     return {

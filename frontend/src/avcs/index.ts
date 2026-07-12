@@ -13,3 +13,4 @@ export type {
   CoreStateId,
 } from "./types";
 export { PALETTES, DEFAULT_PALETTE, DEFAULT_TIER } from "./constants";
+export { attachVoiceAudio } from "./audio/AudioBridge";

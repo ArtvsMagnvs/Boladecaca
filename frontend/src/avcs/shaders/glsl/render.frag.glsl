@@ -9,6 +9,7 @@ uniform vec3 uField; // teal (Savia)
 varying float vRole;
 varying float vSeed;
 varying float vBright;
+varying vec2 vNdc;
 
 void main() {
   vec2 c = gl_PointCoord - 0.5;
@@ -40,5 +41,10 @@ void main() {
     col = mix(uField, vec3(1.0), 0.35 * vSeed); // estrella: teal→blanca
   }
 
-  gl_FragColor = vec4(col * (0.35 + 0.9 * vBright), glow * vBright * 0.85);
+  // Falloff de borde (doc 13 §13.3, "sin clipping"): se desvanece suave en el
+  // ~8% exterior del frustum en vez de recortarse en seco al salir de cuadro.
+  float edge = max(abs(vNdc.x), abs(vNdc.y));
+  float edgeFalloff = 1.0 - smoothstep(0.92, 1.0, edge);
+
+  gl_FragColor = vec4(col * (0.35 + 0.9 * vBright), glow * vBright * 0.85 * edgeFalloff);
 }

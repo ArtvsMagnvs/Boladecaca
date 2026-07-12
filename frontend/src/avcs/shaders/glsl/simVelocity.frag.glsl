@@ -21,6 +21,7 @@ uniform float uWaveR[6];
 uniform float uWaveAmp[6];
 uniform float uWaveSeed[6];
 uniform float uWaveThickness;
+uniform float uAudioEnv;      // envolvente de voz 0-1 (S2, AudioReactor real)
 uniform sampler2D uGenome;
 uniform sampler2D uAnchor;
 

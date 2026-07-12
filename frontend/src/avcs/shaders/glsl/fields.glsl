@@ -82,6 +82,16 @@ vec3 fPulse(vec3 p) {
   return (d / max(r, 1e-4)) * ring * uPulse;
 }
 
+// Latido audio-reactivo (Comunicación, doc 13 §8 "late con la voz"): un halo
+// cerca del núcleo que respira con uAudioEnv en continuo, no un pulso Poisson
+// discreto — sigue la envolvente de voz frame a frame.
+vec3 fVoicePulse(vec3 p) {
+  vec3 d = p - uSeedCenter;
+  float r = length(d);
+  float halo = exp(-pow(r / 0.55, 2.0));
+  return (d / max(r, 1e-4)) * halo * uAudioEnv;
+}
+
 // Stubs S1 (firma real, cuerpo en MVP1).
 vec3 fRoot(vec3 p, vec3 a, float role) { return vec3(0.0); }
 vec3 fBranch(vec3 p, vec3 a, float role) { return vec3(0.0); }
@@ -115,14 +125,18 @@ vec3 computeForce(vec3 pos, vec4 G, vec4 A) {
   fCommon += uWeights[2] * curl;
   fCommon += uWeights[1] * wave;
   fCommon += uWeights[8] * ret;
-  fCommon += uWeights[3] * uGravityDir;
+  // Gravedad (Escucha/Comunicación, doc 13 §4): tira sobre todo de lo poco
+  // anclado (campo/tendrils → "raíces insinuadas"), casi nada del logo/núcleo,
+  // para no deformar la identidad (misma lección que targetAnchor()).
+  fCommon += uWeights[3] * uGravityDir * mix(0.2, 1.0, wanderAllow(role));
   fCommon += uWeights[4] * fRoot(pos, A.xyz, role);
   fCommon += uWeights[5] * fBranch(pos, A.xyz, role);
   fCommon += uWeights[6] * fMandala(pos);
   fCommon += uWeights[7] * fChannel(pos);
 
-  // respiración = latido (pulso), ponderado por el peso 'breath'.
-  fCommon += uWeights[0] * pulse * 2.0;
+  // respiración = latido (pulso Poisson) + halo audio-reactivo continuo
+  // ("late con la voz"), ambos ponderados por el peso 'breath'.
+  fCommon += uWeights[0] * (pulse * 2.0 + fVoicePulse(pos) * 1.6);
 
   // mezcla con sincronía + ruido propio (self)
   vec3 force = mix(slf, fCommon, uSync) + uWeights[9] * slf * (1.0 - uSync * 0.5);

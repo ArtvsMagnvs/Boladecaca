@@ -185,3 +185,20 @@ input[type="range"]::-moz-range-thumb {
     grid-template-columns: minmax(0, 190px) minmax(0, 1fr) minmax(0, 190px);
   }
 }
+
+/* AVCS S3 (doc 13 §13.5, Chat limpio): "respiración sutil de opacidad" del
+   panel flotante — el BORDE respira, nunca el texto (legibilidad intacta).
+   La voz mueve la presencia, no este panel: por eso es una animación
+   ambiental lenta y fija, jamás enganchada a uAudioEnv/coreState. */
+@keyframes panel-breathe {
+  0%, 100% { border-color: rgba(255, 255, 255, 0.06); box-shadow: 0 0 0 rgba(94, 168, 255, 0); }
+  50% { border-color: rgba(255, 255, 255, 0.12); box-shadow: 0 0 18px rgba(94, 168, 255, 0.05); }
+}
+.avcs-panel-breathe {
+  animation: panel-breathe 7s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .avcs-panel-breathe {
+    animation: none;
+  }
+}

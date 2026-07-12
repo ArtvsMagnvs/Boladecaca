@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import { api } from "@/lib/api";
 import { useAppStore } from "@/store/useAppStore";
 import MicButton from "@/components/voice/MicButton";
+import { attachVoiceAudio } from "@/avcs";
 
 interface Message {
   role: "user" | "assistant";
@@ -38,6 +39,20 @@ export default function Chat() {
   const selectedVoiceRef = useRef<string>("es-ES-ElviraNeural");
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
+  // AVCS S3 (Chat limpio, doc 13 §13.5): TTS on/off. Ref porque speak() se
+  // llama desde bucles async (conversationLoop) que deben leer el valor
+  // actual, no el capturado en el momento en que se creó el closure.
+  const [ttsEnabled, setTtsEnabled] = useState(true);
+  const ttsEnabledRef = useRef(true);
+  const toggleTts = useCallback(() => {
+    const next = !ttsEnabledRef.current;
+    ttsEnabledRef.current = next;
+    setTtsEnabled(next);
+    if (!next) {
+      try { audioRef.current?.pause(); } catch { /* noop */ }
+    }
+  }, []);
+
   useEffect(() => {
     api
       .getConfig()
@@ -55,6 +70,7 @@ export default function Chat() {
   // Aithera responda igualmente en voz.
   const speak = useCallback(
     async (text: string) => {
+      if (!ttsEnabledRef.current) return; // AVCS S3: TTS silenciado — solo texto
       const clean = text.trim();
       if (!clean) return;
       const voiceId = selectedVoiceRef.current;
@@ -67,6 +83,7 @@ export default function Chat() {
           }
           const audio = new Audio(dataUrl);
           audioRef.current = audio;
+          attachVoiceAudio(audio); // AVCS S2: ritmo Comunicación late con esta voz
           setCoreState("speaking");
           audio.onended = () => { setCoreState("idle"); resolve(); };
           audio.onerror = () => { setCoreState("idle"); resolve(); };
@@ -289,79 +306,118 @@ export default function Chat() {
     return () => { conversationRef.current = false; };
   }, []);
 
+  // AVCS S3 (Chat limpio, doc 13 §13.5): la presencia domina el centro — el
+  // AVCS ya vive detrás vía AppLayout (full-bleed), así que esta página deja
+  // esa zona vacía a propósito. Solo el panel flotante lateral lleva UI.
   return (
-    <div className="h-full flex flex-col gap-4">
-      <div className="flex items-center justify-between">
-        <h1 className="text-lg font-semibold text-ink">Chat con Aithera</h1>
-        <span className={`text-xs px-2 py-1 rounded ${backendConnected ? "bg-signal-ok/15 text-signal-ok" : "bg-signal-error/15 text-signal-error"}`}>
-          {backendConnected ? "Conectado" : "Desconectado"}
-        </span>
-      </div>
+    <div className="h-full relative">
+      <aside className="avcs-panel-breathe glass-surface absolute top-4 right-4 bottom-4 w-[min(380px,calc(100%-2rem))] rounded-2xl flex flex-col overflow-hidden">
+        <div className="shrink-0 flex items-center justify-between px-4 py-3 border-b border-white/5">
+          <h1 className="text-sm font-semibold text-ink">Chat con Aithera</h1>
+          <span
+            className={`h-1.5 w-1.5 rounded-full shrink-0 ${backendConnected ? "bg-signal-ok" : "bg-signal-error"}`}
+            title={backendConnected ? "Conectado" : "Desconectado"}
+          />
+        </div>
 
-      <div className="flex-1 glass-surface rounded-2xl p-4 overflow-y-auto flex flex-col gap-3">
-        {messages.map((msg, i) => (
-          <div key={i} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
-            <div className={`max-w-[70%] px-4 py-3 rounded-2xl text-sm ${
-              msg.role === "user" 
-                ? "bg-accent/20 text-ink border border-accent/30" 
-                : "bg-base-700/50 text-ink"
-            }`}>
-              {msg.content}
+        {/* Historial compacto */}
+        <div className="flex-1 min-h-0 overflow-y-auto px-3 py-3 flex flex-col gap-2">
+          {messages.map((msg, i) => (
+            <div key={i} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
+              <div className={`max-w-[85%] px-3 py-2 rounded-xl text-xs leading-relaxed ${
+                msg.role === "user"
+                  ? "bg-accent/20 text-ink border border-accent/30"
+                  : "bg-base-700/50 text-ink"
+              }`}>
+                {msg.content}
+              </div>
             </div>
-          </div>
-        ))}
-        {loading && (
-          <div className="flex justify-start">
-            <div className="bg-base-700/50 px-4 py-3 rounded-2xl text-sm text-ink-dim max-w-[70%]">
-              {streamingText || "Pensando..."}
-              <span className="animate-pulse">|</span>
+          ))}
+          {loading && (
+            <div className="flex justify-start">
+              <div className="bg-base-700/50 px-3 py-2 rounded-xl text-xs text-ink-dim max-w-[85%]">
+                {streamingText || "Pensando..."}
+                <span className="animate-pulse">|</span>
+              </div>
             </div>
-          </div>
-        )}
-        <div ref={messagesEndRef} />
-      </div>
+          )}
+          <div ref={messagesEndRef} />
+        </div>
 
-      <div className="flex gap-3 items-start">
-        <input
-          type="text"
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && handleSend()}
-          placeholder="Escribe tu mensaje..."
-          className="flex-1 bg-base-800 border border-base-700 rounded-xl px-4 py-3 text-sm text-ink placeholder:text-ink-faint focus:outline-none focus:border-accent/40"
-          disabled={loading}
-        />
-        {/* V0.83 (Paso 4): boton de micro al lado del input. FIX (audit):
-            deshabilitado durante "Modo Conversación" — antes se podian usar
-            los dos a la vez, abriendo dos capturas de microfono
-            concurrentes que transcribian y enviaban la misma intervencion
-            por separado (doble respuesta). */}
-        <MicButton onTranscript={handleTranscript} language="es" disabled={conversation} />
-        {/* V0.83: Modo Conversación (escucha continua). Verde = activo. */}
-        <button
-          type="button"
-          onClick={toggleConversation}
-          title={conversation ? "Conversación activa — pulsa para parar" : "Conversación continua (habla y te responde en bucle)"}
-          aria-label="Modo conversación"
-          className={`shrink-0 w-12 h-12 rounded-xl flex items-center justify-center border transition-all ${
-            conversation
-              ? "bg-signal-ok/20 text-signal-ok border-signal-ok/40 animate-pulse"
-              : "bg-base-800 text-ink-dim border-base-700 hover:text-ink hover:border-base-600"
-          }`}
-        >
-          {/* icono de conversación (dos bocadillos) */}
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M8 10h.01M12 10h.01M16 10h.01M21 12a8 8 0 0 1-11.6 7.1L3 21l1.9-6.4A8 8 0 1 1 21 12z" />
-          </svg>
-        </button>
-        <button
-          onClick={handleSend}
-          disabled={loading || !input.trim()}
-          className="px-6 py-3 bg-accent/15 text-accent rounded-xl text-sm font-medium border border-accent/30 hover:bg-accent/25 disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          Enviar
-        </button>
-      </div>
+        {/* Controles: input + voz. Durante Comunicación, la voz mueve la
+            presencia (§8) — este panel se queda deliberadamente quieto. */}
+        <div className="shrink-0 border-t border-white/5 p-3 flex flex-col gap-2">
+          <div className="flex gap-2">
+            <input
+              type="text"
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && handleSend()}
+              placeholder="Escribe tu mensaje..."
+              className="flex-1 min-w-0 bg-base-800 border border-base-700 rounded-lg px-3 py-2 text-xs text-ink placeholder:text-ink-faint focus:outline-none focus:border-accent/40"
+              disabled={loading}
+            />
+            <button
+              onClick={handleSend}
+              disabled={loading || !input.trim()}
+              className="shrink-0 px-3 py-2 bg-accent/15 text-accent rounded-lg text-xs font-medium border border-accent/30 hover:bg-accent/25 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Enviar
+            </button>
+          </div>
+
+          <div className="flex items-center gap-2">
+            {/* V0.83 (Paso 4): boton de micro. FIX (audit): deshabilitado
+                durante "Modo Conversación" — antes se podian usar los dos a
+                la vez, abriendo dos capturas de microfono concurrentes que
+                transcribian y enviaban la misma intervencion por separado. */}
+            <MicButton onTranscript={handleTranscript} language="es" disabled={conversation} />
+            {/* V0.83: Modo Conversación (escucha continua). Verde = activo. */}
+            <button
+              type="button"
+              onClick={toggleConversation}
+              title={conversation ? "Conversación activa — pulsa para parar" : "Conversación continua (habla y te responde en bucle)"}
+              aria-label="Modo conversación"
+              className={`shrink-0 w-10 h-10 rounded-lg flex items-center justify-center border transition-all ${
+                conversation
+                  ? "bg-signal-ok/20 text-signal-ok border-signal-ok/40 animate-pulse"
+                  : "bg-base-800 text-ink-dim border-base-700 hover:text-ink hover:border-base-600"
+              }`}
+            >
+              {/* icono de conversación (dos bocadillos) */}
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M8 10h.01M12 10h.01M16 10h.01M21 12a8 8 0 0 1-11.6 7.1L3 21l1.9-6.4A8 8 0 1 1 21 12z" />
+              </svg>
+            </button>
+            {/* AVCS S3: TTS on/off — silencia la voz, el texto sigue llegando. */}
+            <button
+              type="button"
+              onClick={toggleTts}
+              title={ttsEnabled ? "Voz activada — pulsa para silenciar" : "Voz silenciada — pulsa para activar"}
+              aria-label="Voz (texto a voz)"
+              aria-pressed={ttsEnabled}
+              className={`shrink-0 w-10 h-10 rounded-lg flex items-center justify-center border transition-all ${
+                ttsEnabled
+                  ? "bg-base-800 text-ink-dim border-base-700 hover:text-ink hover:border-base-600"
+                  : "bg-signal-warn/15 text-signal-warn border-signal-warn/30"
+              }`}
+            >
+              {ttsEnabled ? (
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
+                  <path d="M15.54 8.46a5 5 0 0 1 0 7.07M19.07 4.93a10 10 0 0 1 0 14.14" />
+                </svg>
+              ) : (
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
+                  <line x1="23" y1="9" x2="17" y2="15" />
+                  <line x1="17" y1="9" x2="23" y2="15" />
+                </svg>
+              )}
+            </button>
+          </div>
+        </div>
+      </aside>
     </div>
   );
 }

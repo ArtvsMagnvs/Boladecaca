@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { api, type AIStatus } from "@/lib/api";
+import type { QualityTier } from "@/avcs";
 
 // AVCS S1: se añaden 'action' (Acción) y 'recovering' (Recuperación) para
 // completar los 7 ritmos del doc 13 §4. Los ritmos reales de esos estados
@@ -14,6 +15,21 @@ export type AICoreState =
   | "action"
   | "recovering";
 
+// AVCS S3 (doc 13 §13.4): Modo Presencia pliega TODA la UI de chrome (sidebar +
+// contenido de la página), dejando solo el canvas a pantalla completa. Vive en
+// el store (no en localStorage) para que "persista por página": no se resetea
+// al navegar entre rutas, solo al reiniciar la app.
+const AVCS_TIER_KEY = "avcs.tier";
+function readStoredTier(): QualityTier {
+  try {
+    const v = window.localStorage.getItem(AVCS_TIER_KEY);
+    if (v === "Q1" || v === "Q2" || v === "Q3" || v === "Q4") return v;
+  } catch {
+    /* localStorage no disponible */
+  }
+  return "Q3";
+}
+
 interface AppState {
   backendConnected: boolean;
   aiStatus: AIStatus | null;
@@ -22,6 +38,11 @@ interface AppState {
   pulseError: () => void;
   refreshBackendStatus: () => Promise<void>;
   refreshAIStatus: () => Promise<void>;
+  presenceMode: boolean;
+  setPresenceMode: (v: boolean) => void;
+  togglePresenceMode: () => void;
+  avcsTier: QualityTier;
+  setAvcsTier: (t: QualityTier) => void;
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -30,6 +51,20 @@ export const useAppStore = create<AppState>((set) => ({
   coreState: "idle",
 
   setCoreState: (state) => set({ coreState: state }),
+
+  presenceMode: false,
+  setPresenceMode: (v) => set({ presenceMode: v }),
+  togglePresenceMode: () => set((s) => ({ presenceMode: !s.presenceMode })),
+
+  avcsTier: readStoredTier(),
+  setAvcsTier: (t) => {
+    try {
+      window.localStorage.setItem(AVCS_TIER_KEY, t);
+    } catch {
+      /* localStorage no disponible */
+    }
+    set({ avcsTier: t });
+  },
 
   refreshBackendStatus: async () => {
     const connected = await api.health();

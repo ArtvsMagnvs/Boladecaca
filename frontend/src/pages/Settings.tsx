@@ -6,6 +6,50 @@
 import { useState, useEffect } from "react";
 import { api, type AIProviderEntry, type ContextItem, type MemoryStats, type TelegramStatus, type ElevenLabsCfgStatus } from "@/lib/api";
 import { useAppStore } from "@/store/useAppStore";
+import type { QualityTier } from "@/avcs";
+
+/**
+ * AVCS S3 (doc 13 §16 PerformanceManager v0): selector manual de tier de
+ * calidad Q1-Q3 ("tiers manuales Q1-Q3" — Q4 queda fuera de Fase 0, es el
+ * nivel "equipos gaming"). Escribe en el store (persistido en localStorage,
+ * ver useAppStore.setAvcsTier) y AitheraPresence lo aplica EN VIVO sin
+ * recargar — la escalera dinámica sigue pudiendo degradar/subir por encima
+ * de este punto de partida.
+ */
+const TIER_INFO: Record<Exclude<QualityTier, "Q4">, { label: string; hint: string }> = {
+  Q1: { label: "Q1 — Brasa", hint: "equipos modestos, máxima fluidez" },
+  Q2: { label: "Q2 — Llama", hint: "equilibrado" },
+  Q3: { label: "Q3 — Aurora", hint: "escritorio moderno (recomendado)" },
+};
+
+function AvcsPerformanceSettings() {
+  const avcsTier = useAppStore((s) => s.avcsTier);
+  const setAvcsTier = useAppStore((s) => s.setAvcsTier);
+
+  return (
+    <div className="flex flex-col gap-2">
+      {(Object.keys(TIER_INFO) as Array<keyof typeof TIER_INFO>).map((t) => (
+        <button
+          key={t}
+          type="button"
+          onClick={() => setAvcsTier(t)}
+          className={`text-left px-3 py-2 rounded-lg border text-xs transition-colors ${
+            avcsTier === t
+              ? "bg-accent/15 text-accent border-accent/30"
+              : "bg-base-700 text-ink-dim border-base-600 hover:bg-base-600"
+          }`}
+        >
+          <span className="font-medium">{TIER_INFO[t].label}</span>
+          <span className="ml-2 opacity-70">{TIER_INFO[t].hint}</span>
+        </button>
+      ))}
+      <p className="text-[10px] text-ink-faint mt-1">
+        Aithera baja de nivel sola si el equipo no aguanta el ritmo, y sube de
+        nuevo en cuanto puede — esto solo fija el punto de partida.
+      </p>
+    </div>
+  );
+}
 
 
 /**
@@ -908,6 +952,12 @@ export default function Settings() {
                 <p>• Frontend: http://localhost:5173</p>
                 <p>• Base de datos: %APPDATA%/Aithera/aithera.db</p>
               </div>
+            </div>
+
+            {/* AVCS S3: rendimiento de la presencia visual (PerformanceManager v0) */}
+            <div className="glass-surface rounded-2xl p-4">
+              <h3 className="text-sm font-medium text-ink mb-3">Presencia visual</h3>
+              <AvcsPerformanceSettings />
             </div>
 
             {/* V0.7 (Fase 4): seccion Google (OAuth) */}

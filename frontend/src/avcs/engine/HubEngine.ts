@@ -34,6 +34,7 @@ export class HubEngine {
   private mounted = false;
   private onRenderConfigChange: ((c: RenderConfig) => void) | null = null;
   private renderConfig: RenderConfig;
+  private lastEffectiveTier: QualityTier;
 
   constructor(opts: HubEngineOptions) {
     this.scene = opts.scene;
@@ -47,6 +48,7 @@ export class HubEngine {
     this.audio = new AudioReactor();
     this.perf = new PerformanceManager(opts.initialTier);
     this.renderConfig = this.perf.renderConfig;
+    this.lastEffectiveTier = opts.initialTier;
     this.rhythm.setMaxWaves(TIERS[opts.initialTier].maxWaves);
   }
 
@@ -81,8 +83,16 @@ export class HubEngine {
     }
 
     this.audio.update(d);
+    const af = this.audio.frame;
+    this.particles.bus.uAudioEnv.value = af.envelope;
+    this.particles.bus.uAudioBands.value.set(af.bands[0], af.bands[1], af.bands[2]);
+
     this.rhythm.update(d, this.time, this.lifePhase);
     this.particles.update(d);
+
+    // "se asienta" (Escucha) / "se eleva" (Comunicación) — offset del grupo entero.
+    const obj = this.particles.object3D;
+    if (obj) obj.position.y = this.rhythm.settleOffset;
 
     // presupuesto (escalera dinámica)
     if (this.perf.observe(dt * 1000)) {
@@ -91,13 +101,34 @@ export class HubEngine {
   }
 
   private applyPerf(): void {
-    // S1 (perf v0): la escalera dinámica re-aplica bloom/DPR/maxWaves. La
-    // reducción real del tamaño de textura sim (escalón 3) se afina en MVP1;
-    // aquí no se re-inicializa el FBO en caliente para no arriesgar estabilidad.
+    // PerformanceManager v0 (doc 13 §16): escalera completa, pasos 1-3 —
+    // 1) bloom off, 2) DPR 1.0 (ambos vía renderConfig), 3) bajar UN tier
+    // completo de partículas (effectiveTier) cuando el frametime no se
+    // recupera con los pasos 1-2. Sube de nuevo sola cuando el frametime lo
+    // permite (histéresis en PerformanceManager.observe). Nunca baja de Q1.
     const cfg = this.perf.renderConfig;
     this.renderConfig = cfg;
     this.rhythm.setMaxWaves(cfg.maxWaves);
+
+    const eff = this.perf.effectiveTier;
+    if (eff !== this.lastEffectiveTier) {
+      this.lastEffectiveTier = eff;
+      this.reinitParticlesTier(eff);
+    }
+
     this.onRenderConfigChange?.(cfg);
+  }
+
+  /** Quita/reconstruye/vuelve a añadir los Points del ParticleEngine para un
+   *  tier dado (manual desde Settings, o automático desde la escalera). */
+  private reinitParticlesTier(tier: QualityTier): void {
+    const obj = this.particles.object3D;
+    if (obj) this.scene.remove(obj);
+    this.particles.setTier(tier);
+    const nobj = this.particles.object3D;
+    if (nobj) this.scene.add(nobj);
+    this.particles.setPalette(DEFAULT_PALETTE);
+    this.rhythm.setMaxWaves(TIERS[tier].maxWaves);
   }
 
   setCoreState(state: CoreStateId): void {
@@ -111,15 +142,12 @@ export class HubEngine {
     if (obj) obj.visible = v;
   }
 
+  /** Cambio MANUAL de tier (Settings, S3 — doc 13 §16.1). Resetea la escalera
+   *  dinámica: el nuevo tier pasa a ser la base desde la que se degrada/sube. */
   setTier(tier: QualityTier): void {
     this.perf.setTier(tier);
-    const obj = this.particles.object3D;
-    if (obj) this.scene.remove(obj);
-    this.particles.setTier(tier);
-    const nobj = this.particles.object3D;
-    if (nobj) this.scene.add(nobj);
-    this.particles.setPalette(DEFAULT_PALETTE);
-    this.rhythm.setMaxWaves(TIERS[tier].maxWaves);
+    this.lastEffectiveTier = tier;
+    this.reinitParticlesTier(tier);
     this.renderConfig = this.perf.renderConfig;
     this.onRenderConfigChange?.(this.renderConfig);
   }

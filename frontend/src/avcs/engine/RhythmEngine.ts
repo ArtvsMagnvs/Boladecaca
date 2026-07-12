@@ -4,8 +4,11 @@
 // el bus de uniforms; NUNCA toca three.js (salvo mutar .value de los uniforms).
 import {
   FIELD_COUNT,
+  GRAVITY_MAGNITUDE,
   MAX_WAVES,
   RHYTHM_BREATH_PERIOD,
+  RHYTHM_GRAVITY_Y,
+  RHYTHM_SETTLE_Y,
   RHYTHM_SYNC,
   RHYTHM_WEIGHTS,
   STATE_TO_RHYTHM,
@@ -39,6 +42,13 @@ export class RhythmEngine {
   private curWeights = new Float32Array(FIELD_COUNT);
   private crossfadeSpeed = 1 / 3; // 3s por defecto (2-4s doc 13)
   private targetSync = 0.9;
+
+  // Escucha/Comunicación (S2): F_gravity con signo por ritmo + offset de
+  // "asentado" del grupo entero. Ambos crossfadean con la misma k que los pesos.
+  private targetGravityY = 0;
+  private curGravityY = 0;
+  private targetSettleY = 0;
+  private curSettleY = 0;
 
   // Respiración (forma preservada): escala global + giro del núcleo + latido
   private breathPhase = 0; // acumulador (rad) — velocidad angular variable
@@ -77,7 +87,14 @@ export class RhythmEngine {
     this.rhythm = name;
     weightsToArray(RHYTHM_WEIGHTS[name], this.targetWeights);
     this.targetSync = RHYTHM_SYNC[name];
+    this.targetGravityY = RHYTHM_GRAVITY_Y[name];
+    this.targetSettleY = RHYTHM_SETTLE_Y[name];
     this.crossfadeSpeed = 1 / Math.max(0.5, transitionS);
+  }
+
+  /** Offset Y a aplicar sobre object3D.position (HubEngine.frame lo lee cada frame). */
+  get settleOffset(): number {
+    return this.curSettleY;
   }
 
   setSync(s: number, _transitionS = 2): void {
@@ -108,6 +125,10 @@ export class RhythmEngine {
       w[i] = this.curWeights[i];
     }
     this.bus.uSync.value += (this.targetSync - this.bus.uSync.value) * k;
+
+    this.curGravityY += (this.targetGravityY - this.curGravityY) * k;
+    this.bus.uGravityDir.value.set(0, this.curGravityY * GRAVITY_MAGNITUDE, 0);
+    this.curSettleY += (this.targetSettleY - this.curSettleY) * k;
   }
 
   private updateBreathAndPulse(dt: number, lifePhase: number): void {
@@ -121,7 +142,12 @@ export class RhythmEngine {
     const raw = Math.sin(this.breathPhase);
     const ripple = 0.06 * noise1D(this.breathPhase * 1.7 + 3.1 + this.seedB);
     const jitter = 1 + 0.1 * noise1D(this.breathTime * 0.3 + this.seedB);
-    this.bus.uBreathScale.value = 1 + 0.05 * (raw + ripple) * jitter;
+    // Comunicación (doc 13 §13.5, "la voz mueve la presencia"): la envolvente
+    // de voz real (ya escrita en el bus por HubEngine antes de este update) se
+    // suma a la escala global — el logo entero se hincha visiblemente al
+    // hablar, sin deformarse (mismo mecanismo que la respiración ambiental).
+    const audioSwell = 0.16 * this.bus.uAudioEnv.value;
+    this.bus.uBreathScale.value = 1 + 0.05 * (raw + ripple) * jitter + audioSwell;
 
     // (2) GIRO del núcleo como un sol: velocidad variable (a veces lenta, a
     // veces invierte el patrón) modulada por noise → nunca mecánico.

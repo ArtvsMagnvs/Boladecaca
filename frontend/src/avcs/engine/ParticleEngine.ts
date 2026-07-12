@@ -115,6 +115,7 @@ export class ParticleEngine {
       uWaveAmp: this.bus.uWaveAmp,
       uWaveSeed: this.bus.uWaveSeed,
       uWaveThickness: this.bus.uWaveThickness,
+      uAudioEnv: this.bus.uAudioEnv,
       uGenome: { value: this.genomeTex },
       uAnchor: { value: this.anchorTex },
     });

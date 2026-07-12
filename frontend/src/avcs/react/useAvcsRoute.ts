@@ -1,10 +1,7 @@
-// AVCS — visibilidad por ruta + tier desde ajustes (localStorage). Sin re-crear
-// el Canvas: solo decide si la presencia está visible y con qué tier arranca.
-import { useState } from "react";
+// AVCS — visibilidad por ruta + tier desde ajustes. Sin re-crear el Canvas:
+// solo decide si la presencia está visible y con qué tier arranca.
 import type { QualityTier } from "../types";
-import { DEFAULT_TIER } from "../constants";
-
-const TIER_KEY = "avcs.tier";
+import { useAppStore } from "@/store/useAppStore";
 
 /** Rutas donde la presencia es plenamente visible (doc 13 §13.5). El resto la
  *  atenúa/pausa sin desmontar el Canvas. */
@@ -14,16 +11,9 @@ export function isPresenceVisible(pathname: string): boolean {
   return VISIBLE_ROUTES.has(pathname);
 }
 
-/** Lee el tier de calidad persistido (Settings, S3). Default Q3 escritorio. */
+/** Tier de calidad, editable en vivo desde Settings (S3, §16) — persistido en
+ *  localStorage por el store (avcsTier), leído aquí de forma reactiva para que
+ *  un cambio en Ajustes reconfigure el motor sin recargar la app. */
 export function useAvcsTier(): QualityTier {
-  const [tier] = useState<QualityTier>(() => {
-    try {
-      const v = window.localStorage.getItem(TIER_KEY);
-      if (v === "Q1" || v === "Q2" || v === "Q3" || v === "Q4") return v;
-    } catch {
-      /* localStorage no disponible */
-    }
-    return DEFAULT_TIER;
-  });
-  return tier;
+  return useAppStore((s) => s.avcsTier);
 }

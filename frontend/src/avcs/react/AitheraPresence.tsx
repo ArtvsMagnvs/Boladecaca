@@ -13,7 +13,7 @@ import * as THREE from "three";
 import { HubEngine } from "../engine/HubEngine";
 import { useAppStore } from "@/store/useAppStore";
 import { isPresenceVisible, useAvcsTier } from "./useAvcsRoute";
-import { TIERS } from "../constants";
+import { CONTENT_HALF_HEIGHT, CONTENT_HALF_WIDTH, FIT_MARGIN, TIERS } from "../constants";
 import type { CoreStateId, QualityTier } from "../types";
 
 interface RunnerProps {
@@ -26,6 +26,7 @@ function PresenceRunner({ visible, tier }: RunnerProps) {
   const engineRef = useRef<HubEngine | null>(null);
   const [bloom, setBloom] = useState<boolean>(() => TIERS[tier].bloom);
   const [bloomIntensity, setBloomIntensity] = useState<number>(() => TIERS[tier].bloomIntensity);
+  const lastAspectRef = useRef(-1);
 
   // Crear el engine UNA vez (sobrevive a cambios de ruta porque el Canvas persiste).
   useEffect(() => {
@@ -71,7 +72,26 @@ function PresenceRunner({ visible, tier }: RunnerProps) {
   // EL UNICO useFrame maestro. Priority 0: hace compute + escribe uniforms, NO
   // renderiza. R3F auto-renderiza (sin bloom) o <EffectComposer> renderiza
   // (con bloom, a mayor priority) DESPUES — el compute siempre precede al render.
-  useFrame((_, dt) => {
+  //
+  // Cámara fit-contain (doc 13 §13.3, "sin clipping"): la semilla + 2ª capa
+  // (doc: CONTENT_HALF_WIDTH/HEIGHT) deben caber SIEMPRE, cualquiera sea el
+  // aspect ratio de la ventana. FOV vertical = max(el que necesita la altura,
+  // el que necesita la anchura convertido a vertical vía el aspect actual).
+  useFrame((state, dt) => {
+    const aspect = state.size.width / Math.max(1, state.size.height);
+    if (Math.abs(aspect - lastAspectRef.current) > 0.001) {
+      lastAspectRef.current = aspect;
+      const cam = state.camera as THREE.PerspectiveCamera;
+      const dist = cam.position.length();
+      const halfW = CONTENT_HALF_WIDTH * FIT_MARGIN;
+      const halfH = CONTENT_HALF_HEIGHT * FIT_MARGIN;
+      const halfAngleForHeight = Math.atan(halfH / dist);
+      const halfAngleNeededH = Math.atan(halfW / dist); // ángulo horizontal necesario
+      const halfAngleForWidth = Math.atan(Math.tan(halfAngleNeededH) / aspect); // → vertical equivalente
+      const vFovRad = 2 * Math.max(halfAngleForHeight, halfAngleForWidth);
+      cam.fov = THREE.MathUtils.radToDeg(vFovRad);
+      cam.updateProjectionMatrix();
+    }
     engineRef.current?.frame(dt);
   });
 
