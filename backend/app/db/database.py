@@ -437,6 +437,59 @@ class EmailTriage(Base):
     method = Column(String(12), nullable=False, default='heuristic')
     created_at = Column(DateTime, default=datetime.utcnow)
 
+class MemoryJobRun(Base):
+    """
+    V0.85 (MOS M1): tracking de los jobs de memoria (ingesta en M2, summarizer
+    en M3, lifecycle/compactacion). Una fila por pasada, para auditar QUE corrio,
+    CUANDO, con que resultado, y con que checkpoint reanudar (idempotencia).
+
+    status: 'running' | 'ok' | 'error'
+    checkpoint: JSON string (p.ej. el ultimo internalDate/email_id procesado) —
+                permite reanudar la ingesta sin reprocesar todo.
+    """
+    __tablename__ = 'memory_job_runs'
+    id = Column(Integer, primary_key=True)
+    job_name = Column(String(80), nullable=False, index=True)
+    started_at = Column(DateTime, default=datetime.utcnow)
+    finished_at = Column(DateTime)
+    status = Column(String(20), nullable=False, default='running', index=True)
+    items_processed = Column(Integer, default=0)
+    error_detail = Column(Text)
+    checkpoint = Column(Text)  # JSON string
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class Decision(Base):
+    """
+    V0.85 (MOS M1): Decision Memory (P03 §5.1). Nace AHORA aunque su uso real
+    empieza en V0.9 (aprobaciones) y V1.0 (planes del Orchestrator), para que
+    esas fases escriban desde su primer dia sin una migracion funcional despues.
+
+    Es la fuente de verdad SQL; su espejo semantico vive en mem_decision
+    (decision_service.store_decision escribe en ambos).
+
+    impact: 'high' | 'med' | 'low'
+    status: 'active' | 'superseded' | 'archived'
+    alternatives: JSON string (lista de alternativas consideradas)
+    mission_id: [Δ doc 14 §4.1] enlaza planes/reflexiones del TIE (V1.0) a una
+                mision, sin migracion nueva. Nullable (la mayoria de decisiones
+                no nacen de una mision).
+    """
+    __tablename__ = 'decisions'
+    id = Column(String(36), primary_key=True)  # UUID str
+    title = Column(String(300), nullable=False)
+    body = Column(Text)
+    reason = Column(Text)
+    alternatives = Column(Text)  # JSON string
+    project = Column(String(200), index=True)  # nullable
+    outcome = Column(Text)  # nullable — se enlaza a posteriori (link_outcome, V0.9)
+    impact = Column(String(10), default='med')
+    status = Column(String(20), nullable=False, default='active', index=True)
+    superseded_by = Column(String(36))  # id de la decision que la reemplaza
+    mission_id = Column(String(36), index=True)  # [Δ] nullable
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+
+
 class AIProviderConfig(Base):
     """
     Fase 2 - Sistema de IA: proveedores configurados por el usuario.

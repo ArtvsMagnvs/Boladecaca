@@ -63,11 +63,36 @@ activo con instrucción de estilo del usuario, plantilla como fallback).
   migración Alembic `d4e5f6a7b8c9_v08_encrypt_api_keys` re-cifra las existentes
   (idempotente). Falta solo el PIN/token de red (irá con el cliente Web, post-V1.0).
 
+**V0.85 — MOS Skeleton (en curso, sobre `master`)**: Memory Operating System,
+Opción B (arquitectura definitiva, implementación mínima). Diseño completo en
+`PLAN_MAESTRO_2026/07_MOS_V085_DISENO.md` (+ 08 arquitectura). Sprints M1-M5.
+- ✅ **M1 — Contratos + esqueleto** (`app/memory/`): contratos CONGELADOS en
+  `interfaces.py` (`IMemoryStore` 6 métodos async, `ISkillStore`, `MemoryType`
+  —5 activos + 6 reservados, append-only—, `MemoryItem`, `MemoryQuery`,
+  `LocalSkill` con linaje `derived_from`/`superseded_by` [Δ doc 14], `SkillStatus`).
+  `LocalMemoryStore` (ChromaDB, reusa el cliente del `memory_manager` legacy vía
+  accesor compartido — una sola carga de sentence-transformers; 1 colección por
+  MemoryType, `CONVERSATIONAL` aliasa la legacy `conversations`; metadata
+  saneada; async vía `to_thread`; dedup idempotente por `dedup_key`).
+  `MemoryRouter` (singleton `memory_router`, `{MemoryType→IMemoryStore}`, todo a
+  Local en V0.85 — el punto de intercambio tecnológico, 08 RFC-006). Stubs:
+  `distributed_store.py` (V2.0+), `stores/skill_store.py` (singleton `skill_store`).
+  `app/services/decision_service.py` (tabla `decisions` fuente de verdad + espejo
+  `mem_decision`, best-effort). Migración Alembic 12.ª `e5f6a7b8c9d0_v085_mos_skeleton`
+  (`memory_job_runs`, `decisions` con `mission_id` [Δ]). Disciplina modular
+  [Δ doc 16]: API pública en `app/memory/__init__.py`, vigilada por
+  `test_module_boundaries.py`. Tests `test_memory_contracts.py` (contratos + e2e
+  ChromaDB + dedup + skills + decision_service). `AITHERA_CHROMA_PATH` aísla la
+  BD vectorial en tests. `/api/memory/*` intacto por contrato.
+- ⏳ M2 ingesta email/calendario + `app/core/events.py` · M3 summarizer + briefing
+  · M4 contexto en chat + `chat_service.py` · M5 hardening (init async ChromaDB,
+  índices, perf) + tag `v0.8.5`.
+
 **Fases pendientes (documentadas, no implementadas)** — ver §5 para el orden
-completo acordado (Hub Visual → Voz → V0.85 Memory → V0.9 → V1.0 → V1.1 Hermes;
-Web+PWA aplazado a post-V1.0):
-- **V0.85** — Memory & Context (captura de skills, contexto de proyectos,
-  briefings ricos, patrones de trabajo) — ANTES del Automation Engine
+completo acordado (Hub Visual → Voz → V0.85 Memory → V0.87 WPMS → V0.9 → V1.0 →
+V1.1 Hermes; Web+PWA aplazado a post-V1.0):
+- **V0.87** — WPMS (Workspace & Project Management, doc 18): primer escritor real
+  de `mem_project`
 - **V0.9** — Automation Engine (APScheduler + reglas + sistema de aprobaciones)
 - **V1.0** — Orchestrator (intent analyzer + planner + Claude Code Agent)
 - **V1.1** — Hermes (Nous Research) como sistema de agentes bajo el Orchestrator
@@ -146,7 +171,7 @@ Aithera/
 │   │   │   ├── secrets.py          # V0.8: cifrado DPAPI de secretos (token TG)
 │   │   │   └── logging_config.py
 │   │   ├── db/
-│   │   │   ├── database.py         # 14 modelos SQLAlchemy + engine dinámico
+│   │   │   ├── database.py         # 16 modelos SQLAlchemy + engine dinámico
 │   │   │   ├── models.py           # Re-exports
 │   │   │   └── schemas.py          # Pydantic v2
 │   │   ├── api/endpoints/          # 18 routers: core + 7 email + telegram (ver §6)
@@ -296,36 +321,48 @@ Doc: `Fase_5_Clients_Telegram_Web_V08.md` + `PLAN_MAESTRO_2026/06_GATEWAY_V08_DI
 - **STT** (speech-to-text) con reconocimiento de voz.
 - **Estado**: base existente (`app/voice/`), falta rematar; sin implementar.
 
-### ⏳ V0.85 — Memory & Context (ANTES del Automation Engine)
-Salto de memoria de verdad, previo a la automatización y al orchestrator:
-- Captura automática de skills.
-- Contexto de proyectos.
-- Briefings ricos.
-- Detección de patrones de trabajo.
-- **Estado**: planificado, sin implementar.
+### ⏳ V0.85 — MOS Skeleton (ANTES del Automation Engine)
+Salto de memoria de verdad, previo a la automatización y al TIE. Diseño completo:
+`PLAN_MAESTRO_2026/07` (implementación) + `08` (arquitectura/RFCs):
+- Contratos `IMemoryStore`/`MemoryRouter` + 5 tipos de memoria + tabla `decisions`.
+- Ingesta email/calendario en background, resumen nocturno, briefing, contexto
+  con atribución de fuente en el chat.
+- **[Δ 2026-07-12]** 4 deltas del Cognitive Runtime (docs 14 §4.1 y 16): stub de
+  skills con linaje, `decisions.mission_id`, `app/core/events.py` (la ingesta
+  emite eventos; spec canónica del bus: `PLAN_MAESTRO_2026/17`), disciplina
+  modular (API pública por `__init__.py` + `test_module_boundaries.py`).
+- **Estado**: **M1 HECHO** (contratos congelados + `LocalMemoryStore`/`MemoryRouter`
+  + stubs + `decisions`/`memory_job_runs` + `decision_service` + disciplina
+  modular + tests; ver §1). M2-M5 pendientes.
 
-### ⏳ V0.9 — Automation Engine
-Doc: `Fase_6_Automation_V08.md`
-- Modelos `AutomationRule` y `AutomationExecution`; **APScheduler** en el `lifespan`.
-- Acciones: `telegram_message`, `email_summary`, `agent_task`, `chat_query`.
-- Sistema de aprobaciones + UI + reglas de ejemplo (desactivadas por defecto).
+### ⏳ V0.9 — Automation Engine + ApprovalGate
+Doc: `PLAN_MAESTRO_2026/11` parte A (sustituye a `Fase_6_Automation_V08.md`).
+- 4 capas (Triggers/Conditions/Actions/Learner-stub); **APScheduler** en el
+  `lifespan` (absorbe los jobs asyncio de V0.85).
+- **ApprovalGate genérico** persistente/reanudable — el primitivo que reusan TIE,
+  Hermes y skills. `EventTrigger` reactivo sobre los eventos de la ingesta.
+- El AE NO contiene inteligencia: desde V1.0 `AgentTaskAction` delega en el TIE.
 - **Estado**: solo documentado, sin implementar.
 
-### ⏳ V1.0 — Orchestrator
-Doc: `Fase_8_Orchestrator_V10.md`
-- **Intent Analyzer** (query/create/execute/automate/conversational), **Task
-  Planner** (sobre el AI Manager), **Response Builder**, **Claude Code Agent**.
-- Enganche clave: `gateway.set_handler(orchestrator)` — un solo punto, sin tocar
-  adapters. UI de aprobación de planes.
+### ⏳ V1.0 — TIE v1 (Orchestrator) + MVP BETA
+Docs: `PLAN_MAESTRO_2026/14` (TIE/Cognitive Runtime) + `11` parte B (perfil v1) +
+`10` (AgentRuntime). Sustituyen a `Fase_8_Orchestrator_V10.md`.
+- Módulo `app/tie/`: Intent → Context Enricher → Planner → **TaskGraph**
+  (plan-como-grafo serializable) → Graph Execution Engine (lineal en V1.0, con
+  checkpoints, gates y kill-switch) → Response Builder → Tracer.
+- Camino corto conversational (sin planner) para ~80% de queries. LLL básico
+  (detección de tareas repetidas → skills DRAFT con cuarentena, docs 09/15).
+- Enganche clave: `gateway.set_handler(tie.handle)` — un solo punto, sin tocar
+  adapters. UI de aprobación de planes. Cierre: MVP beta distribuible.
 - **Estado**: solo documentado, sin implementar.
 
-### ⏳ V1.1 — Hermes como sistema de agentes principal
-Integrar **Hermes** (Nous Research, https://hermes-agent.nousresearch.com/) POR
-DEBAJO del Orchestrator: los agentes guiados por Hermes usarían su sistema de
-skills, memoria y aprendizaje de trabajo. Hay que investigar la vía de
-integración con Aithera (el Orchestrator delega en Hermes; Hermes ejecuta con su
-propio stack de skills/memoria).
-- **Estado**: idea de roadmap, pendiente de diseño.
+### ⏳ V1.1 — Hermes Runtime + Learning System
+Docs: `PLAN_MAESTRO_2026/10` (Hermes/AgentRuntime) + `15` (Learning System) + `09`.
+- Hermes como `AgentRuntime` intercambiable POR DEBAJO del TIE (sprint H0 de
+  investigación GO/NO-GO primero; contingencia definida si NO-GO).
+- LSL completa + LLL completo + **Mission Learning** (reflexión post-misión) +
+  panel "lo que Aithera ha aprendido" con undo.
+- **Estado**: diseñado (docs 10/15), sin implementar.
 
 ### ⏳ Post-V1.0 — Cliente Web + PWA (aplazado)
 - Build de React servido por FastAPI en `/app` (mismo build que Electron, sin
@@ -415,7 +452,7 @@ para auto-registrar las herramientas en el `ToolManager`. Sin este import,
 
 ---
 
-## 9. Modelos de base de datos (14 reales)
+## 9. Modelos de base de datos (16 reales)
 
 Definidos en `backend/app/db/database.py`:
 
@@ -434,10 +471,16 @@ Definidos en `backend/app/db/database.py`:
 | `MeetingProposal` | `meeting_proposals` | Propuestas detectadas en emails | V0.7 |
 | `EmailActivityLog` | `email_activity_log` | Auditoría de acciones email | V0.7 |
 | `EmailTriage` | `email_triage` | Categoría de triaje por email (7 categorías, 2 etapas) | V0.7.3 |
+| `MemoryJobRun` | `memory_job_runs` | Tracking de jobs de memoria (ingesta/summarizer/lifecycle) + checkpoint | V0.85 (MOS M1) |
+| `Decision` | `decisions` | Decision Memory (UUID, `mission_id` [Δ]); fuente de verdad + espejo `mem_decision` | V0.85 (MOS M1) |
 | `AIProviderConfig` | `ai_provider_configs` | Config de cada proveedor IA | V0.2 |
 
-**Migración de esquema**: ahora con Alembic. NO usar `_ensure_columns()` —
-eso era de V0.2. Alembic es la fuente de verdad desde V0.4.
+(16 modelos. La memoria semántica del MOS —colecciones ChromaDB `mem_*`— NO son
+tablas SQL: viven en ChromaDB vía `LocalMemoryStore`/`MemoryRouter`, §1.)
+
+**Migración de esquema**: ahora con Alembic (12 migraciones; la 12.ª es
+`e5f6a7b8c9d0_v085_mos_skeleton`). NO usar `_ensure_columns()` — eso era de V0.2.
+Alembic es la fuente de verdad desde V0.4.
 
 ---
 

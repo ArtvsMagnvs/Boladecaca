@@ -12,5 +12,7 @@ from app.db.database import (
     MeetingProposal,  # V0.7 extra (Fase 4): propuestas de reunion automaticas
     EmailActivityLog,  # V0.7 extra (FIX): dashboard persistente de actividad
     EmailTriage,  # V0.7.3 (Sprint 3): categoria de triaje por email
+    MemoryJobRun,  # V0.85 (MOS M1): tracking de jobs de memoria
+    Decision,  # V0.85 (MOS M1): Decision Memory (tabla + espejo mem_decision)
     AIProviderConfig,
 )

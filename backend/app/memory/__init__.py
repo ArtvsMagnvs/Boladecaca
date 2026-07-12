@@ -1,12 +1,48 @@
-# backend/app/memory/__init__.py
+# backend/app/memory/__init__.py — API PUBLICA del MOS (Memory Operating System)
 #
-# V0.6 (Fase 3 Memory System): paquete de memoria semantica de Aithera.
+# [Δ doc 16 §4.1] Disciplina modular: este __init__ ES la API publica del
+# paquete. El resto de la app importa SOLO desde `app.memory` — nunca de
+# app.memory.stores.*, .router ni .interfaces (internos). La frontera la vigila
+# tests/test_module_boundaries.py.
 #
-# Importar `app.memory.memory_manager` activa el singleton `memory_manager`.
-# El constructor es lazy y robusto: si chromadb o sentence-transformers
-# fallan, `memory_manager.is_healthy()` devolvera False y los metodos
-# devolveran resultados vacios sin romper el backend.
+# V0.6 (legacy): `memory_manager` sigue expuesto para los consumidores actuales
+# (chat/gateway/main). Se migran a `memory_router` en M4; hasta entonces conviven.
+# V0.85 (M1): se anaden los contratos congelados + memory_router + skill_store.
 
+# --- Legacy (V0.6): memoria semantica original ---
 from .memory_manager import MemoryManager, memory_manager, CHROMA_PATH
 
-__all__ = ["MemoryManager", "memory_manager", "CHROMA_PATH"]
+# --- Contratos congelados (V0.85 M1) ---
+from .interfaces import (
+    IMemoryStore,
+    ISkillStore,
+    MemoryType,
+    MemoryItem,
+    MemoryQuery,
+    LocalSkill,
+    SkillStatus,
+)
+
+# --- Puntos de acceso publicos (singletons) ---
+from .router import MemoryRouter, memory_router
+from .stores.skill_store import LocalSkillStore, skill_store
+
+__all__ = [
+    # legacy
+    "MemoryManager",
+    "memory_manager",
+    "CHROMA_PATH",
+    # contratos
+    "IMemoryStore",
+    "ISkillStore",
+    "MemoryType",
+    "MemoryItem",
+    "MemoryQuery",
+    "LocalSkill",
+    "SkillStatus",
+    # acceso
+    "MemoryRouter",
+    "memory_router",
+    "LocalSkillStore",
+    "skill_store",
+]

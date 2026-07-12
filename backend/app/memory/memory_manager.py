@@ -26,7 +26,11 @@ from typing import List, Optional, Dict, Any
 # ChromaDB y sentence-transformers se importan lazy dentro del constructor
 # para que un fallo en estos paquetes NO impida importar el modulo.
 
-CHROMA_PATH = os.path.join(os.environ.get("APPDATA") or ".", "Aithera", "chroma")
+# AITHERA_CHROMA_PATH permite reubicar la BD vectorial (p.ej. aislarla en tests
+# a un dir temporal, o moverla fuera de %APPDATA%). Por defecto, %APPDATA%/Aithera/chroma.
+CHROMA_PATH = os.environ.get("AITHERA_CHROMA_PATH") or os.path.join(
+    os.environ.get("APPDATA") or ".", "Aithera", "chroma"
+)
 os.makedirs(CHROMA_PATH, exist_ok=True)
 
 
@@ -75,6 +79,29 @@ class MemoryManager:
 
     def get_init_error(self) -> Optional[str]:
         return self._init_error
+
+    # ------------------------------------------------------------------
+    # V0.85 (MOS M1): acceso compartido al cliente ChromaDB.
+    #
+    # LocalMemoryStore (app/memory/stores/local_store.py) crea las colecciones
+    # del MOS (mem_personal, mem_project, mem_skill, mem_decision, ...) A TRAVES
+    # de este accesor para REUTILIZAR el mismo PersistentClient y la misma
+    # funcion de embeddings — asi sentence-transformers se carga UNA sola vez.
+    # Es una extension aditiva: no reescribe nada del MemoryManager legacy.
+    # ------------------------------------------------------------------
+    def get_or_create_collection(self, name: str):
+        """Devuelve (o crea) una coleccion ChromaDB con el cliente y la funcion
+        de embeddings compartidos. None si la memoria no esta sana (degradacion
+        graceful — el caller trata None como 'sin memoria')."""
+        if not self._healthy or self._client is None:
+            return None
+        try:
+            return self._client.get_or_create_collection(
+                name, embedding_function=self._ef
+            )
+        except Exception as e:
+            print(f"[MemoryManager] get_or_create_collection({name}) error: {e}")
+            return None
 
     def get_stats(self) -> Dict[str, Any]:
         if not self._healthy:

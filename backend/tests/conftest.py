@@ -13,6 +13,10 @@ import tempfile
 # --- Entorno de test: debe ejecutarse antes de cualquier import de app.* ---
 _TEST_DB_DIR = tempfile.mkdtemp(prefix="aithera_tests_")
 os.environ["DATABASE_URL"] = f"sqlite:///{os.path.join(_TEST_DB_DIR, 'test_aithera.db')}"
+# V0.85 (MOS M1): aisla ChromaDB a un dir temporal para que los tests de memoria
+# NO toquen la BD vectorial real del usuario (%APPDATA%/Aithera/chroma). El
+# modelo de sentence-transformers sigue cacheado aparte, no se re-descarga.
+os.environ["AITHERA_CHROMA_PATH"] = os.path.join(_TEST_DB_DIR, "chroma")
 
 import pytest  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
