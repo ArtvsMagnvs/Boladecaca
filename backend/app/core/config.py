@@ -17,6 +17,10 @@ class Settings:
     API_URL = "http://localhost:8000"
     API_PREFIX = "/api"
 
+    # V0.85 (MOS M2): cadencia de los jobs de ingesta proactiva (doc 07 §6).
+    MEMORY_INGEST_INTERVAL_MIN = int(os.getenv("MEMORY_INGEST_INTERVAL_MIN", "20"))
+    MEMORY_INGEST_CALENDAR_INTERVAL_MIN = int(os.getenv("MEMORY_INGEST_CALENDAR_INTERVAL_MIN", "60"))
+
     # V0.8 (hardening): CORS restringido. Además de localhost (cubierto por
     # regex) y file:// de Electron (origen 'null'), se pueden declarar orígenes
     # extra por env como CSV — p.ej. la IP de la red local al exponer la web:

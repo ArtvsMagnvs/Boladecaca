@@ -13,7 +13,7 @@
 # NOTA: si ChromaDB no esta disponible, todos los endpoints devuelven 503
 # (excepto /stats que devuelve el error en el cuerpo).
 
-from typing import Optional, List
+from typing import Optional, List, Literal
 
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
@@ -140,6 +140,64 @@ def clear_conversations():
     _check_healthy()
     count_before = memory_manager.clear_conversations()
     return {"cleared": True, "count_before": count_before}
+
+
+# ----------------------------------------------------------------------
+# Ingesta proactiva (V0.85 M2, doc 07 §8) — endpoints ADITIVOS, no tocan
+# ninguno de los de arriba. Reflejan MemoryJobRun (backend/app/db/database.py)
+# vía app/memory/ingestion.py (ingest_email/ingest_calendar/last_run).
+# ----------------------------------------------------------------------
+
+def _serialize_run(run) -> Optional[dict]:
+    if run is None:
+        return None
+    return {
+        "id": run.id,
+        "started_at": run.started_at.isoformat() if run.started_at else None,
+        "finished_at": run.finished_at.isoformat() if run.finished_at else None,
+        "status": run.status,
+        "items_processed": run.items_processed,
+        "error_detail": run.error_detail,
+    }
+
+
+@router.get("/ingest/status")
+def ingest_status():
+    """Ultima pasada de cada job + proxima ejecucion estimada (last.finished_at
+    + intervalo configurado). No requiere memoria sana: los jobs son SQL puro."""
+    from datetime import datetime, timedelta
+
+    from app.core.config import settings
+    from app.memory.ingestion import JOB_CALENDAR, JOB_EMAIL, last_run
+
+    jobs = {}
+    for job_name, interval_min in (
+        (JOB_EMAIL, settings.MEMORY_INGEST_INTERVAL_MIN),
+        (JOB_CALENDAR, settings.MEMORY_INGEST_CALENDAR_INTERVAL_MIN),
+    ):
+        run = last_run(job_name)
+        next_run_at = None
+        if run is not None and run.finished_at is not None:
+            next_run_at = (run.finished_at + timedelta(minutes=interval_min)).isoformat()
+        jobs[job_name] = {
+            "interval_min": interval_min,
+            "last_run": _serialize_run(run),
+            "next_run_at": next_run_at,
+        }
+    return {"jobs": jobs}
+
+
+@router.post("/ingest/run")
+async def ingest_run(job: Literal["email", "calendar", "all"] = Query("all")):
+    """Fuerza una pasada de ingesta (para probar sin esperar al intervalo)."""
+    from app.memory.ingestion import ingest_calendar, ingest_email
+
+    results = []
+    if job in ("email", "all"):
+        results.append(await ingest_email())
+    if job in ("calendar", "all"):
+        results.append(await ingest_calendar())
+    return {"results": results}
 
 
 # ----------------------------------------------------------------------

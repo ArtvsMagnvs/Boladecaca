@@ -84,9 +84,31 @@ Opción B (arquitectura definitiva, implementación mínima). Diseño completo e
   `test_module_boundaries.py`. Tests `test_memory_contracts.py` (contratos + e2e
   ChromaDB + dedup + skills + decision_service). `AITHERA_CHROMA_PATH` aísla la
   BD vectorial en tests. `/api/memory/*` intacto por contrato.
-- ⏳ M2 ingesta email/calendario + `app/core/events.py` · M3 summarizer + briefing
-  · M4 contexto en chat + `chat_service.py` · M5 hardening (init async ChromaDB,
-  índices, perf) + tag `v0.8.5`.
+- ✅ **M2 — Ingesta proactiva** (`app/memory/ingestion.py`): job email (cada
+  `Settings.MEMORY_INGEST_INTERVAL_MIN`, default 20 min) indexa
+  `list_inbox_preview` (subject+snippet+sender) en `mem_personal` vía
+  `email_service`/`EmailTool` —nunca Gmail directo—, cruza `EmailTriage` ya
+  calculada (no llama al LLM), `dedup_key=email_id`. Job calendario (cada
+  `MEMORY_INGEST_CALENDAR_INTERVAL_MIN`, default 60 min): `CalendarEvent`
+  locales (−7d/+14d, sin límite) + Google `list_events` (solo futuro, fail-soft
+  —la API no soporta ventana pasada—), `dedup_key=f"cal:{local:id|google:id}"`.
+  Arranque en el `lifespan` de `main.py` (mismo patrón que el Gateway:
+  `create_task` + try/except total, jitter inicial); si Google no está
+  conectado, pasada "ok, 0 items" sin ruido. Cada pasada escribe un
+  `MemoryJobRun` (`ingestion.last_run(job_name)`).
+  **[Δ doc 17] nace `app/core/events.py`** (pub/sub in-process, ≤80 líneas:
+  `Event` frozen + `subscribe`/`unsubscribe`/`emit`, aislamiento total de
+  handlers rotos, comodín `"*"`): la ingesta emite `memory.ingested` (al
+  terminar una pasada con items) y `email.triaged` (por email ya categorizado).
+  Endpoints aditivos `GET /api/memory/ingest/status` (última pasada + próximo
+  run estimado por job) y `POST /api/memory/ingest/run?job=email|calendar|all`
+  (fuerza una pasada sin esperar). Tests: `test_events.py` (bus completo),
+  `test_memory_ingestion.py` (e2e con `EmailTool` fake — sin credenciales
+  Google en CI—, calendario con datos reales de BD, idempotencia de 2ª pasada,
+  entrega del evento a un handler de prueba, endpoints). Suite completa: 209
+  passed (sin tareas asíncronas colgadas en el teardown del `lifespan`).
+- ⏳ M3 summarizer + briefing · M4 contexto en chat + `chat_service.py` · M5
+  hardening (init async ChromaDB, índices, perf) + tag `v0.8.5`.
 
 **Fases pendientes (documentadas, no implementadas)** — ver §5 para el orden
 completo acordado (Hub Visual → Voz → V0.85 Memory → V0.87 WPMS → V0.9 → V1.0 →
@@ -331,9 +353,10 @@ Salto de memoria de verdad, previo a la automatización y al TIE. Diseño comple
   skills con linaje, `decisions.mission_id`, `app/core/events.py` (la ingesta
   emite eventos; spec canónica del bus: `PLAN_MAESTRO_2026/17`), disciplina
   modular (API pública por `__init__.py` + `test_module_boundaries.py`).
-- **Estado**: **M1 HECHO** (contratos congelados + `LocalMemoryStore`/`MemoryRouter`
-  + stubs + `decisions`/`memory_job_runs` + `decision_service` + disciplina
-  modular + tests; ver §1). M2-M5 pendientes.
+- **Estado**: **M1 y M2 HECHOS** (contratos congelados + `LocalMemoryStore`/
+  `MemoryRouter` + stubs + `decisions`/`memory_job_runs` + `decision_service` +
+  disciplina modular + ingesta email/calendario + `app/core/events.py`; ver
+  §1). M3-M5 pendientes.
 
 ### ⏳ V0.9 — Automation Engine + ApprovalGate
 Doc: `PLAN_MAESTRO_2026/11` parte A (sustituye a `Fase_6_Automation_V08.md`).
@@ -395,7 +418,7 @@ Docs: `PLAN_MAESTRO_2026/10` (Hermes/AgentRuntime) + `15` (Learning System) + `0
 | `/api/email` | `email_activity.py` | ~260 líneas | Activity log (dashboard) + digest diario |
 | `/api/voice` | `voice.py` | 8.6KB | ElevenLabs + eSpeak |
 | `/api/tools` | `tools.py` | 2.3KB | Catálogo de herramientas + ejecución |
-| `/api/memory` | `memory.py` | 5.6KB | Búsqueda y stats de memoria semántica |
+| `/api/memory` | `memory.py` | 5.6KB | Búsqueda y stats de memoria semántica + V0.85 M2: `ingest/status`, `ingest/run` |
 | `/api/telegram` | `telegram.py` | ~110 líneas | V0.8: status + configure (token cifrado DPAPI) del canal Telegram |
 
 Health checks: `GET /` (versión), `GET /health` (status simple).

@@ -107,6 +107,20 @@ async def lifespan(app: FastAPI):
             "No se pudo iniciar el canal Telegram (backend sigue sin ese canal)",
         )
 
+    # V0.85 (MOS M2): arranque de la ingesta proactiva (email + calendario)
+    # sobre el MOS. Mismo patron que el Gateway: create_task + try/except
+    # total — un fallo aqui NUNCA debe impedir que el backend arranque. Cada
+    # loop tiene su propio jitter inicial y su propio try/except interno
+    # (app/memory/ingestion.py), asi que un fallo de una pasada tampoco mata
+    # el loop.
+    try:
+        from app.memory.ingestion import start_background_jobs
+
+        start_background_jobs()
+        log_info("startup", "Ingesta de memoria (MOS) iniciada — email + calendario")
+    except Exception as e:
+        log_error("startup", e, "No se pudo iniciar la ingesta de memoria (MOS sigue disponible sin ingesta automatica)")
+
     yield
 
     # Shutdown: parada limpia de los canales del Gateway (polling de Telegram).
