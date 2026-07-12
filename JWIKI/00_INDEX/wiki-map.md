@@ -186,60 +186,60 @@
 
 | ID | Path | Título | Turno | Estado |
 |---|---|---|---|---|
-| JWIKI-135 | 08_VOICE/README.md | Comparativa TTS STT | B | 🔴 pending |
-| JWIKI-136 | 08_VOICE/elevenlabs.md | ElevenLabs - en uso | A | 🔴 pending |
-| JWIKI-137 | 08_VOICE/openai-tts.md | OpenAI TTS | B | 🔴 pending |
-| JWIKI-138 | 08_VOICE/google-tts.md | Google Cloud TTS | A | 🔴 pending |
-| JWIKI-139 | 08_VOICE/azure-speech.md | Azure Speech | B | 🔴 pending |
-| JWIKI-140 | 08_VOICE/espeak.md | eSpeak NG fallback Aithera | A | 🔴 pending |
-| JWIKI-141 | 08_VOICE/coqui-tts.md | Coqui TTS open source | B | 🔴 pending |
-| JWIKI-142 | 08_VOICE/whisper.md | OpenAI Whisper STT | A | 🔴 pending |
-| JWIKI-143 | 08_VOICE/deepgram.md | Deepgram STT | B | 🔴 pending |
-| JWIKI-144 | 08_VOICE/google-stt.md | Google STT | A | 🔴 pending |
-| JWIKI-145 | 08_VOICE/wake-word-porcupine.md | Wake word Porcupine | B | 🔴 pending |
-| JWIKI-146 | 08_VOICE/voice-pipelines-realtime.md | Voice pipelines realtime | A | 🔴 pending |
-| JWIKI-147 | 08_VOICE/voice-latency-budget.md | Latency budgets | B | 🔴 pending |
-| JWIKI-148 | 08_VOICE/voice-cloning.md | Voice cloning ElevenLabs | A | 🔴 pending |
-| JWIKI-149 | 08_VOICE/multilingual-tts.md | TTS multilingual | B | 🔴 pending |
-| JWIKI-150 | 08_VOICE/voice-orchestrator.md | Voice orchestrator futuro | A | 🔴 pending |
+| JWIKI-135 | 08_VOICE/README.md | Comparativa TTS STT | B | 🟢 verified | (tick 2026-07-09 — comparativa TTS/STT, Aithera V0.8.0 stack; 6/6) |
+| JWIKI-136 | 08_VOICE/elevenlabs.md | ElevenLabs - en uso | A | 🟢 verified | (tick 2026-07-09 — ElevenLabs primary Aithera, voice cloning, pricing; 6/6) |
+| JWIKI-137 | 08_VOICE/openai-tts.md | OpenAI TTS | B | 🟢 verified | (tick 2026-07-09 — OpenAI TTS NO Aithera, Realtime API; 6/6) |
+| JWIKI-138 | 08_VOICE/google-tts.md | Google Cloud TTS | A | 🟢 verified | (tick 2026-07-09 — Google TTS WaveNet/Neural2, SSML, NO Aithera; 6/6) |
+| JWIKI-139 | 08_VOICE/azure-speech.md | Azure Speech | B | 🟢 verified | (tick 2026-07-09 — Azure Speech enterprise, NO Aithera; 6/6) |
+| JWIKI-140 | 08_VOICE/espeak.md | eSpeak NG fallback Aithera | A | 🟢 verified | (tick 2026-07-09 — eSpeak NG offline fallback, robotic pero funciona; 6/6) |
+| JWIKI-141 | 08_VOICE/coqui-tts.md | Coqui TTS open source | B | 🟢 verified | (tick 2026-07-09 — Coqui TTS NO Aithera, XTTS v2 voice cloning; 6/6) |
+| JWIKI-142 | 08_VOICE/whisper.md | OpenAI Whisper STT | A | 🟢 verified | (tick 2026-07-09 — Whisper + faster-whisper en Aithera, distil-large-v3; 6/6) |
+| JWIKI-143 | 08_VOICE/deepgram.md | Deepgram STT | B | 🟢 verified | (tick 2026-07-09 — Deepgram streaming + diarization, NO Aithera; 6/6) |
+| JWIKI-144 | 08_VOICE/google-stt.md | Google STT | A | 🟢 verified | (tick 2026-07-09 — Google Speech-to-Text 125+ idiomas, NO Aithera; 6/6) |
+| JWIKI-145 | 08_VOICE/wake-word-porcupine.md | Wake word Porcupine | B | 🟢 verified | (tick 2026-07-09 — Porcupine + openWakeWord, NO Aithera V0.8.0, V0.85+; 6/6) |
+| JWIKI-146 | 08_VOICE/voice-pipelines-realtime.md | Voice pipelines realtime | A | 🟢 verified | (tick 2026-07-09 — pipeline async, OpenAI Realtime, Gemini Live; 6/6) |
+| JWIKI-147 | 08_VOICE/voice-latency-budget.md | Latency budgets | B | 🟢 verified | (tick 2026-07-09 — latency budget breakdown, target <2s TTFB, profiling; 6/6) |
+| JWIKI-148 | 08_VOICE/voice-cloning.md | Voice cloning ElevenLabs | A | 🟢 verified | (tick 2026-07-09 — ElevenLabs + XTTS v2 voice cloning, V0.85+; 6/6) |
+| JWIKI-149 | 08_VOICE/multilingual-tts.md | TTS multilingual | B | 🟢 verified | (tick 2026-07-09 — ElevenLabs v2 29 idiomas, EdgeTTS 100+, routing; 6/6) |
+| JWIKI-150 | 08_VOICE/voice-orchestrator.md | Voice orchestrator futuro | A | 🟢 verified | (tick 2026-07-09 — Voice orchestrator V1.0+, state mgmt, barge-in, multi-voice; 6/6) |
 
 ## 09_INTEGRATIONS
 
 | ID | Path | Título | Turno | Estado |
 |---|---|---|---|---|
-| JWIKI-151 | 09_INTEGRATIONS/README.md | Overview integración servicios | B | 🔴 pending |
-| JWIKI-152 | 09_INTEGRATIONS/google-oauth-flow.md | Google OAuth2 flow | A | 🔴 pending |
-| JWIKI-153 | 09_INTEGRATIONS/gmail-api.md | Gmail REST API | B | 🔴 pending |
-| JWIKI-154 | 09_INTEGRATIONS/google-calendar-api.md | Google Calendar API | A | 🔴 pending |
-| JWIKI-155 | 09_INTEGRATIONS/microsoft-graph.md | Microsoft Graph API | B | 🔴 pending |
-| JWIKI-156 | 09_INTEGRATIONS/telegram-bot.md | Telegram bot python-telegram-bot | A | 🔴 pending |
-| JWIKI-157 | 09_INTEGRATIONS/discord-bot.md | Discord bot discord.py | B | 🔴 pending |
-| JWIKI-158 | 09_INTEGRATIONS/whatsapp-baileys.md | WhatsApp Baileys | A | 🔴 pending |
-| JWIKI-159 | 09_INTEGRATIONS/slack-bolt.md | Slack Bolt SDK | B | 🔴 pending |
-| JWIKI-160 | 09_INTEGRATIONS/notion-api.md | Notion API | A | 🔴 pending |
-| JWIKI-161 | 09_INTEGRATIONS/linear-api.md | Linear API | B | 🔴 pending |
-| JWIKI-162 | 09_INTEGRATIONS/github-api.md | GitHub API | A | 🔴 pending |
-| JWIKI-163 | 09_INTEGRATIONS/imap-smtp.md | IMAP SMTP genérico | B | 🔴 pending |
-| JWIKI-164 | 09_INTEGRATIONS/caldav-carddav.md | CalDAV CardDAV | A | 🔴 pending |
-| JWIKI-165 | 09_INTEGRATIONS/webhooks.md | Webhooks | B | 🔴 pending |
-| JWIKI-166 | 09_INTEGRATIONS/auto-reply-patterns.md | Auto-reply Aithera V0.7 | A | 🔴 pending |
-| JWIKI-167 | 09_INTEGRATIONS/meeting-detection.md | Meeting detection Aithera | B | 🔴 pending |
-| JWIKI-168 | 09_INTEGRATIONS/email-activity-log.md | Email activity log | A | 🔴 pending |
+| JWIKI-151 | 09_INTEGRATIONS/README.md | Overview integración servicios | B | 🟢 verified | (tick 2026-07-09 — overview integraciones Aithera V0.7.3+; 6/6) |
+| JWIKI-152 | 09_INTEGRATIONS/google-oauth-flow.md | Google OAuth2 flow | A | 🟢 verified | (tick 2026-07-09 — OAuth2 + PKCE completo, Aithera V0.7+; 6/6) |
+| JWIKI-153 | 09_INTEGRATIONS/gmail-api.md | Gmail REST API | B | 🟢 verified | (tick 2026-07-09 — Gmail API, search syntax, Aithera 44KB tool; 6/6) |
+| JWIKI-154 | 09_INTEGRATIONS/google-calendar-api.md | Google Calendar API | A | 🟢 verified | (tick 2026-07-09 — Calendar API, free/busy, conflict detection V0.7.1; 6/6) |
+| JWIKI-155 | 09_INTEGRATIONS/microsoft-graph.md | Microsoft Graph API | B | 🟢 verified | (tick 2026-07-09 — Microsoft Graph Outlook/Calendar/Teams/OneDrive, NO Aithera; 6/6) |
+| JWIKI-156 | 09_INTEGRATIONS/telegram-bot.md | Telegram bot python-telegram-bot | A | 🟢 verified | (tick 2026-07-09 — Telegram adapter en Aithera V0.8+, polling, whitelist; 6/6) |
+| JWIKI-157 | 09_INTEGRATIONS/discord-bot.md | Discord bot discord.py | B | 🟢 verified | (tick 2026-07-09 — discord.py, slash commands, NO Aithera; 6/6) |
+| JWIKI-158 | 09_INTEGRATIONS/whatsapp-baileys.md | WhatsApp Baileys | A | 🟢 verified | (tick 2026-07-09 — Baileys Node.js, QR auth, NO Aithera por privacy; 6/6) |
+| JWIKI-159 | 09_INTEGRATIONS/slack-bolt.md | Slack Bolt SDK | B | 🟢 verified | (tick 2026-07-09 — Slack Bolt Python, OAuth2, NO Aithera; 6/6) |
+| JWIKI-160 | 09_INTEGRATIONS/notion-api.md | Notion API | A | 🟢 verified | (tick 2026-07-09 — Notion API, OAuth2, V1.0+ skills, NO Aithera V0.7.3; 6/6) |
+| JWIKI-161 | 09_INTEGRATIONS/linear-api.md | Linear API | B | 🟢 verified | (tick 2026-07-09 — Linear GraphQL, issue tracking, V1.0+ skills; 6/6) |
+| JWIKI-162 | 09_INTEGRATIONS/github-api.md | GitHub API | A | 🟢 verified | (tick 2026-07-09 — GitHub REST + GraphQL, V1.0+ skills, git_tool V0.7.3; 6/6) |
+| JWIKI-163 | 09_INTEGRATIONS/imap-smtp.md | IMAP SMTP genérico | B | 🟢 verified | (tick 2026-07-09 — IMAP/SMTP standards, app passwords Gmail, NO Aithera V0.7.3; 6/6) |
+| JWIKI-164 | 09_INTEGRATIONS/caldav-carddav.md | CalDAV CardDAV | A | 🟢 verified | (tick 2026-07-09 — CalDAV/CardDAV multi-provider, iCloud/Nextcloud; 6/6) |
+| JWIKI-165 | 09_INTEGRATIONS/webhooks.md | Webhooks | B | 🟢 verified | (tick 2026-07-09 — webhook pattern, GitHub signature verify, Aithera V0.85+; 6/6) |
+| JWIKI-166 | 09_INTEGRATIONS/auto-reply-patterns.md | Auto-reply Aithera V0.7 | A | 🟢 verified | (tick 2026-07-09 — auto-reply V0.7.3, Inbox Zero pattern, autonomy gradual; 6/6) |
+| JWIKI-167 | 09_INTEGRATIONS/meeting-detection.md | Meeting detection Aithera | B | 🟢 verified | (tick 2026-07-09 — meeting detection 2-stage AMD GAIA, conflict detection; 6/6) |
+| JWIKI-168 | 09_INTEGRATIONS/email-activity-log.md | Email activity log | A | 🟢 verified | (tick 2026-07-09 — activity log V0.7.2 bug fixed, digest V0.7.3; 6/6) |
 
 ## 10_AUTOMATION
 
 | ID | Path | Título | Turno | Estado |
 |---|---|---|---|---|
-| JWIKI-169 | 10_AUTOMATION/README.md | Overview automation | B | 🔴 pending |
-| JWIKI-170 | 10_AUTOMATION/apscheduler.md | APScheduler Aithera V0.9 | A | 🔴 pending |
-| JWIKI-171 | 10_AUTOMATION/celery-beat.md | Celery beat | B | 🔴 pending |
-| JWIKI-172 | 10_AUTOMATION/cron-unix.md | Cron Unix clásico | A | 🔴 pending |
-| JWIKI-173 | 10_AUTOMATION/bullmq.md | BullMQ Node | B | 🔴 pending |
-| JWIKI-174 | 10_AUTOMATION/rules-engines.md | Rules engines JSON | A | 🔴 pending |
-| JWIKI-175 | 10_AUTOMATION/triggers-time-event.md | Triggers time event webhook | B | 🔴 pending |
-| JWIKI-176 | 10_AUTOMATION/approval-flows-automation.md | Approval flows automatizaciones | A | 🔴 pending |
-| JWIKI-177 | 10_AUTOMATION/n8n-comparison.md | n8n alternativa visual | B | 🔴 pending |
-| JWIKI-178 | 10_AUTOMATION/automation-rules-examples.md | Reglas ejemplo predefinidas | A | 🔴 pending |
+| JWIKI-169 | 10_AUTOMATION/README.md | Overview automation | B | 🟢 verified | (tick 2026-07-09 — overview automation engine V0.9 APScheduler; 6/6) |
+| JWIKI-170 | 10_AUTOMATION/apscheduler.md | APScheduler Aithera V0.9 | A | 🟢 verified | (tick 2026-07-09 — APScheduler setup, SQLAlchemy jobstore, triggers; 6/6) |
+| JWIKI-171 | 10_AUTOMATION/celery-beat.md | Celery beat | B | 🟢 verified | (tick 2026-07-09 — Celery distributed, broker, NO Aithera; 6/6) |
+| JWIKI-172 | 10_AUTOMATION/cron-unix.md | Cron Unix clásico | A | 🟢 verified | (tick 2026-07-09 — cron syntax 5-asterisco, NO Aithera; 6/6) |
+| JWIKI-173 | 10_AUTOMATION/bullmq.md | BullMQ Node | B | 🟢 verified | (tick 2026-07-09 — BullMQ Redis-based, NO Aithera Python; 6/6) |
+| JWIKI-174 | 10_AUTOMATION/rules-engines.md | Rules engines JSON | A | 🟢 verified | (tick 2026-07-09 — JSON rules engine, triggers, actions, execution model; 6/6) |
+| JWIKI-175 | 10_AUTOMATION/triggers-time-event.md | Triggers time event webhook | B | 🟢 verified | (tick 2026-07-09 — triggers time/event/webhook/manual; 6/6) |
+| JWIKI-176 | 10_AUTOMATION/approval-flows-automation.md | Approval flows automatizaciones | A | 🟢 verified | (tick 2026-07-09 — approval gates, Telegram integration, sensitive actions list; 6/6) |
+| JWIKI-177 | 10_AUTOMATION/n8n-comparison.md | n8n alternativa visual | B | 🟢 verified | (tick 2026-07-09 — n8n low-code alternative, NO Aithera; 6/6) |
+| JWIKI-178 | 10_AUTOMATION/automation-rules-examples.md | Reglas ejemplo predefinidas | A | 🟢 verified | (tick 2026-07-09 — 8 reglas ejemplo predefinidas (digest, archive, GitHub, standup); 6/6) |
 
 ## 11_SECURITY
 
@@ -251,113 +251,113 @@
 | JWIKI-182 | 11_SECURITY/api-keys-keyring.md | OS keyring | A | 🔴 pending |
 | JWIKI-183 | 11_SECURITY/sandboxing-tool-whitelist.md | Sandboxing Aithera | B | 🔴 pending |
 | JWIKI-184 | 11_SECURITY/path-traversal-prevention.md | Path traversal prevention | A | 🔴 pending |
-| JWIKI-185 | 11_SECURITY/command-injection-prevention.md | Command injection prevention | B | 🔴 pending |
-| JWIKI-186 | 11_SECURITY/oauth-pkce.md | OAuth2 PKCE | A | 🔴 pending |
-| JWIKI-187 | 11_SECURITY/oauth-state-parameter.md | OAuth state parameter | B | 🔴 pending |
-| JWIKI-188 | 11_SECURITY/prompt-injection-defenses.md | Prompt injection defenses | A | 🔴 pending |
-| JWIKI-189 | 11_SECURITY/data-encryption-rest.md | Data encryption at rest | B | 🔴 pending |
-| JWIKI-190 | 11_SECURITY/secrets-managers.md | Secrets managers | A | 🔴 pending |
+| JWIKI-182 | 11_SECURITY/api-keys-keyring.md | OS keyring | A | 🟢 verified | (tick 2026-07-09 — keyring Python library cross-platform; 6/6) |
+| JWIKI-186 | 11_SECURITY/oauth-pkce.md | OAuth2 PKCE | A | 🟢 verified | (tick 2026-07-09 — OAuth2 + PKCE security best practices; 6/6) |
+| JWIKI-187 | 11_SECURITY/oauth-state-parameter.md | OAuth state parameter | B | 🟢 verified | (tick 2026-07-09 — state param CSRF protection, Aithera V0.7+; 6/6) |
+| JWIKI-188 | 11_SECURITY/prompt-injection-defenses.md | Prompt injection defenses | A | 🟢 verified | (tick 2026-07-09 — B21 + secure system prompt + 5 layers; 6/6) |
+| JWIKI-189 | 11_SECURITY/data-encryption-rest.md | Data encryption at rest | B | 🟢 verified | (tick 2026-07-09 — encryption at rest, Aithera DPAPI V0.8+; 6/6) |
+| JWIKI-190 | 11_SECURITY/secrets-managers.md | Secrets managers | A | 🟢 verified | (tick 2026-07-09 — Vault/AWS/Doppler, NO Aithera overkill; 6/6) |
 
 ## 12_TOOLING
 
 | ID | Path | Título | Turno | Estado |
 |---|---|---|---|---|
-| JWIKI-191 | 12_TOOLING/README.md | Overview tooling | B | 🔴 pending |
-| JWIKI-192 | 12_TOOLING/execution-engine-pattern.md | Execution engine Aithera | A | 🔴 pending |
-| JWIKI-193 | 12_TOOLING/tool-manager-pattern.md | Tool manager Aithera | B | 🔴 pending |
-| JWIKI-194 | 12_TOOLING/validators-schema.md | Validators JSON schema | A | 🔴 pending |
-| JWIKI-195 | 12_TOOLING/filesystem-tool.md | Filesystem tool Aithera | B | 🔴 pending |
-| JWIKI-196 | 12_TOOLING/shell-tool.md | Shell tool whitelist | A | 🔴 pending |
-| JWIKI-197 | 12_TOOLING/git-tool.md | Git tool | B | 🔴 pending |
-| JWIKI-198 | 12_TOOLING/powershell-tool.md | PowerShell tool | A | 🔴 pending |
-| JWIKI-199 | 12_TOOLING/email-tool.md | Email tool V0.7 | B | 🔴 pending |
-| JWIKI-200 | 12_TOOLING/calendar-tool.md | Calendar tool V0.7 | A | 🔴 pending |
-| JWIKI-201 | 12_TOOLING/tool-calling-llm-format.md | Tool calling formato LLM | B | 🔴 pending |
-| JWIKI-202 | 12_TOOLING/tool-timeout-handling.md | Tool timeout handling | A | 🔴 pending |
+| JWIKI-191 | 12_TOOLING/README.md | Overview tooling | B | 🟢 verified | (tick 2026-07-09 — 8 tools overview; 6/6) |
+| JWIKI-192 | 12_TOOLING/execution-engine-pattern.md | Execution engine Aithera | A | 🟢 verified | (tick 2026-07-09 — execution engine V0.5+; 6/6) |
+| JWIKI-193 | 12_TOOLING/tool-manager-pattern.md | Tool manager Aithera | B | 🟢 verified | (tick 2026-07-09 — ToolManager 11KB whitelist + validation; 6/6) |
+| JWIKI-194 | 12_TOOLING/validators-schema.md | Validators JSON schema | A | 🟢 verified | (tick 2026-07-09 — Pydantic validation, JSON schema; 6/6) |
+| JWIKI-195 | 12_TOOLING/filesystem-tool.md | Filesystem tool Aithera | B | 🟢 verified | (tick 2026-07-09 — filesystem_tool 11KB; 6/6) |
+| JWIKI-196 | 12_TOOLING/shell-tool.md | Shell tool whitelist | A | 🟢 verified | (tick 2026-07-09 — shell_tool 7.6KB, command whitelist; 6/6) |
+| JWIKI-197 | 12_TOOLING/git-tool.md | Git tool | B | 🟢 verified | (tick 2026-07-09 — git_tool 9.2KB, status/log/diff/commit; 6/6) |
+| JWIKI-198 | 12_TOOLING/powershell-tool.md | PowerShell tool | A | 🟢 verified | (tick 2026-07-09 — powershell_tool 7.9KB, scripts aprobados; 6/6) |
+| JWIKI-199 | 12_TOOLING/email-tool.md | Email tool V0.7 | B | 🟢 verified | (tick 2026-07-09 — email_tool 44KB, auto-reply + meeting detection; 6/6) |
+| JWIKI-200 | 12_TOOLING/calendar-tool.md | Calendar tool V0.7 | A | 🟢 verified | (tick 2026-07-09 — calendar_tool 29KB, free/busy + conflict detection; 6/6) |
+| JWIKI-201 | 12_TOOLING/tool-calling-llm-format.md | Tool calling formato LLM | B | 🟢 verified | (tick 2026-07-09 — OpenAI tools format, Anthropic tool_use, Gemini function_call; 6/6) |
+| JWIKI-202 | 12_TOOLING/tool-timeout-handling.md | Tool timeout handling | A | 🟢 verified | (tick 2026-07-09 — asyncio.wait_for, max_execution_time, graceful kill; 6/6) |
 
 ## 13_DEPLOYMENT
 
 | ID | Path | Título | Turno | Estado |
 |---|---|---|---|---|
-| JWIKI-203 | 13_DEPLOYMENT/README.md | Overview deployment | B | 🔴 pending |
-| JWIKI-204 | 13_DEPLOYMENT/electron-builder.md | electron-builder Aithera | A | 🔴 pending |
-| JWIKI-205 | 13_DEPLOYMENT/electron-builder-nsis.md | NSIS installer | B | 🔴 pending |
-| JWIKI-206 | 13_DEPLOYMENT/electron-auto-update.md | electron-updater | A | 🔴 pending |
-| JWIKI-207 | 13_DEPLOYMENT/electron-code-signing.md | Code signing Windows | B | 🔴 pending |
-| JWIKI-208 | 13_DEPLOYMENT/tauri-build.md | Tauri bundle | A | 🔴 pending |
-| JWIKI-209 | 13_DEPLOYMENT/docker-compose-backend.md | Docker compose backend | B | 🔴 pending |
-| JWIKI-210 | 13_DEPLOYMENT/docker-postgres.md | PostgreSQL en Docker | A | 🔴 pending |
-| JWIKI-211 | 13_DEPLOYMENT/pwa-manifest.md | PWA manifest | B | 🔴 pending |
-| JWIKI-212 | 13_DEPLOYMENT/pwa-service-worker.md | PWA service worker | A | 🔴 pending |
-| JWIKI-213 | 13_DEPLOYMENT/github-releases.md | GitHub Releases distribución | B | 🔴 pending |
-| JWIKI-214 | 13_DEPLOYMENT/msix-store.md | Microsoft Store MSIX | A | 🔴 pending |
-| JWIKI-215 | 13_DEPLOYMENT/ci-github-actions.md | CI GitHub Actions | B | 🔴 pending |
-| JWIKI-216 | 13_DEPLOYMENT/backup-restore-db.md | Backup restore PostgreSQL | A | 🔴 pending |
+| JWIKI-203 | 13_DEPLOYMENT/README.md | Overview deployment | B | 🟢 verified | (tick 2026-07-09 — Electron + NSIS + Docker; 6/6) |
+| JWIKI-204 | 13_DEPLOYMENT/electron-builder.md | electron-builder Aithera | A | 🟢 verified | (tick 2026-07-09 — electron-builder 24, NSIS, build pipeline; 6/6) |
+| JWIKI-205 | 13_DEPLOYMENT/electron-builder-nsis.md | NSIS installer | B | 🟢 verified | (tick 2026-07-09 — NSIS installer Windows; 6/6) |
+| JWIKI-206 | 13_DEPLOYMENT/electron-auto-update.md | electron-updater | A | 🟢 verified | (tick 2026-07-09 — electron-updater GitHub Releases; 6/6) |
+| JWIKI-207 | 13_DEPLOYMENT/electron-code-signing.md | Code signing Windows | B | 🟢 verified | (tick 2026-07-09 — Certum, code signing Windows; 6/6) |
+| JWIKI-208 | 13_DEPLOYMENT/tauri-build.md | Tauri bundle | A | 🟢 verified | (tick 2026-07-09 — Tauri bundle, NSIS; 6/6) |
+| JWIKI-209 | 13_DEPLOYMENT/docker-compose-backend.md | Docker compose backend | B | 🟢 verified | (tick 2026-07-09 — docker-compose FastAPI + Postgres; 6/6) |
+| JWIKI-210 | 13_DEPLOYMENT/docker-postgres.md | PostgreSQL en Docker | A | 🟢 verified | (tick 2026-07-09 — Postgres 16 docker; 6/6) |
+| JWIKI-211 | 13_DEPLOYMENT/pwa-manifest.md | PWA manifest | B | 🟢 verified | (tick 2026-07-09 — PWA manifest.json; 6/6) |
+| JWIKI-212 | 13_DEPLOYMENT/pwa-service-worker.md | PWA service worker | A | 🟢 verified | (tick 2026-07-09 — service worker offline; 6/6) |
+| JWIKI-213 | 13_DEPLOYMENT/github-releases.md | GitHub Releases distribución | B | 🟢 verified | (tick 2026-07-09 — gh release, electron-updater feed; 6/6) |
+| JWIKI-214 | 13_DEPLOYMENT/msix-store.md | Microsoft Store MSIX | A | 🟢 verified | (tick 2026-07-09 — MSIX, Microsoft Partner Center; 6/6) |
+| JWIKI-215 | 13_DEPLOYMENT/ci-github-actions.md | CI GitHub Actions | B | 🟢 verified | (tick 2026-07-09 — test + release workflow; 6/6) |
+| JWIKI-216 | 13_DEPLOYMENT/backup-restore-db.md | Backup restore PostgreSQL | A | 🟢 verified | (tick 2026-07-09 — pg_dump/pg_restore, cron backup; 6/6) |
 
 ## 14_BEST_PRACTICES
 
 | ID | Path | Título | Turno | Estado |
 |---|---|---|---|---|
-| JWIKI-217 | 14_BEST_PRACTICES/README.md | Overview best practices | B | 🔴 pending |
-| JWIKI-218 | 14_BEST_PRACTICES/architecture-decisions.md | Decisiones arquitectónicas ADRs | A | 🔴 pending |
-| JWIKI-219 | 14_BEST_PRACTICES/performance-streaming.md | Performance streaming | B | 🔴 pending |
-| JWIKI-220 | 14_BEST_PRACTICES/performance-caching.md | Performance caching | A | 🔴 pending |
-| JWIKI-221 | 14_BEST_PRACTICES/ux-feedback-loops.md | UX feedback loops | B | 🔴 pending |
-| JWIKI-222 | 14_BEST_PRACTICES/ux-error-handling.md | UX error handling | A | 🔴 pending |
-| JWIKI-223 | 14_BEST_PRACTICES/conventions-code-structure.md | Convenciones estructura | B | 🔴 pending |
-| JWIKI-224 | 14_BEST_PRACTICES/conventions-naming.md | Convenciones naming | A | 🔴 pending |
-| JWIKI-225 | 14_BEST_PRACTICES/observability-logs.md | Logs estructurados | B | 🔴 pending |
-| JWIKI-226 | 14_BEST_PRACTICES/observability-metrics.md | Métricas Prometheus | A | 🔴 pending |
-| JWIKI-227 | 14_BEST_PRACTICES/testing-strategy.md | Testing strategy | B | 🔴 pending |
-| JWIKI-228 | 14_BEST_PRACTICES/documentation-strategy.md | Documentación como código | A | 🔴 pending |
+| JWIKI-217 | 14_BEST_PRACTICES/README.md | Overview best practices | B | 🟢 verified | (tick 2026-07-09 — best practices overview, 8 principios Aithera; 6/6) |
+| JWIKI-218 | 14_BEST_PRACTICES/architecture-decisions.md | Decisiones arquitectónicas ADRs | A | 🟢 verified | (tick 2026-07-09 — ADRs Aithera 001-008; 6/6) |
+| JWIKI-219 | 14_BEST_PRACTICES/performance-streaming.md | Performance streaming | B | 🟢 verified | (tick 2026-07-09 — SSE streaming + TTFT < 750ms; 6/6) |
+| JWIKI-220 | 14_BEST_PRACTICES/performance-caching.md | Performance caching | A | 🟢 verified | (tick 2026-07-09 — Redis cache, HTTP headers, LLM prompt cache; 6/6) |
+| JWIKI-221 | 14_BEST_PRACTICES/ux-feedback-loops.md | UX feedback loops | B | 🟢 verified | (tick 2026-07-09 — feedback loops V0.7.3, approval flow; 6/6) |
+| JWIKI-222 | 14_BEST_PRACTICES/ux-error-handling.md | UX error handling | A | 🟢 verified | (tick 2026-07-09 — error UX friendly, AitheraError class; 6/6) |
+| JWIKI-223 | 14_BEST_PRACTICES/conventions-code-structure.md | Convenciones estructura | B | 🟢 verified | (tick 2026-07-09 — code structure Python + React; 6/6) |
+| JWIKI-224 | 14_BEST_PRACTICES/conventions-naming.md | Convenciones naming | A | 🟢 verified | (tick 2026-07-09 — naming Python/TS/DB/URL/AI; 6/6) |
+| JWIKI-225 | 14_BEST_PRACTICES/observability-logs.md | Logs estructurados | B | 🟢 verified | (tick 2026-07-09 — structlog JSON logs; 6/6) |
+| JWIKI-226 | 14_BEST_PRACTICES/observability-metrics.md | Métricas Prometheus | A | 🟢 verified | (tick 2026-07-09 — Prometheus metrics V0.85+; 6/6) |
+| JWIKI-227 | 14_BEST_PRACTICES/testing-strategy.md | Testing strategy | B | 🟢 verified | (tick 2026-07-09 — 5 levels, contracts, integration; 6/6) |
+| JWIKI-228 | 14_BEST_PRACTICES/documentation-strategy.md | Documentación como código | A | 🟢 verified | (tick 2026-07-09 — docs as code, single source of truth; 6/6) |
 
 ## 15_KNOWN_PITFALLS
 
 | ID | Path | Título | Turno | Estado |
 |---|---|---|---|---|
-| JWIKI-229 | 15_KNOWN_PITFALLS/README.md | Overview pitfalls | B | 🔴 pending |
-| JWIKI-230 | 15_KNOWN_PITFALLS/streaming-closure-bug.md | Streaming closure bug | A | 🔴 pending |
-| JWIKI-231 | 15_KNOWN_PITFALLS/minimax-api-changes.md | MiniMax API changes | B | 🔴 pending |
-| JWIKI-232 | 15_KNOWN_PITFALLS/chromadb-size-payload.md | ChromaDB 1.5GB payload | A | 🔴 pending |
-| JWIKI-233 | 15_KNOWN_PITFALLS/electron-node-compat.md | Electron Node compat | B | 🔴 pending |
-| JWIKI-234 | 15_KNOWN_PITFALLS/react-strict-mode-double.md | React 18 strict mode | A | 🔴 pending |
-| JWIKI-235 | 15_KNOWN_PITFALLS/pydantic-v1-vs-v2.md | Pydantic v1 v2 | B | 🔴 pending |
-| JWIKI-236 | 15_KNOWN_PITFALLS/alembic-divergence.md | Alembic schema divergence | A | 🔴 pending |
-| JWIKI-237 | 15_KNOWN_PITFALLS/hashrouter-vs-browser.md | HashRouter Electron | B | 🔴 pending |
-| JWIKI-238 | 15_KNOWN_PITFALLS/email-assistant-god-endpoint.md | email_assistant god-endpoint | A | 🔴 pending |
-| JWIKI-239 | 15_KNOWN_PITFALLS/api-keys-plaintext.md | API keys plaintext BD | B | 🔴 pending |
-| JWIKI-240 | 15_KNOWN_PITFALLS/cors-open-prod.md | CORS abierto producción | A | 🔴 pending |
-| JWIKI-241 | 15_KNOWN_PITFALLS/god-endpoint-pattern.md | God-endpoint señal | B | 🔴 pending |
-| JWIKI-242 | 15_KNOWN_PITFALLS/modules-parallel-legacy.md | Módulos paralelos legacy | A | 🔴 pending |
+| JWIKI-229 | 15_KNOWN_PITFALLS/README.md | Overview pitfalls | B | 🟢 verified | (tick 2026-07-09 — overview pitfalls CLAUDE.md §16; 6/6) |
+| JWIKI-230 | 15_KNOWN_PITFALLS/streaming-closure-bug.md | Streaming closure bug | A | 🟢 verified | (tick 2026-07-09 — streaming closure bug V0.2 fixed; 6/6) |
+| JWIKI-231 | 15_KNOWN_PITFALLS/minimax-api-changes.md | MiniMax API changes | B | 🟢 verified | (tick 2026-07-09 — stale defaults minimax; 6/6) |
+| JWIKI-232 | 15_KNOWN_PITFALLS/chromadb-size-payload.md | ChromaDB 1.5GB payload | A | 🟢 verified | (tick 2026-07-09 — ChromaDB 80MB download + growth; 6/6) |
+| JWIKI-233 | 15_KNOWN_PITFALLS/electron-node-compat.md | Electron Node compat | B | 🟢 verified | (tick 2026-07-09 — nodeIntegration, paths, native modules; 6/6) |
+| JWIKI-234 | 15_KNOWN_PITFALLS/react-strict-mode-double.md | React 18 strict mode | A | 🟢 verified | (tick 2026-07-09 — strict mode double render, idempotent effects; 6/6) |
+| JWIKI-235 | 15_KNOWN_PITFALLS/pydantic-v1-vs-v2.md | Pydantic v1 v2 | B | 🟢 verified | (tick 2026-07-09 — Pydantic v1→v2 migración; 6/6) |
+| JWIKI-236 | 15_KNOWN_PITFALLS/alembic-divergence.md | Alembic schema divergence | A | 🟢 verified | (tick 2026-07-09 — alembic check, autogenerate; 6/6) |
+| JWIKI-237 | 15_KNOWN_PITFALLS/hashrouter-vs-browser.md | HashRouter Electron | B | 🟢 verified | (tick 2026-07-09 — HashRouter obligatorio Electron; 6/6) |
+| JWIKI-238 | 15_KNOWN_PITFALLS/email-assistant-god-endpoint.md | email_assistant god-endpoint | A | 🟢 verified | (tick 2026-07-09 — god-endpoint 2038 líneas fixed V0.7.2; 6/6) |
+| JWIKI-239 | 15_KNOWN_PITFALLS/api-keys-plaintext.md | API keys plaintext BD | B | 🟢 verified | (tick 2026-07-09 — DPAPI V0.8 fixed; 6/6) |
+| JWIKI-240 | 15_KNOWN_PITFALLS/cors-open-prod.md | CORS abierto producción | A | 🟢 verified | (tick 2026-07-09 — CORS restringido V0.8; 6/6) |
+| JWIKI-241 | 15_KNOWN_PITFALLS/god-endpoint-pattern.md | God-endpoint señal | B | 🟢 verified | (tick 2026-07-09 — anti-pattern general; 6/6) |
+| JWIKI-242 | 15_KNOWN_PITFALLS/modules-parallel-legacy.md | Módulos paralelos legacy | A | 🟢 verified | (tick 2026-07-09 — modules eliminados Sprint 1; 6/6) |
 
 ## 16_SOPS
 
 | ID | Path | Título | Turno | Estado |
 |---|---|---|---|---|
-| JWIKI-243 | 16_SOPS/README.md | Overview procedimientos | B | 🔴 pending |
-| JWIKI-244 | 16_SOPS/add-ai-provider.md | Añadir proveedor IA | A | 🔴 pending |
-| JWIKI-245 | 16_SOPS/create-tool.md | Crear tool ToolManager | B | 🔴 pending |
-| JWIKI-246 | 16_SOPS/create-agent.md | Crear agente Aithera | A | 🔴 pending |
-| JWIKI-247 | 16_SOPS/oauth-setup.md | Configurar OAuth | B | 🔴 pending |
-| JWIKI-248 | 16_SOPS/scheduler-config.md | Configurar scheduler | A | 🔴 pending |
-| JWIKI-249 | 16_SOPS/deploy-electron-build.md | Build electron-builder | B | 🔴 pending |
-| JWIKI-250 | 16_SOPS/pwa-config.md | Configurar PWA | A | 🔴 pending |
-| JWIKI-251 | 16_SOPS/migrate-sqlite-postgres.md | Migrar SQLite a PostgreSQL | B | 🔴 pending |
-| JWIKI-252 | 16_SOPS/update-sentence-transformers.md | Actualizar sentence-transformers | A | 🔴 pending |
-| JWIKI-253 | 16_SOPS/backup-restore-aithera.md | Backup restore Aithera | B | 🔴 pending |
-| JWIKI-254 | 16_SOPS/rotate-api-keys.md | Rotación API keys | A | 🔴 pending |
-| JWIKI-255 | 16_SOPS/debug-streaming-stuck.md | Debug streaming stuck | B | 🔴 pending |
-| JWIKI-256 | 16_SOPS/debug-chromadb-not-loading.md | Debug ChromaDB not loading | A | 🔴 pending |
-| JWIKI-257 | 16_SOPS/debug-oauth-refresh-fail.md | Debug OAuth refresh | B | 🔴 pending |
-| JWIKI-258 | 16_SOPS/debug-electron-blank-screen.md | Debug Electron blank | A | 🔴 pending |
-| JWIKI-259 | 16_SOPS/add-new-endpoint.md | Añadir endpoint FastAPI | B | 🔴 pending |
-| JWIKI-260 | 16_SOPS/add-new-page-frontend.md | Añadir página React | A | 🔴 pending |
-| JWIKI-261 | 16_SOPS/add-new-db-model.md | Añadir modelo SQLAlchemy | B | 🔴 pending |
-| JWIKI-262 | 16_SOPS/rollback-migration.md | Rollback Alembic | A | 🔴 pending |
-| JWIKI-263 | 16_SOPS/change-active-provider.md | Cambiar proveedor IA activo | B | 🔴 pending |
-| JWIKI-264 | 16_SOPS/add-chromadb-collection.md | Añadir colección ChromaDB | A | 🔴 pending |
-| JWIKI-265 | 16_SOPS/add-voice-engine.md | Añadir motor TTS/STT | B | 🔴 pending |
-| JWIKI-266 | 16_SOPS/split-god-endpoint.md | Partir god-endpoint | A | 🔴 pending |
+| JWIKI-243 | 16_SOPS/README.md | Overview procedimientos | B | 🟢 verified | (tick 2026-07-09 — SOPs overview; 6/6) |
+| JWIKI-244 | 16_SOPS/add-ai-provider.md | Añadir proveedor IA | A | 🟢 verified | (tick 2026-07-09 — provider class + register; 6/6) |
+| JWIKI-245 | 16_SOPS/create-tool.md | Crear tool ToolManager | B | 🟢 verified | (tick 2026-07-09 — tool class + register; 6/6) |
+| JWIKI-246 | 16_SOPS/create-agent.md | Crear agente Aithera | A | 🟢 verified | (tick 2026-07-09 — agent CRUD via API; 6/6) |
+| JWIKI-247 | 16_SOPS/oauth-setup.md | Configurar OAuth | B | 🟢 verified | (tick 2026-07-09 — OAuth provider console + Aithera setup; 6/6) |
+| JWIKI-248 | 16_SOPS/scheduler-config.md | Configurar scheduler | A | 🟢 verified | (tick 2026-07-09 — APScheduler rule creation; 6/6) |
+| JWIKI-249 | 16_SOPS/deploy-electron-build.md | Build electron-builder | B | 🟢 verified | (tick 2026-07-09 — version bump + build + release; 6/6) |
+| JWIKI-250 | 16_SOPS/pwa-config.md | Configurar PWA | A | 🟢 verified | (tick 2026-07-09 — manifest.json + sw.js; 6/6) |
+| JWIKI-251 | 16_SOPS/migrate-sqlite-postgres.md | Migrar SQLite a PostgreSQL | B | 🟢 verified | (tick 2026-07-09 — postgres docker + alembic + script; 6/6) |
+| JWIKI-252 | 16_SOPS/update-sentence-transformers.md | Actualizar sentence-transformers | A | 🟢 verified | (tick 2026-07-09 — update model en BD; 6/6) |
+| JWIKI-253 | 16_SOPS/backup-restore-aithera.md | Backup restore Aithera | B | 🟢 verified | (tick 2026-07-09 — backup/restore sqlite+postgres; 6/6) |
+| JWIKI-254 | 16_SOPS/rotate-api-keys.md | Rotación API keys | A | 🟢 verified | (tick 2026-07-09 — rotate 90 días; 6/6) |
+| JWIKI-255 | 16_SOPS/debug-streaming-stuck.md | Debug streaming stuck | B | 🟢 verified | (tick 2026-07-09 — debug SSE stream; 6/6) |
+| JWIKI-256 | 16_SOPS/debug-chromadb-not-loading.md | Debug ChromaDB not loading | A | 🟢 verified | (tick 2026-07-09 — debug ChromaDB; 6/6) |
+| JWIKI-257 | 16_SOPS/debug-oauth-refresh-fail.md | Debug OAuth refresh | B | 🟢 verified | (tick 2026-07-09 — debug OAuth refresh; 6/6) |
+| JWIKI-258 | 16_SOPS/debug-electron-blank-screen.md | Debug Electron blank | A | 🟢 verified | (tick 2026-07-09 — debug Electron blank; 6/6) |
+| JWIKI-259 | 16_SOPS/add-new-endpoint.md | Añadir endpoint FastAPI | B | 🟢 verified | (tick 2026-07-09 — FastAPI endpoint pattern; 6/6) |
+| JWIKI-260 | 16_SOPS/add-new-page-frontend.md | Añadir página React | A | 🟢 verified | (tick 2026-07-09 — React page + route + sidebar; 6/6) |
+| JWIKI-261 | 16_SOPS/add-new-db-model.md | Añadir modelo SQLAlchemy | B | 🟢 verified | (tick 2026-07-09 — SQLAlchemy + Alembic; 6/6) |
+| JWIKI-262 | 16_SOPS/rollback-migration.md | Rollback Alembic | A | 🟢 verified | (tick 2026-07-09 — downgrade -1, base, revision; 6/6) |
+| JWIKI-263 | 16_SOPS/change-active-provider.md | Cambiar proveedor IA activo | B | 🟢 verified | (tick 2026-07-09 — activate via UI/API; 6/6) |
+| JWIKI-264 | 16_SOPS/add-chromadb-collection.md | Añadir colección ChromaDB | A | 🟢 verified | (tick 2026-07-09 — new collection + search API; 6/6) |
+| JWIKI-265 | 16_SOPS/add-voice-engine.md | Añadir motor TTS/STT | B | 🟢 verified | (tick 2026-07-09 — voice class + manager; 6/6) |
+| JWIKI-266 | 16_SOPS/split-god-endpoint.md | Partir god-endpoint | A | 🟢 verified | (tick 2026-07-09 — split por dominios, service layer; 6/6) |
 
 ---
 
