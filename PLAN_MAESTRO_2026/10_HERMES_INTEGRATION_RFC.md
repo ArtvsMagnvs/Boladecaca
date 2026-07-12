@@ -15,7 +15,9 @@ Orchestrator → AgentRuntime → [ NullRuntime (V1.0) | HermesRuntime (V1.1) | 
 ```
 
 ```python
-# backend/app/orchestrator/runtime.py (V1.0)
+# backend/app/tie/runtime.py (V1.0)
+# [Δ 2026-07-12: el módulo se llama app/tie/ — doc 14; "orchestrator" es el
+#  nombre histórico del pipeline v1. Nada más de este RFC cambia.]
 class AgentRuntime(ABC):
     """El Orchestrator SOLO depende de esta interfaz. Un runtime recibe memoria,
     tools y gate DE AITHERA por inyección — jamás gestiona los suyos propios."""

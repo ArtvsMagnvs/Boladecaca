@@ -5,6 +5,19 @@
 > **Regla fundamental**: el MEJOR DISEÑO posible con la implementación MÍNIMA
 > funcional por versión. V1.0 = Aithera completa en modo básico; V1.x potencia;
 > V2.0+ lleva al límite. Nada de sobreingeniería pre-V1.0.
+>
+> **Δ 2026-07-12 — Cognitive Runtime (doc 14)**: la **Parte B es ahora el perfil
+> mínimo del TIE (Task Intelligence Engine) — "TIE v1"**. Todo su diseño sigue
+> vigente con 3 ajustes: (1) el módulo es `backend/app/tie/` (no
+> `app/orchestrator/`); (2) `Plan`/`PlanStep` se formalizan como
+> `TaskGraph`/`TaskNode` (doc 14 §3.2 — mismos campos + extensiones opcionales;
+> `depends_on` ya lo hacía grafo); (3) el executor V1.0 es el Graph Execution
+> Engine en modo lineal (ola de tamaño 1) con checkpoint por transición y
+> kill-switch (doc 14 §3.4). La Parte A no cambia; su `AutomationLearner` (Capa 4)
+> ES el módulo Learner del doc 15. `EventTrigger` se suscribe a
+> `app/core/events.py` (nace en V0.85 M2 — doc 07 §6; spec canónica: doc 17).
+> Además, el AE emite `automation.rule_fired` y `approval.requested/resolved`
+> (semilla de eventos en 17 §4) — datos que ya tiene al cerrar cada ejecución.
 
 ---
 

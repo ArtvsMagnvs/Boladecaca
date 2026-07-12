@@ -7,6 +7,12 @@
 >
 > Incorporación: LLL básico en **V1.0**, LSL completa en **V1.1**, sync GSN en V2.0+.
 > El stub de V0.85 (`stores/skill_store.py`, doc 07) usa YA estos contratos.
+>
+> **Δ 2026-07-12**: este RFC queda EXTENDIDO por el doc 15 (Aithera Learning
+> System): el LLL de aquí es su núcleo analítico; la evolución de skills
+> (merge/split/specialize + `skill_events`) está en 15 §6 y la cuarentena de
+> validación en 15 §3. `LocalSkill` gana 2 campos de linaje (marcados `[Δ]` abajo)
+> que el stub de V0.85 ya debe incluir en su metadata.
 
 ---
 
@@ -38,6 +44,10 @@ class LocalSkill:
     quality_score: float       # 0-1
     error_rate: float          # % ejecuciones fallidas
 
+    # Linaje [Δ 2026-07-12 — Skill Evolution, doc 15 §6]
+    derived_from: list[str]    # ids de skills origen (merge/split/specialize); [] normal
+    superseded_by: str | None  # id del reemplazo cuando status=DEPRECATED
+
     # Contexto
     projects: list[str]
     tags: list[str]
@@ -64,7 +74,10 @@ DETECTED → DRAFT → VALIDATED → LOCAL ──(usuario decide publicar)──
 ```
 
 `LOCAL` es el estado de reposo normal. `DEPRECATED` cuando el LLL detecta calidad
-bajo umbral y existe reemplazo (nunca se borra: se archiva con historia).
+bajo umbral y existe reemplazo (nunca se borra: se archiva con historia). Las
+operaciones de evolución — improve/split/merge/specialize/deprecate, todas como
+propuestas del Learner con cuarentena — están especificadas en el doc 15 §6; el
+linaje se reconstruye por `derived_from`/`superseded_by`.
 
 ### 1.3 Servicio `LocalSkillLibrary` (V1.1)
 

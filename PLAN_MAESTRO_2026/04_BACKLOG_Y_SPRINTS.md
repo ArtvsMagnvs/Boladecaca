@@ -79,10 +79,12 @@ Los sprints de cada fase están definidos en sus docs de diseño; este es el ín
 | Fase | Sprints | Doc |
 |---|---|---|
 | V0.82/83 | **AVCS Fase 0**: S1 motor+semilla+ondas+reposo · S2 escucha+habla+sin-clipping · S3 modo presencia+chat limpio+perf v0 — incluye perf-front (lazy Three) y voz (A6) | 13 §20, 12 §1-3 |
-| V0.85 | M1 contratos+router · M2 ingesta · M3 briefing · M4 contexto+chat_service · M5 hardening+perf (tag v0.8.5) | 07 §10 |
+| V0.85 | M1 contratos+router **+ fronteras modulares + `decisions.mission_id` [Δ]** · M2 ingesta **+ `events.py` [Δ]** · M3 briefing · M4 contexto+chat_service · M5 hardening+perf (tag v0.8.5) | 07 §10, 16 §4, 14 §4.1, 17 |
+| V0.87 | W1 modelo (migración + Milestone + progreso + endpoints + tests) · W2 UI Linear-like (Vista Proyecto + popup Task + atajos) · W3 integración (destilado MOS + eventos + briefing + tag v0.8.7) | 18 |
 | V0.9 | A1 ApprovalGate · A2 engine+APScheduler · A3 acciones+UI · A4 integración MOS (tag v0.9) | 11 |
-| V1.0 | O1 intents+traces · O2 enricher+planner · O3 executor+gateway handler · O4 responder+LLL+UI · O5 **cierre MVP beta** (auto-start, instalador, onboarding; tag v1.0.0-beta) | 11, 12 §3 |
-| V1.1 | H0 investigación GO/NO-GO · H1-H4 runtime+adapters+LSL | 10 |
+| V1.0 | O1 intents+traces **+ contracts.py/graph.py del TIE** · O2 enricher+planner **(salida TaskGraph)** · O3 executor **(grafo lineal, checkpoint, kill-switch)** +gateway handler · O4 responder+LLL+UI · O5 **cierre MVP beta** (auto-start, instalador, onboarding; tag v1.0.0-beta) | 14, 11, 12 §3 |
+| V1.1 | H0 investigación GO/NO-GO · H1-H4 runtime+adapters+LSL **+ Mission Learning + panel "lo aprendido"** | 10, 15 |
+| V1.2 | MCP server/client · TIE v2 (olas, replan, missions, presupuestos) · Skill Evolution · AutomationLearner · mission evals | 14 §5, 15 §6-9 |
 | V1.5 | AVCS MVP1 (7 ritmos + campos componibles + perf íntegro + UI rediseñada) | 13 §20 |
 | V1.6+ | AVCS MVP2 (UI viva + vida procedural + memoria visual) | 13 §20 |
 | Flotantes vigentes | B20 auto-start (→ absorbido por O5) · B21 ✅ hecho (reasoning filter) · A2 httpx persistente · A5 split processing · limpieza scripts debug | 12 |

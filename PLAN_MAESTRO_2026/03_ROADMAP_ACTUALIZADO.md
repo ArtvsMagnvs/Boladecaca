@@ -1,9 +1,15 @@
 # Roadmap definitivo — V0.8 → V2.0+ (Plan Maestro 2.0)
 
 > Reescrito 2026-07-09 (Fable 5) integrando los diseños de `FABLE5_PROMPTS/` 01-07.
+> **Revisión 2026-07-12**: Cognitive Runtime integrado — **14** TIE (absorbe el
+> Orchestrator de 11-B como "TIE v1") · **15** Learning System (extiende 09) ·
+> **16** Principios Modulares (NO frameworkitis — gobierna a todos). El ORDEN de
+> fases no cambia; cambian contenidos de V1.0/V1.2/V1.5 y 4 deltas menores en V0.85.
 > Los principios 1-8 del AOS siguen vigentes e inviolables. Documentos de diseño:
 > **07** MOS V0.85 · **08** MOS arquitectura completa · **09** LSL/LLL · **10** Hermes
-> · **11** Automation+Orchestrator · **12** Auditoría/optimización · **13** AVCS (sistema visual).
+> · **11** Automation+Orchestrator · **12** Auditoría/optimización · **13** AVCS
+> (sistema visual) · **14** TIE/Cognitive Runtime · **15** Learning System ·
+> **16** Principios Modulares · **17** Event Bus/Observabilidad · **18** WPMS/Workspace.
 >
 > **La estrella polar**: V1.0 es un **MVP bien hecho — completamente autónomo y
 > distribuible a usuarios BETA** — alcanzable en semanas, no meses. Todo lo que no
@@ -15,8 +21,19 @@
 
 - **ACI (Aithera Cognitive Infrastructure)**: memoria + skills + tools +
   automatización + orquestación. Diseñada para sobrevivir a cualquier LLM o runtime.
+- **Principios Modulares (doc 16)**: cada gran sistema (MOS, TIE, Learner, AE,
+  Skills, Gateway, AVCS) es una librería interna del monorepo — API pública por
+  `__init__.py`, llamadas directas en memoria (nunca HTTP interno), fronteras
+  vigiladas por `test_module_boundaries.py`. Prioridad sobre todo RFC.
 - **MOS (Memory Operating System)**: el subsistema de memoria de la ACI (docs 07/08).
-  **La memoria pertenece a Aithera, nunca al runtime.**
+  **La memoria pertenece a Aithera, nunca al runtime.** El MOS recuerda; jamás
+  planifica ni ejecuta.
+- **TIE (Task Intelligence Engine, doc 14)**: el cerebro de planificación/ejecución
+  — entiende el objetivo, produce un **TaskGraph** (plan-como-datos) y lo ejecuta
+  con checkpoints, gates y presupuestos. V1.0 = "TIE v1" (el Orchestrator de 11-B).
+- **Learner (Aithera Learning System, doc 15)**: observa traces/errores/feedback y
+  PROPONE skills, mejoras y conocimiento — siempre con cuarentena de validación.
+  Nunca aplica nada solo.
 - **`AgentRuntime`** (doc 10): el mecanismo de extensión para motores de agentes —
   Hermes, futuros runtimes o uno nativo son implementaciones intercambiables, igual
   que los 8 proveedores del AIManager.
@@ -70,10 +87,36 @@ presupuesto), vault opcional.
 
 - Sprints M1-M5 (5-6 sesiones), criterios de cierre por sprint en doc 07 §10.
 - Incluye las optimizaciones P1 de doc 12 (init de ChromaDB en background, índices).
+- **[Δ 2026-07-12]** 4 deltas del Cognitive Runtime (14 §4.1, ya en doc 07):
+  `LocalSkill` con linaje en el stub · `decisions.mission_id` · `app/core/events.py`
+  + emisión desde la ingesta (spec canónica: doc 17) · disciplina modular
+  (doc 16 §4) desde M1. Contratos `IMemoryStore`/`MemoryRouter`/`MemoryType`
+  intactos.
 - **Cierre de fase**: "¿qué me ha llegado importante hoy?" responde desde memoria
   local con Gmail desconectado. Tag `v0.8.5`.
 - Handoff garantizado a V0.9: briefing estable, `context()` ≤ 300 ms, `decisions`
-  lista, jobs asyncio migrables a APScheduler.
+  lista, jobs asyncio migrables a APScheduler, eventos operativos.
+
+## 3b. V0.87 — WPMS: Workspace & Project Management System (diseño completo: doc 18)
+
+El sistema operativo del trabajo: la capa donde usuario y Aithera organizan
+proyectos, milestones (por versión) y tareas. **Estado operativo en SQL; el
+conocimiento sigue en el MOS** (`mem_project`) — el WPMS es la representación
+operativa del Project Memory, nunca una segunda memoria.
+
+- **Extiende** los modelos `Project`/`Task` reales (no reescritura) + entidad nueva
+  `Milestone` (eje de versión) + `checklist`/`depends_on`/`links` en Task. Una
+  migración Alembic aditiva; rutas `/api/projects` y `/api/tasks` intactas.
+- **Progreso automático** por conteo de tareas (nunca manual); versionado
+  `current_version` + milestone activo; docs como enlaces (repo/roadmap), sin
+  duplicar. UI vara-Linear: Vista Proyecto de una columna + popup Task + atajos.
+- **Integra**: escribe destilados a `mem_project` por evento (MOS); el TIE
+  planifica hacia el milestone activo y escribe `mission_id` en las tareas; el AE
+  gana `WorkspaceAction` (stub V0.9); el Learner mide estimado vs real; el
+  briefing lee el WPMS (estado sin Gmail/LLM en caliente). Emite `task.*`/
+  `milestone.*` al Event Bus (doc 17).
+- **Impacto MOS**: nulo en contratos — solo convierte `mem_project` de stub a
+  escritor real (doc 18 §0). Sprints W1-W3 (~2-3 sesiones). Tag `v0.8.7`.
 
 ## 4. V0.9 — Automation Engine + ApprovalGate (diseño completo: doc 11 parte A)
 
@@ -88,16 +131,27 @@ Arquitectura de 4 capas (Triggers/Conditions/Actions/Learner) con MVP funcional:
   API; errores → Error Memory. APScheduler entra aquí y absorbe los jobs de V0.85.
 - Reglas predefinidas (off por defecto): daily_briefing, system_monitor,
   urgent_email_alert, email_summary, agent_task. UI de reglas + aprobaciones.
+- **[Δ]** Posición ratificada por el doc 14 §0: el AE va ANTES del TIE porque
+  aporta sus dos prerrequisitos (ApprovalGate = gates de nodos; APScheduler) y
+  porque el AE, por diseño, no contiene inteligencia — desde V1.0 `AgentTaskAction`
+  delega en el TIE. `EventTrigger` se suscribe a los eventos que la ingesta de
+  V0.85 ya emite (cero polling, cero retro-instrumentación).
 - Sprints A1-A4 (4-5 sesiones). Stubs listos para V1.2: PatternTrigger,
-  MemoryTrigger, AutomationLearner, ChainedRuleAction. Tag `v0.9`.
+  MemoryTrigger, AutomationLearner (= módulo Learner, doc 15), ChainedRuleAction.
+  Tag `v0.9`.
 
-## 5. V1.0 — Orchestrator + **MVP BETA distribuible** (diseño: doc 11 parte B)
+## 5. V1.0 — **TIE v1** (Orchestrator) + **MVP BETA distribuible** (docs 14 + 11-B)
 
-El cerebro: 6 componentes (Intent Classifier barato-siempre → Context Enricher con
-pre-fetch/caché → Task Planner potente-solo-si-hace-falta → Executor secuencial con
-gates → Response Builder → Tracer con Decision API). `AgentRuntime` + `NullRuntime`
-(doc 10) — V1.0 es completo SIN Hermes. LLL básico (doc 09): detección de tareas
-repetidas → propuesta de skills. Enganche: `gateway.set_handler(orchestrator)`.
+El cerebro: los 6 componentes de 11-B (Intent Classifier barato-siempre → Context
+Enricher con pre-fetch/caché → Task Planner potente-solo-si-hace-falta → Executor
+con gates → Response Builder → Tracer con Decision API), ahora como módulo
+`app/tie/` con los contratos congelados del doc 14: el plan es un **TaskGraph**
+(grafo dirigido serializable; en V1.0 lineal — ola de tamaño 1), checkpoint por
+transición de nodo, kill-switch de misión, validación determinista por nodo y
+camino corto conversational (~80% de queries sin grafo ni planner). `AgentRuntime`
++ `NullRuntime` (doc 10) — V1.0 es completo SIN Hermes. LLL básico (doc 09):
+detección de tareas repetidas → propuesta de skills con cuarentena (doc 15 §3).
+Enganche: `gateway.set_handler(tie.handle)`.
 
 **Definición de "MVP beta" (criterios de release, sprint O5)**:
 
@@ -114,24 +168,34 @@ repetidas → propuesta de skills. Enganche: `gateway.set_handler(orchestrator)`
 
 Sprints O1-O5 (5-6 sesiones). Tag `v1.0.0-beta`.
 
-## 6. V1.1 — Hermes Runtime (diseño completo: doc 10)
+## 6. V1.1 — Hermes Runtime + **Learning System operativo** (docs 10 + 15)
 
 Sprint H0 de **investigación GO/NO-GO** (API real, licencia, huella) → HermesRuntime
 + 4 adapters (Memory/Skill/Tool/Context Provider): Hermes piensa, todo lo aprendido
-vive en el MOS, toda tool pasa por whitelist+gate. LSL completa + LLL completo +
-panel "lo que Aithera ha aprendido" (doc 09). Working Memory (Letta) como detalle
-interno del runtime. **Contingencia definida** si NO-GO (wrapper de proceso /
-runtime nativo / otro OSS) — V1.0 ya es producto completo sin él.
-Cierre: Hermes ejecuta una tarea usando memoria de Aithera sin escribir un solo
-archivo propio; 0 menciones a "Hermes" en la UI. (4-5 sesiones + H0.)
+vive en el MOS, toda tool pasa por whitelist+gate. LSL completa (tabla `skills` +
+`skill_events`) + LLL completo (análisis 2-5) + **Mission Learning** (doc 15 §4:
+reflexión post-misión → decisiones/pins/skills candidatas) + escalera de confianza
+completa (doc 15 §3) + panel "lo que Aithera ha aprendido" con undo. Working Memory
+(Letta) como detalle interno del runtime. **Contingencia definida** si NO-GO
+(wrapper de proceso / runtime nativo / otro OSS) — V1.0 ya es producto completo
+sin él. Cierre: Hermes ejecuta una tarea usando memoria de Aithera sin escribir un
+solo archivo propio; 0 menciones a "Hermes" en la UI. (4-5 sesiones + H0.)
 
-## 7. V1.2 — MCP Interop + potenciación
+## 7. V1.2 — MCP Interop + **TIE v2** + Skill Evolution
 
 - **MCP server**: ToolManager expuesto (whitelist + gates intactos). **MCP client**:
   `MCPToolProxy` — tools externas con las mismas validaciones; Hermes las ve vía
   `AitheraToolProvider` sin cambios.
-- Orchestrator: paralelismo por olas, plan backtracking, plan negotiation.
-- Automation: PatternTrigger/MemoryTrigger (alimentados por el LLL) + AutomationLearner.
+- **TIE v2** (doc 14 §5): olas paralelas con semáforo, retry + replan de subárbol
+  (los nodos DONE son inmutables), presupuestos de coste DUROS por misión (medidos
+  desde V1.0), Mission Manager persistente (tabla `missions` + panel en el Hub +
+  misiones del AE vía `MissionAction`), Model Router alimentado por
+  `model_stats`/`tool_stats` del Learner. **Mission evals**: suite de misiones
+  canónicas de regresión pre-release (doc 15 §9).
+- **Skill Evolution** (doc 15 §6): merge/split/specialize con linaje + dedup
+  conceptual y detección de contradicciones del Knowledge Evolution (doc 15 §7).
+- Automation: PatternTrigger/MemoryTrigger (alimentados por el LLL) +
+  AutomationLearner (reglas sugeridas con HITL — doc 15 §8).
 - MOS: Project Memory (Capa 2) activa; candidatos Qdrant/KuzuDB/Graphiti/Cognee
   entran AQUÍ como muy pronto, uno por vez, con el protocolo de migración RFC-006.
 
@@ -150,7 +214,10 @@ PerformanceManager íntegro (escalera de degradación + invariantes de identidad
 **rediseño general de la UI** alrededor de la presencia y salto de animaciones →
 comportamiento. (5-7 sesiones.)
 
-También en esta era: Hermes Desktop deja de usarse; multi-instancia de runtimes
+También en esta era: **TIE v3** (doc 14 §5 — reflexión mid-mission del Learner,
+routing predictivo, misiones recurrentes con memoria de misión previa,
+priorización entre misiones concurrentes); Knowledge Evolution con grafo de
+entidades (doc 15 §7); Hermes Desktop deja de usarse; multi-instancia de runtimes
 por perfil (research/coding/calendar) compartiendo el MOS; panel de memoria/skills
 rico en el Hub.
 
@@ -183,17 +250,31 @@ tipado. Sincronización LSL↔GSN siempre con confirmación explícita (09 §3).
 | Compactación (RFC-007) | mínima | prune | ✅ | ✅ | ✅ | ✅ |
 | GSN/CIE/Guardians | — | — | — | — | — | ✅ opcional |
 
+## 11b. Mapa de evolución del Cognitive Runtime (TIE + Learner — detalle en 14 §5 y 15 §9)
+
+| Componente | V0.85 | V0.9 | V1.0 | V1.1 | V1.2 | V1.5 |
+|---|---|---|---|---|---|---|
+| Contratos TIE (Mission/TaskGraph/TaskNode) | diseño | diseño | ✅ código | ✅ | ✅ | ✅ |
+| Eventos (`app/core/events.py`) | ✅ nace (M2) | ✅ AE consume | ✅ `mission.*` | ✅ | ✅ | ✅ |
+| Graph Execution Engine | — | — | ✅ lineal | ✅ | ✅ olas+replan | ✅ |
+| ApprovalGate / gates por nodo | — | ✅ nace | ✅ reusado | ✅ | ✅ | ✅ |
+| Model Router / Cost | — | — | fast-smart / medir | ✅ | +stats / imponer | cost-aware pleno |
+| Missions | — | — | implícita (=trace) | implícita | ✅ tabla+panel | ✅ recurrentes |
+| Learner: LLL análisis 1 / Mission Learning / evolución skills | — | — | ✅ / — / — | ✅ / ✅ / tabla | ✅ / ✅ / ✅ merge-split | +predictivo |
+| Mission evals (regresión) | — | — | — | — | ✅ | ✅ |
+
 ## 12. Tabla resumen
 
 | Versión | Nombre | Sesiones (Opus 4.8) | Entregable usable |
 |---|---|---|---|
 | V0.82/0.83 | Voz + **AVCS Fase 0** (semilla+ondas, 3 ritmos, modo presencia, chat limpio) | 3-4 | una presencia viva en el Hub |
 | V0.85 | MOS Skeleton | 5-6 | memoria viva: ingesta, briefing, contexto con fuentes |
+| V0.87 | **WPMS** (Workspace) | 2-3 | proyectos/milestones/tareas vara-Linear, progreso automático, enganche MOS/TIE |
 | V0.9 | Automation + Gates | 4-5 | briefing matinal automático, reglas, aprobaciones |
-| V1.0 | Orchestrator + **MVP BETA** | 5-6 | **instalable y autónomo para beta testers** |
-| V1.1 | Hermes Runtime | 4-5 (+H0) | agente que aprende; skills en la LSL |
-| V1.2 | MCP + potenciación | 4-5 | interop total, paralelismo, Project Memory |
-| V1.5 | **AVCS MVP1** + Hub avanzado | 5-7 | los 7 ritmos, UI rediseñada |
+| V1.0 | **TIE v1** (Orchestrator) + **MVP BETA** | 5-6 | **instalable y autónomo para beta testers**; planes como grafo, camino corto, kill-switch |
+| V1.1 | Hermes Runtime + **Learning System** | 4-5 (+H0) | agente que aprende; LSL completa; Mission Learning; panel "lo aprendido" |
+| V1.2 | MCP + **TIE v2** + Skill Evolution | 4-5 | interop total, olas paralelas+replan, misiones persistentes, Project Memory, mission evals |
+| V1.5 | **AVCS MVP1** + Hub avanzado + **TIE v3** | 5-7 | los 7 ritmos, UI rediseñada; reflexión continua y routing predictivo |
 | V1.6+ | **AVCS MVP2** (UI viva, vida, memoria visual) | 6-8 | el Hub como organismo |
 | V2.0+ | Red (GSN/CIE/Guardians) | — | inteligencia colectiva opcional |
 
@@ -203,5 +284,9 @@ la fase, nunca se aplaza V1.0.
 
 ---
 *Roadmap definitivo 2026-07-09 (Fable 5). Sustituye a la versión V0.7.2→V1.2.
-Cambios clave: V0.85 = MOS Skeleton con contratos definitivos; V0.9/V1.0 integrados
-con el MOS; 
+Cambios clave 07-09: V0.85 = MOS Skeleton con contratos definitivos; V0.9/V1.0
+integrados con el MOS.*
+*Revisión 2026-07-12: Cognitive Runtime integrado (docs 14/15/16) — V1.0 = TIE v1
+(absorbe el Orchestrator, plan-como-grafo), V1.1 += Learning System, V1.2 += TIE v2
++ Skill Evolution, V1.5 += TIE v3. El orden de fases y la fecha de V1.0 no cambian;
+V0.85 recibe 4 deltas menores (07 §Δ / 14 §4.1).*

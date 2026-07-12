@@ -216,3 +216,6 @@ ARCHIVE             vault Markdown (%APPDATA%/Aithera/vault/) — legible, fuera
 ---
 *Diseño 2026-07-09 (Fable 5). Los contratos de aquí son los que implementa 07 en
 V0.85 y los que consumen 09 (LSL/LLL), 10 (Hermes) y 11 (AE/Orchestrator).*
+*Δ 2026-07-12: el TIE (doc 14) y el Learning System (doc 15) consumen estas 6 APIs
+sin cambios de contrato. El estado de ejecución (misiones/grafos) NO entra al MOS
+(14 §4.1); Knowledge Evolution (15 §7) extiende RFC-007 sin modificarlo.*

@@ -8,6 +8,13 @@
 >
 > **Criterio de cierre de V0.85**: preguntar *"¿qué me ha llegado importante hoy?"*
 > responde desde memoria local sin llamar a Gmail en caliente.
+>
+> **Δ 2026-07-12 (Cognitive Runtime, docs 14/15/16)** — 4 deltas menores, ya
+> integrados abajo con la marca `[Δ]`: (1) el stub de skills usa el `LocalSkill`
+> ampliado con linaje (doc 09 §1.1); (2) `decisions.mission_id`; (3) nace
+> `app/core/events.py` y la ingesta emite eventos; (4) disciplina modular del doc
+> 16 §4 desde M1. **Nada más cambia**: `IMemoryStore`, `MemoryRouter`, `MemoryType`,
+> ingesta, summarizer, briefing, compactación y la posición de V0.85 quedan intactos.
 
 ---
 
@@ -153,7 +160,9 @@ class Decision(Base):              # Decision Memory (P03 §5.1) — nace en V0.
     __tablename__ = "decisions"
     id (UUID str), title, body, reason, alternatives (JSON), project (ix, null),
     outcome (null), impact (high|med|low), status (active|superseded|archived, ix),
-    superseded_by (null), created_at (ix)
+    superseded_by (null), created_at (ix),
+    mission_id (str, null, ix)     # [Δ 14 §4.1] enlaza planes/reflexiones del TIE
+                                   # (V1.0+) sin migración nueva; null hasta entonces
 ```
 
 `decisions` nace ahora porque V0.9 (aprobaciones) y V1.0 (planes) escriben en ella
@@ -173,6 +182,12 @@ desde su primer día — así no hay migración funcional después. API interna:
   total, escribe `MemoryJobRun` por pasada, jitter inicial 30 s para no competir
   con el arranque. Si Google no está conectado → pasada "ok, 0 items", sin ruido.
 - **Idempotencia**: `dedup_key` + checkpoint (último `internalDate` procesado).
+- **[Δ 14 §4.1] Eventos**: cada pasada con items nuevos emite `memory.ingested`
+  (y el triaje `email.triaged`) en `app/core/events.py` — pub/sub in-process
+  mínimo (≤80 líneas; **especificación canónica: doc 17** — contrato `Event`,
+  naming, reglas de payload y `test_events.py`). Consumers ya con fecha:
+  `EventTrigger` del AE (V0.9), micro-análisis del Learner (V1.1), tarjetas del
+  Hub. Sin esto, V0.9 tendría que retro-instrumentar la ingesta.
 
 ## 7. Resumen nocturno (summarizer.py)
 
@@ -216,8 +231,8 @@ Si no da tiempo: se corta ESTO primero (está marcado Opcional en P01 §3).
 
 | Sprint | Contenido | Cierre verificable |
 |---|---|---|
-| M1 | `interfaces.py` + `LocalMemoryStore` + `MemoryRouter` + stubs + colecciones + migración (`memory_job_runs`, `decisions`) + `test_memory_contracts.py` | suite verde; `memory_router.store/search/context` funcionan e2e con ChromaDB; rutas `/api/memory/*` existentes intactas por contrato |
-| M2 | `ingestion.py` (email+calendario) + endpoints ingest + `test_memory_ingestion.py` | `POST ingest/run` indexa el inbox real; segunda pasada = 0 duplicados; job visible en `ingest/status` |
+| M1 | `interfaces.py` + `LocalMemoryStore` + `MemoryRouter` + stubs + colecciones + migración (`memory_job_runs`, `decisions` con `mission_id` [Δ]) + `test_memory_contracts.py` + **[Δ 16 §4] API pública en `app/memory/__init__.py` + `test_module_boundaries.py`** | suite verde; `memory_router.store/search/context` funcionan e2e con ChromaDB; rutas `/api/memory/*` existentes intactas por contrato; test de fronteras verde |
+| M2 | `ingestion.py` (email+calendario) + endpoints ingest + `test_memory_ingestion.py` + **[Δ] `app/core/events.py` + emisión `memory.ingested`/`email.triaged`** | `POST ingest/run` indexa el inbox real; segunda pasada = 0 duplicados; job visible en `ingest/status`; un handler de prueba recibe el evento |
 | M3 | `summarizer.py` + `GET /briefing` + tarjeta Hub + `test_memory_briefing.py` | "¿qué me ha llegado hoy?" responde desde memoria con Gmail desconectado (**criterio de cierre de fase**) |
 | M4 | contexto en chat vía router + consolidación chat/gateway (`chat_service.py`) + `test_memory_context.py` + vault si cabe | el chat cita fuentes ("según el email de X del martes"); handler del gateway y endpoint comparten implementación |
 | M5 | hardening: init async de ChromaDB en background (P07-B2), migración de índices (P07-B3), presupuestos de latencia, `test_startup_time.py` | backend acepta peticiones < 2 s; búsqueda < 200 ms con 10k items; CLAUDE.md + roadmap actualizados; tag `v0.8.5` |
@@ -228,7 +243,9 @@ Al cerrar V0.85, V0.9 puede asumir SIN comprobar: (1) `GET /api/memory/briefing`
 estable y testeado por contrato; (2) `memory_router.context()` con presupuesto
 ≤ 300 ms; (3) tabla `decisions` + `decision_service` listos para las aprobaciones;
 (4) `MemoryType.ERROR/AUTOMATION` definidos (colección se crea sola al primer
-`store`); (5) jobs asyncio como patrón de referencia para migrar a APScheduler.
+`store`); (5) jobs asyncio como patrón de referencia para migrar a APScheduler;
+(6) [Δ] `app/core/events.py` operativo con `memory.ingested`/`email.triaged` —
+el `EventTrigger` de V0.9 solo se suscribe, no instrumenta nada.
 
 ## 12. Riesgos
 

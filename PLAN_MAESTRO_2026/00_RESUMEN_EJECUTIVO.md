@@ -51,7 +51,7 @@ del ToolManager compatible (no bloquea nada antes).
 - **No adoptar LangGraph/CrewAI como framework** — el orchestrator custom de ~200 líneas previsto en V1.0 sigue siendo la decisión correcta para un solo usuario (principio 8). Copiamos sus *patrones* (checkpointing, interrupt), no su dependencia.
 - **No multi-canal masivo estilo OpenClaw** (11+ canales) — Telegram + Web + PWA bastan. El Gateway P2 deja la puerta abierta si algún día hace falta.
 - **No reescribir en Rust/Tauri** (OpenHuman, JarvisAgent) — Electron ya funciona; migrar sería reescritura, violando el principio 2. Se reevalúa solo si el peso de Electron se vuelve un problema real.
-- **No self-evolving skills** (Hermes) — experimental, sin beneficio claro para un usuario. Los traces del P5 dejan la base para retomarlo en el futuro.
+- ~~**No self-evolving skills** (Hermes) — experimental, sin beneficio claro~~ — **REVISADO 2026-07-12**: los traces del P5 cumplieron su función de base; el Aithera Learning System (doc 15) incorpora skills evolutivas PERO con cuarentena de validación (evidencia o HITL, nunca automático) — justo la disciplina cuya ausencia motivó el "no" original.
 - **No marketplace de skills** — no hay comunidad que servir; somos un usuario.
 
 ## 5. Secuencia de fases actualizada
@@ -61,10 +61,11 @@ del ToolManager compatible (no bloquea nada antes).
 ✅ V0.8    Gateway + Telegram + hardening + voz + B21
    V0.82/83  Voz remate + AVCS Fase 0: semilla+ondas+modo presencia (doc 13)
    V0.85   MOS Skeleton — la memoria definitiva (docs 07/08)
+   V0.87   WPMS — Workspace & Project Management (doc 18)
    V0.9    Automation Engine + ApprovalGate (doc 11-A)
-   V1.0    Orchestrator + MVP BETA distribuible (docs 11-B, 10, 12)
-   V1.1    Hermes Runtime + LSL/LLL completos (docs 10, 09)
-   V1.2    MCP + potenciación · post-V1.0: Web+PWA+PIN
+   V1.0    TIE v1 (Orchestrator) + MVP BETA distribuible (docs 14, 11-B, 10, 12)
+   V1.1    Hermes Runtime + Learning System (docs 10, 09, 15)
+   V1.2    MCP + TIE v2 + Skill Evolution · post-V1.0: Web+PWA+PIN
    V1.5    AVCS MVP1: 7 ritmos + UI rediseñada (doc 13)
    V2.0+   GSN + CIE + Guardians (doc 08)
 ```
@@ -82,6 +83,11 @@ Detalle por fase en `03_ROADMAP_ACTUALIZADO.md` (reescrito 2026-07-09).
 | `11_AUTOMATION_ORCHESTRATOR_RFC.md` | Automation Engine (4 capas) + Orchestrator (6 componentes) + sprints A1-A4/O1-O5 |
 | `12_AUDITORIA_OPTIMIZACION.md` | hallazgos verificados, plan de optimización P1-P3, estándares de rendimiento, tests |
 | `13_AVCS_DISENO_MAESTRO.md` | AVCS — sistema visual: identidad, 7 ritmos, motor de partículas, performance, Fase 0/MVP1/MVP2 |
+| `14_TIE_COGNITIVE_RUNTIME_DISENO.md` | Cognitive Runtime + TIE: benchmark de patrones, TaskGraph/TaskNode, Graph Execution Engine propio, misiones (absorbe 11-B como TIE v1) |
+| `15_LEARNING_SYSTEM_DISENO.md` | Aithera Learning System: cuarentena de validación, Mission Learning, reflexión 5 escalas, Skill/Knowledge Evolution (extiende 09) |
+| `16_PRINCIPIOS_MODULARES_NO_FRAMEWORKITIS.md` | Principios Maestros aplicados: mapa de módulos, reglas de frontera, eventos, viabilidad — **prioridad sobre todo RFC** |
+| `17_EVENT_BUS_OBSERVABILIDAD.md` | Event Bus (`app/core/events.py`, spec canónica): contrato `Event`, naming, semilla de eventos por módulo, punto de conexión reservado para Runtime Telemetry/Intelligence (V2.0+) |
+| `18_WPMS_WORKSPACE_DISENO.md` | WPMS (V0.87): estado operativo del trabajo (Project/Milestone/Task vara-Linear) sobre el Project Memory del MOS; progreso automático, versionado, integración TIE/AE/Learner/briefing |
 | `FABLE5_PROMPTS/` | los 7 briefings de origen |
 
 ## 6. Fuentes

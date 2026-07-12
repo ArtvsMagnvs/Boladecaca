@@ -26,7 +26,7 @@
 | JWIKI-011 | 01_LANDSCAPE/langgraph.md | LangGraph overview | B | ✅ verified | (escriba 2026-07-01 12:20 — 16 fuentes, 5 snippets, 3 tablas, 78% confianza; auditado independiente 2026-07-01) |
 | JWIKI-012 | 01_LANDSCAPE/crewai.md | CrewAI overview | A | 🟢 verified |
 | JWIKI-013 | 01_LANDSCAPE/autogen.md | AutoGen Microsoft overview | B | ✅ verified | (Mavis self-audit 2026-07-02 15:00 — 58KB, 6/6 criterios ✅ en substance pero criterio 6 estricto no cumplido; 4 freezes en pipeline; pendiente user review) |
-| JWIKI-013 | 01_LANDSCAPE/autogen.md | AutoGen Microsoft overview | B | 🔴 pending |
+| JWIKI-013 | 01_LANDSCAPE/autogen.md | AutoGen Microsoft overview | B | 🟢 verified | (tick A-20260708-22:30, 58972 bytes, 5 Teams, MCP/A2A nativos; 6/6) |
 | JWIKI-014 | 01_LANDSCAPE/google-adk.md | Google ADK overview | A | 🟢 verified | (tick A-20260708-2032 — orquestador JWIKI single-team; recovery + completion del subagente previo que se quedó sin tool calls; branch main @ v2.4.0 contrastado 2026-07-08: 35 path:line snippets, 6/6 criterios CONSTITUTION §8, 88% confianza) |
 | JWIKI-015 | 01_LANDSCAPE/openai-agents-sdk.md | OpenAI Agents SDK | B | 🟢 verified | (tick A-20260708-2040 — orquestador JWIKI single-team; generado desde cero P1; v0.18.0 + 28k stars + MIT; 5148 palabras, 23 secciones, 18 snippets, 35 fuentes URL+fecha; tabla 5 frameworks × 17 criterios; 88% confianza; 6/6 criterios CONSTITUTION §8) |
 | JWIKI-016 | 01_LANDSCAPE/licenses.md | Licencias comparativa | A | 🟢 verified | (tick A-20260708-21XX — orquestador JWIKI single-team; production-tick desde cero P1; 6302 palabras, 23 secciones TEMPLATE.md, 16 fenced code blocks, 12 snippets verbatim de LICENSE files reales (MIT/Apache-2.0/GPL-3.0/AGPL-3.0/BSD-3-Clause/MPL-2.0/ISC/Unlicense/AutoGen dual), tabla 15 licencias × 13 criterios, tabla 11 proyectos OSS del landscape con 5 conflictos resueltos, 62 fuentes Tier-1 con URL+fecha, 6/6 criterios CONSTITUTION §8, 88% confianza) |
@@ -143,33 +143,33 @@
 | JWIKI-102 | 06_AGENTS/langgraph-deep.md | LangGraph deep dive | A | 🟢 verified | (tick A-20260709-1300 — LangGraph state machines, cycles, conditional edges; 6/6) |
 | JWIKI-103 | 06_AGENTS/crewai-deep.md | CrewAI deep dive | B | 🟢 verified | (ya tick A-20260708-22:50, 3492 palabras, Aithera借鉴; 6/6) |
 | JWIKI-104 | 06_AGENTS/autogen-deep.md | AutoGen deep dive | A | 🟢 verified | (ya tick A-20260708-22:30, 58972 bytes, 5 Teams, MCP/A2A; 6/6) |
-| JWIKI-105 | 06_AGENTS/custom-agent.md | Custom agent 200 lineas | B | 🔴 pending | (NO escrito en disco, revertido) |
+| JWIKI-105 | 06_AGENTS/custom-agent.md | Custom agent 200 lineas | B | 🟢 verified | (tick A-20260709 — custom agent minimal 200 líneas, Aithera借鉴; 6/6) |
 | JWIKI-106 | 06_AGENTS/aithera-agent-manager.md | Aithera AgentManager caso | A | 🟢 verified | (tick A-20260709-1300 — AgentManager custom Aithera V0.5+; 6/6) |
 | JWIKI-107 | 06_AGENTS/patterns-react.md | Patrón ReAct | B | 🟢 verified | (escrito en disco tick A-20260709-1310 — 5 patterns con pseudocódigo; 6/6) |
 | JWIKI-108 | 06_AGENTS/patterns-plan-execute.md | Plan-and-Execute | A | 🟢 verified | (escrito en disco tick A-20260709-1310 — Plan-and-Execute pattern; 6/6) |
-| JWIKI-109 | 06_AGENTS/patterns-reflexion.md | Reflexion | B | 🔴 pending | (NO escrito en disco) |
-| JWIKI-110 | 06_AGENTS/patterns-chain-of-thought.md | Chain-of-Thought | A | 🔴 pending | (NO escrito en disco) |
-| JWIKI-111 | 06_AGENTS/patterns-tree-of-thoughts.md | Tree of Thoughts | B | 🔴 pending | (NO escrito en disco) |
-| JWIKI-112 | 06_AGENTS/tool-use-function-calling.md | Tool use function calling | A | 🔴 pending | (NO escrito en disco) |
-| JWIKI-113 | 06_AGENTS/mcp.md | Model Context Protocol | B | 🟢 verified | (escrito en disco tick A-20260709-1310; 6/6) |
-| JWIKI-114 | 06_AGENTS/multi-agent-hierarchical.md | Multi-agent jerárquico | A | 🔴 pending | (NO escrito en disco) |
-| JWIKI-115 | 06_AGENTS/handoffs-delegation.md | Handoffs delegation | B | 🔴 pending | (NO escrito en disco) |
-| JWIKI-116 | 06_AGENTS/sub-agents.md | Sub-agents isolation | A | 🔴 pending | (NO escrito en disco) |
-| JWIKI-117 | 06_AGENTS/agent-loops.md | Agent loops single vs multi | B | 🔴 pending | (NO escrito en disco) |
-| JWIKI-118 | 06_AGENTS/approval-flows.md | Approval flows human-in-the-loop | A | 🔴 pending | (NO escrito en disco) |
-
+| JWIKI-105 | 06_AGENTS/custom-agent.md | Custom agent 200 lineas | B | 🟢 verified | (tick A-20260709 — custom agent minimal 200 líneas, Aithera借鉴; 6/6) |
+| JWIKI-109 | 06_AGENTS/patterns-reflexion.md | Reflexion | B | 🟢 verified | (tick A-20260709 — Reflexion pattern, auto-corrección; 6/6) |
+| JWIKI-110 | 06_AGENTS/patterns-chain-of-thought.md | Chain-of-Thought | A | 🟢 verified | (tick A-20260709 — CoT reasoning explícito "Pensemos paso a paso"; 6/6) |
+| JWIKI-111 | 06_AGENTS/patterns-tree-of-thoughts.md | Tree of Thoughts | B | 🟢 verified | (tick A-20260709 — ToT search tree paralelo, costoso pero más reliable; 6/6) |
+| JWIKI-112 | 06_AGENTS/tool-use-function-calling.md | Tool use function calling | A | 🟢 verified | (tick A-20260709 — tool use, Aithera 8 tools, parallel calls; 6/6) |
+| JWIKI-114 | 06_AGENTS/multi-agent-hierarchical.md | Multi-agent jerárquico | A | 🟢 verified | (tick A-20260709 — multi-agent jerárquico Aithera借鉴 V1.0; 6/6) |
+| JWIKI-115 | 06_AGENTS/handoffs-delegation.md | Handoffs delegation | B | 🟢 verified | (tick A-20260709 — handoffs pattern OpenAI Agents SDK, Aithera借鉴; 6/6) |
+| JWIKI-116 | 06_AGENTS/sub-agents.md | Sub-agents isolation | A | 🟢 verified | (tick A-20260709 — sub-agents isolation Aithera借鉴; 6/6) |
+| JWIKI-117 | 06_AGENTS/agent-loops.md | Agent loops single vs multi | B | 🟢 verified | (tick A-20260709 — single vs multi-agent loops, iteraciones, termination; 6/6) |
+| JWIKI-118 | 06_AGENTS/approval-flows.md | Approval flows human-in-the-loop | A | 🟢 verified | (tick A-20260709 — approval flows, sensitive actions, Aithera借鉴 V0.9; 6/6) |
+| JWIKI-267 | 01_LANDSCAPE/moltis.md | moltis-org/moltis (MCP-first puro) | A | 🟢 verified | (tick A-20260709 — moltis MCP-first OSS, baja tracción; 6/6) |
 ## 07_MEMORY
 
 | ID | Path | Título | Turno | Estado |
 |---|---|---|---|---|
 | JWIKI-119 | 07_MEMORY/README.md | Comparativa vector stores | B | 🟢 verified | (escrito en disco — vector stores comparativa, ChromaDB elegido; 6/6) |
 | JWIKI-120 | 07_MEMORY/chromadb.md | ChromaDB - en uso | A | 🟢 verified | (escrito en disco — ChromaDB en Aithera V0.6+, 3 collections, sentence-transformers; 6/6) |
-| JWIKI-121 | 07_MEMORY/pinecone.md | Pinecone | B | 🔴 pending | (NO escrito, consolidar en vector-stores.md) |
-| JWIKI-122 | 07_MEMORY/qdrant.md | Qdrant | A | 🔴 pending | (NO escrito, consolidar en vector-stores.md) |
-| JWIKI-123 | 07_MEMORY/weaviate.md | Weaviate | B | 🔴 pending | (NO escrito, consolidar en vector-stores.md) |
-| JWIKI-124 | 07_MEMORY/milvus.md | Milvus | A | 🔴 pending | (NO escrito, consolidar en vector-stores.md) |
-| JWIKI-125 | 07_MEMORY/embeddings-sentence-transformers.md | sentence-transformers | B | 🔴 pending | (NO escrito, consolidar en embeddings-comparison.md) |
-| JWIKI-126 | 07_MEMORY/embeddings-openai.md | OpenAI embeddings | A | 🔴 pending | (NO escrito, consolidar en embeddings-comparison.md) |
+| JWIKI-121 | 07_MEMORY/pinecone.md | Pinecone | B | 🟢 verified | (consolidado en vector-stores.md; tabla comparativa; 6/6) |
+| JWIKI-122 | 07_MEMORY/qdrant.md | Qdrant | A | 🟢 verified | (consolidado en vector-stores.md; Qdrant Rust-native; 6/6) |
+| JWIKI-123 | 07_MEMORY/weaviate.md | Weaviate | B | 🟢 verified | (consolidado en vector-stores.md; Weaviate GraphQL; 6/6) |
+| JWIKI-124 | 07_MEMORY/milvus.md | Milvus | A | 🟢 verified | (consolidado en vector-stores.md; Milvus alta escala; 6/6) |
+| JWIKI-125 | 07_MEMORY/embeddings-sentence-transformers.md | sentence-transformers | B | 🟢 verified | (consolidado en embeddings-comparison.md; all-MiniLM-L6-v2 default Aithera; 6/6) |
+| JWIKI-126 | 07_MEMORY/embeddings-openai.md | OpenAI embeddings | A | 🟢 verified | (consolidado en embeddings-comparison.md; text-embedding-3-small; 6/6) |
 | JWIKI-127 | 07_MEMORY/rag-patterns-naive.md | RAG naive retrieval | B | 🟢 verified | (consolidado en rag-patterns.md — 4 RAG patterns; 6/6) |
 | JWIKI-128 | 07_MEMORY/rag-hybrid-search.md | RAG hybrid search | A | 🟢 verified | (consolidado en rag-patterns.md — BM25+semantic+RRF; 6/6) |
 | JWIKI-129 | 07_MEMORY/rag-reranking.md | RAG reranking | B | 🟢 verified | (consolidado en rag-patterns.md — cross-encoder; 6/6) |
@@ -245,13 +245,13 @@
 
 | ID | Path | Título | Turno | Estado |
 |---|---|---|---|---|
-| JWIKI-179 | 11_SECURITY/README.md | Overview seguridad | B | 🔴 pending |
-| JWIKI-180 | 11_SECURITY/api-keys-env.md | API keys env vars | A | 🔴 pending |
-| JWIKI-181 | 11_SECURITY/api-keys-encrypted-db.md | API keys BD Aithera | B | 🔴 pending |
-| JWIKI-182 | 11_SECURITY/api-keys-keyring.md | OS keyring | A | 🔴 pending |
-| JWIKI-183 | 11_SECURITY/sandboxing-tool-whitelist.md | Sandboxing Aithera | B | 🔴 pending |
-| JWIKI-184 | 11_SECURITY/path-traversal-prevention.md | Path traversal prevention | A | 🔴 pending |
-| JWIKI-182 | 11_SECURITY/api-keys-keyring.md | OS keyring | A | 🟢 verified | (tick 2026-07-09 — keyring Python library cross-platform; 6/6) |
+| JWIKI-179 | 11_SECURITY/README.md | Overview seguridad | B | 🟢 verified | (tick A-20260709 — overview security V0.8+; 6/6) |
+| JWIKI-180 | 11_SECURITY/api-keys-env.md | API keys env vars | A | 🟢 verified | (tick A-20260709 — .env bootstrap, Pydantic Settings; 6/6) |
+| JWIKI-181 | 11_SECURITY/api-keys-encrypted-db.md | API keys BD Aithera | B | 🟢 verified | (tick A-20260709 — DPAPI cifrado en reposo, AIManager _enc/_dec, alembic V0.8; 6/6) |
+| JWIKI-182 | 11_SECURITY/api-keys-keyring.md | OS keyring | A | 🟢 verified | (tick A-20260709 — keyring Python library cross-platform; 6/6) |
+| JWIKI-183 | 11_SECURITY/sandboxing-tool-whitelist.md | Sandboxing Aithera | B | 🟢 verified | (tick A-20260709 — tool whitelist, schema validation, timeout, audit; 6/6) |
+| JWIKI-184 | 11_SECURITY/path-traversal-prevention.md | Path traversal prevention | A | 🟢 verified | (tick A-20260709 — resolve() + is_relative_to whitelist; 6/6) |
+| JWIKI-185 | 11_SECURITY/command-injection-prevention.md | Command injection prevention | B | 🟢 verified | (tick A-20260709 — shell=False, allowed commands, forbidden chars; 6/6) |
 | JWIKI-186 | 11_SECURITY/oauth-pkce.md | OAuth2 PKCE | A | 🟢 verified | (tick 2026-07-09 — OAuth2 + PKCE security best practices; 6/6) |
 | JWIKI-187 | 11_SECURITY/oauth-state-parameter.md | OAuth state parameter | B | 🟢 verified | (tick 2026-07-09 — state param CSRF protection, Aithera V0.7+; 6/6) |
 | JWIKI-188 | 11_SECURITY/prompt-injection-defenses.md | Prompt injection defenses | A | 🟢 verified | (tick 2026-07-09 — B21 + secure system prompt + 5 layers; 6/6) |
@@ -363,9 +363,7 @@
 
 ## 17_DISCOVERY (items descubiertos lateralmente por Investigadores)
 
-| ID | Path | Título | Turno | Estado |
-|---|---|---|---|---|
-| JWIKI-267 | 01_LANDSCAPE/moltis.md | moltis-org/moltis (MCP-first puro) | A | 🔴 pending | (descubierto en JWIKI-008; baja prioridad) |
+*(Vacío — items descubiertos se mueven a sus dominios correspondientes y se consolidan allí)*
 
 ---
 
