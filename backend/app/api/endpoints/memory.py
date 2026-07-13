@@ -1,7 +1,7 @@
 # /api/memory - Endpoints del sistema de memoria semantica (V0.6 Fase 3)
 #
 # Endpoints:
-#   GET    /api/memory/stats              -> stats de las 3 colecciones
+#   GET    /api/memory/stats              -> stats de las 3 colecciones + [M3] MOS
 #   POST   /api/memory/context            -> guarda/actualiza una preferencia
 #   GET    /api/memory/context/list       -> lista todas las preferencias
 #   GET    /api/memory/context/search?q=  -> busca preferencias relevantes
@@ -9,6 +9,9 @@
 #   POST   /api/memory/documents          -> indexa un documento
 #   GET    /api/memory/documents/search?q=-> busca documentos relevantes
 #   POST   /api/memory/conversations/clear -> borra el historial de conversaciones
+#   GET    /api/memory/ingest/status      -> [V0.85 M2] ultima pasada de ingesta por job
+#   POST   /api/memory/ingest/run         -> [V0.85 M2] fuerza una pasada de ingesta
+#   GET    /api/memory/briefing?date=     -> [V0.85 M3] resumen del dia + urgentes + agenda + top remitentes
 #
 # NOTA: si ChromaDB no esta disponible, todos los endpoints devuelven 503
 # (excepto /stats que devuelve el error en el cuerpo).
@@ -38,8 +41,57 @@ def _check_healthy():
 
 @router.get("/stats")
 def get_stats():
-    """Devuelve las estadisticas de las 3 colecciones de ChromaDB."""
-    return memory_manager.get_stats()
+    """Estadisticas de las 3 colecciones legacy + [V0.85 M3] las del MOS
+    (items por MemoryType activo + cobertura de dias de mem_personal, la
+    coleccion que alimenta la ingesta). Aditivo: las claves legacy no cambian."""
+    base = memory_manager.get_stats()
+
+    from app.memory import MemoryType
+
+    mos_collections = {}
+    for mt in (MemoryType.PERSONAL, MemoryType.PROJECT, MemoryType.SKILL, MemoryType.DECISION):
+        col = memory_manager.get_or_create_collection(mt.value)
+        mos_collections[mt.value] = col.count() if col is not None else 0
+
+    days_covered = 0
+    personal_col = memory_manager.get_or_create_collection(MemoryType.PERSONAL.value)
+    if personal_col is not None:
+        got = personal_col.get()
+        dates = {m.get("date") for m in (got.get("metadatas") or []) if m and m.get("date")}
+        days_covered = len(dates)
+
+    return {**base, "mos_collections": mos_collections, "mos_days_covered": days_covered}
+
+
+# ----------------------------------------------------------------------
+# Briefing (V0.85 M3, doc 07 §7/§8) — el endpoint del criterio de cierre de
+# fase: responde desde memoria local, sin Gmail/Google en caliente.
+# ----------------------------------------------------------------------
+
+@router.get("/briefing")
+async def get_briefing(date: Optional[str] = Query(None, description="YYYY-MM-DD; default hoy")):
+    from datetime import date as _date, datetime as _datetime
+
+    from app.memory.summarizer import build_deterministic_summary, gather_day_data, get_cached_summary
+
+    if date:
+        try:
+            target = _date.fromisoformat(date)
+        except ValueError:
+            raise HTTPException(status_code=400, detail=f"fecha invalida: {date!r} (formato YYYY-MM-DD)")
+    else:
+        target = _datetime.utcnow().date()
+
+    data = gather_day_data(target)
+    cached = await get_cached_summary(target)
+    if cached:
+        summary, summary_source = cached, "cached"
+    else:
+        # Sin resumen nocturno todavia para esta fecha: determinista al vuelo
+        # (cero LLM en el critical path de un GET — presupuesto de latencia).
+        summary, summary_source = build_deterministic_summary(data), "live_deterministic"
+
+    return {**data, "summary": summary, "summary_source": summary_source}
 
 
 # ----------------------------------------------------------------------

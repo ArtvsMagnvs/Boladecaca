@@ -144,6 +144,32 @@ async def test_store_search_retrieve_context_forget():
 
 @requires_chroma
 @pytest.mark.anyio
+async def test_summarize_filtra_por_rango_de_fechas():
+    """Regresion [V0.85 M3]: summarize() usaba where $gte/$lte sobre un string
+    de fecha, y esta version de ChromaDB (1.5.x) solo admite $gte/$lte sobre
+    numeros -> lanzaba ValueError en cuanto alguien lo llamaba de verdad. Se
+    arreglo con $in sobre los dias enumerados; este test lo cubre para que no
+    vuelva a colarse sin test."""
+    from datetime import date, timedelta
+
+    today = date.today()
+    await memory_router.store(
+        "elemento de hoy", MemoryType.PERSONAL, "test_contract_summarize", dedup_key="sum_today",
+    )
+    text = await memory_router.summarize(MemoryType.PERSONAL, today, today)
+    assert "elemento de hoy" in text or "1 elementos" in text
+
+    # Rango que NO incluye hoy -> vacio, sin lanzar.
+    empty = await memory_router.summarize(
+        MemoryType.PERSONAL, today - timedelta(days=30), today - timedelta(days=29)
+    )
+    assert empty == ""
+
+    await memory_router.forget(MemoryType.PERSONAL, {"source": "test_contract_summarize"})
+
+
+@requires_chroma
+@pytest.mark.anyio
 async def test_dedup_key_es_idempotente():
     """Dos store con el mismo dedup_key = 1 item (actualiza, no duplica)."""
     dedup = "idem_key"

@@ -100,6 +100,7 @@ export interface ExecutionLogEntry {
 }
 
 // V0.6 (Fase 3 Memory System): tipos para ChromaDB endpoints.
+// V0.85 (MOS M3): mos_collections/mos_days_covered son aditivos (doc 07 §8).
 export interface MemoryStats {
   healthy: boolean;
   error?: string | null;
@@ -107,6 +108,34 @@ export interface MemoryStats {
   conversations: number;
   user_context: number;
   documents: number;
+  mos_collections?: Record<string, number>;
+  mos_days_covered?: number;
+}
+
+// V0.85 (MOS M2): estado de los jobs de ingesta proactiva.
+export interface MemoryJobRunInfo {
+  id: number;
+  started_at: string | null;
+  finished_at: string | null;
+  status: "running" | "ok" | "error";
+  items_processed: number;
+  error_detail: string | null;
+}
+export interface MemoryIngestStatus {
+  jobs: Record<string, { interval_min: number; last_run: MemoryJobRunInfo | null; next_run_at: string | null }>;
+}
+
+// V0.85 (MOS M3): briefing del dia — resumen + urgentes + agenda + top remitentes.
+export interface MemoryBriefing {
+  date: string;
+  summary: string;
+  summary_source: "cached" | "live_deterministic";
+  triage_counts: Record<string, number>;
+  triaged_total: number;
+  urgent_pending: { count: number; items: { email_id: string; sender: string | null; subject: string | null }[] };
+  agenda: { title: string; start: string }[];
+  top_senders: { sender: string; count: number }[];
+  conversations_count: number;
 }
 
 export interface ContextItem {
@@ -656,6 +685,10 @@ export const api = {
   // endpoints del modulo /api/memory/*
   getMemoryStats: () => request<MemoryStats>("/memory/stats"),
   getMemoryHealth: () => request<{ healthy: boolean; init_error?: string | null; stats: MemoryStats }>("/memory/health"),
+  // V0.85 (MOS M2/M3): ingesta proactiva + briefing del dia.
+  getMemoryIngestStatus: () => request<MemoryIngestStatus>("/memory/ingest/status"),
+  getMemoryBriefing: (date?: string) =>
+    request<MemoryBriefing>(`/memory/briefing${date ? `?date=${date}` : ""}`),
   storeContext: (data: { key: string; content: string; category?: string }) =>
     request<{ id: string; stored: boolean; key: string }>("/memory/context", {
       method: "POST",

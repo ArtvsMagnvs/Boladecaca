@@ -121,6 +121,17 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         log_error("startup", e, "No se pudo iniciar la ingesta de memoria (MOS sigue disponible sin ingesta automatica)")
 
+    # V0.85 (MOS M3): resumen nocturno (03:30 local). GET /api/memory/briefing
+    # no depende de este loop (genera el resumen determinista al vuelo si no
+    # hay cache), asi que un fallo aqui nunca deja el briefing sin respuesta.
+    try:
+        from app.memory.summarizer import start_summarizer_job
+
+        start_summarizer_job()
+        log_info("startup", "Resumen nocturno (MOS) programado — 03:30 local")
+    except Exception as e:
+        log_error("startup", e, "No se pudo programar el resumen nocturno (briefing sigue disponible en modo determinista)")
+
     yield
 
     # Shutdown: parada limpia de los canales del Gateway (polling de Telegram).

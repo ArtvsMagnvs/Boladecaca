@@ -18,7 +18,7 @@ from __future__ import annotations
 import asyncio
 import json
 import uuid
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from typing import Any, Optional
 
 from app.memory.interfaces import IMemoryStore, MemoryItem, MemoryType
@@ -214,16 +214,23 @@ class LocalMemoryStore(IMemoryStore):
     ) -> str:
         """V0.85 M1: resumen determinista minimo (conteo + primeras lineas del
         rango). El resumen rico Ollama-first llega en M3 (summarizer.py) y se
-        cachea como item kind=daily_summary; este metodo lo preferira entonces."""
+        cachea como item kind=daily_summary; este metodo lo preferira entonces.
+
+        NOTA: esta version de ChromaDB (1.5.x) solo admite $gte/$lte sobre
+        numeros, no sobre strings — el rango de fechas se resuelve con $in
+        sobre los dias enumerados (acotado a 1 año; summarize() es para
+        rangos cortos: dia/semana/mes, doc 07 §7)."""
         if not self.healthy:
             return ""
         f_iso, t_iso = date_from.isoformat(), date_to.isoformat()
+        span_days = min(max((date_to - date_from).days + 1, 0), 366)
+        day_range = [(date_from + timedelta(days=i)).isoformat() for i in range(span_days)]
 
         def _work() -> str:
             col = self._collection(memory_type)
-            if col is None:
+            if col is None or not day_range:
                 return ""
-            got = col.get(where={"date": {"$gte": f_iso, "$lte": t_iso}})
+            got = col.get(where={"date": {"$in": day_range}})
             docs = got.get("documents", []) if got else []
             if not docs:
                 return ""

@@ -107,8 +107,36 @@ Opción B (arquitectura definitiva, implementación mínima). Diseño completo e
   Google en CI—, calendario con datos reales de BD, idempotencia de 2ª pasada,
   entrega del evento a un handler de prueba, endpoints). Suite completa: 209
   passed (sin tareas asíncronas colgadas en el teardown del `lifespan`).
-- ⏳ M3 summarizer + briefing · M4 contexto en chat + `chat_service.py` · M5
-  hardening (init async ChromaDB, índices, perf) + tag `v0.8.5`.
+- ✅ **M3 — Resumen nocturno + Briefing + tarjeta Hub** (`app/memory/summarizer.py`):
+  job diario **03:30 hora LOCAL** (`datetime.now()`, no UTC — a propósito,
+  doc 07 §7) que junta `EmailTriage` del día + agenda ya ingestada (M2) +
+  turnos de chat, y escribe un item `mem_personal` (`kind=daily_summary`,
+  `dedup_key=day:{date}` → re-ejecutar el mismo día sobreescribe). Modelo:
+  **Ollama si está sano (coste 0) → proveedor activo → plantilla determinista**
+  (nunca se salta el día); salida por `strip_reasoning()` (B21).
+  `GET /api/memory/briefing?date=`: resumen (cache si existe, si no
+  determinista al vuelo — cero LLM en el critical path del GET) + urgentes
+  pendientes (`EmailTriage.category='urgente'` sin ninguna `EmailActivityLog`
+  todavía — no acotado por día, "pendiente" es un estado, no un evento del
+  día) + agenda del día + top remitentes. `GET /api/memory/stats` extendido
+  (aditivo) con `mos_collections` (items por `MemoryType` activo) y
+  `mos_days_covered`. Tarjeta **"Memoria"** en el Hub (`Hub.tsx`): resumen de
+  hoy en 2 líneas + última ingesta + nº de urgentes, cargada junto al resto de
+  paneles (patrón `Promise.all` + `safeSet`, mismo estilo que el digest de
+  Email). **Regresión encontrada y arreglada**: ChromaDB 1.5.x NO admite
+  `$gte`/`$lte` sobre strings (solo números) — afectaba también a
+  `LocalMemoryStore.summarize()` de M1 (nunca se había ejercitado con datos
+  reales); se resolvió con `$in` sobre fechas enumeradas (rangos cortos,
+  acotado a 1 año) o filtro en Python cuando el campo no es un `date` uniforme
+  (`event_start` mezcla fecha y datetime; `timestamp` de conversaciones sí es
+  uniforme pero de todos modos se filtra en Python por simplicidad). Test de
+  regresión en `test_memory_contracts.py`. **Cierre de fase verificado**:
+  `test_criterio_de_cierre_briefing_sin_google` (Gmail desconectado, briefing
+  real) + verificación manual contra el backend real del usuario (28
+  urgentes pendientes reales, resumen coherente, tarjeta del Hub renderizando
+  con datos en vivo). Suite completa: 220 passed.
+- ⏳ M4 contexto en chat + `chat_service.py` · M5 hardening (init async
+  ChromaDB, índices, perf) + tag `v0.8.5`.
 
 **Fases pendientes (documentadas, no implementadas)** — ver §5 para el orden
 completo acordado (Hub Visual → Voz → V0.85 Memory → V0.87 WPMS → V0.9 → V1.0 →
@@ -353,10 +381,12 @@ Salto de memoria de verdad, previo a la automatización y al TIE. Diseño comple
   skills con linaje, `decisions.mission_id`, `app/core/events.py` (la ingesta
   emite eventos; spec canónica del bus: `PLAN_MAESTRO_2026/17`), disciplina
   modular (API pública por `__init__.py` + `test_module_boundaries.py`).
-- **Estado**: **M1 y M2 HECHOS** (contratos congelados + `LocalMemoryStore`/
+- **Estado**: **M1, M2 y M3 HECHOS** (contratos congelados + `LocalMemoryStore`/
   `MemoryRouter` + stubs + `decisions`/`memory_job_runs` + `decision_service` +
-  disciplina modular + ingesta email/calendario + `app/core/events.py`; ver
-  §1). M3-M5 pendientes.
+  disciplina modular + ingesta email/calendario + `app/core/events.py` +
+  resumen nocturno + `GET /api/memory/briefing` + tarjeta Memoria en el Hub;
+  ver §1). **Criterio de cierre de fase ya verificado** (briefing responde con
+  Gmail desconectado). M4-M5 pendientes.
 
 ### ⏳ V0.9 — Automation Engine + ApprovalGate
 Doc: `PLAN_MAESTRO_2026/11` parte A (sustituye a `Fase_6_Automation_V08.md`).
@@ -418,7 +448,7 @@ Docs: `PLAN_MAESTRO_2026/10` (Hermes/AgentRuntime) + `15` (Learning System) + `0
 | `/api/email` | `email_activity.py` | ~260 líneas | Activity log (dashboard) + digest diario |
 | `/api/voice` | `voice.py` | 8.6KB | ElevenLabs + eSpeak |
 | `/api/tools` | `tools.py` | 2.3KB | Catálogo de herramientas + ejecución |
-| `/api/memory` | `memory.py` | 5.6KB | Búsqueda y stats de memoria semántica + V0.85 M2: `ingest/status`, `ingest/run` |
+| `/api/memory` | `memory.py` | 5.6KB | Búsqueda y stats de memoria semántica + V0.85 M2: `ingest/status`, `ingest/run` + M3: `briefing`, `stats` extendido |
 | `/api/telegram` | `telegram.py` | ~110 líneas | V0.8: status + configure (token cifrado DPAPI) del canal Telegram |
 
 Health checks: `GET /` (versión), `GET /health` (status simple).

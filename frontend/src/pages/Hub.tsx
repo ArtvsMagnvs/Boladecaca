@@ -91,6 +91,13 @@ export default function Hub() {
   const [proposalsCount, setProposalsCount] = useState<{ pending: number; counter_sent: number; confirmed: number }>({
     pending: 0, counter_sent: 0, confirmed: 0,
   });
+  // V0.85 (MOS M3): tarjeta Memoria — ultima ingesta, dias cubiertos, briefing de hoy.
+  const [memoryCard, setMemoryCard] = useState<{
+    summary: string;
+    urgentCount: number;
+    daysCovered: number;
+    lastIngestAt: string | null;
+  } | null>(null);
   /**
    * Carga simultánea de los datos del Hub. Centralizado en una sola
    * función para que el efecto inicial y el intervalo de 30s compartan
@@ -175,6 +182,32 @@ export default function Hub() {
         setProposalsCount(counts);
       })
       .catch(() => setProposalsCount({ pending: 0, counter_sent: 0, confirmed: 0 }));
+
+    // V0.85 (MOS M3): tarjeta Memoria (briefing de hoy + ultima ingesta + dias
+    // cubiertos). Tres llamadas independientes, barato y solo BD/Chroma local.
+    Promise.all([
+      api.getMemoryBriefing().catch(() => null),
+      api.getMemoryIngestStatus().catch(() => null),
+      api.getMemoryStats().catch(() => null),
+    ]).then(([briefing, ingest, stats]) => {
+      if (cancelled) return;
+      if (!briefing && !ingest && !stats) {
+        setMemoryCard(null);
+        return;
+      }
+      const lastRuns = ingest
+        ? Object.values(ingest.jobs)
+            .map((j) => j.last_run?.finished_at)
+            .filter((d): d is string => !!d)
+        : [];
+      const lastIngestAt = lastRuns.length ? lastRuns.sort().at(-1)! : null;
+      setMemoryCard({
+        summary: briefing?.summary ?? "",
+        urgentCount: briefing?.urgent_pending.count ?? 0,
+        daysCovered: stats?.mos_days_covered ?? 0,
+        lastIngestAt,
+      });
+    });
 
     return () => {
       cancelled = true;
@@ -555,6 +588,36 @@ export default function Hub() {
               >
                 Configurar Email
               </button>
+            </>
+          )}
+        </HubPanel>
+
+        {/* V0.85 (MOS M3): tarjeta Memoria — ultima ingesta, dias cubiertos, briefing de hoy */}
+        <HubPanel
+          title="Memoria"
+          action={
+            <span className="text-[10px] text-ink-faint">
+              {memoryCard?.daysCovered ? `${memoryCard.daysCovered} días` : ""}
+            </span>
+          }
+        >
+          {memoryCard === null ? (
+            <LoadingDots />
+          ) : (
+            <>
+              <p className="text-sm text-ink line-clamp-2">
+                {memoryCard.summary || "Sin actividad relevante todavía."}
+              </p>
+              <div className="mt-2 flex items-center justify-between text-[10px] px-2 py-1.5 rounded-lg bg-base-800/40">
+                <span className="text-ink-faint">
+                  {memoryCard.lastIngestAt
+                    ? `Ingesta: ${formatEventDate(memoryCard.lastIngestAt)}`
+                    : "Sin ingesta todavía"}
+                </span>
+                <span className={memoryCard.urgentCount > 0 ? "text-signal-error font-medium" : "text-ink-faint"}>
+                  {memoryCard.urgentCount} urgentes
+                </span>
+              </div>
             </>
           )}
         </HubPanel>
