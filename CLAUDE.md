@@ -824,12 +824,12 @@ npm run electron:build  # genera release/*.exe con electron-builder
 
 Estas decisiones son **inviolables** salvo acuerdo explícito del usuario:
 
-1. **No romper lo que funciona** — cada commit deja producto usable
+1. **No romper lo que funciona** — cada commit deja producto usable. Protege comportamiento CORRECTO y contratos públicos, nunca bugs ni vulnerabilidades: cifrar una key que estaba en plano o cerrar un CORS abierto no es "romper", es corregir (aclaración 2026-07-13, ver AOS §2 principio 1)
 2. **Evolución, no reescritura** — refactor solo cuando un módulo impide avanzar
 3. **Un backend, múltiples clientes** — Electron/Telegram/Web/PWA son interfaces puras
 4. **La IA razona, Aithera decide** — el LLM nunca tiene acceso directo a herramientas
 5. **Ejecución controlada** — ExecutionEngine valida whitelist antes de ejecutar
-6. **Optimizar para un usuario** — no multi-tenancy, no balanceo
+6. **Optimizar para un usuario** — no multi-tenancy, no balanceo. Gobierna infraestructura de escala, no seguridad; no contradice diseñar código que aguante 5 años (doc 16 principio 17 — ver aclaración en AOS §2 principio 6)
 7. **Cada fase deja producto usable** — duración de días, no semanas
 8. **Sin sobreingeniería** — Celery no, GraphQL no, LangChain no, AutoGen no
 

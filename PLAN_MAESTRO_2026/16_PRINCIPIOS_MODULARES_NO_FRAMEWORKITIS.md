@@ -26,12 +26,12 @@
 | 9 | **Bajo acoplamiento** | Un módulo conoce las interfaces públicas de los demás, jamás su implementación (TIE → `IMemoryStore`, nunca → ChromaDB) |
 | 10 | **Alta cohesión** | El código relacionado vive junto; no repartir una responsabilidad entre módulos |
 | 11 | **Arranque rápido** | Lazy loading: al iniciar solo UI + AVCS + Voice + gateway; el resto se carga al primer uso (coherente con doc 12 A1) |
-| 12 | **El rendimiento es prioritario** | Comunicación entre módulos = llamadas directas en memoria. Prohibido HTTP/REST/gRPC/sockets/procesos dentro del mismo programa |
+| 12 | **El rendimiento es prioritario** | Comunicación *entre módulos de Aithera* = llamadas directas en memoria. Prohibido HTTP/REST/gRPC/sockets/procesos **como mecanismo de comunicación interna** entre esos módulos. **Aclaración (2026-07-13)**: NO prohíbe el aislamiento por proceso como medida de seguridad (p.ej. sandboxear ejecución de código no confiable/generado por IA en el futuro Agente del TIE, V1.0) — eso lo gobierna AOS principio 5 (ejecución controlada), no este |
 | 13 | **Código comprensible** | Un dev nuevo entiende la arquitectura en horas. Si algo necesita 40 páginas, es demasiado complejo |
-| 14 | **Sin sobreingeniería** | La solución más sencilla que permita evolucionar mañana. Nada "por si acaso" |
+| 14 | **Sin sobreingeniería** | La solución más sencilla que permita evolucionar mañana. Nada "por si acaso". Si entra en tensión con el principio 17 sobre una decisión concreta, decide la Regla de Oro de abajo (simplicidad antes que escalabilidad) |
 | 15 | **Aithera es el banco de pruebas** | Un módulo solo se considera extraíble tras meses de estabilidad dentro de Aithera. Nunca antes |
 | 16 | **El usuario no nota la arquitectura** | Se siente UNA IA, no diez sistemas conectados |
-| 17 | **Diseñar a cinco años** | "¿Tomaría esta decisión con un millón de usuarios y cinco años de evolución?" |
+| 17 | **Diseñar a cinco años** | "¿Tomaría esta decisión con un millón de usuarios y cinco años de evolución?" — sobre la CALIDAD de las fronteras del código (que un cambio futuro no obligue a reescribirlo todo), nunca sobre construir infraestructura de escala real (eso lo prohíbe AOS principio 6). Si entra en tensión con el 14, decide la Regla de Oro |
 
 **Regla de Oro (orden inviolable)**: 1. Simplicidad · 2. Claridad · 3. Rendimiento ·
 4. Mantenibilidad · 5. Escalabilidad · 6. Modularidad · 7. Reutilización.
@@ -194,3 +194,16 @@ Criterios acumulativos para considerar extraer (p.ej. el MOS como producto):
 ---
 *Diseño 2026-07-12 (Fable 5). Gobierna a los docs 14 y 15 y, retroactivamente, a
 07-13 (sin cambios de contrato: ya cumplían). Primera aplicación: V0.85 sprint M1.*
+
+*Revisión 2026-07-13: aclaraciones en los principios 12, 14 y 17 tras una revisión
+crítica pedida explícitamente por el usuario ("¿hay algún principio ambiguo o
+peligroso?"). Ninguno se elimina ni se contradice a sí mismo — se cierran bordes
+que una lectura literal futura (de un dev nuevo o de otra sesión sin este
+contexto) podría aplicar mal: (12) el rendimiento no prohíbe sandboxing por
+seguridad, solo HTTP/colas entre módulos; (14/17) la tensión "nada por si acaso"
+vs "diseña a cinco años" ya tenía árbitro (la Regla de Oro) pero ningún principio
+apuntaba a él. Auditoría del historial real del proyecto: no se encontró ningún
+caso en que una decisión ya tomada se hiciera mal por esta ambigüedad (el CORS
+abierto a `*` se corrigió correctamente en V0.8 pese a la redacción antigua del
+principio 1 en AOS) — esto cierra el riesgo antes de que cause un error, no
+corrige uno ya cometido.*

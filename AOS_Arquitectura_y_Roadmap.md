@@ -32,7 +32,7 @@ Aithera V0.2.0 es una aplicación de escritorio funcional (Electron + React + Fa
 
 ## 2. Principios que rigen cada decisión
 
-**1. Nunca romper lo que funciona.** La app debe estar en estado usable en cada fase. No existe un periodo donde "todo esté roto". Cada commit deja un producto funcional.
+**1. Nunca romper lo que funciona.** La app debe estar en estado usable en cada fase. No existe un periodo donde "todo esté roto". Cada commit deja un producto funcional. **Aclaración (2026-07-13, revisión crítica de principios)**: esto protege comportamiento CORRECTO y contratos públicos ya acordados (rutas, schemas, comportamiento esperado por el usuario) — nunca protege un bug, una vulnerabilidad o una configuración insegura solo porque nadie se había quejado todavía. Restringir un CORS abierto a `*` o cifrar una API key que estaba en texto plano NO es "romper lo que funciona": es corregir lo que nunca debió funcionar así. La pregunta correcta no es "¿esto cambia algo?" sino "¿esto le quita al usuario algo que dependía intencionadamente tener?".
 
 **2. Evolución, no reescritura.** Antes de reemplazar un módulo, la pregunta es: ¿puede evolucionar con cambios menores? Si la respuesta es sí, se evoluciona. Solo se reemplaza cuando el módulo existente impide el avance de forma demostrable.
 
@@ -42,7 +42,7 @@ Aithera V0.2.0 es una aplicación de escritorio funcional (Electron + React + Fa
 
 **5. Ejecución controlada, nunca arbitraria.** El Execution Engine solo ejecuta herramientas de una whitelist registrada. La IA nunca puede generar un comando y ejecutarlo directamente. Toda acción con efectos externos pasa por una herramienta validada.
 
-**6. Optimizar para un usuario, no para cientos.** No hay multi-tenancy, no hay balanceo de carga. La arquitectura es la mínima necesaria para que un usuario avanzado trabaje de forma potente y fluida.
+**6. Optimizar para un usuario, no para cientos.** No hay multi-tenancy, no hay balanceo de carga. La arquitectura es la mínima necesaria para que un usuario avanzado trabaje de forma potente y fluida. **Aclaración (2026-07-13)**: esto gobierna infraestructura de escala (multi-tenancy, balanceo, sharding) — nunca seguridad, y no contradice `PLAN_MAESTRO_2026/16` principio 17 ("diseñar a cinco años"): ese principio habla de la calidad de las fronteras del código, no de construir para mil usuarios. Un solo usuario también necesita credenciales cifradas y una red que no esté abierta por defecto.
 
 **7. Cada fase deja el producto usable.** Las fases duran días, no semanas. Si una fase crece demasiado, se parte en dos.
 
