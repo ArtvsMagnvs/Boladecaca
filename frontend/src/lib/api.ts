@@ -7,6 +7,13 @@
 export const API_URL = "http://localhost:8000/api";
 export const BACKEND_URL = "http://localhost:8000";
 
+// V0.87 (WPMS): un enlace de documentacion del proyecto (repo/roadmap/arquitectura).
+export interface ProjectDoc {
+  label: string;
+  kind: string; // "repo" | "md" | "url" | ...
+  url_or_path: string;
+}
+
 export interface Project {
   id: number;
   name: string;
@@ -16,8 +23,31 @@ export interface Project {
   priority: string;
   due_date?: string | null;
   notes?: string | null;
+  // V0.87 (WPMS W1)
+  repo_path?: string | null;
+  current_version?: string | null;
+  target_version?: string | null;
+  start_date?: string | null;
+  tags?: string[] | null;
+  docs?: ProjectDoc[] | null;
+  archived_at?: string | null;
   created_at?: string | null;
   updated_at?: string | null;
+}
+
+// V0.87 (WPMS): item de checklist ligero dentro de una tarea (no es una tarea).
+export interface ChecklistItem {
+  text: string;
+  done: boolean;
+}
+// V0.87 (WPMS): traza al trabajo real (commit/PR/mision del TIE/decision).
+export interface TaskLinks {
+  commit?: string;
+  pr?: string;
+  agent_execution_id?: number;
+  mission_id?: string;
+  decision?: string;
+  [k: string]: unknown;
 }
 
 export interface Task {
@@ -29,8 +59,54 @@ export interface Task {
   project_id?: number | null;
   due_date?: string | null;
   assignee?: string | null;
+  // V0.87 (WPMS W1)
+  milestone_id?: number | null;
+  checklist?: ChecklistItem[] | null;
+  depends_on?: number[] | null;
+  estimate?: string | null;
+  order_index?: number | null;
+  closed_at?: string | null;
+  links?: TaskLinks | null;
   created_at?: string | null;
   updated_at?: string | null;
+}
+
+// V0.87 (WPMS W1): progreso calculado (done/total/ratio) — no columna.
+export interface Progress {
+  done: number;
+  total: number;
+  ratio: number;
+}
+
+// V0.87 (WPMS W1): milestone = eje de version. progress se adjunta calculado.
+export interface Milestone {
+  id: number;
+  project_id?: number | null;
+  name?: string | null;
+  version?: string | null;
+  description?: string | null;
+  status: string; // planned | active | done | archived
+  target_date?: string | null;
+  order_index: number;
+  created_at?: string | null;
+  completed_at?: string | null;
+  updated_at?: string | null;
+  progress?: Progress | null;
+}
+
+// V0.87 (WPMS W1): GET /workspace/progress — overall + por milestone.
+export interface WorkspaceProgress {
+  project_id: number;
+  overall: Progress;
+  milestones: Array<{
+    milestone_id: number;
+    name: string | null;
+    version: string | null;
+    status: string;
+    done: number;
+    total: number;
+    ratio: number;
+  }>;
 }
 
 export interface CalendarEvent {
@@ -367,6 +443,21 @@ export const api = {
   updateTask: (id: number, data: Partial<Task>) =>
     request<Task>(`/tasks/${id}`, { method: "PUT", body: JSON.stringify(data) }),
   deleteTask: (id: number) => request(`/tasks/${id}`, { method: "DELETE" }),
+
+  // --- Workspace / Milestones (V0.87 WPMS W1) ---
+  // /projects y /tasks (arriba) los sirve el mismo router workspace.py por
+  // contrato; aqui van las rutas nuevas del WPMS.
+  getMilestones: (projectId?: number) =>
+    request<Milestone[]>(`/milestones/${projectId != null ? `?project_id=${projectId}` : ""}`),
+  createMilestone: (data: Partial<Milestone>) =>
+    request<Milestone>("/milestones/", { method: "POST", body: JSON.stringify(data) }),
+  updateMilestone: (id: number, data: Partial<Milestone>) =>
+    request<Milestone>(`/milestones/${id}`, { method: "PUT", body: JSON.stringify(data) }),
+  deleteMilestone: (id: number) => request(`/milestones/${id}`, { method: "DELETE" }),
+  completeMilestone: (id: number) =>
+    request<Milestone>(`/milestones/${id}/complete`, { method: "POST" }),
+  getWorkspaceProgress: (projectId: number) =>
+    request<WorkspaceProgress>(`/workspace/progress?project_id=${projectId}`),
 
   // --- Calendario ---
   getEvents: (skip = 0, limit = 200) => request<CalendarEvent[]>(`/calendar/events?skip=${skip}&limit=${limit}`),

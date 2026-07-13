@@ -267,7 +267,7 @@ export default function Hub() {
           count={activeProjects.length}
           action={
             <button
-              onClick={() => navigate("/projects")}
+              onClick={() => navigate("/workspace")}
               className="text-xs text-accent hover:text-accent-glow transition-colors"
             >
               Ver todos →
@@ -283,7 +283,7 @@ export default function Hub() {
               {activeProjects.map((p) => (
                 <li
                   key={p.id}
-                  onClick={() => navigate("/projects")}
+                  onClick={() => navigate("/workspace")}
                   className="flex items-center justify-between gap-3 cursor-pointer rounded-lg px-2 py-1.5 -mx-2 hover:bg-base-800/40 transition-colors"
                 >
                   <div className="flex items-center gap-2 min-w-0">
@@ -308,7 +308,7 @@ export default function Hub() {
           count={pendingTasks.length}
           action={
             <button
-              onClick={() => navigate("/tasks")}
+              onClick={() => navigate("/workspace")}
               className="text-xs text-accent hover:text-accent-glow transition-colors"
             >
               Ver todas →
@@ -324,7 +324,7 @@ export default function Hub() {
               {pendingTasks.map((t) => (
                 <li
                   key={t.id}
-                  onClick={() => navigate("/tasks")}
+                  onClick={() => navigate("/workspace")}
                   className="flex items-center justify-between gap-3 cursor-pointer rounded-lg px-2 py-1.5 -mx-2 hover:bg-base-800/40 transition-colors"
                 >
                   <div className="flex items-center gap-2 min-w-0">

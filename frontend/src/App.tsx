@@ -1,9 +1,10 @@
-import { HashRouter, Routes, Route } from "react-router-dom";
+import { HashRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AppLayout } from "@/components/layout/AppLayout";
 import Hub from "@/pages/Hub";
 import Chat from "@/pages/Chat";
-import Projects from "@/pages/Projects";
-import Tasks from "@/pages/Tasks";
+// V0.87 (WPMS W2a): Workspace unifica Proyectos + Tareas. Las paginas viejas
+// (Projects.tsx/Tasks.tsx) se retiran; /projects y /tasks redirigen aqui.
+import Workspace from "@/pages/Workspace";
 import CalendarPage from "@/pages/Calendar";
 import Settings from "@/pages/Settings";
 import VoiceCenter from "@/pages/VoiceCenter";
@@ -22,8 +23,10 @@ export default function App() {
           <Route path="/" element={<Hub />} />
           <Route path="/chat" element={<Chat />} />
           <Route path="/email" element={<EmailAssistant />} />
-          <Route path="/projects" element={<Projects />} />
-          <Route path="/tasks" element={<Tasks />} />
+          <Route path="/workspace" element={<Workspace />} />
+          {/* V0.87: rutas viejas -> Workspace (sin romper enlaces existentes) */}
+          <Route path="/projects" element={<Navigate to="/workspace" replace />} />
+          <Route path="/tasks" element={<Navigate to="/workspace" replace />} />
           <Route path="/calendar" element={<CalendarPage />} />
           <Route path="/agents" element={<Agents />} />
           <Route path="/voice" element={<VoiceCenter />} />

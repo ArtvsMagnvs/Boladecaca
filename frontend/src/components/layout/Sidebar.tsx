@@ -39,22 +39,13 @@ const NAV_ITEMS: NavItem[] = [
     ),
   },
   {
-    to: "/projects",
-    label: "Proyectos",
+    // V0.87 (WPMS W2a): un solo item unifica Proyectos + Tareas + Milestones.
+    to: "/workspace",
+    label: "Workspace",
     icon: (
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
         <path d="M3 3h18v18H3z" rx="2" ry="2" />
         <path d="M3 9h18M9 21V9" />
-      </svg>
-    ),
-  },
-  {
-    to: "/tasks",
-    label: "Tareas",
-    icon: (
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-        <polyline points="9 11 12 14 22 4" />
-        <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" />
       </svg>
     ),
   },
