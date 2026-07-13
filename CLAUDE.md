@@ -197,11 +197,43 @@ Opción B (arquitectura definitiva, implementación mínima). Diseño completo e
   técnica): compactación/`lifecycle.py` (RFC-007) y `httpx` con conexiones
   persistentes (doc 12 A2) quedan para V0.9.
 
-**Fases pendientes (documentadas, no implementadas)** — ver §5 para el orden
-completo acordado (Hub Visual → Voz → V0.85 Memory → V0.87 WPMS → V0.9 → V1.0 →
-V1.1 Hermes; Web+PWA aplazado a post-V1.0):
-- **V0.87** — WPMS (Workspace & Project Management, doc 18): primer escritor real
-  de `mem_project`
+**V0.87 — WPMS (Workspace & Project Management, doc 18) — EN CURSO sobre `master`**:
+la capa operativa (estado en SQL) que organiza proyectos/milestones/tareas
+vara-Linear; el conocimiento permanente sigue en el MOS (`mem_project`). Sprints
+W1-W3 (W2 dividida en W2a/W2b por decisión de producto: drag&drop core + ratón y
+teclado a la par).
+- ✅ **W1 — Modelo + progreso + endpoints** (`app/workspace/`): extensión ADITIVA
+  del modelo real `Project`/`Task` (no reescritura) + entidad nueva `Milestone`
+  (el eje de versión). `Project +=` `repo_path·current_version·target_version·
+  start_date·tags·docs·archived_at`; `Task +=` `milestone_id(ix)·checklist·
+  depends_on·estimate·order_index·closed_at·links` (JSON donde aplica; `order` es
+  palabra reservada → `order_index`). Referencias cross-módulo
+  (`Task.milestone_id`, `Milestone.project_id`) como Integer plano indexado —NO
+  ForeignKey— porque `init_db()` corre `create_all` al importar, antes de que
+  workspace registre `Milestone` (mismo criterio laxo que `Conversation.agent_id`;
+  la integridad la lleva el endpoint). Migración Alembic 15.ª
+  `a7b8c9d0e1f2_v087_wpms_model` **aditiva e idempotente** (verificada en los dos
+  caminos reales: no-op sobre BD ya creada por `create_all`, y ADD real sobre BD
+  vieja con datos intactos). **Progreso automático** (`workspace/progress.py`,
+  función pura testeable): `done/total` por conteo, ratio 0-1 (el frontend pinta
+  `progress*100`); `DONE_STATUSES={done,completed}` (coincide con el filtro real
+  del `telegram_adapter`); lo escribe `workspace/service.py` por evento
+  (crear/editar/borrar tarea → recalcula `Project.progress`), NUNCA el usuario.
+  **Versionado**: completar un milestone propaga `current_version`←version y
+  activa el siguiente `planned` (`service.complete_milestone`); el destilado a
+  `mem_project` + eventos son hooks vacíos hasta W3. `endpoints/workspace.py`
+  **absorbe `/api/projects` y `/api/tasks` con contrato idéntico** (patrón split
+  email; `projects.py`/`tasks.py` eliminados) + `/api/milestones` (CRUD +
+  `/complete`) + `/api/workspace/progress`. Disciplina modular (doc 16): API
+  pública en `app/workspace/__init__.py` (`Milestone`, `workspace_service`,
+  `compute_progress`), fronteras vigiladas por `test_module_boundaries.py`
+  extendido (`app.workspace.models/.service/.progress` internos). Tests:
+  `test_workspace_model.py` (13: progreso puro, contrato rutas viejas, campos
+  nuevos, Milestone CRUD, progreso automático, `closed_at`, versionado, borrado
+  → backlog). Suite completa: **254 passed**.
+- ⏳ **W2a** — Vista Proyecto + popup Task (CRUD por ratón) · **W2b** — board
+  Kanban + drag&drop + atajos · **W3** — integración MOS/eventos/briefing + Hub +
+  tag `v0.8.7`.
 - **V0.9** — Automation Engine (APScheduler + reglas + sistema de aprobaciones)
 - **V1.0** — Orchestrator (intent analyzer + planner + Claude Code Agent)
 - **V1.1** — Hermes (Nous Research) como sistema de agentes bajo el Orchestrator
@@ -499,8 +531,10 @@ Docs: `PLAN_MAESTRO_2026/10` (Hermes/AgentRuntime) + `15` (Learning System) + `0
 | Prefijo | Router | Tamaño | Descripción |
 |---------|--------|--------|-------------|
 | `/api/config` | `config.py` | 1.4KB | Configuración key-value |
-| `/api/projects` | `projects.py` | 2.2KB | CRUD proyectos |
-| `/api/tasks` | `tasks.py` | 2.0KB | CRUD tareas |
+| `/api/projects` | `workspace.py` | — | CRUD proyectos (V0.87: absorbido en `workspace.py`, contrato idéntico) |
+| `/api/tasks` | `workspace.py` | — | CRUD tareas + progreso automático por evento (V0.87) |
+| `/api/milestones` | `workspace.py` | ~10KB | V0.87 (WPMS W1): CRUD milestones + `/{id}/complete` (versionado) |
+| `/api/workspace` | `workspace.py` | (mismo) | V0.87: `/progress?project_id=` (overall + por milestone) |
 | `/api/calendar` | `calendar.py` | 10KB | CRUD eventos |
 | `/api/ai` | `ai.py` | 5.9KB | Status, catálogo, configured, test, activate, ollama models |
 | `/api/chat` | `chat.py` | 5.7KB | POST /stream (SSE), GET /history, DELETE /history — B21: filtra `<think>` (stream + no-stream) |
@@ -578,8 +612,9 @@ Definidos en `backend/app/db/database.py`:
 | Modelo | Tabla | Propósito | Añadido en |
 |--------|-------|-----------|------------|
 | `Config` | `config` | Key-value settings | V0.2 |
-| `Project` | `projects` | Proyectos del usuario | V0.2 |
-| `Task` | `tasks` | Tareas | V0.2 |
+| `Project` | `projects` | Proyectos (V0.87 WPMS: +`repo_path`,`current_version`,`target_version`,`start_date`,`tags`,`docs`,`archived_at`; `progress` ahora auto por evento) | V0.2 + V0.87 |
+| `Task` | `tasks` | Tareas (V0.87 WPMS: +`milestone_id`,`checklist`,`depends_on`,`estimate`,`order_index`,`closed_at`,`links`) | V0.2 + V0.87 |
+| `Milestone` | `milestones` | V0.87 (WPMS W1): eje de versión (planned/active/done); progreso calculado, no columna. Definido en `app/workspace/models.py` | V0.87 |
 | `CalendarEvent` | `calendar_events` | Eventos (con `google_event_id`) | V0.2 + V0.7 |
 | `Conversation` | `conversations` | Sesiones de chat | V0.2 |
 | `ChatMessage` | `chat_messages` | Mensajes con `model_used`/`tokens_used` | V0.2 |
@@ -594,8 +629,10 @@ Definidos en `backend/app/db/database.py`:
 | `Decision` | `decisions` | Decision Memory (UUID, `mission_id` [Δ]); fuente de verdad + espejo `mem_decision` | V0.85 (MOS M1) |
 | `AIProviderConfig` | `ai_provider_configs` | Config de cada proveedor IA | V0.2 |
 
-(16 modelos. La memoria semántica del MOS —colecciones ChromaDB `mem_*`— NO son
-tablas SQL: viven en ChromaDB vía `LocalMemoryStore`/`MemoryRouter`, §1.)
+(17 modelos. `Milestone` vive en `app/workspace/models.py` —disciplina modular
+doc 16—, el resto en `database.py`. La memoria semántica del MOS —colecciones
+ChromaDB `mem_*`— NO son tablas SQL: viven en ChromaDB vía
+`LocalMemoryStore`/`MemoryRouter`, §1.)
 
 **Migración de esquema**: ahora con Alembic (12 migraciones; la 12.ª es
 `e5f6a7b8c9d0_v085_mos_skeleton`). NO usar `_ensure_columns()` — eso era de V0.2.

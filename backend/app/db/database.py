@@ -1,4 +1,4 @@
-from sqlalchemy import create_engine, Column, Integer, String, Text, DateTime, Boolean, Float, ForeignKey
+from sqlalchemy import create_engine, Column, Integer, String, Text, DateTime, Boolean, Float, ForeignKey, JSON
 # FIX V0.2: declarative_base movido a sqlalchemy.orm en SQLAlchemy 2.0
 from sqlalchemy.orm import declarative_base, sessionmaker
 from datetime import datetime
@@ -120,12 +120,25 @@ class Project(Base):
     name = Column(String(200))
     description = Column(Text)
     status = Column(String(50), default='active')
+    # progress: ratio 0.0-1.0 (el frontend lo pinta como progress*100). V0.87
+    # (WPMS): deja de teclearse a mano — lo recalcula workspace/progress.py por
+    # evento (cierre/apertura de tarea). Antes era una columna sin dueno real.
     progress = Column(Float, default=0.0)
     # Fase 6 - Proyectos y Tareas: prioridad, fecha limite y notas, para que
     # un proyecto tenga la misma informacion util que ya tenia una tarea.
     priority = Column(String(20), default='medium')
     due_date = Column(DateTime)
     notes = Column(Text)
+    # V0.87 (WPMS W1, doc 18 §3.3): extension operativa del proyecto. Cada
+    # campo alimenta a un sistema (TIE/AE/Learner/briefing) o a la vista — nada
+    # decorativo (regla rectora del doc 18).
+    repo_path = Column(String(500))       # raiz del repo local: git/fs tools + TIE
+    current_version = Column(String(40))  # "0.8.5" — version activa del proyecto
+    target_version = Column(String(40))   # hacia donde va (apunta el milestone activo)
+    start_date = Column(DateTime)         # para que el Learner calcule ritmos reales
+    tags = Column(JSON)                   # list[str] — filtrado + skills transferibles
+    docs = Column(JSON)                   # list[{label, kind, url_or_path}] — enlaces, no contenido
+    archived_at = Column(DateTime)        # los proyectos se archivan, no se borran
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow)
 
@@ -141,6 +154,23 @@ class Task(Base):
     due_date = Column(DateTime)
     # Fase 6 - Proyectos y Tareas: responsable de la tarea.
     assignee = Column(String(100))
+    # V0.87 (WPMS W1, doc 18 §3.5): extension. Lo que se toca a diario +
+    # lo que alimenta a la IA. Rechazados a proposito (doc 18): comentarios,
+    # adjuntos binarios, time-tracking manual, campos "relacionados" manuales.
+    # Referencia cross-modulo (Milestone vive en app/workspace/models.py, se
+    # registra despues que database.py). Integer plano + indice, NO ForeignKey:
+    # un FK obligaria a que 'milestones' este en Base.metadata cuando corre el
+    # create_all de init_db (linea ~549), que corre ANTES de importar workspace.
+    # Integridad a nivel app (nullar al borrar el milestone) en el endpoint
+    # DELETE. Mismo criterio laxo que Conversation.agent_id.
+    milestone_id = Column(Integer, index=True)  # -> milestones.id (ver comentario)
+    checklist = Column(JSON)      # list[{text, done}] — subtareas ligeras, NO tareas
+    depends_on = Column(JSON)     # list[task_id] — el TIE necesita el orden real
+    estimate = Column(String(40)) # "2 sesiones" — el Learner compara estimado vs real
+    # 'order' es palabra reservada en SQL (SQLite/Postgres) -> order_index.
+    order_index = Column(Integer, default=0)  # posicion en la lista (drag&drop, W2b)
+    closed_at = Column(DateTime)  # cierre REAL -> progreso + metricas de ciclo (Learner)
+    links = Column(JSON)          # {commit, pr, agent_execution_id, mission_id, decision}
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow)
 

@@ -8,7 +8,11 @@ import traceback
 
 from app.db.database import engine, Base
 from app.core.config import settings
-from app.api.endpoints import config, projects, tasks, calendar, ai, chat, agents, voice, tools, memory
+from app.api.endpoints import config, calendar, ai, chat, agents, voice, tools, memory
+# V0.87 (WPMS W1, doc 18): workspace.py ABSORBE /api/projects y /api/tasks
+# (rutas identicas por contrato) + /api/milestones + /api/workspace. Sustituye a
+# los viejos projects.py/tasks.py (eliminados). Mismo patron que el split de email.
+from app.api.endpoints import workspace
 # V0.8 (Fase 5 Clientes): router de configuracion del canal Telegram.
 from app.api.endpoints import telegram as telegram_endpoints
 # V0.7.2 (Sprint 2, PLAN_MAESTRO_2026 B4): god-endpoint de email dividido en
@@ -198,8 +202,8 @@ app.add_middleware(
 
 # Include routers
 app.include_router(config.router, prefix="/api")
-app.include_router(projects.router, prefix="/api")
-app.include_router(tasks.router, prefix="/api")
+# V0.87 (WPMS): /api/projects + /api/tasks + /api/milestones + /api/workspace.
+app.include_router(workspace.router, prefix="/api")
 app.include_router(calendar.router, prefix="/api")
 app.include_router(ai.router, prefix="/api")
 app.include_router(chat.router, prefix="/api")

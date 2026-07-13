@@ -40,6 +40,10 @@ if config.config_file_name is not None:
 # para que `alembic revision --autogenerate` pueda detectar cambios
 # comparando contra Base.metadata.
 from app.db.database import Base  # noqa: E402
+# V0.87 (WPMS): los modelos del modulo workspace viven fuera de database.py
+# (disciplina modular, doc 16). Import con efecto secundario para que se
+# registren en Base.metadata y autogenerate/create_all los vean.
+import app.workspace.models  # noqa: E402,F401
 target_metadata = Base.metadata
 
 

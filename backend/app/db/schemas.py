@@ -43,6 +43,13 @@ class ProjectCreate(BaseModel):
     priority: str = "medium"
     due_date: Optional[datetime] = None
     notes: Optional[str] = None
+    # V0.87 (WPMS W1, doc 18 §3.3) — todos opcionales (contrato retrocompatible).
+    repo_path: Optional[str] = None
+    current_version: Optional[str] = None
+    target_version: Optional[str] = None
+    start_date: Optional[datetime] = None
+    tags: Optional[List[str]] = None
+    docs: Optional[List[dict]] = None
 
 
 class ProjectUpdate(BaseModel):
@@ -53,6 +60,14 @@ class ProjectUpdate(BaseModel):
     priority: Optional[str] = None
     due_date: Optional[datetime] = None
     notes: Optional[str] = None
+    # V0.87 (WPMS W1)
+    repo_path: Optional[str] = None
+    current_version: Optional[str] = None
+    target_version: Optional[str] = None
+    start_date: Optional[datetime] = None
+    tags: Optional[List[str]] = None
+    docs: Optional[List[dict]] = None
+    archived_at: Optional[datetime] = None
 
 
 class ProjectResponse(BaseModel):
@@ -64,6 +79,14 @@ class ProjectResponse(BaseModel):
     priority: str = "medium"
     due_date: Optional[datetime] = None
     notes: Optional[str] = None
+    # V0.87 (WPMS W1)
+    repo_path: Optional[str] = None
+    current_version: Optional[str] = None
+    target_version: Optional[str] = None
+    start_date: Optional[datetime] = None
+    tags: Optional[List[str]] = None
+    docs: Optional[List[dict]] = None
+    archived_at: Optional[datetime] = None
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 
@@ -79,6 +102,13 @@ class TaskCreate(BaseModel):
     project_id: Optional[int] = None
     due_date: Optional[datetime] = None
     assignee: Optional[str] = None
+    # V0.87 (WPMS W1, doc 18 §3.5) — todos opcionales (contrato retrocompatible).
+    milestone_id: Optional[int] = None
+    checklist: Optional[List[dict]] = None
+    depends_on: Optional[List[int]] = None
+    estimate: Optional[str] = None
+    order_index: Optional[int] = None
+    links: Optional[dict] = None
 
 
 class TaskUpdate(BaseModel):
@@ -89,6 +119,13 @@ class TaskUpdate(BaseModel):
     project_id: Optional[int] = None
     due_date: Optional[datetime] = None
     assignee: Optional[str] = None
+    # V0.87 (WPMS W1)
+    milestone_id: Optional[int] = None
+    checklist: Optional[List[dict]] = None
+    depends_on: Optional[List[int]] = None
+    estimate: Optional[str] = None
+    order_index: Optional[int] = None
+    links: Optional[dict] = None
 
 
 class TaskResponse(BaseModel):
@@ -100,8 +137,56 @@ class TaskResponse(BaseModel):
     project_id: Optional[int] = None
     due_date: Optional[datetime] = None
     assignee: Optional[str] = None
+    # V0.87 (WPMS W1)
+    milestone_id: Optional[int] = None
+    checklist: Optional[List[dict]] = None
+    depends_on: Optional[List[int]] = None
+    estimate: Optional[str] = None
+    order_index: Optional[int] = None
+    closed_at: Optional[datetime] = None
+    links: Optional[dict] = None
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+
+# V0.87 (WPMS W1, doc 18 §3.4) — Milestone: el eje de version. progress NO es
+# campo del modelo (se calcula); en la respuesta se adjunta calculado por §8.
+class MilestoneCreate(BaseModel):
+    project_id: int
+    name: str
+    version: Optional[str] = None
+    description: Optional[str] = None
+    status: str = "planned"  # planned|active|done|archived
+    target_date: Optional[datetime] = None
+    order_index: Optional[int] = None
+
+
+class MilestoneUpdate(BaseModel):
+    name: Optional[str] = None
+    version: Optional[str] = None
+    description: Optional[str] = None
+    status: Optional[str] = None
+    target_date: Optional[datetime] = None
+    order_index: Optional[int] = None
+
+
+class MilestoneResponse(BaseModel):
+    id: int
+    project_id: Optional[int] = None
+    name: Optional[str] = None
+    version: Optional[str] = None
+    description: Optional[str] = None
+    status: str
+    target_date: Optional[datetime] = None
+    order_index: int = 0
+    created_at: Optional[datetime] = None
+    completed_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+    # calculado (no columna) — done/total/ratio de sus tareas (doc 18 §8)
+    progress: Optional[dict] = None
 
     class Config:
         from_attributes = True
