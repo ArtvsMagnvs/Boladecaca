@@ -24,26 +24,23 @@ class GatewayError(Exception):
 
 
 async def chat_message_handler(envelope: MessageEnvelope) -> str:
-    """Handler por defecto: chat con el proveedor IA activo + memoria.
+    """Handler por defecto: chat con el proveedor IA activo + memoria del MOS.
 
     Equivalente channel-agnostic de POST /api/chat (no streaming: Telegram
     y similares no lo necesitan). B21 aplicado: sin razonamiento del modelo.
-    """
-    from app.ai.ai_manager import ai_manager
-    from app.ai.reasoning_filter import strip_reasoning
-    from app.memory.memory_manager import memory_manager
-    from app.api.endpoints.chat import _build_system_prompt
 
-    system_prompt = _build_system_prompt(envelope.text)
-    memory_manager.store_conversation(
-        "user", envelope.text, metadata={"channel": envelope.channel}
+    [V0.85 M4] Delega en chat_service.answer() — MISMA implementacion que usa
+    POST /api/chat (doc 12 A4: antes esta logica estaba duplicada casi entera
+    entre este handler y el endpoint). persist_chat_message=False: los
+    canales del Gateway no escriben en ChatMessage (historial de la UI de
+    escritorio) — comportamiento identico al que ya tenia este handler.
+    """
+    from app.services import chat_service
+
+    result = await chat_service.answer(
+        envelope.text, channel=envelope.channel, persist_chat_message=False
     )
-    result = await ai_manager.chat(message=envelope.text, system_prompt=system_prompt)
-    response_text = strip_reasoning(result.get("response", "")) or "(sin respuesta)"
-    memory_manager.store_conversation(
-        "assistant", response_text, metadata={"channel": envelope.channel}
-    )
-    return response_text
+    return result.text or "(sin respuesta)"
 
 
 class Gateway:

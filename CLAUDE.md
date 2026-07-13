@@ -135,8 +135,34 @@ Opción B (arquitectura definitiva, implementación mínima). Diseño completo e
   real) + verificación manual contra el backend real del usuario (28
   urgentes pendientes reales, resumen coherente, tarjeta del Hub renderizando
   con datos en vivo). Suite completa: 220 passed.
-- ⏳ M4 contexto en chat + `chat_service.py` · M5 hardening (init async
-  ChromaDB, índices, perf) + tag `v0.8.5`.
+- ✅ **M4 — Contexto con fuentes + consolidación `chat_service.py`**
+  (`app/services/chat_service.py`): pipeline ÚNICO de chat (system prompt +
+  memoria + IA + `strip_reasoning`), usado por `POST /api/chat` (`chat.py`) Y
+  por el Gateway (`gateway.py::chat_message_handler`) — antes duplicaban esta
+  lógica casi entera (doc 12 A4). `build_system_prompt()` combina: prompt base
+  + preferencias (colección legacy `user_context`, fuera del MOS a propósito —
+  doc 07 no la migra en V0.85) + **memoria del MOS con atribución de fuente**
+  vía `memory_router.context()` (conversacional + personal + proyecto + skill
+  + decision). **Presupuesto de latencia duro de 300 ms** (`asyncio.wait_for`)
+  sobre la llamada al MOS — si excede, contexto vacío, el chat nunca espera
+  (doc 07 §8). `answer()` preserva el orden de persistencia pre-existente
+  (mensaje del usuario indexado ANTES de llamar a la IA, para no perderlo si
+  la IA falla) y el flag `persist_chat_message` (el Gateway sigue sin escribir
+  en `ChatMessage`, igual que antes). `/api/chat/stream` (el camino real que
+  usa `Chat.tsx`) comparte `build_system_prompt()` pero mantiene su propio
+  generador — no puede delegar en `answer()` sin streaming. Import diferido de
+  `ai_manager` dentro de `answer()` (patrón ya usado en `email_service.py`,
+  necesario para que los tests puedan sustituirlo con `monkeypatch`).
+  **Verificado en vivo contra el backend real** (no solo tests): el modelo citó
+  correctamente preferencias reales guardadas del usuario ("reuniones por la
+  tarde después de las 15:00", "color favorito verde") tanto en `/api/chat`
+  como en `/api/chat/stream`, y ambos turnos quedaron en `ChatMessage`. Tests:
+  `test_memory_context.py` (presupuesto de latencia forzando un `context()`
+  lento, orden de persistencia con IA que lanza excepción, `persist_chat_message`,
+  y que `/api/chat` y el Gateway invocan literalmente la misma función).
+  Suite completa: 228 passed.
+- ⏳ M5 hardening (init async ChromaDB, índices, tests de rendimiento) + tag
+  `v0.8.5`.
 
 **Fases pendientes (documentadas, no implementadas)** — ver §5 para el orden
 completo acordado (Hub Visual → Voz → V0.85 Memory → V0.87 WPMS → V0.9 → V1.0 →
@@ -381,12 +407,14 @@ Salto de memoria de verdad, previo a la automatización y al TIE. Diseño comple
   skills con linaje, `decisions.mission_id`, `app/core/events.py` (la ingesta
   emite eventos; spec canónica del bus: `PLAN_MAESTRO_2026/17`), disciplina
   modular (API pública por `__init__.py` + `test_module_boundaries.py`).
-- **Estado**: **M1, M2 y M3 HECHOS** (contratos congelados + `LocalMemoryStore`/
+- **Estado**: **M1, M2, M3 y M4 HECHOS** (contratos congelados + `LocalMemoryStore`/
   `MemoryRouter` + stubs + `decisions`/`memory_job_runs` + `decision_service` +
   disciplina modular + ingesta email/calendario + `app/core/events.py` +
-  resumen nocturno + `GET /api/memory/briefing` + tarjeta Memoria en el Hub;
-  ver §1). **Criterio de cierre de fase ya verificado** (briefing responde con
-  Gmail desconectado). M4-M5 pendientes.
+  resumen nocturno + `GET /api/memory/briefing` + tarjeta Memoria en el Hub +
+  `chat_service.py` (pipeline único de chat, `/api/chat` y el Gateway
+  consolidados, contexto del MOS con atribución de fuente y presupuesto de
+  300 ms); ver §1). **Criterio de cierre de fase ya verificado** (briefing
+  responde con Gmail desconectado). M5 pendiente.
 
 ### ⏳ V0.9 — Automation Engine + ApprovalGate
 Doc: `PLAN_MAESTRO_2026/11` parte A (sustituye a `Fase_6_Automation_V08.md`).

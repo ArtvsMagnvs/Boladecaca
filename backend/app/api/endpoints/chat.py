@@ -2,6 +2,9 @@
 # V0.6 (Fase 3 Memory System): integracion de ChromaDB como memoria semantica.
 # Cada mensaje del chat se almacena automaticamente y el contexto recuperado
 # se inyecta en el system prompt de las siguientes interacciones.
+# V0.85 (MOS M4): el pipeline (system prompt + memoria + IA + strip_reasoning)
+# vive ahora en app/services/chat_service.py — lo comparte con el Gateway
+# (doc 12 A4: antes duplicaban esta logica casi entera).
 from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
@@ -13,82 +16,24 @@ from app.db.schemas import ChatRequest, ChatResponse
 from app.memory.memory_manager import memory_manager
 # B21 (2026-07-02): separar la cadena de pensamiento de los modelos
 # razonadores (MiniMax <think>) de la respuesta que ve el usuario.
-from app.ai.reasoning_filter import strip_reasoning, StreamingReasoningFilter
+from app.ai.reasoning_filter import StreamingReasoningFilter
+from app.services import chat_service
 
 router = APIRouter(prefix="/chat", tags=["Chat"])
 
 
-# FIX V0.6: prompt base actualizado para reflejar el proposito del sistema.
-# El bloque de contexto semantico (preferencias del usuario + conversaciones
-# relevantes) se concatena en runtime desde memory_manager.build_context_for_chat().
-DEFAULT_SYSTEM_PROMPT = """Eres Aithera, un sistema operativo personal de IA.
-
-Conoces los proyectos, tareas, calendario y preferencias del usuario.
-Responde siempre en el idioma del usuario. Se conciso y util."""
-
-
-def _build_system_prompt(user_message: str) -> str:
-    """V0.6: enriquece el system prompt base con el contexto de la memoria.
-
-    Si ChromaDB no esta disponible o no hay coincidencias, devuelve solo el
-    prompt base (sin romper el chat).
-    """
-    base = DEFAULT_SYSTEM_PROMPT
-    if not memory_manager.is_healthy() or not user_message:
-        return base
-    try:
-        ctx = memory_manager.build_context_for_chat(user_message)
-    except Exception as e:
-        print(f"[chat] build_context_for_chat error: {e}")
-        ctx = ""
-    if ctx:
-        return f"{base}\n\n{ctx}"
-    return base
-
-
 @router.post("/", response_model=ChatResponse)
-async def chat(request: ChatRequest, db: Session = Depends(get_db)):
-    """Send a chat message and get a complete (non-streaming) response."""
-    # V0.6: el system prompt se construye con el contexto de la memoria.
-    system_prompt = _build_system_prompt(request.message)
+async def chat(request: ChatRequest):
+    """Send a chat message and get a complete (non-streaming) response.
 
-    # V0.6: almacenamos el mensaje del usuario ANTES de la respuesta, para
-    # que si la IA falla al responder, el mensaje siga indexado.
-    memory_manager.store_conversation("user", request.message)
-
-    result = await ai_manager.chat(
-        message=request.message,
-        system_prompt=system_prompt,
-    )
-
-    # B21: sin razonamiento del modelo en la respuesta del chat
-    response_text = strip_reasoning(result.get("response", ""))
-    # V0.6: almacenamos la respuesta del asistente (si no esta vacia).
-    if response_text:
-        memory_manager.store_conversation("assistant", response_text)
-
-    # Mantenemos el guardado tradicional en ChatMessage (historial de UI).
-    user_msg = ChatMessage(
-        role="user",
-        content=request.message,
-        model_used=result.get("model"),
-    )
-    db.add(user_msg)
-
-    assistant_msg = ChatMessage(
-        role="assistant",
-        content=response_text,
-        model_used=result.get("model"),
-        tokens_used=result.get("tokens"),
-    )
-    db.add(assistant_msg)
-
-    db.commit()
-
+    [V0.85 M4] Delega en chat_service.answer() — mismo pipeline que usa el
+    Gateway (Telegram, etc.), con memoria del MOS y atribucion de fuente.
+    """
+    result = await chat_service.answer(request.message, channel="web")
     return ChatResponse(
-        response=response_text or "No response",
-        model=result.get("model"),
-        tokens=result.get("tokens"),
+        response=result.text or "No response",
+        model=result.model,
+        tokens=result.tokens,
     )
 
 
@@ -99,12 +44,18 @@ async def chat_stream(request: ChatRequest):
     V0.6: igual que chat() pero en modo streaming. La gestion del DB session
     se hace en `finally` (mismo patron que en V0.2 para evitar que FastAPI
     cierre la sesion antes de que termine el stream).
+
+    [V0.85 M4] El system prompt usa chat_service.build_system_prompt(): misma
+    memoria del MOS con atribucion de fuente que el chat no-streaming. No se
+    delega en chat_service.answer() completo porque el streaming necesita ir
+    emitiendo chunks mientras la IA genera, algo que answer() (no streaming)
+    no puede hacer — pero comparte la MISMA construccion de contexto.
     """
-    system_prompt = _build_system_prompt(request.message)
+    system_prompt = await chat_service.build_system_prompt(request.message)
 
     # Almacenamos el user message al principio para que quede indexado
     # aunque la IA falle o el cliente cancele el stream.
-    memory_manager.store_conversation("user", request.message)
+    memory_manager.store_conversation("user", request.message, metadata={"channel": "web"})
 
     async def event_generator():
         full_response = ""
@@ -129,7 +80,8 @@ async def chat_stream(request: ChatRequest):
             # V0.6: almacenamos la respuesta del asistente.
             if full_response:
                 memory_manager.store_conversation(
-                    "assistant", full_response, metadata={"model": model_used or "unknown"}
+                    "assistant", full_response,
+                    metadata={"model": model_used or "unknown", "channel": "web"},
                 )
             db = SessionLocal()
             try:
