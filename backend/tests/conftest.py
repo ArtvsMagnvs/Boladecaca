@@ -17,6 +17,9 @@ os.environ["DATABASE_URL"] = f"sqlite:///{os.path.join(_TEST_DB_DIR, 'test_aithe
 # NO toquen la BD vectorial real del usuario (%APPDATA%/Aithera/chroma). El
 # modelo de sentence-transformers sigue cacheado aparte, no se re-descarga.
 os.environ["AITHERA_CHROMA_PATH"] = os.path.join(_TEST_DB_DIR, "chroma")
+# V0.85 (MOS vault, doc 07 §9): mismo aislamiento para el espejo Markdown —
+# los tests NUNCA escriben en %APPDATA%/Aithera/vault del usuario real.
+os.environ["AITHERA_VAULT_PATH"] = os.path.join(_TEST_DB_DIR, "vault")
 
 import pytest  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402

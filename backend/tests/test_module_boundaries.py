@@ -20,6 +20,7 @@ FORBIDDEN = (
     "app.memory.stores",
     "app.memory.router",
     "app.memory.interfaces",
+    "app.memory.vault",
 )
 
 
@@ -35,6 +36,8 @@ def test_public_api_completa():
         "MemoryRouter", "memory_router", "LocalSkillStore", "skill_store",
         # legacy
         "MemoryManager", "memory_manager", "CHROMA_PATH",
+        # vault
+        "vault_write_daily_summary", "vault_write_decision",
     }
     faltan = esperado - set(dir(mem))
     assert not faltan, f"app.memory no exporta: {sorted(faltan)}"

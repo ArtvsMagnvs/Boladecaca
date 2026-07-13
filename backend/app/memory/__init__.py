@@ -27,6 +27,10 @@ from .interfaces import (
 from .router import MemoryRouter, memory_router
 from .stores.skill_store import LocalSkillStore, skill_store
 
+# --- Vault (V0.85, doc 07 §9): espejo Markdown, solo escritura ---
+from .vault import write_daily_summary as vault_write_daily_summary
+from .vault import write_decision as vault_write_decision
+
 __all__ = [
     # legacy
     "MemoryManager",
@@ -45,4 +49,7 @@ __all__ = [
     "memory_router",
     "LocalSkillStore",
     "skill_store",
+    # vault
+    "vault_write_daily_summary",
+    "vault_write_decision",
 ]

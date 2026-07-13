@@ -22,7 +22,7 @@ from typing import Any, Optional
 from app.core.events import emit
 from app.db.database import SessionLocal
 from app.db.models import EmailActivityLog, EmailTriage, MemoryJobRun
-from app.memory import MemoryType, memory_manager, memory_router
+from app.memory import MemoryType, memory_manager, memory_router, vault_write_daily_summary
 
 JOB_SUMMARIZER = "memory_summarize_daily"
 DAILY_HOUR, DAILY_MINUTE = 3, 30  # hora local del job nocturno (doc 07 §7)
@@ -272,6 +272,7 @@ async def run_summarizer(target_date: Optional[date] = None) -> dict[str, Any]:
             metadata={"kind": "daily_summary", "date": target.isoformat()},
             dedup_key=f"day:{target.isoformat()}",
         )
+        vault_write_daily_summary(target, summary)  # espejo Markdown (doc 07 §9, best-effort)
         _finish_run(run_id, status="ok", items_processed=1)
         emit("memory.ingested", source="mos", payload={"job": JOB_SUMMARIZER, "items_new": 1})
         return {"job": JOB_SUMMARIZER, "status": "ok", "date": target.isoformat(), "summary": summary}

@@ -221,11 +221,19 @@ desde su primer día — así no hay migración funcional después. API interna:
 
 - Hub: tarjeta "Memoria" (última ingesta, días cubiertos, briefing de hoy en 2 líneas).
 
-## 9. Vault (opcional — solo si sobra sesión)
+## 9. Vault — ✅ IMPLEMENTADO (2026-07-13, post-cierre de M1-M5)
 
 `vault.py`: espejo Markdown de `mem_personal.kind=daily_summary` y `decisions` en
-`%APPDATA%/Aithera/vault/YYYY/MM/`. Solo escritura en V0.85 (bidireccional = V1.x).
-Si no da tiempo: se corta ESTO primero (está marcado Opcional en P01 §3).
+`%APPDATA%/Aithera/vault/YYYY/MM/` (`AITHERA_VAULT_PATH` la reubica — aislado en
+tests, mismo patrón que `AITHERA_CHROMA_PATH`). Solo escritura en V0.85
+(bidireccional = V1.x, sin fecha). Best-effort: un fallo de disco nunca rompe al
+caller. Wiring: `summarizer.run_summarizer()` escribe el resumen del día tras
+persistir en `mem_personal`; `decision_service._mirror_to_memory()` escribe cada
+decisión (alta y `link_outcome`) tras el espejo semántico. Expuesto en el barrel
+(`vault_write_daily_summary`, `vault_write_decision`); `app.memory.vault` añadido
+a `FORBIDDEN` en `test_module_boundaries.py`. Cobertura: `test_vault.py` (9 tests
++ 2 de integración con summarizer/decision_service). No se había hecho antes por
+gestión de tiempo durante el sprint M1-M5, no por ningún motivo técnico.
 
 ## 10. Plan de sprints (Opus 4.8)
 

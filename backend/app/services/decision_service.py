@@ -19,11 +19,12 @@ from typing import Any, Optional
 
 from app.db.database import SessionLocal
 from app.db.models import Decision
-from app.memory import MemoryType, memory_router
+from app.memory import MemoryType, memory_router, vault_write_decision
 
 
 async def _mirror_to_memory(decision: Decision) -> None:
-    """Espejo semantico en mem_decision (best-effort, idempotente por id)."""
+    """Espejo semantico en mem_decision (best-effort, idempotente por id) +
+    espejo Markdown en el vault (doc 07 §9, tambien best-effort)."""
     try:
         body = (decision.body or "").strip()
         content = f"{decision.title}\n\n{body}".strip() if body else decision.title
@@ -43,6 +44,8 @@ async def _mirror_to_memory(decision: Decision) -> None:
         )
     except Exception as e:  # el espejo nunca rompe la escritura autoritativa
         print(f"[decision_service] espejo mem_decision fallo (no critico): {e}")
+
+    vault_write_decision(decision)
 
 
 async def store_decision(

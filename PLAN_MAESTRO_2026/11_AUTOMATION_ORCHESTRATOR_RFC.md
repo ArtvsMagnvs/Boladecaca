@@ -89,8 +89,25 @@ trigger origen, resultado, duración, si hubo aprobación). Calidad exigida (P06
 trigger nuevo = implementar interfaz, cero cambios en engine; condiciones
 composables; acciones aisladas; **idempotencia** (re-evaluar una regla no duplica
 efectos — dedup por `(rule_id, event_key)` en ventana); auditoría completa.
-APScheduler entra AQUÍ (no antes): los jobs asyncio de V0.85 (ingesta, summarizer,
-lifecycle) se migran a APScheduler en un sprint de V0.9 (misma función, mejor gestión).
+APScheduler entra AQUÍ (no antes): los jobs asyncio de V0.85 (ingesta, summarizer)
+se migran a APScheduler en un sprint de V0.9 (misma función, mejor gestión).
+
+**[Δ 2026-07-13, hallazgo de cierre de V0.85]** `lifecycle.py` (compactación,
+08 RFC-007: dedup semántico + presupuesto `MEMORY_BUDGET_MB` + roll-up) **NO
+se construyó en V0.85** — no estaba en la fila M5 de doc 07 §10 (se comprobó
+literalmente al cerrar la fase) y quedó fuera a propósito. Este párrafo hablaba
+de "migrar" ese job asumiendo que ya existía: es un error de redacción, no una
+decisión — corregido aquí. **A2 debe CONSTRUIR `lifecycle.py` primero** (con el
+diseño ya completo de 08 RFC-007), y solo entonces llevarlo a APScheduler junto
+con ingesta/summarizer. Sin esto, la memoria del MOS crece sin límite.
+
+**[Δ 2026-07-13]** También entra en A2, por ser el mismo tipo de trabajo de
+infraestructura (jobs/engine): **httpx con conexiones persistentes** (doc 12
+A2 — un `AsyncClient` por proveedor IA, creado lazy y cerrado en shutdown, en
+vez de abrir uno nuevo por request). Identificado en la auditoría original
+(doc 12), nunca asignado a un sprint concreto hasta ahora — quedaba solo en la
+tabla de prioridades de doc 12, sin ningún sprint de este documento
+apuntándole. Corregido para que no se pierda.
 
 ## PARTE B — Orchestrator (V1.0)
 

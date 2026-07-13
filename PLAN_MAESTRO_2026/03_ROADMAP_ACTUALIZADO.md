@@ -136,6 +136,14 @@ Arquitectura de 4 capas (Triggers/Conditions/Actions/Learner) con MVP funcional:
 - **Integración MOS obligatoria**: `daily_briefing` consume `/api/memory/briefing`
   (sin Gmail en caliente); resultados → Automation Memory; aprobaciones → Decision
   API; errores → Error Memory. APScheduler entra aquí y absorbe los jobs de V0.85.
+- **[Δ 2026-07-13] Deuda de V0.85 recogida explícitamente en A2** (antes solo
+  mencionada en la nota de cierre de §3, sin sprint asignado — corregido):
+  `lifecycle.py` se **construye** aquí (no se "migra": nunca existió, quedó
+  fuera a propósito del alcance literal de M5) con dedup semántico +
+  presupuesto `MEMORY_BUDGET_MB` + roll-up (diseño en doc 08 RFC-007); y
+  `httpx` con conexiones persistentes por proveedor IA (doc 12 A2, `AsyncClient`
+  reutilizado en vez de uno nuevo por request). Ambos entran en A2 por ser
+  trabajo de infraestructura de jobs/engine, el mismo sprint que trae APScheduler.
 - Reglas predefinidas (off por defecto): daily_briefing, system_monitor,
   urgent_email_alert, email_summary, agent_task. UI de reglas + aprobaciones.
 - **[Δ]** Posición ratificada por el doc 14 §0: el AE va ANTES del TIE porque
