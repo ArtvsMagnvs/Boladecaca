@@ -231,9 +231,20 @@ teclado a la par).
   `test_workspace_model.py` (13: progreso puro, contrato rutas viejas, campos
   nuevos, Milestone CRUD, progreso automático, `closed_at`, versionado, borrado
   → backlog). Suite completa: **254 passed**.
-- ⏳ **W2a** — Vista Proyecto + popup Task (CRUD por ratón) · **W2b** — board
-  Kanban + drag&drop + atajos · **W3** — integración MOS/eventos/briefing + Hub +
-  tag `v0.8.7`.
+- ✅ **W2a — Vista Proyecto + popup Task (UI ratón-primero)** (`frontend/src/pages/Workspace/`):
+  vista de una columna (panel de proyectos + detalle: cabecera versión/estado,
+  barra de progreso del milestone activo, enlaces repo/docs, lista de milestones
+  con progreso, lista de tareas, actividad reciente). `Modal.tsx` (shell: Esc +
+  clic-fuera + Guardar visible) + `TaskPopup`/`ProjectPopup`/`MilestonePopup`
+  (todo editable por ratón; checklist con checkboxes; links commit/pr/mission/
+  decision; Completar milestone → versionado). Progreso se recalcula en vivo al
+  marcar una tarea (verificado e2e contra el backend real). Routing: `/workspace`
+  nuevo, `/projects`+`/tasks` → `Navigate` a `/workspace`, `Sidebar` unifica en un
+  ítem "Workspace", `Hub` repunta sus `navigate()`; `Projects.tsx`/`Tasks.tsx`
+  eliminados. `lib/api.ts` extendido (tipos + métodos milestones/progress).
+  `tsc --noEmit` 0 errores, `vite build` OK. El board Kanban + drag&drop es W2b.
+- ⏳ **W2b** — board Kanban + drag&drop + atajos + panel `(?)` · **W3** —
+  integración MOS/eventos/briefing + Hub + tag `v0.8.7`.
 - **V0.9** — Automation Engine (APScheduler + reglas + sistema de aprobaciones)
 - **V1.0** — Orchestrator (intent analyzer + planner + Claude Code Agent)
 - **V1.1** — Hermes (Nous Research) como sistema de agentes bajo el Orchestrator
@@ -569,8 +580,7 @@ Exception handler global en `main.py:113` que captura y loguea todo.
 | `Calendar.tsx` | 20KB | ✅ CRUD eventos (V0.2 + fix schemas) |
 | `VoiceCenter.tsx` | 11KB | ✅ ElevenLabs + eSpeak |
 | `Chat.tsx` | 4.4KB | ✅ Streaming SSE con fix closure |
-| `Projects.tsx` | 3.9KB | ✅ CRUD básico |
-| `Tasks.tsx` | 4.0KB | ✅ CRUD básico |
+| `Workspace/` | ~5 archivos | ✅ V0.87 W2a: Vista Proyecto + popups (Task/Project/Milestone) ratón-primero. Absorbe Projects+Tasks (eliminados). Board+drag&drop en W2b |
 
 ### Componentes
 - `components/hub/AICore.tsx` (5.3KB) — esfera 3D con shaders custom, no tocar
