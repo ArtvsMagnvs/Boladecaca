@@ -59,14 +59,36 @@ def _ensure_columns():
     """
     from sqlalchemy import inspect, text
 
+    # SOLO SQLite: en PostgreSQL las columnas las gestiona Alembic (y este DDL
+    # con DATETIME no es valido en PG). Guardar aqui evita romper el arranque de
+    # un usuario PG que reinicie antes de correr `alembic upgrade head`.
+    if engine.dialect.name != "sqlite":
+        return
+
     expected = {
         'projects': {
             'priority': "ALTER TABLE projects ADD COLUMN priority VARCHAR(20) DEFAULT 'medium'",
             'due_date': "ALTER TABLE projects ADD COLUMN due_date DATETIME",
             'notes': "ALTER TABLE projects ADD COLUMN notes TEXT",
+            # V0.87 (WPMS W1, doc 18): auto-heal de instalaciones SQLite previas.
+            'repo_path': "ALTER TABLE projects ADD COLUMN repo_path VARCHAR(500)",
+            'current_version': "ALTER TABLE projects ADD COLUMN current_version VARCHAR(40)",
+            'target_version': "ALTER TABLE projects ADD COLUMN target_version VARCHAR(40)",
+            'start_date': "ALTER TABLE projects ADD COLUMN start_date DATETIME",
+            'tags': "ALTER TABLE projects ADD COLUMN tags JSON",
+            'docs': "ALTER TABLE projects ADD COLUMN docs JSON",
+            'archived_at': "ALTER TABLE projects ADD COLUMN archived_at DATETIME",
         },
         'tasks': {
             'assignee': "ALTER TABLE tasks ADD COLUMN assignee VARCHAR(100)",
+            # V0.87 (WPMS W1)
+            'milestone_id': "ALTER TABLE tasks ADD COLUMN milestone_id INTEGER",
+            'checklist': "ALTER TABLE tasks ADD COLUMN checklist JSON",
+            'depends_on': "ALTER TABLE tasks ADD COLUMN depends_on JSON",
+            'estimate': "ALTER TABLE tasks ADD COLUMN estimate VARCHAR(40)",
+            'order_index': "ALTER TABLE tasks ADD COLUMN order_index INTEGER DEFAULT 0",
+            'closed_at': "ALTER TABLE tasks ADD COLUMN closed_at DATETIME",
+            'links': "ALTER TABLE tasks ADD COLUMN links JSON",
         },
         # V0.4 (Fase 2 AgentManager + ToolSystem): nuevas columnas en agents
         # para soportar allowed_tools (whitelist de tool_id) y max_execution_time.
