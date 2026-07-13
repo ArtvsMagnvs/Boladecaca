@@ -134,7 +134,8 @@ class Task(Base):
     id = Column(Integer, primary_key=True)
     title = Column(String(200))
     description = Column(Text)
-    status = Column(String(50), default='pending')
+    # V0.85 (MOS M5, doc 12 A3): indexado — filtro frecuente (tareas pendientes).
+    status = Column(String(50), default='pending', index=True)
     priority = Column(String(20), default='medium')
     project_id = Column(Integer, ForeignKey('projects.id'))
     due_date = Column(DateTime)
@@ -148,7 +149,9 @@ class CalendarEvent(Base):
     id = Column(Integer, primary_key=True)
     title = Column(String(200))
     description = Column(Text)
-    start_date = Column(DateTime, nullable=False)
+    # V0.85 (MOS M5, doc 12 A3): indexado — filtro frecuente (agenda del dia,
+    # ingesta del MOS por rango de fechas).
+    start_date = Column(DateTime, nullable=False, index=True)
     end_date = Column(DateTime)
     all_day = Column(Boolean, default=False)
     color = Column(String(20), default='#00d4ff')
@@ -174,7 +177,8 @@ class ChatMessage(Base):
     model_used = Column(String(100))
     tokens_used = Column(Integer)
     agent_id = Column(Integer)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    # V0.85 (MOS M5, doc 12 A3): indexado — historial ordenado por fecha (get_chat_history).
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
 
 class Agent(Base):
     __tablename__ = 'agents'
@@ -217,7 +221,8 @@ class AgentExecution(Base):
     id = Column(Integer, primary_key=True)
     agent_id = Column(Integer, ForeignKey('agents.id', ondelete='CASCADE'), nullable=False)
     task_description = Column(Text)
-    status = Column(String(20), default='pending')
+    # V0.85 (MOS M5, doc 12 A3): indexado — filtro frecuente (ejecuciones en curso/fallidas).
+    status = Column(String(20), default='pending', index=True)
     result = Column(Text)
     error_message = Column(Text)
     # V0.5: registro de las herramientas que el agente decidio usar durante
@@ -390,13 +395,15 @@ class EmailActivityLog(Base):
     """
     __tablename__ = 'email_activity_log'
     id = Column(Integer, primary_key=True)
-    timestamp = Column(DateTime, default=datetime.utcnow)
+    # V0.85 (MOS M5, doc 12 A3): indexado — el digest/briefing filtra por fecha.
+    timestamp = Column(DateTime, default=datetime.utcnow, index=True)
     email_id = Column(String(200))
     sender = Column(String(300))
     sender_email = Column(String(300))  # solo el email sin el nombre
     subject = Column(String(500))
     snippet = Column(Text)
-    action_type = Column(String(30), nullable=False)
+    # V0.85 (MOS M5, doc 12 A3): indexado — el digest/dashboard filtra por tipo.
+    action_type = Column(String(30), nullable=False, index=True)
     # V0.7 extra: JSON con campos especificos segun action_type
     # Ej: para sent: {reply_body, message_id, rule_id}
     # Ej: para meeting_proposal: {original_date, proposed_date, calendar_status}
@@ -404,7 +411,8 @@ class EmailActivityLog(Base):
     details = Column(Text)
     rule_id = Column(Integer)
     rule_name = Column(String(200))
-    read = Column(Boolean, default=False)  # si el usuario ya lo vio en dashboard
+    # V0.85 (MOS M5, doc 12 A3): indexado — el digest cuenta pendientes por read=False.
+    read = Column(Boolean, default=False, index=True)  # si el usuario ya lo vio en dashboard
 
 
 
@@ -435,7 +443,8 @@ class EmailTriage(Base):
     subject = Column(String(500))
     category = Column(String(20), nullable=False, index=True)
     method = Column(String(12), nullable=False, default='heuristic')
-    created_at = Column(DateTime, default=datetime.utcnow)
+    # V0.85 (MOS M5, doc 12 A3): indexado — el summarizer filtra el triaje por dia.
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
 
 class MemoryJobRun(Base):
     """

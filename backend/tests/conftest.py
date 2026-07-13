@@ -23,6 +23,18 @@ from fastapi.testclient import TestClient  # noqa: E402
 
 from app.main import app  # noqa: E402
 from app.db.database import Base, engine, SessionLocal  # noqa: E402
+from app.memory.memory_manager import memory_manager  # noqa: E402
+
+# V0.85 (MOS M5, doc 12 A1): desde M5, MemoryManager.__init__() es instantaneo
+# y NO inicializa chromadb — is_healthy() es False hasta que algo llama a
+# initialize_async()/initialize_sync(). Varios tests de memoria usan
+# `pytestmark = pytest.mark.skipif(not memory_router.healthy, ...)` a nivel de
+# MODULO, que pytest evalua en COLLECTION TIME (al importar el fichero de test),
+# antes de que corra NINGUN fixture (incluido `client`, que dispara el lifespan
+# en background). Sin esto, esos skipif verian is_healthy()==False siempre y
+# se saltarian TODOS esos tests. Se inicializa aqui, sincrono, a nivel de
+# modulo de conftest.py — que pytest carga antes de coleccionar ningun test.
+memory_manager.initialize_sync()
 
 
 @pytest.fixture(scope="session")
@@ -31,6 +43,8 @@ def client():
 
     El memory system degradara gracefully si ChromaDB no esta disponible
     en el entorno de test — eso es comportamiento esperado y no un fallo.
+    Ya esta inicializado (sincrono, arriba) antes de que este fixture corra;
+    el lifespan.initialize_async() del propio TestClient sera un no-op.
     """
     with TestClient(app, raise_server_exceptions=False) as c:
         yield c

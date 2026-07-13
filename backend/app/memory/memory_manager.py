@@ -18,7 +18,18 @@ DISENO:
   gracefully: build_context_for_chat() devuelve "" y los endpoints de
   memoria devuelven error 503. Asi el chat sigue funcionando aunque
   la memoria este caida.
+
+V0.85 (MOS M5, doc 12 A1): la carga de chromadb + sentence-transformers
+(I/O + CPU; puede tardar 3-5s, o 1-2 min la primera vez que descarga el
+modelo) YA NO ocurre en __init__ (antes bloqueaba el import de main.py, y
+por tanto el arranque de uvicorn, esos 3-5s SIEMPRE). Ahora __init__ es
+instantaneo; initialize_async() la ejecuta en un hilo aparte (asyncio.to_
+thread), llamada en background desde el lifespan — uvicorn acepta
+peticiones sin esperar. is_healthy() sigue siendo False hasta que termine:
+mismo contrato de degradacion graceful de siempre, solo cambia CUANDO se
+resuelve.
 """
+import asyncio
 import os
 from datetime import datetime
 from typing import List, Optional, Dict, Any
@@ -38,8 +49,11 @@ class MemoryManager:
     """Gestiona las 3 colecciones de ChromaDB para Aithera."""
 
     def __init__(self):
-        # Inicializacion lazy: si falla, marcamos _healthy=False y los
-        # metodos devuelven resultados vacios sin lanzar excepciones.
+        # V0.85 (MOS M5): constructor INSTANTANEO — la carga pesada se movio a
+        # _do_init(), invocada por initialize_async() (background, produccion)
+        # o initialize_sync() (bloqueante, scripts/tests que la necesitan YA).
+        # Mientras nadie la llame, is_healthy() es False (degradacion graceful
+        # identica a la de antes de M5: el chat sigue funcionando sin memoria).
         self._healthy = False
         self._client = None
         self._ef = None
@@ -47,6 +61,11 @@ class MemoryManager:
         self._user_context = None
         self._documents = None
         self._init_error: Optional[str] = None
+
+    def _do_init(self) -> None:
+        """Cuerpo SINCRONO de la inicializacion (chromadb + sentence-transformers
+        + las 3 colecciones legacy). No llamar directamente desde codigo async
+        sin envolver en asyncio.to_thread — usar initialize_async()."""
         try:
             import chromadb
             from chromadb.utils import embedding_functions
@@ -69,6 +88,24 @@ class MemoryManager:
             # No relanzamos: degradamos gracefully.
             self._init_error = f"{type(e).__name__}: {e}"
             print(f"[MemoryManager] Inicializacion fallida: {self._init_error}")
+
+    async def initialize_async(self) -> None:
+        """[V0.85 M5, doc 12 A1] Llamar UNA vez desde el lifespan (main.py), en
+        background (asyncio.create_task) — para que uvicorn acepte peticiones
+        sin esperar. Corre _do_init() en un hilo aparte (asyncio.to_thread) para
+        no bloquear el event loop. Idempotente: si ya esta sana, no repite nada."""
+        if self._healthy:
+            return
+        await asyncio.to_thread(self._do_init)
+
+    def initialize_sync(self) -> None:
+        """Init BLOQUEANTE. Para contextos sin event loop corriendo (scripts) o
+        que necesitan memoria lista de forma deterministica ANTES de arrancar
+        (p.ej. el fixture de tests: evita la carrera con la tarea de background
+        del lifespan). Idempotente igual que initialize_async()."""
+        if self._healthy:
+            return
+        self._do_init()
 
     # ------------------------------------------------------------------
     # Estado
@@ -410,7 +447,9 @@ class MemoryManager:
             return 0
 
 
-# Singleton global - se inicializa al importar.
-# El constructor es lazy y degrada gracefully si chromadb/sentence-transformers
-# fallan, asi que importar este modulo NUNCA rompe el backend.
+# Singleton global. Desde V0.85 M5 el constructor es INSTANTANEO (no hace
+# I/O): importar este modulo nunca bloquea ni falla. La carga real de
+# chromadb/sentence-transformers (que SI puede fallar) ocurre al llamar
+# initialize_async()/initialize_sync() — hasta entonces is_healthy() es False
+# y todo degrada gracefully, igual que si hubiera fallado.
 memory_manager = MemoryManager()

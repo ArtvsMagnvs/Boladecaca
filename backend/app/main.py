@@ -1,4 +1,5 @@
 # Aithera Backend - Main Application
+import asyncio
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -49,22 +50,30 @@ async def lifespan(app: FastAPI):
         log_error("startup", e, "Error al inicializar base de datos")
         raise
 
-    # V0.6 (Fase 3): arrancamos el sistema de memoria semantica. La primera
-    # vez descarga el modelo de embeddings (sentence-transformers, ~80MB),
-    # por eso este mensaje puede tardar 1-2 min en aparecer.
-    if memory_manager.is_healthy():
-        stats = memory_manager.get_stats()
-        log_info(
-            "startup",
-            f"Memory system listo — {stats['conversations']} conv, "
-            f"{stats['user_context']} ctx, {stats['documents']} docs",
-        )
-    else:
-        log_error(
-            "startup",
-            Exception(memory_manager.get_init_error() or "unknown"),
-            "Memory system no disponible (chat seguira funcionando sin memoria)",
-        )
+    # V0.85 (MOS M5, doc 12 A1): arrancamos el sistema de memoria semantica EN
+    # BACKGROUND — antes, chromadb + sentence-transformers cargaban de forma
+    # sincrona aqui mismo (3-5s SIEMPRE, 1-2 min la primera vez que descargan
+    # el modelo), bloqueando a uvicorn antes de aceptar la primera peticion.
+    # Ahora el lifespan continua de inmediato; el log de "listo"/"fallo" se
+    # emite desde dentro de la propia tarea, cuando de verdad termine (aqui
+    # seria prematuro — is_healthy() todavia seria False).
+    async def _init_memory_background() -> None:
+        await memory_manager.initialize_async()
+        if memory_manager.is_healthy():
+            stats = memory_manager.get_stats()
+            log_info(
+                "startup",
+                f"Memory system listo (background) — {stats['conversations']} conv, "
+                f"{stats['user_context']} ctx, {stats['documents']} docs",
+            )
+        else:
+            log_error(
+                "startup",
+                Exception(memory_manager.get_init_error() or "unknown"),
+                "Memory system no disponible (chat seguira funcionando sin memoria)",
+            )
+
+    asyncio.create_task(_init_memory_background())
 
     # V0.8 (Fase 5 Clientes): arranque de canales sobre el Gateway. El adapter
     # de Telegram se registra SOLO si hay token en Config; si falta la lib
@@ -157,9 +166,9 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="Aithera API",
     description="Sistema Operativo de IA - Backend API",
-    # V0.7.3 (Sprint 4 cierre fase Email Assistant - bump sincronizado
-    # con root(), core/config.py y frontend/package.json).
-    version="0.8.0",
+    # V0.85 (MOS M5, cierre de fase - bump sincronizado con root(),
+    # core/config.py y frontend/package.json). Tag v0.8.5.
+    version="0.8.5",
     lifespan=lifespan
 )
 
@@ -213,11 +222,11 @@ app.include_router(telegram_endpoints.router, prefix="/api")
 
 @app.get("/")
 def root():
-    """V0.7.3 (Sprint 4 cierre fase Email Assistant - bump sincronizado con FastAPI
-    app.version y core/config.py (VERSION = 0.7.1))."""
+    """V0.85 (MOS M5, cierre de fase - bump sincronizado con FastAPI
+    app.version y core/config.py). Tag v0.8.5."""
     return {
         "name": "Aithera",
-        "version": "0.8.0",
+        "version": "0.8.5",
         "status": "running"
     }
 

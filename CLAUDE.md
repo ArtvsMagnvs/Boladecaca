@@ -9,12 +9,16 @@
 
 ## 1. Estado actual del proyecto
 
-**Versión real**: `0.8.0` (consistente en `backend/app/main.py`,
-`backend/app/core/config.py` y `frontend/package.json`). Bump 0.7.3 → 0.8.0
-(2026-07-09) al cerrar el grueso de V0.8: Gateway + Telegram + hardening
-(CORS/DPAPI) + voz (STT Whisper, TTS multi-proveedor EdgeTTS/ElevenLabs/Kokoro/
-eSpeak, conversación continua) + Hub responsivo. Banners de los `.bat` de
-arranque actualizados a 0.8.0 con la lista de funciones reales.
+**Versión real**: `0.8.5` (consistente en `backend/app/main.py`,
+`backend/app/core/config.py` y `frontend/package.json`; tag de git `v0.8.5`).
+Bump 0.7.3 → 0.8.0 (2026-07-09) al cerrar el grueso de V0.8: Gateway +
+Telegram + hardening (CORS/DPAPI) + voz (STT Whisper, TTS multi-proveedor
+EdgeTTS/ElevenLabs/Kokoro/eSpeak, conversación continua) + Hub responsivo.
+Bump 0.8.0 → 0.8.5 (2026-07-13) al **cerrar V0.85 completa (MOS Skeleton,
+sprints M1-M5)** — ver más abajo. Banners de los `.bat` de arranque
+actualizados a 0.8.5 (`iniciar_backend.bat`, `iniciar_todo.bat`,
+`iniciar_frontend_react.bat`; `backend/iniciar_app.bat` sigue con un banner
+`0.3.0` heredado y desactualizado — deuda menor, no tocado en V0.85).
 
 **Fases completadas**: V0.2 (base) → V0.3 (Hub) → V0.4 (PostgreSQL + Alembic) →
 V0.5 (AgentManager + ToolManager) → V0.6 (Memory ChromaDB) → V0.7 (Email + Calendar) →
@@ -161,8 +165,37 @@ Opción B (arquitectura definitiva, implementación mínima). Diseño completo e
   lento, orden de persistencia con IA que lanza excepción, `persist_chat_message`,
   y que `/api/chat` y el Gateway invocan literalmente la misma función).
   Suite completa: 228 passed.
-- ⏳ M5 hardening (init async ChromaDB, índices, tests de rendimiento) + tag
-  `v0.8.5`.
+- ✅ **M5 — Hardening, rendimiento y cierre** (doc 07 §10 M5, doc 12 A1/A3):
+  **A1 — init async de ChromaDB en background**: `MemoryManager.__init__()`
+  pasa a ser INSTANTÁNEO (ya no hace I/O); la carga real de chromadb +
+  sentence-transformers vive en `_do_init()`, invocada por
+  `initialize_async()` (`asyncio.to_thread`, arrancada como
+  `asyncio.create_task` en el `lifespan` — background, no bloqueante) o
+  `initialize_sync()` (bloqueante; la usa `tests/conftest.py` a nivel de
+  módulo, ANTES de que pytest coleccione ningún test — necesario porque varios
+  `pytestmark = pytest.mark.skipif(not memory_router.healthy, ...)` se evalúan
+  en collection time, antes de que corra cualquier fixture; sin este fix
+  hubiera saltado ~40 tests en silencio). El log "Memory system listo" ahora
+  se emite desde dentro de la propia tarea de fondo, cuando de verdad termina.
+  **Verificado en vivo contra el backend real**: "Application startup
+  complete" a las 10:51:14, pero "Memory system listo" no llegó hasta las
+  10:51:23 — **9 s en los que el backend ya aceptaba peticiones** en vez de
+  estar bloqueado (antes de M5, esos 9 s bloqueaban el arranque siempre).
+  **A3 — índices de rendimiento** (migración 14.ª `f6a7b8c9d0e1_v085_m5_indices`,
+  idempotente): 8 columnas de filtro frecuente indexadas —
+  `email_activity_log(action_type, read, timestamp)`, `email_triage(created_at)`,
+  `agent_executions(status)`, `tasks(status)`, `calendar_events(start_date)`,
+  `chat_messages(created_at)` (antes solo 3 `index=True` en toda la BD).
+  Tests de rendimiento (doc 12 §6): `test_startup_time.py` (constructor de
+  `MemoryManager` <0.1 s + `import app.main` aislado en subproceso <2 s, sin
+  disparar la carga de memoria) y `test_chromadb_search_perf.py` (búsqueda
+  <200 ms con 10k items — corpus con embeddings sintéticos para que preparar
+  el test sea rápido, query con el embedding function real). **Bump de
+  versión** 0.8.0 → 0.8.5 en las 3 ubicaciones sincronizadas + banners `.bat`.
+  Suite completa: **232 passed, 0 skipped**. **V0.85 (MOS Skeleton) CERRADA.**
+  Alcance NO incluido en M5 (no está en la fila M5 de doc 07 §10 — ver deuda
+  técnica): compactación/`lifecycle.py` (RFC-007) y `httpx` con conexiones
+  persistentes (doc 12 A2) quedan para V0.9.
 
 **Fases pendientes (documentadas, no implementadas)** — ver §5 para el orden
 completo acordado (Hub Visual → Voz → V0.85 Memory → V0.87 WPMS → V0.9 → V1.0 →
@@ -397,7 +430,7 @@ Doc: `Fase_5_Clients_Telegram_Web_V08.md` + `PLAN_MAESTRO_2026/06_GATEWAY_V08_DI
 - **STT** (speech-to-text) con reconocimiento de voz.
 - **Estado**: base existente (`app/voice/`), falta rematar; sin implementar.
 
-### ⏳ V0.85 — MOS Skeleton (ANTES del Automation Engine)
+### ✅ V0.85 — MOS Skeleton (CERRADA, tag `v0.8.5`)
 Salto de memoria de verdad, previo a la automatización y al TIE. Diseño completo:
 `PLAN_MAESTRO_2026/07` (implementación) + `08` (arquitectura/RFCs):
 - Contratos `IMemoryStore`/`MemoryRouter` + 5 tipos de memoria + tabla `decisions`.
@@ -407,14 +440,19 @@ Salto de memoria de verdad, previo a la automatización y al TIE. Diseño comple
   skills con linaje, `decisions.mission_id`, `app/core/events.py` (la ingesta
   emite eventos; spec canónica del bus: `PLAN_MAESTRO_2026/17`), disciplina
   modular (API pública por `__init__.py` + `test_module_boundaries.py`).
-- **Estado**: **M1, M2, M3 y M4 HECHOS** (contratos congelados + `LocalMemoryStore`/
-  `MemoryRouter` + stubs + `decisions`/`memory_job_runs` + `decision_service` +
-  disciplina modular + ingesta email/calendario + `app/core/events.py` +
-  resumen nocturno + `GET /api/memory/briefing` + tarjeta Memoria en el Hub +
-  `chat_service.py` (pipeline único de chat, `/api/chat` y el Gateway
-  consolidados, contexto del MOS con atribución de fuente y presupuesto de
-  300 ms); ver §1). **Criterio de cierre de fase ya verificado** (briefing
-  responde con Gmail desconectado). M5 pendiente.
+- **Estado**: **M1-M5 HECHOS, fase CERRADA** (contratos congelados +
+  `LocalMemoryStore`/`MemoryRouter` + stubs + `decisions`/`memory_job_runs` +
+  `decision_service` + disciplina modular + ingesta email/calendario +
+  `app/core/events.py` + resumen nocturno + `GET /api/memory/briefing` +
+  tarjeta Memoria en el Hub + `chat_service.py` (pipeline único de chat,
+  contexto del MOS con atribución de fuente y presupuesto de 300 ms) +
+  hardening (init async de ChromaDB, 8 índices nuevos, tests de rendimiento);
+  ver §1 para el detalle completo por sprint). **Criterio de cierre de fase
+  verificado dos veces** (test automatizado con Gmail desconectado +
+  verificación manual contra el backend real). Suite: 232 passed, 0 skipped.
+  **Deuda diferida a propósito a V0.9** (no estaba en el alcance literal de
+  M5): compactación/`lifecycle.py` (RFC-007), `httpx` con conexiones
+  persistentes (doc 12 A2).
 
 ### ⏳ V0.9 — Automation Engine + ApprovalGate
 Doc: `PLAN_MAESTRO_2026/11` parte A (sustituye a `Fase_6_Automation_V08.md`).

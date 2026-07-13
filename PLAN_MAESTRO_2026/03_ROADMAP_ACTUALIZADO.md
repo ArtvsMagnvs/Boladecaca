@@ -76,7 +76,7 @@ hardcodeadas (doc 12 A6) y el sprint perf-front (lazy Three.js/code-splitting) �
 misma zona de código, mismo momento.
 **Cierre**: test de presencia superado (13 §21.1). ~3-4 sesiones.
 
-## 3. V0.85 — MOS Skeleton (diseño completo: doc 07)
+## 3. ✅ V0.85 — MOS Skeleton — CERRADA (tag `v0.8.5`) (diseño completo: doc 07)
 
 **Opción B**: arquitectura definitiva, implementación mínima. En una frase: se
 construye la columna vertebral de la memoria (interfaces `IMemoryStore`/`MemoryRouter`
@@ -96,6 +96,13 @@ presupuesto), vault opcional.
   local con Gmail desconectado. Tag `v0.8.5`.
 - Handoff garantizado a V0.9: briefing estable, `context()` ≤ 300 ms, `decisions`
   lista, jobs asyncio migrables a APScheduler, eventos operativos.
+- **✅ ESTADO (2026-07-13): M1-M5 completos, fase cerrada.** Criterio de cierre
+  verificado (test automatizado + backend real del usuario). M5 confirmó en
+  vivo el arranque no bloqueante (9 s de carga de ChromaDB ya no bloquean a
+  uvicorn) y añadió 8 índices de rendimiento. Suite: 232 passed, 0 skipped.
+  Detalle completo por sprint en `CLAUDE.md` §1. Diferido a propósito a V0.9
+  (fuera del alcance literal de la fila M5 de doc 07 §10): compactación/
+  `lifecycle.py` (08 RFC-007), `httpx` con conexiones persistentes (doc 12 A2).
 
 ## 3b. V0.87 — WPMS: Workspace & Project Management System (diseño completo: doc 18)
 
@@ -268,7 +275,7 @@ tipado. Sincronización LSL↔GSN siempre con confirmación explícita (09 §3).
 | Versión | Nombre | Sesiones (Opus 4.8) | Entregable usable |
 |---|---|---|---|
 | V0.82/0.83 | Voz + **AVCS Fase 0** (semilla+ondas, 3 ritmos, modo presencia, chat limpio) | 3-4 | una presencia viva en el Hub |
-| V0.85 | MOS Skeleton | 5-6 | memoria viva: ingesta, briefing, contexto con fuentes |
+| V0.85 ✅ | MOS Skeleton (cerrada, tag `v0.8.5`) | 5-6 | memoria viva: ingesta, briefing, contexto con fuentes |
 | V0.87 | **WPMS** (Workspace) | 2-3 | proyectos/milestones/tareas vara-Linear, progreso automático, enganche MOS/TIE |
 | V0.9 | Automation + Gates | 4-5 | briefing matinal automático, reglas, aprobaciones |
 | V1.0 | **TIE v1** (Orchestrator) + **MVP BETA** | 5-6 | **instalable y autónomo para beta testers**; planes como grafo, camino corto, kill-switch |

@@ -8,9 +8,9 @@ load_dotenv()
 class Settings:
     # App settings
     APP_NAME = "Aithera"
-    # V0.7.1 (Fase 4b Email Assistant refactor - bump sincronizado con main.py y
-    # frontend/package.json).
-    VERSION = "0.8.0"
+    # V0.85 (MOS M5, cierre de fase) - bump sincronizado con main.py y
+    # frontend/package.json. Tag v0.8.5.
+    VERSION = "0.8.5"
     DEBUG = os.getenv("DEBUG", "false").lower() == "true"
 
     # API settings

@@ -17,7 +17,7 @@ cd /d "%~dp0"
 echo.
 echo ============================================================
 echo        A I T H E R A   F R O N T E N D
-echo                 Version 0.8.0
+echo                 Version 0.8.5
 echo ------------------------------------------------------------
 echo   Hub Visual 3D  .  Chat con voz (STT/TTS)
 echo   Proyectos . Tareas . Calendario . Agentes
