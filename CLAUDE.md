@@ -243,8 +243,32 @@ teclado a la par).
   ítem "Workspace", `Hub` repunta sus `navigate()`; `Projects.tsx`/`Tasks.tsx`
   eliminados. `lib/api.ts` extendido (tipos + métodos milestones/progress).
   `tsc --noEmit` 0 errores, `vite build` OK. El board Kanban + drag&drop es W2b.
-- ⏳ **W2b** — board Kanban + drag&drop + atajos + panel `(?)` · **W3** —
-  integración MOS/eventos/briefing + Hub + tag `v0.8.7`.
+- ✅ **W2b — Lienzo espacial: tarjetas arrastrables/redimensionables + estantería**
+  (`frontend/src/pages/Workspace/`): el panel de proyectos pasa de lista fija a
+  tarjetas-ventana. `useWindowCard.ts` — mecánica con Pointer Events nativos
+  (sin librería nueva): mutación directa del DOM durante el gesto (60fps),
+  estado confirmado solo en `pointerup`; resize acotado a 3 asas (derecha=ancho,
+  abajo=alto, esquina=ambos) para no acoplar mover posición con redimensionar.
+  Persistencia en `localStorage` (`aithera.workspace.cardLayouts`), nunca SQL ni
+  `mem_project` — es preferencia de pantalla, no conocimiento (doc 18 regla
+  rectora). Fondo ambiental: reusa `AICore.tsx` tal cual (sin modificarlo),
+  atenuado — **no** es el AVCS completo de doc 13 (V0.82/V0.83, sin construir).
+  `Shelf.tsx` (estantería, lista todos los proyectos para que uno abierto nunca
+  se pierda detrás de otro) + `ProjectCard.tsx` (header arrastrable, doble clic
+  expande al área del Workspace, contenido adaptativo por alto disponible,
+  carga perezosa de milestones/tareas por tarjeta) + `WorkspaceCanvas.tsx`.
+  **Bug real encontrado y arreglado en verificación en vivo** (no solo
+  tsc/build): dos proyectos abiertos por primera vez caían en la misma
+  posición por defecto, superpuestos — el fallback de `setLayout()` usaba
+  índice 0 en vez del real; corregido derivando el stagger de `project_id`
+  (estable) en vez de un índice de array. Verificado en vivo contra el dev
+  server real con `PointerEvent`s nativos (la herramienta de drag automatizado
+  no está disponible en este entorno): arrastre con delta exacto, 3 asas
+  independientes, expandir/restaurar preserva el rect libre, minimizar, y
+  soltar sobre la estantería la minimiza automáticamente.
+- ⏳ **W2c** — agentes embebidos + hueco de automatizaciones · **W3b** — board
+  Kanban + drag&drop de tareas + atajos + panel `(?)` · **W4** — integración
+  MOS/eventos/briefing + Hub + tag `v0.8.7`.
 - **V0.9** — Automation Engine (APScheduler + reglas + sistema de aprobaciones)
 - **V1.0** — Orchestrator (intent analyzer + planner + Claude Code Agent)
 - **V1.1** — Hermes (Nous Research) como sistema de agentes bajo el Orchestrator
