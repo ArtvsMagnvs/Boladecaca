@@ -23,10 +23,21 @@ export function ProjectPopup({ project, onSave, onDelete, onClose }: Props) {
   const [currentVersion, setCurrentVersion] = useState(project?.current_version ?? "");
   const [targetVersion, setTargetVersion] = useState(project?.target_version ?? "");
   const [repoPath, setRepoPath] = useState(project?.repo_path ?? "");
+  const [githubUrl, setGithubUrl] = useState(project?.github_url ?? "");
+  const [showCreateRepoNote, setShowCreateRepoNote] = useState(false);
   const [tags, setTags] = useState((project?.tags ?? []).join(", "));
   const [docs, setDocs] = useState<ProjectDoc[]>(project?.docs ?? []);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // V0.87 (WPMS W2e): solo existe dentro de Electron (preload.cjs). En el
+  // navegador normal (Browser pane / desarrollo web) se oculta el botón y
+  // queda solo el campo de texto manual — degradación sin romper nada.
+  const canPickFolder = typeof window !== "undefined" && !!window.aithera?.pickFolder;
+  const pickFolder = async () => {
+    const picked = await window.aithera?.pickFolder();
+    if (picked) setRepoPath(picked);
+  };
 
   const addDoc = () => setDocs((prev) => [...prev, { label: "", kind: "url", url_or_path: "" }]);
   const setDoc = (i: number, patch: Partial<ProjectDoc>) =>
@@ -44,6 +55,7 @@ export function ProjectPopup({ project, onSave, onDelete, onClose }: Props) {
         current_version: currentVersion || null,
         target_version: targetVersion || null,
         repo_path: repoPath || null,
+        github_url: githubUrl || null,
         tags: tags.split(",").map((t) => t.trim()).filter(Boolean),
         docs: docs.filter((d) => d.label.trim() && d.url_or_path.trim()),
       });
@@ -89,8 +101,15 @@ export function ProjectPopup({ project, onSave, onDelete, onClose }: Props) {
           </select>
         </div>
         <div>
-          <label className={fieldLabel}>Ruta del repo</label>
-          <input value={repoPath ?? ""} onChange={(e) => setRepoPath(e.target.value)} className={fieldInput} placeholder="C:/repos/…" />
+          <label className={fieldLabel}>Carpeta local</label>
+          <div className="flex gap-1.5">
+            <input value={repoPath ?? ""} onChange={(e) => setRepoPath(e.target.value)} className={fieldInput} placeholder="C:/repos/…" />
+            {canPickFolder && (
+              <button type="button" onClick={pickFolder} className={`${btnGhost} px-2.5 whitespace-nowrap`} title="Elegir carpeta…">
+                📁
+              </button>
+            )}
+          </div>
         </div>
         <div>
           <label className={fieldLabel}>Versión actual</label>
@@ -99,6 +118,27 @@ export function ProjectPopup({ project, onSave, onDelete, onClose }: Props) {
         <div>
           <label className={fieldLabel}>Versión objetivo</label>
           <input value={targetVersion ?? ""} onChange={(e) => setTargetVersion(e.target.value)} className={fieldInput} placeholder="0.9" />
+        </div>
+        <div>
+          <label className={fieldLabel}>Repositorio GitHub</label>
+          <div className="flex gap-1.5">
+            <input value={githubUrl ?? ""} onChange={(e) => setGithubUrl(e.target.value)} className={fieldInput} placeholder="https://github.com/…" />
+            {!githubUrl && (
+              <button
+                type="button"
+                onClick={() => setShowCreateRepoNote((v) => !v)}
+                className={`${btnGhost} px-2.5 whitespace-nowrap text-[11px]`}
+              >
+                Crear repositorio
+              </button>
+            )}
+          </div>
+          {showCreateRepoNote && (
+            <p className="text-[11px] text-ink-faint mt-1 leading-snug">
+              La creación automática de repositorios llega con la integración MCP de
+              GitHub (V1.2). Por ahora, crea el repo manualmente y pega aquí su URL.
+            </p>
+          )}
         </div>
       </div>
       <div>

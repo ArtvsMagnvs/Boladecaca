@@ -5,7 +5,7 @@
 // "iniciar_backend.bat" y luego la app de escritorio. Mantener ese flujo de
 // arranque ya probado evita introducir una nueva fuente de fallos al migrar
 // la capa visual.
-const { app, BrowserWindow, session } = require("electron");
+const { app, BrowserWindow, session, ipcMain, dialog } = require("electron");
 const path = require("path");
 
 // V0.7.1 (FIX): Suprimir warnings internos de Chromium DevTools que aparecen
@@ -69,6 +69,20 @@ function createWindow() {
     win.loadFile(path.join(__dirname, "..", "dist", "index.html"));
   }
 }
+
+// V0.87 (WPMS W2e): primer uso real de IPC en esta app (preload.cjs estaba
+// vacio a proposito, como punto de extension). Un proyecto necesita apuntar
+// a una carpeta local real (repo_path) y el navegador no puede leer rutas
+// absolutas del sistema de archivos por seguridad — el picker nativo de
+// Electron es el unico camino honesto. Sin logica de negocio aqui: solo
+// devuelve la ruta elegida o null si el usuario cancela.
+ipcMain.handle("dialog:pick-folder", async () => {
+  const result = await dialog.showOpenDialog({
+    properties: ["openDirectory", "createDirectory"],
+  });
+  if (result.canceled || result.filePaths.length === 0) return null;
+  return result.filePaths[0];
+});
 
 app.whenReady().then(() => {
   // V0.83 (Paso 4) STT: el micro se usa desde el Hub/Chat (MediaRecorder).

@@ -165,6 +165,11 @@ class Project(Base):
     tags = Column(JSON)                   # list[str] — filtrado + skills transferibles
     docs = Column(JSON)                   # list[{label, kind, url_or_path}] — enlaces, no contenido
     archived_at = Column(DateTime)        # los proyectos se archivan, no se borran
+    # V0.87 (WPMS W2e, doc 18): SOLO el enlace al repo remoto. Sin integracion
+    # real de GitHub (crear repo, leer issues, etc.) — eso llega con el MCP de
+    # GitHub en V1.2. Este campo es la arquitectura minima para que esa fase
+    # tenga donde enganchar sin migracion nueva.
+    github_url = Column(String(500))
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow)
 
@@ -269,6 +274,11 @@ class Agent(Base):
     skills = Column(JSON)
     # icon: emoji corto, NO subida de imagen (necesitaria almacenamiento nuevo).
     icon = Column(String(16))
+    # V0.87 (WPMS W2e, doc 14 §4.3c, Δ 2026-07-15): reservado para "orchestrator".
+    # Esqueleto puro — sin UI ni logica de autoridad todavia. El TIE v1 (V1.0)
+    # creara el orquestador por proyecto y hara cumplir que solo tenga poder
+    # sobre agentes de su mismo project_id y las carpetas de ese proyecto.
+    role = Column(String(20))
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow)
 

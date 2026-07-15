@@ -9,7 +9,7 @@
 > **07** MOS V0.85 · **08** MOS arquitectura completa · **09** LSL/LLL · **10** Hermes
 > · **11** Automation+Orchestrator · **12** Auditoría/optimización · **13** AVCS
 > (sistema visual) · **14** TIE/Cognitive Runtime · **15** Learning System ·
-> **16** Principios Modulares · **17** Event Bus/Observabilidad · **18** WPMS/Workspace.
+> **16** Principios Modulares · **17** Event Bus/Observabilidad · **18** WPMS/Workspace · **19** MEL/Model Execution Layer.
 >
 > **La estrella polar**: V1.0 es un **MVP bien hecho — completamente autónomo y
 > distribuible a usuarios BETA** — alcanzable en semanas, no meses. Todo lo que no
@@ -168,6 +168,14 @@ camino corto conversational (~80% de queries sin grafo ni planner). `AgentRuntim
 detección de tareas repetidas → propuesta de skills con cuarentena (doc 15 §3).
 Enganche: `gateway.set_handler(tie.handle)`.
 
+**[Δ 2026-07-15] Orquestador por proyecto** (pedido del usuario, esqueleto ya
+dejado en W2e del WPMS — doc 14 §4.3c tiene el diseño completo): cada proyecto
+podrá tener un `Agent` con `role="orchestrator"` cuya autoridad se limita a los
+agentes de ESE proyecto y a las carpetas que el usuario le haya añadido — nunca
+al resto del sistema. La columna `Agent.role` ya existe (V0.87, nullable, sin
+lógica); V1.0 implementa la delegación real y, opcionalmente, la creación
+guiada del orquestador al crear un proyecto.
+
 **Definición de "MVP beta" (criterios de release, sprint O5)**:
 
 1. Instalador NSIS con **auto-start del backend desde Electron** (doc 12 B6) —
@@ -181,7 +189,19 @@ Enganche: `gateway.set_handler(tie.handle)`.
 5. Seguridad local: todo cifrado DPAPI, CORS cerrado, sin exposición de red
    (el cliente Web/PWA con PIN llega post-V1.0 a propósito).
 
-Sprints O1-O5 (5-6 sesiones). Tag `v1.0.0-beta`.
+**[Δ 2026-07-13] MEL v1 — Model Execution Layer (doc 19), bloque E1-E2 entre O4
+y O5**: la capa universal de ejecución de modelos. El resto del sistema pide
+CAPACIDADES (`mel.complete(capability=CLASSIFY|DRAFT|REASON|...)`) y el MEL decide
+el modelo con un **Rule Engine determinista sin LLM (<1 ms)**, políticas
+Economy/Quality/Offline autoconfiguradas al cerrar el wizard del onboarding (por
+eso va antes de O5), sistema de fallback con circuit breakers, y registro
+`mel_executions`. `ai_manager` pasa a ser su Provider Registry interno;
+`tie/router.py` (doc 14) queda como shim que delega en el MEL; se migran los ~9
+call-sites (chat, triaje, ai_reply, summarizer, TIE). El aprendizaje (Learning +
+Recommendation Engines) y el builder Custom drag&drop llegan en V1.2 con el
+Learner (comparten la tabla `model_stats`).
+
+Sprints O1-O5 + E1-E2 (7-8 sesiones). Tag `v1.0.0-beta`.
 
 ## 6. V1.1 — Hermes Runtime + **Learning System operativo** (docs 10 + 15)
 
@@ -207,6 +227,13 @@ solo archivo propio; 0 menciones a "Hermes" en la UI. (4-5 sesiones + H0.)
   misiones del AE vía `MissionAction`), Model Router alimentado por
   `model_stats`/`tool_stats` del Learner. **Mission evals**: suite de misiones
   canónicas de regresión pre-release (doc 15 §9).
+- **MEL v2** (doc 19 §9): Learning Engine (job nocturno sobre `mel_executions` +
+  `model_stats` compartida con el Learner: prior bayesiano, decaimiento temporal,
+  evidencia mínima, cambio acotado) + Recommendation Engine (propuestas HITL con
+  evidencia, misma escalera de confianza) + **Custom builder drag&drop** +
+  pantallas Actividad/Recomendaciones + reconfiguración automática por eventos +
+  presupuestos de coste. La fila "Model Router alimentado por model_stats" de TIE
+  v2 se cumple A TRAVÉS del MEL (una sola pieza aprende a elegir modelo).
 - **Skill Evolution** (doc 15 §6): merge/split/specialize con linaje + dedup
   conceptual y detección de contradicciones del Knowledge Evolution (doc 15 §7).
 - Automation: PatternTrigger/MemoryTrigger (alimentados por el LLL) +

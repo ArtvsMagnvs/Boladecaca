@@ -6,8 +6,8 @@ import { useEffect, useState } from "react";
 import { api, type Agent, type ToolInfo } from "@/lib/api";
 import { Modal, ErrorBanner, fieldLabel, fieldInput, btnPrimary, btnGhost } from "./Modal";
 import { SkillPickerPopup } from "./SkillPickerPopup";
+import { useModeloIAOptions } from "./useModeloIAOptions";
 
-const AGENT_TYPES = ["generic", "claude_code", "minimax", "ollama", "custom"];
 const EMOJI_CHOICES = ["🤖", "🧠", "⚙️", "🔧", "📊", "🔍", "✉️", "📅", "🗂️", "⚡"];
 
 interface Props {
@@ -28,6 +28,7 @@ export function AgentCreatePopup({ projectId, onSave, onClose }: Props) {
   const [isActive, setIsActive] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const modeloOptions = useModeloIAOptions();
 
   useEffect(() => {
     api.getTools().then((r) => setTools(r.tools)).catch(() => {});
@@ -98,9 +99,9 @@ export function AgentCreatePopup({ projectId, onSave, onClose }: Props) {
 
       <div className="grid grid-cols-2 gap-3">
         <div>
-          <label className={fieldLabel}>Tipo</label>
+          <label className={fieldLabel}>Modelo IA</label>
           <select value={agentType} onChange={(e) => setAgentType(e.target.value)} className={fieldInput}>
-            {AGENT_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
+            {modeloOptions.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
           </select>
         </div>
         <div>

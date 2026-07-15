@@ -31,12 +31,17 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
-/* Superficie de cristal reutilizable: paneles flotantes, menus, el nucleo. */
+/* Superficie de cristal reutilizable: paneles flotantes, menus, el nucleo.
+   V0.87 (WPMS W2e): borde azul electrico fino — el borde gris casi
+   transparente anterior (rgba 255,255,255,0.06) era practicamente invisible
+   sobre el fondo oscuro; pedido explicito del usuario ("cuesta ver los
+   bordes"). Usa el mismo accent (#5EA8FF) que el resto del sistema, solo
+   mas opaco que un simple tinte. */
 .glass-surface {
   background: rgba(23, 26, 36, 0.6);
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(94, 168, 255, 0.35);
 }
 
 /* Anillos de estado del nucleo IA */
@@ -223,6 +228,25 @@ input[type="range"]::-moz-range-thumb {
   animation: agent-ring-orbit 2.4s linear infinite;
   pointer-events: none;
 }
+/* V0.87 (WPMS W2e): punto que sobresale en el extremo más brillante del
+   "cometa" (justo donde el conic-gradient llega a accent.DEFAULT al 100%,
+   que es el mismo punto de partida del gradiente — arriba, sin rotar).
+   Al ser un pseudo-elemento del propio .agent-ring-glow, rota CON él
+   (el rotate() del padre arrastra a sus hijos), así que queda siempre
+   pegado a la cabeza del cometa. Deliberadamente más grande que el grosor
+   del anillo (2px) para que "sobresalga" tal como se pidió. */
+.agent-ring-glow::after {
+  content: "";
+  position: absolute;
+  top: -3px;
+  left: 50%;
+  width: 6px;
+  height: 6px;
+  margin-left: -3px;
+  border-radius: 9999px;
+  background: theme("colors.accent.glow");
+  box-shadow: 0 0 7px 2px theme("colors.accent.glow"), 0 0 3px theme("colors.accent.DEFAULT");
+}
 @keyframes agent-ring-orbit {
   to { transform: rotate(360deg); }
 }
@@ -230,5 +254,8 @@ input[type="range"]::-moz-range-thumb {
   .agent-ring-glow {
     animation: none;
     opacity: 0.7;
+  }
+  .agent-ring-glow::after {
+    display: none;
   }
 }

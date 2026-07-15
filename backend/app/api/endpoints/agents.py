@@ -71,6 +71,7 @@ def create_agent(payload: AgentCreate):
             project_id=payload.project_id,
             skills=payload.skills,
             icon=payload.icon,
+            role=payload.role,
         )
         return _agent_to_response(agent)
     except ValueError as e:

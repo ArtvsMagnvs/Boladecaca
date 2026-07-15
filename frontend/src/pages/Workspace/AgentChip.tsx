@@ -34,12 +34,14 @@ interface Props {
   // a este chip en AgentsSection.tsx (onPointerDown ahi) — no hace falta que
   // AgentChip sepa nada de reorden, solo mostrar el estado "isDragging".
   isDragging?: boolean;
-  onOpen: () => void; // clic simple -> AgentDetailPopup
-  onOpenFullscreen: () => void; // doble clic -> W2d (pantalla completa)
+  // V0.87 (WPMS W2e): un solo clic abre la pantalla completa (W2d) — el
+  // popup de detalle de solo lectura (AgentDetailPopup) se retiro porque
+  // duplicaba lo que ya muestra la pantalla completa, sin poder editar nada.
+  onOpen: () => void;
 }
 
 export function AgentChip({
-  agent, size, lastExecutionFailed, executions, isDragging, onOpen, onOpenFullscreen,
+  agent, size, lastExecutionFailed, executions, isDragging, onOpen,
 }: Props) {
   const ringClass = agent.is_active
     ? "agent-ring-active"
@@ -47,12 +49,24 @@ export function AgentChip({
       ? "border-signal-error/70"
       : "border-ink-faint/40";
 
+  // V0.87 (WPMS W2e): "trabajando…" estilo WhatsApp — pedido explicito del
+  // usuario. pending+running cuentan como "trabajando" (pending es el
+  // instante entre enviar la tarea y que el AgentManager la recoja).
+  const isWorking = executions.some((e) => e.status === "pending" || e.status === "running");
+
   const icon = (
     <div
       className={`relative shrink-0 h-9 w-9 rounded-full border-2 flex items-center justify-center text-base bg-base-800 ${ringClass}`}
     >
       {agent.is_active && <span className="agent-ring-glow" aria-hidden />}
       <span className="relative z-[1]">{agent.icon || "🤖"}</span>
+      {isWorking && (
+        <span
+          className="absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full bg-signal-ok border border-base-900 animate-pulse"
+          aria-hidden
+          title="Trabajando…"
+        />
+      )}
     </div>
   );
 
@@ -60,7 +74,6 @@ export function AgentChip({
     return (
       <button
         onClick={onOpen}
-        onDoubleClick={onOpenFullscreen}
         title={agent.name}
         className={`shrink-0 ${isDragging ? "opacity-50" : ""}`}
       >
@@ -77,7 +90,6 @@ export function AgentChip({
   return (
     <div
       onClick={onOpen}
-      onDoubleClick={(e) => { e.stopPropagation(); onOpenFullscreen(); }}
       className={`flex items-center gap-2.5 glass-surface rounded-xl px-2.5 py-2 cursor-pointer hover:border-accent/25 border border-transparent transition-all ${
         isDragging ? "opacity-50" : ""
       }`}
@@ -86,6 +98,9 @@ export function AgentChip({
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-1.5">
           <span className="text-xs font-medium text-ink truncate">{agent.name}</span>
+          {isWorking && (
+            <span className="text-[9.5px] text-signal-ok shrink-0 animate-pulse">escribiendo…</span>
+          )}
         </div>
         {size === "full" && (
           <>

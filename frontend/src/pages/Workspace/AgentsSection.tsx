@@ -6,7 +6,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, type Agent, type AgentExecution } from "@/lib/api";
 import { AgentChip, type ChipSize } from "./AgentChip";
 import { AgentCreatePopup } from "./AgentCreatePopup";
-import { AgentDetailPopup } from "./AgentDetailPopup";
 
 const CLICK_THRESHOLD_PX = 5;
 
@@ -32,11 +31,10 @@ function saveOrder(projectId: number, order: number[]) {
 interface Props {
   projectId: number;
   size: ChipSize; // calculado por ProjectCard segun el alto/ancho disponible
-  // W2d: doble clic abre la pantalla completa del agente (vive en
-  // WorkspaceCanvas, no aqui — debe poder cubrir todo el canvas). Si no se
-  // pasa (no deberia pasar en producción), degrada con gracia al mismo
-  // popup de detalle que el clic simple.
-  onOpenFullscreen?: (agentId: number) => void;
+  // W2d/W2e: un solo clic abre la pantalla completa del agente (vive en
+  // WorkspaceCanvas, no aqui — debe poder cubrir todo el canvas). Ya no hay
+  // popup de detalle de solo lectura como alternativa (retirado en W2e).
+  onOpenFullscreen: (agentId: number) => void;
   // W2d: sube cada vez que se cierra la pantalla completa de un agente — la
   // pantalla completa es OTRA instancia con sus propios datos, asi que esta
   // seccion no se entera sola si is_active/icon cambiaron ahi.
@@ -48,7 +46,6 @@ export function AgentsSection({ projectId, size, onOpenFullscreen, refreshTick }
   const [order, setOrder] = useState<number[]>(() => loadOrder(projectId));
   const [execByAgent, setExecByAgent] = useState<Record<number, AgentExecution[]>>({});
   const [createOpen, setCreateOpen] = useState(false);
-  const [detailAgent, setDetailAgent] = useState<Agent | null>(null);
   const [dragId, setDragId] = useState<number | null>(null);
 
   const containerRef = useRef<HTMLDivElement>(null);
@@ -58,14 +55,16 @@ export function AgentsSection({ projectId, size, onOpenFullscreen, refreshTick }
   const load = useCallback(async () => {
     const list = await api.getAgents(projectId);
     setAgents(list);
-    // Ejecuciones recientes: de los inactivos (para el marco gris/rojo) y de
-    // todos si hay sitio para el contador de tareas ("full").
-    const need = size === "full" ? list : list.filter((a) => !a.is_active);
+    // V0.87 (WPMS W2e): ejecuciones de TODOS los agentes, en todos los
+    // tamaños — antes solo se pedian para los inactivos (marco gris/rojo) o
+    // en "full" (contador de tareas); el indicador "trabajando…" necesita
+    // saber si hay una ejecucion pending/running incluso en iconos pequeños.
+    // Pocos agentes por proyecto (uso personal, doc 18 regla 6) — coste bajo.
     const pairs = await Promise.all(
-      need.map(async (a) => [a.id, await api.getAgentExecutions(a.id, 20).catch(() => [])] as const),
+      list.map(async (a) => [a.id, await api.getAgentExecutions(a.id, 20).catch(() => [])] as const),
     );
     setExecByAgent(Object.fromEntries(pairs));
-  }, [projectId, size, refreshTick]);
+  }, [projectId, refreshTick]);
 
   useEffect(() => {
     load().catch(() => {});
@@ -169,8 +168,7 @@ export function AgentsSection({ projectId, size, onOpenFullscreen, refreshTick }
                 lastExecutionFailed={lastFailed(a.id)}
                 executions={execByAgent[a.id] ?? []}
                 isDragging={dragId === a.id}
-                onOpen={() => setDetailAgent(a)}
-                onOpenFullscreen={() => (onOpenFullscreen ? onOpenFullscreen(a.id) : setDetailAgent(a))}
+                onOpen={() => onOpenFullscreen(a.id)}
               />
             </div>
           ))}
@@ -186,14 +184,6 @@ export function AgentsSection({ projectId, size, onOpenFullscreen, refreshTick }
             await load();
           }}
           onClose={() => setCreateOpen(false)}
-        />
-      )}
-
-      {detailAgent && (
-        <AgentDetailPopup
-          agent={detailAgent}
-          executions={execByAgent[detailAgent.id] ?? []}
-          onClose={() => setDetailAgent(null)}
         />
       )}
     </section>

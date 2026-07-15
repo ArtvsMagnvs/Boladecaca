@@ -31,6 +31,10 @@ export interface Project {
   tags?: string[] | null;
   docs?: ProjectDoc[] | null;
   archived_at?: string | null;
+  // V0.87 (WPMS W2e): solo el enlace al repo remoto. Sin integracion real de
+  // GitHub — eso llega con el MCP de GitHub en V1.2 (esto es la arquitectura
+  // minima para que esa fase tenga donde enganchar).
+  github_url?: string | null;
   created_at?: string | null;
   updated_at?: string | null;
 }
@@ -136,6 +140,9 @@ export interface Agent {
   skills?: string[] | null;
   // icon = emoji corto, NO una imagen subida.
   icon?: string | null;
+  // V0.87 (WPMS W2e, doc 14 §4.3c): esqueleto, sin UI ni logica todavia.
+  // Reservado para "orchestrator" — lo usara de verdad el TIE v1 (V1.0).
+  role?: string | null;
   created_at?: string | null;
   updated_at?: string | null;
 }

@@ -50,6 +50,8 @@ class ProjectCreate(BaseModel):
     start_date: Optional[datetime] = None
     tags: Optional[List[str]] = None
     docs: Optional[List[dict]] = None
+    # V0.87 (WPMS W2e) — solo el enlace, sin integracion real (llega en V1.2 MCP).
+    github_url: Optional[str] = None
 
 
 class ProjectUpdate(BaseModel):
@@ -68,6 +70,8 @@ class ProjectUpdate(BaseModel):
     tags: Optional[List[str]] = None
     docs: Optional[List[dict]] = None
     archived_at: Optional[datetime] = None
+    # V0.87 (WPMS W2e)
+    github_url: Optional[str] = None
 
 
 class ProjectResponse(BaseModel):
@@ -87,6 +91,8 @@ class ProjectResponse(BaseModel):
     tags: Optional[List[str]] = None
     docs: Optional[List[dict]] = None
     archived_at: Optional[datetime] = None
+    # V0.87 (WPMS W2e)
+    github_url: Optional[str] = None
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 
@@ -257,6 +263,9 @@ class AgentCreate(BaseModel):
     project_id: Optional[int] = None
     skills: Optional[List[str]] = None
     icon: Optional[str] = None
+    # V0.87 (WPMS W2e, doc 14 §4.3c) — esqueleto, sin UI todavia. Reservado
+    # para "orchestrator"; el TIE v1 (V1.0) es quien lo usara de verdad.
+    role: Optional[str] = None
 
 
 class AgentUpdate(BaseModel):
@@ -272,6 +281,7 @@ class AgentUpdate(BaseModel):
     project_id: Optional[int] = None
     skills: Optional[List[str]] = None
     icon: Optional[str] = None
+    role: Optional[str] = None
 
 
 class AgentResponse(BaseModel):
@@ -294,6 +304,7 @@ class AgentResponse(BaseModel):
     project_id: Optional[int] = None
     skills: Optional[List[str]] = None
     icon: Optional[str] = None
+    role: Optional[str] = None
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 

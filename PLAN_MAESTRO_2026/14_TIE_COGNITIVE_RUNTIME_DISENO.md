@@ -181,7 +181,7 @@ difieren como políticas/columnas** (no módulos) hasta tener datos:
 | Reflection Engine | módulo **Learner** (doc 15 §5) | V1.1 → V1.5 | la reflexión con consecuencias persistidas es aprendizaje → vive en el Learner; el executor solo valida resultados por nodo (barato) |
 | Recovery Manager | políticas en `executor.py` | V1.0 (degradar) → V1.2 (retry/replan) | §3.4.5 |
 | Cost Manager | columnas en nodo/misión + agregación del tracer; política de presupuesto | V1.0 (medir) → V1.2 (imponer) | primero DATOS, luego política — jamás al revés |
-| Model Router | `app/tie/router.py` (política sobre `ai_manager`) | V1.0 | fast/smart por nodo (11 B.3) + hint por nodo; cost-aware y stats del Learner en V1.2 |
+| Model Router | `app/tie/router.py` — **[Δ 2026-07-13] desde V1.0-E1 es un shim que delega en el MEL (doc 19)**: el TIE pide capacidades, el MEL elige modelo | V1.0 | fast/smart por nodo (11 B.3) + hint por nodo; cost-aware y stats del Learner en V1.2 |
 | ~~Tool Router~~ | **ELIMINADO** | — | ya existe: `ToolManager` + whitelist por nodo (`node.tools`). No hay nada que "rutear" |
 | Agent Factory | registro `{nombre: AgentRuntime}` en `runtime.py` | V1.0 | una factoría real solo cuando haya runtimes con construcción costosa (V1.2 multi-instancia) |
 | Execution Monitor | `app/tie/tracer.py` + streaming de estado | V1.0 | ya diseñado (11 B.1/B.5); en V1.2 emite `mission.*` events + vista del grafo en el Hub |
@@ -356,7 +356,9 @@ PRÓXIMA MISIÓN — el planner y el router arrancan con mejor contexto, mejores
 
 ### 3.5 Model Router + Cost Manager (políticas, no módulos)
 
-- **Router V1.0** (= 11 B.3): `fast_model`/`smart_model` en Settings; intent y
+- **Router V1.0** (= 11 B.3) *(Δ 2026-07-13: vigente solo hasta el bloque E1 de
+  V1.0 — después `router.py` delega en `mel.complete(capability=...)`, doc 19
+  §1.1, y estos settings los gestionan las políticas del MEL)*: `fast_model`/`smart_model` en Settings; intent y
   camino corto usan fast; planner usa smart; cada nodo puede traer `model_hint`.
   Salud del proveedor vía `ai_manager` (health-check cacheado existente).
 - **Router V1.2**: se añade la estadística del Learner (`model_stats` por
@@ -437,6 +439,34 @@ son Tasks del WPMS — no se persisten en el Workspace). Al cerrar, el TIE escri
 del WPMS como señales; el enricher inyecta contexto de proyecto vía
 `context(memory_types=[PROJECT])`. Frontera dura: el TIE no edita el Workspace
 (eso es del usuario o del AE vía `WorkspaceAction`); solo lo lee y anota el enlace.
+
+### 4.3c TIE ↔ Orquestador de proyecto (Δ 2026-07-15, esqueleto — NO se implementa hasta V1.0)
+
+**Pedido explícito del usuario, dejado como esqueleto de datos ahora para no necesitar
+una migración nueva cuando se construya el sistema real.** Cada proyecto del WPMS
+podrá tener un agente **orquestador** — un `Agent` especial con
+`Agent.role = "orchestrator"` (columna añadida en V0.87 W2e, nullable, sin UI ni
+lógica todavía) y `Agent.project_id` apuntando a su proyecto. La regla de autoridad
+que gobernará el TIE cuando esto se construya de verdad (V1.0):
+
+- **El orquestador de un proyecto SOLO tiene autoridad sobre los agentes de ESE
+  proyecto** (`Agent.project_id` igual al suyo) — nunca sobre agentes de otro
+  proyecto ni sobre agentes sin proyecto (`project_id IS NULL`).
+- **Su acceso a herramientas de filesystem/git se limita a las carpetas que el
+  usuario haya añadido a ese proyecto** (`Project.repo_path`, y cualquier carpeta
+  adicional que W2e añada) — nunca al sistema de archivos completo. Esto es una
+  instancia más estricta del Principio 5 (AOS): ejecución controlada, aquí acotada
+  además por proyecto.
+- El TIE v1 (V1.0) NO crea orquestadores automáticamente todavía — cuando se
+  implemente, la creación de un proyecto podrá ofrecer crear su orquestador
+  (nombre/icono/modelo elegidos por el usuario, mismo formulario que un agente
+  normal + el flag `role="orchestrator"`), y el planner del TIE, al recibir una
+  misión con `source="workspace"` y un `project_id`, delegará primero en el
+  orquestador de ese proyecto si existe, antes de crear agentes sueltos.
+- **Lo que esto NO es todavía**: no hay lógica de delegación, no hay creación
+  automática, no hay enforcement de la autoridad descrita arriba — eso es trabajo
+  real del TIE v1. Lo único que existe hoy es la columna `Agent.role` reservada,
+  para que V1.0 no necesite una migración de esquema para arrancar esta pieza.
 
 ### 4.4 TIE ↔ Learner (doc 15)
 

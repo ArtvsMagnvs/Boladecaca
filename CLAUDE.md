@@ -320,6 +320,54 @@ teclado a la par).
   Verificado en vivo end-to-end: crear agente → pantalla completa → lanzar
   tarea real → sondeo detecta "Completada" con resultado real → cambiar
   icono/estado → cerrar → el chip refleja los cambios sin recargar.
+- ✅ **W2e — Esqueleto GitHub/orquestador + edición completa de agentes + pulido**
+  (peticiones directas del usuario, 15-jul): migración 17.ª
+  `c9d0e1f2a3b4_v087_wpms_w2e_project_agent_skeleton` (aditiva, aplicada al
+  Postgres real de inmediato — ya van 3 incidentes de "migración nunca
+  aplicada", esta vez se verificó en el mismo paso): `Project.github_url`
+  (solo el enlace — **sin integración real de GitHub**, eso es V1.2 MCP;
+  `ProjectPopup.tsx` gana el campo + botón stub "Crear repositorio" con nota
+  explicativa, nunca llama a ninguna API) y `Agent.role` (reservado para
+  `"orchestrator"`, sin UI ni lógica — esqueleto puro documentado en
+  `PLAN_MAESTRO_2026/14_TIE_COGNITIVE_RUNTIME_DISENO.md` §4.3c: el TIE v1
+  (V1.0) creará el orquestador por proyecto con autoridad limitada a los
+  agentes de su mismo `project_id` y a las carpetas de ese proyecto — cross-
+  referenciado en `03_ROADMAP_ACTUALIZADO.md` §5). **Carpeta local real**:
+  primer uso real de IPC de Electron (`preload.cjs` estaba vacío a propósito
+  como punto de extensión) — `dialog:pick-folder` en `main.cjs` +
+  `window.aithera.pickFolder()` expuesto vía `contextBridge`, botón 📁 en
+  `ProjectPopup.tsx` que degrada con gracia (se oculta) fuera de Electron.
+  **"Modelo IA" dinámico**: `useModeloIAOptions.ts` — "Flexible según
+  necesidad" (antes "Generic") + solo los proveedores con
+  `AIProviderEntry.is_configured` (vía `api.getConfiguredProviders()`); se
+  eliminó `"custom"` (no usable) y la lista fija hardcodeada; usado en
+  `AgentCreatePopup.tsx` y en el nuevo modo edición de `AgentFullscreen.tsx`
+  — si el usuario conecta/desconecta un proveedor en Ajustes, la lista se
+  actualiza sola. **Edición completa de agentes**: `AgentFullscreen.tsx` gana
+  un modo "Editar" (nombre/descripción/Modelo IA/skills/herramientas
+  permitidas/timeout, con `SkillPickerPopup` reutilizado) — antes solo
+  icono/`is_active` eran editables. **Un solo clic abre pantalla completa**:
+  se retiró `AgentDetailPopup.tsx` (popup de solo lectura redundante);
+  `AgentChip.tsx` pierde `onOpenFullscreen`/doble-clic, `onOpen` ahora siempre
+  abre `AgentFullscreen`. **Indicador "trabajando…"** estilo WhatsApp: punto
+  verde pulsante en la esquina del icono (tamaño "icon") + texto
+  "escribiendo…" en verde (tamaños "compact"/"full") cuando el agente tiene
+  una `AgentExecution` en `pending`/`running`; `AgentsSection.load()` pasa a
+  pedir ejecuciones de TODOS los agentes en todos los tamaños (antes solo en
+  "full" o para inactivos) — pocos agentes por proyecto, coste bajo (doc 18
+  regla 6). **Pulido CSS**: `.glass-surface` gana un borde azul eléctrico fino
+  (`rgba(94,168,255,0.35)`, antes casi invisible en `rgba(255,255,255,0.06)`)
+  — afecta a TODAS las tarjetas y popups del Workspace de una sola vez;
+  `.agent-ring-glow` gana un `::after` — un punto de 6px que sobresale del
+  grosor del anillo (2px), fijo en el punto más brillante del "cometa" y que
+  rota CON él al ser hijo del mismo elemento animado. Suite backend
+  **254 passed** (sin regresión). Verificado en vivo contra el backend y
+  frontend reales: dropdown "Modelo IA" mostrando solo Ollama/MiniMax
+  (los dos conectados, sin `custom` ni `claude_code` desconectado), crear
+  agente funcionando de nuevo, clic simple abriendo pantalla completa,
+  edición completa guardando y reflejándose en el chip al cerrar, borde
+  azul confirmado por `getComputedStyle`, punto del anillo confirmado
+  (6×6px, con `box-shadow` de brillo).
 - ⏳ **W3b** — board Kanban + drag&drop de tareas + atajos + panel `(?)` ·
   **W4** — integración MOS/eventos/briefing + Hub +
   tag `v0.8.7`.

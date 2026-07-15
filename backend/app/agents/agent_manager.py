@@ -69,6 +69,7 @@ class AgentManager:
         project_id: Optional[int] = None,
         skills: Optional[List[str]] = None,
         icon: Optional[str] = None,
+        role: Optional[str] = None,
     ) -> Agent:
         """Crea un agente y persiste en BD.
 
@@ -96,6 +97,7 @@ class AgentManager:
                 project_id=project_id,
                 skills=skills,
                 icon=icon,
+                role=role,
             )
             db.add(agent)
             db.commit()
