@@ -306,10 +306,22 @@ teclado a la par).
   estático sin backend). Verificado en vivo contra el backend real: crear
   agente completo, filtro de skills (Marketing → 36 resultados), y el
   contenido de la tarjeta cambiando ANTES de soltar el ratón al redimensionar.
-- ⏳ **W2d** (nueva, doc 03) — agente en pantalla completa + panel de proceso
-  (alcance honesto: la ejecución de agentes hoy es un placeholder de V0.5,
-  sin razonamiento real) · **W3b** — board Kanban + drag&drop de tareas +
-  atajos + panel `(?)` · **W4** — integración MOS/eventos/briefing + Hub +
+- ✅ **W2d — Agente en pantalla completa + panel de proceso** (`AgentFullscreen.tsx`):
+  doble clic en un icono de agente lo abre ocupando el área del Workspace
+  (vive en `WorkspaceCanvas`, no en la `ProjectCard` chica que lo abrió, con
+  z-index por encima de cualquier tarjeta). **Alcance honesto** (auditado
+  `agent_manager.py` antes de diseñar, no después): la ejecución hoy es un
+  placeholder de V0.5 (demo fija, sin razonamiento real) — el panel muestra
+  tarea → estado real (sondeo cada 1.8s) → resultado real + `tool_calls`,
+  nunca streaming inventado; nota visible explicándolo. Icono (emoji) +
+  `is_active` editables vía `api.updateAgent`. Sincronización entre el chip
+  pequeño y la pantalla completa (dos instancias con datos propios) vía un
+  `refreshTick` que sube por `WorkspaceCanvas → ProjectCard → AgentsSection`.
+  Verificado en vivo end-to-end: crear agente → pantalla completa → lanzar
+  tarea real → sondeo detecta "Completada" con resultado real → cambiar
+  icono/estado → cerrar → el chip refleja los cambios sin recargar.
+- ⏳ **W3b** — board Kanban + drag&drop de tareas + atajos + panel `(?)` ·
+  **W4** — integración MOS/eventos/briefing + Hub +
   tag `v0.8.7`.
 - **V0.9** — Automation Engine (APScheduler + reglas + sistema de aprobaciones)
 - **V1.0** — Orchestrator (intent analyzer + planner + Claude Code Agent)
