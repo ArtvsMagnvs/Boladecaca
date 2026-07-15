@@ -130,6 +130,12 @@ export interface Agent {
   allowed_tools?: string[] | null;
   max_execution_time?: number | null;
   is_active: boolean;
+  // V0.87 (WPMS W2c): agente embebido en la tarjeta de un proyecto.
+  project_id?: number | null;
+  // skills = tags simples que teclea el usuario, NO el sistema LSL (doc 09).
+  skills?: string[] | null;
+  // icon = emoji corto, NO una imagen subida.
+  icon?: string | null;
   created_at?: string | null;
   updated_at?: string | null;
 }
@@ -469,7 +475,9 @@ export const api = {
   // FIX V0.3 (Fase 1 Estabilizacion Hub V03): getAgents expone los campos
   // agent_type / description / is_active (alineado con AgentResponse del
   // backend tras P1).
-  getAgents: () => request<Agent[]>("/agents/"),
+  // V0.87 (WPMS W2c): projectId opcional filtra a los agentes de una tarjeta.
+  getAgents: (projectId?: number) =>
+    request<Agent[]>(`/agents/${projectId != null ? `?project_id=${projectId}` : ""}`),
   getAgent: (id: number) => request<Agent>(`/agents/${id}`),
   createAgent: (data: Partial<Agent>) =>
     request<Agent>("/agents/", { method: "POST", body: JSON.stringify(data) }),

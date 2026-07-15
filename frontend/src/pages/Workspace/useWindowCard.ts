@@ -6,11 +6,13 @@
 // (via ref, sin pasar por React) para que arrastrar/redimensionar sea fluido a
 // 60fps; el estado de React (y localStorage) solo se confirma en pointerup.
 //
-// Alcance de resize deliberadamente acotado a 3 asas (borde derecho = ancho,
-// borde inferior = alto, esquina inferior-derecha = ambos) — borde
-// izquierdo/superior exigirian mover x/y A LA VEZ que w/h, acoplando posicion
-// y tamano en el mismo gesto (mas superficie de bugs). Si hace falta mas
-// adelante, se anade; no es un recorte de producto, es un recorte de riesgo.
+// Las 8 asas (4 bordes + 4 esquinas) resuelven cada una que combinacion de
+// {x,y,w,h} cambia. Los bordes norte/oeste son los delicados: al arrastrar el
+// borde IZQUIERDO, mover el cursor a la derecha debe ENCOGER el ancho Y mover
+// x a la derecha a la vez — si se clampa el ancho a un minimo, x tiene que
+// quedarse fijo en ESE punto (no seguir el cursor), o la tarjeta "salta".
+// Por eso el ancho/alto se clampa PRIMERO y la posicion se deriva de cuanto
+// realmente se movio el borde (startRect.w - clampedW), nunca del delta crudo.
 import { useCallback, useEffect, useRef, useState } from "react";
 
 export interface CardLayout {
@@ -127,7 +129,8 @@ export function useWorkspaceLayouts() {
   return { getLayout, setLayout, bringToFront, openFromShelf, sendToShelf, toggleExpanded };
 }
 
-type GestureKind = "drag" | "resize-w" | "resize-h" | "resize-wh";
+type ResizeDir = "n" | "s" | "e" | "w" | "ne" | "nw" | "se" | "sw";
+type GestureKind = "drag" | ResizeDir;
 interface Rect {
   x: number;
   y: number;
@@ -159,17 +162,50 @@ export function useDragResize({
     moved: boolean;
   } | null>(null);
 
-  const clamp = useCallback(
+  const clampSize = useCallback(
+    (w: number, max: number) => Math.min(Math.max(w, MIN_CARD_W), Math.max(MIN_CARD_W, max)),
+    [],
+  );
+
+  const clampDragPosition = useCallback(
     (r: Rect): Rect => {
-      const w = Math.min(Math.max(r.w, MIN_CARD_W), Math.max(MIN_CARD_W, bounds.width));
-      const h = Math.min(Math.max(r.h, MIN_CARD_H), Math.max(MIN_CARD_H, bounds.height));
       // Deja siempre al menos 60px del header visible dentro del lienzo, para
       // que una tarjeta nunca se pueda "perder" fuera de alcance del raton.
-      const x = Math.min(Math.max(r.x, -w + 60), Math.max(0, bounds.width - 60));
+      // Solo se aplica al ARRASTRAR (mover) — redimensionar ya se resuelve
+      // asa por asa en resolveResize, sin necesitar este clamp adicional.
+      const x = Math.min(Math.max(r.x, -r.w + 60), Math.max(0, bounds.width - 60));
       const y = Math.min(Math.max(r.y, 0), Math.max(0, bounds.height - 32));
-      return { x, y, w, h };
+      return { ...r, x, y };
     },
     [bounds.width, bounds.height],
+  );
+
+  /** Resuelve {x,y,w,h} para CUALQUIER asa (8 direcciones). Los bordes norte/
+   * oeste clampan el tamano PRIMERO y derivan la posicion de cuanto
+   * realmente se movio el borde (no del delta crudo) — evita el salto al
+   * tocar el minimo. Los bordes este/sur solo cambian w/h, x/y quedan fijos. */
+  const resolveResize = useCallback(
+    (dir: ResizeDir, dx: number, dy: number, start: Rect): Rect => {
+      let { x, y, w, h } = start;
+      if (dir.includes("e")) {
+        w = clampSize(start.w + dx, bounds.width);
+      }
+      if (dir.includes("w")) {
+        const cw = clampSize(start.w - dx, bounds.width);
+        x = start.x + (start.w - cw);
+        w = cw;
+      }
+      if (dir.includes("s")) {
+        h = clampSize(start.h + dy, bounds.height);
+      }
+      if (dir.includes("n")) {
+        const ch = clampSize(start.h - dy, bounds.height);
+        y = start.y + (start.h - ch);
+        h = ch;
+      }
+      return { x, y, w, h };
+    },
+    [clampSize, bounds.width, bounds.height],
   );
 
   const applyRect = (r: Rect) => {
@@ -189,19 +225,15 @@ export function useDragResize({
       if (!g.moved && Math.hypot(dx, dy) > CLICK_THRESHOLD_PX) g.moved = true;
       if (!g.moved) return;
 
-      const next: Rect = { ...g.startRect };
-      if (g.kind === "drag") {
-        next.x = g.startRect.x + dx;
-        next.y = g.startRect.y + dy;
-      }
-      if (g.kind === "resize-w" || g.kind === "resize-wh") next.w = g.startRect.w + dx;
-      if (g.kind === "resize-h" || g.kind === "resize-wh") next.h = g.startRect.h + dy;
+      const next =
+        g.kind === "drag"
+          ? clampDragPosition({ ...g.startRect, x: g.startRect.x + dx, y: g.startRect.y + dy })
+          : resolveResize(g.kind, dx, dy, g.startRect);
 
-      const clamped = clamp(next);
-      applyRect(clamped);
-      g.lastRect = clamped;
+      applyRect(next);
+      g.lastRect = next;
     },
-    [clamp],
+    [clampDragPosition, resolveResize],
   );
 
   const endGesture = useCallback(
@@ -244,9 +276,14 @@ export function useDragResize({
     nodeRef,
     headerHandlers: { onPointerDown: startGesture("drag") },
     resizeHandlers: {
-      right: { onPointerDown: startGesture("resize-w") },
-      bottom: { onPointerDown: startGesture("resize-h") },
-      corner: { onPointerDown: startGesture("resize-wh") },
+      n: { onPointerDown: startGesture("n") },
+      s: { onPointerDown: startGesture("s") },
+      e: { onPointerDown: startGesture("e") },
+      w: { onPointerDown: startGesture("w") },
+      ne: { onPointerDown: startGesture("ne") },
+      nw: { onPointerDown: startGesture("nw") },
+      se: { onPointerDown: startGesture("se") },
+      sw: { onPointerDown: startGesture("sw") },
     },
   };
 }

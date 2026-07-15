@@ -37,12 +37,15 @@ class AgentManager:
     # CRUD
     # ------------------------------------------------------------------
 
-    def list_agents(self, only_active: bool = False) -> List[Agent]:
+    def list_agents(self, only_active: bool = False, project_id: Optional[int] = None) -> List[Agent]:
         db = SessionLocal()
         try:
             q = db.query(Agent)
             if only_active:
                 q = q.filter(Agent.is_active == True)  # noqa: E712
+            # V0.87 (WPMS W2c): filtro para la seccion "Agentes" de una tarjeta.
+            if project_id is not None:
+                q = q.filter(Agent.project_id == project_id)
             return q.order_by(Agent.created_at.desc()).all()
         finally:
             db.close()
@@ -63,6 +66,9 @@ class AgentManager:
         allowed_tools: Optional[List[str]] = None,
         max_execution_time: int = 300,
         is_active: bool = True,
+        project_id: Optional[int] = None,
+        skills: Optional[List[str]] = None,
+        icon: Optional[str] = None,
     ) -> Agent:
         """Crea un agente y persiste en BD.
 
@@ -87,6 +93,9 @@ class AgentManager:
                 allowed_tools=json.dumps(allowed_tools or []),
                 max_execution_time=max(1, min(max_execution_time, 3600)),
                 is_active=is_active,
+                project_id=project_id,
+                skills=skills,
+                icon=icon,
             )
             db.add(agent)
             db.commit()

@@ -5,14 +5,15 @@
 // enlaces/milestones/tareas/actividad) — se traslada aqui, no se reescribe.
 // Cada tarjeta carga sus propios milestones/tareas (lazy: solo si esta fuera
 // de la estanteria), para no pedir datos de proyectos que el usuario no ha
-// abierto. Los agentes (W2c) se anaden como una seccion mas del cuerpo,
-// despues de esta sesion.
+// abierto. La seccion "Agentes" (W2c, AgentsSection) hace su propio fetch
+// perezoso igual, con su propio umbral de tamano (iconos/completa).
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { api, type Project, type Task, type Milestone, type WorkspaceProgress } from "@/lib/api";
 import { pct, MS_STATUS_LABEL } from "./shared";
 import { TaskList } from "./TaskList";
 import { TaskPopup } from "./TaskPopup";
 import { MilestonePopup } from "./MilestonePopup";
+import { AgentsSection } from "./AgentsSection";
 import { useDragResize, MIN_CARD_W, MIN_CARD_H, type CardLayout } from "./useWindowCard";
 
 interface Props {
@@ -105,10 +106,14 @@ export function ProjectCard({
   const overallRatio = progress?.overall.ratio ?? project.progress ?? 0;
   const activeRatio = activeMilestone?.progress?.ratio ?? overallRatio;
 
-  // Contenido adaptativo por tamano (doc del usuario): tarjeta pequena solo
-  // cabecera+progreso; mediana +milestones; grande/expandida +tareas+actividad.
+  // Contenido adaptativo por tamano (pedido explicito del usuario): tarjeta
+  // MUY pequena -> solo cabecera+progreso; PEQUENA -> +milestones+iconos de
+  // agente; GRANDE/expandida -> +tareas+actividad+tarjetas de agente
+  // completas+hueco de automatizaciones.
   const availableH = layout.expanded ? Infinity : layout.h - 56; // 56 ~ alto del header
   const showMilestones = layout.expanded || availableH > 140;
+  const showAgentsIcons = layout.expanded || availableH > 140;
+  const showAgentsFull = layout.expanded || availableH > 320;
   const showTasksAndActivity = layout.expanded || availableH > 320;
 
   const recentTasks = useMemo(
@@ -197,6 +202,17 @@ export function ProjectCard({
               </section>
             )}
 
+            {showAgentsIcons && (
+              <AgentsSection projectId={project.id} size={showAgentsFull ? "full" : "icon"} />
+            )}
+
+            {showAgentsFull && (
+              <section>
+                <h3 className="text-xs font-medium text-ink-dim mb-1.5">Automatizaciones</h3>
+                <p className="text-[11px] text-ink-faint px-1">Sin automatizaciones todavía — llega con el Automation Engine (V0.9).</p>
+              </section>
+            )}
+
             {showTasksAndActivity && (
               <>
                 <section>
@@ -226,12 +242,19 @@ export function ProjectCard({
         )}
       </div>
 
-      {/* Asas de resize — solo cuando no esta expandida (ancho y alto independientes) */}
+      {/* Asas de resize — las 8 (4 bordes + 4 esquinas), solo cuando no esta
+          expandida. Los bordes dejan un hueco de 12px en cada punta para que
+          las esquinas (encima, sin solaparse) tengan su propia zona de clic. */}
       {!layout.expanded && (
         <>
-          <div {...resizeHandlers.right} className="absolute top-0 right-0 w-2 h-full cursor-ew-resize" />
-          <div {...resizeHandlers.bottom} className="absolute bottom-0 left-0 w-full h-2 cursor-ns-resize" />
-          <div {...resizeHandlers.corner} className="absolute bottom-0 right-0 w-3.5 h-3.5 cursor-nwse-resize" />
+          <div {...resizeHandlers.n} className="absolute top-0 left-3 right-3 h-2 cursor-ns-resize" />
+          <div {...resizeHandlers.s} className="absolute bottom-0 left-3 right-3 h-2 cursor-ns-resize" />
+          <div {...resizeHandlers.w} className="absolute left-0 top-3 bottom-3 w-2 cursor-ew-resize" />
+          <div {...resizeHandlers.e} className="absolute right-0 top-3 bottom-3 w-2 cursor-ew-resize" />
+          <div {...resizeHandlers.nw} className="absolute top-0 left-0 w-3 h-3 cursor-nwse-resize" />
+          <div {...resizeHandlers.ne} className="absolute top-0 right-0 w-3 h-3 cursor-nesw-resize" />
+          <div {...resizeHandlers.sw} className="absolute bottom-0 left-0 w-3 h-3 cursor-nesw-resize" />
+          <div {...resizeHandlers.se} className="absolute bottom-0 right-0 w-3 h-3 cursor-nwse-resize" />
         </>
       )}
 

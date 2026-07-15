@@ -202,3 +202,33 @@ input[type="range"]::-moz-range-thumb {
     animation: none;
   }
 }
+
+/* V0.87 (WPMS W2c, doc 18): marco de agente activo — un punto de luz azul
+   eléctrico recorriendo el marco en círculo. Base: borde accent estático
+   (.agent-ring-active). Encima, un conic-gradient enmascarado a solo el
+   grosor del anillo (mask-composite: exclude "vacía" el centro) que gira
+   sin parar — el efecto de "cometa" recorriendo el círculo. */
+.agent-ring-active {
+  border-color: theme("colors.accent.DEFAULT");
+}
+.agent-ring-glow {
+  position: absolute;
+  inset: -2px;
+  border-radius: 9999px;
+  padding: 2px;
+  background: conic-gradient(from 0deg, transparent 0%, transparent 75%, theme("colors.accent.glow") 90%, theme("colors.accent.DEFAULT") 100%);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  animation: agent-ring-orbit 2.4s linear infinite;
+  pointer-events: none;
+}
+@keyframes agent-ring-orbit {
+  to { transform: rotate(360deg); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .agent-ring-glow {
+    animation: none;
+    opacity: 0.7;
+  }
+}

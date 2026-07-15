@@ -96,6 +96,10 @@ def _ensure_columns():
             'allowed_tools': "ALTER TABLE agents ADD COLUMN allowed_tools TEXT DEFAULT '[]'",
             'max_execution_time': "ALTER TABLE agents ADD COLUMN max_execution_time INTEGER DEFAULT 300",
             'updated_at': "ALTER TABLE agents ADD COLUMN updated_at DATETIME",
+            # V0.87 (WPMS W2c, doc 18)
+            'project_id': "ALTER TABLE agents ADD COLUMN project_id INTEGER",
+            'skills': "ALTER TABLE agents ADD COLUMN skills JSON",
+            'icon': "ALTER TABLE agents ADD COLUMN icon VARCHAR(16)",
         },
     }
 
@@ -251,6 +255,20 @@ class Agent(Base):
     # V0.5: tiempo maximo de ejecucion por tarea en segundos (default 5min).
     max_execution_time = Column(Integer, default=300)
     is_active = Column(Boolean, default=True)
+    # V0.87 (WPMS W2c, doc 18): un agente puede pertenecer a un proyecto para
+    # mostrarse en su tarjeta del lienzo espacial. Integer plano + indice, NO
+    # ForeignKey: aunque Agent y Project viven en el mismo archivo (sin
+    # problema de orden de registro), SQLite NO soporta anadir una columna con
+    # constraint FK via ALTER TABLE ADD COLUMN fuera de "batch mode"
+    # (confirmado en pruebas reales de la migracion 16.a) — mismo criterio
+    # laxo que Task.milestone_id/Milestone.project_id en W1, por un motivo
+    # distinto pero igual de real. Integridad a nivel app.
+    project_id = Column(Integer, index=True)  # -> projects.id (ver comentario)
+    # skills: tags simples que teclea el usuario — NO el sistema LSL de doc 09
+    # (derivacion automatica, linaje, versionado), que sigue sin construir.
+    skills = Column(JSON)
+    # icon: emoji corto, NO subida de imagen (necesitaria almacenamiento nuevo).
+    icon = Column(String(16))
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow)
 

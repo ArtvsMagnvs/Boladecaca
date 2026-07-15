@@ -253,6 +253,10 @@ class AgentCreate(BaseModel):
     allowed_tools: List[str] = []
     max_execution_time: int = 300
     is_active: bool = True
+    # V0.87 (WPMS W2c) — todos opcionales (contrato retrocompatible).
+    project_id: Optional[int] = None
+    skills: Optional[List[str]] = None
+    icon: Optional[str] = None
 
 
 class AgentUpdate(BaseModel):
@@ -264,6 +268,10 @@ class AgentUpdate(BaseModel):
     allowed_tools: Optional[List[str]] = None
     max_execution_time: Optional[int] = None
     is_active: Optional[bool] = None
+    # V0.87 (WPMS W2c)
+    project_id: Optional[int] = None
+    skills: Optional[List[str]] = None
+    icon: Optional[str] = None
 
 
 class AgentResponse(BaseModel):
@@ -282,6 +290,10 @@ class AgentResponse(BaseModel):
     allowed_tools: Optional[List[str]] = None
     max_execution_time: Optional[int] = None
     is_active: bool = True
+    # V0.87 (WPMS W2c)
+    project_id: Optional[int] = None
+    skills: Optional[List[str]] = None
+    icon: Optional[str] = None
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 

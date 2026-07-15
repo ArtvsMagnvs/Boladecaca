@@ -45,10 +45,14 @@ def _execution_to_response(ex: AgentExecution) -> AgentExecutionResponse:
 
 
 @router.get("/", response_model=List[AgentResponse])
-def list_agents(is_active: Optional[bool] = Query(None, description="Filtrar por agentes activos")):
-    """Lista todos los agentes (mas recientes primero). Opcionalmente filtra por is_active."""
+def list_agents(
+    is_active: Optional[bool] = Query(None, description="Filtrar por agentes activos"),
+    project_id: Optional[int] = Query(None, description="V0.87 WPMS: filtrar por proyecto (tarjeta del lienzo)"),
+):
+    """Lista todos los agentes (mas recientes primero). Opcionalmente filtra por is_active/project_id."""
     return [
-        _agent_to_response(a) for a in agent_manager.list_agents(only_active=bool(is_active))
+        _agent_to_response(a)
+        for a in agent_manager.list_agents(only_active=bool(is_active), project_id=project_id)
     ]
 
 
@@ -64,6 +68,9 @@ def create_agent(payload: AgentCreate):
             allowed_tools=payload.allowed_tools,
             max_execution_time=payload.max_execution_time,
             is_active=payload.is_active,
+            project_id=payload.project_id,
+            skills=payload.skills,
+            icon=payload.icon,
         )
         return _agent_to_response(agent)
     except ValueError as e:

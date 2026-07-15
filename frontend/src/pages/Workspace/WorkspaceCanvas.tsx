@@ -41,12 +41,24 @@ export function WorkspaceCanvas({ projects, onCreateProject, onEditProject, onPr
     return clientX >= r.left && clientX <= r.right && clientY >= r.top && clientY <= r.bottom;
   };
 
+  // Simetrico a isOverShelf: al soltar un arrastre iniciado EN la estanteria,
+  // si cae dentro de la propia estanteria no hace nada (sigue guardado); si
+  // cae fuera, se saca y se posiciona centrada bajo el cursor.
+  const handleDragOut = (projectId: number, clientX: number, clientY: number) => {
+    if (isOverShelf(clientX, clientY)) return;
+    const canvasRect = canvasRef.current?.getBoundingClientRect();
+    const x = canvasRect ? clientX - canvasRect.left - 180 : 40;
+    const y = canvasRect ? clientY - canvasRect.top - 20 : 40;
+    setLayout(projectId, { x: Math.max(0, x), y: Math.max(0, y), shelved: false });
+    bringToFront(projectId);
+  };
+
   const openCards = projects.filter((p) => !getLayout(p.id).shelved);
 
   return (
     <div className="h-full flex gap-4">
       <div ref={shelfWrapRef}>
-        <Shelf projects={projects} getLayout={getLayout} onOpen={openFromShelf} onCreate={onCreateProject} />
+        <Shelf projects={projects} getLayout={getLayout} onOpen={openFromShelf} onDragOut={handleDragOut} onCreate={onCreateProject} />
       </div>
 
       <div ref={canvasRef} className="flex-1 min-w-0 relative rounded-2xl overflow-hidden bg-base-900/30 border border-base-700/40">
