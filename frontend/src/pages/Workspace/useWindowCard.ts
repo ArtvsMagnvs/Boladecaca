@@ -131,7 +131,7 @@ export function useWorkspaceLayouts() {
 
 type ResizeDir = "n" | "s" | "e" | "w" | "ne" | "nw" | "se" | "sw";
 type GestureKind = "drag" | ResizeDir;
-interface Rect {
+export interface Rect {
   x: number;
   y: number;
   w: number;
@@ -146,11 +146,20 @@ interface DragResizeOptions {
   /** true si (clientX,clientY) cae dentro de la estanteria — solo se consulta al soltar un arrastre. */
   isOverShelf?: (clientX: number, clientY: number) => boolean;
   onDropOnShelf?: () => void;
+  /** Se llama en CADA pointermove de un redimensionado (nunca en drag, la
+   * posicion no cambia el contenido) con el rect en vivo — para que el
+   * contenido de la tarjeta se reorganice MIENTRAS se arrastra el asa, no
+   * solo al soltar (pedido explicito: "el usuario puede ver como va a
+   * quedar la tarjeta... sin tener que hacer pruebas"). Separado de
+   * onCommit a proposito: esto es una preview local barata (un solo numero,
+   * el alto), onCommit sigue disparando una sola vez al soltar para no
+   * escribir en localStorage en cada frame. */
+  onLiveResize?: (rect: Rect) => void;
 }
 
 /** Arrastrar (header) y redimensionar (asas) de UNA tarjeta que NO esta expandida. */
 export function useDragResize({
-  layout, bounds, onCommit, onInteractStart, isOverShelf, onDropOnShelf,
+  layout, bounds, onCommit, onInteractStart, isOverShelf, onDropOnShelf, onLiveResize,
 }: DragResizeOptions) {
   const nodeRef = useRef<HTMLDivElement>(null);
   const gesture = useRef<{
@@ -232,8 +241,9 @@ export function useDragResize({
 
       applyRect(next);
       g.lastRect = next;
+      if (g.kind !== "drag") onLiveResize?.(next);
     },
-    [clampDragPosition, resolveResize],
+    [clampDragPosition, resolveResize, onLiveResize],
   );
 
   const endGesture = useCallback(

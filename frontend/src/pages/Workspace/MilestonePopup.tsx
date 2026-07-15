@@ -4,7 +4,7 @@
 // versión al proyecto y activa el siguiente (versionado, §6) — acción explícita.
 import { useState } from "react";
 import type { Milestone } from "@/lib/api";
-import { Modal, fieldLabel, fieldInput, btnPrimary, btnGhost } from "./Modal";
+import { Modal, ErrorBanner, fieldLabel, fieldInput, btnPrimary, btnGhost } from "./Modal";
 
 const STATUSES = [
   { value: "planned", label: "Planificado" },
@@ -29,10 +29,12 @@ export function MilestonePopup({ milestone, projectId, onSave, onDelete, onCompl
   const [status, setStatus] = useState(milestone?.status ?? "planned");
   const [targetDate, setTargetDate] = useState((milestone?.target_date ?? "").slice(0, 10));
   const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const handleSave = async () => {
     if (!name.trim()) return;
     setSaving(true);
+    setError(null);
     try {
       await onSave({
         project_id: projectId,
@@ -42,6 +44,21 @@ export function MilestonePopup({ milestone, projectId, onSave, onDelete, onCompl
         status,
         target_date: targetDate ? new Date(targetDate).toISOString() : null,
       });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "No se pudo guardar el milestone.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleComplete = async () => {
+    if (!milestone || !onComplete) return;
+    setSaving(true);
+    setError(null);
+    try {
+      await onComplete(milestone.id);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "No se pudo completar el milestone.");
     } finally {
       setSaving(false);
     }
@@ -61,7 +78,7 @@ export function MilestonePopup({ milestone, projectId, onSave, onDelete, onCompl
             </button>
           )}
           {canComplete && (
-            <button onClick={() => onComplete!(milestone!.id)} className="px-3 py-2 text-signal-ok/80 hover:text-signal-ok text-sm border border-signal-ok/30 rounded-xl">
+            <button onClick={handleComplete} disabled={saving} className="px-3 py-2 text-signal-ok/80 hover:text-signal-ok text-sm border border-signal-ok/30 rounded-xl disabled:opacity-40">
               ✓ Completar
             </button>
           )}
@@ -72,6 +89,7 @@ export function MilestonePopup({ milestone, projectId, onSave, onDelete, onCompl
         </>
       }
     >
+      <ErrorBanner message={error} />
       <div>
         <label className={fieldLabel}>Nombre</label>
         <input value={name} onChange={(e) => setName(e.target.value)} className={fieldInput} placeholder="p.ej. V0.9 — Automation Engine" autoFocus />

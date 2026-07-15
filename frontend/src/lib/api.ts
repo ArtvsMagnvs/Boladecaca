@@ -411,7 +411,18 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     ...init,
   });
   if (!response.ok) {
-    throw new Error(`HTTP ${response.status} en ${path}`);
+    // FastAPI devuelve {"detail": "..."} en sus errores — sin esto, un popup
+    // que solo hace catch(()=>{}) no tiene ningun texto real que mostrar (asi
+    // se enmascaro el bug real de la migracion de Postgres sin aplicar: el
+    // popup de crear agente "no hacia nada" en vez de decir por que).
+    let detail = `HTTP ${response.status} en ${path}`;
+    try {
+      const body = await response.json();
+      if (body?.detail) detail = typeof body.detail === "string" ? body.detail : JSON.stringify(body.detail);
+    } catch {
+      /* sin cuerpo JSON parseable: se queda el mensaje generico */
+    }
+    throw new Error(detail);
   }
   // Algunos endpoints (DELETE) devuelven cuerpos pequenos o vacios.
   const text = await response.text();

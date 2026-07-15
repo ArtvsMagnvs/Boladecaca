@@ -14,7 +14,7 @@ import { TaskList } from "./TaskList";
 import { TaskPopup } from "./TaskPopup";
 import { MilestonePopup } from "./MilestonePopup";
 import { AgentsSection } from "./AgentsSection";
-import { useDragResize, MIN_CARD_W, MIN_CARD_H, type CardLayout } from "./useWindowCard";
+import { useDragResize, MIN_CARD_W, MIN_CARD_H, type CardLayout, type Rect } from "./useWindowCard";
 
 interface Props {
   project: Project;
@@ -34,9 +34,24 @@ export function ProjectCard({
   project, allProjects, layout, bounds, onInteractStart, onCommit,
   onMinimize, onToggleExpanded, isOverShelf, onEditProject, onProjectsRefresh,
 }: Props) {
+  // Alto "en vivo" mientras se arrastra un asa de resize — separado del
+  // layout.h ya confirmado (el que vive en el padre + localStorage). Pedido
+  // explicito: el contenido se reorganiza MIENTRAS se redimensiona, no solo
+  // al soltar. Se limpia en cuanto el gesto termina (handleCommit).
+  const [liveH, setLiveH] = useState<number | null>(null);
+
+  const handleCommit = useCallback(
+    (patch: Partial<CardLayout>) => {
+      setLiveH(null);
+      onCommit(patch);
+    },
+    [onCommit],
+  );
+
   const { nodeRef, headerHandlers, resizeHandlers } = useDragResize({
-    layout, bounds, onCommit, onInteractStart,
+    layout, bounds, onCommit: handleCommit, onInteractStart,
     isOverShelf, onDropOnShelf: onMinimize,
+    onLiveResize: useCallback((r: Rect) => setLiveH(r.h), []),
   });
 
   const [milestones, setMilestones] = useState<Milestone[]>([]);
@@ -110,7 +125,7 @@ export function ProjectCard({
   // MUY pequena -> solo cabecera+progreso; PEQUENA -> +milestones+iconos de
   // agente; GRANDE/expandida -> +tareas+actividad+tarjetas de agente
   // completas+hueco de automatizaciones.
-  const availableH = layout.expanded ? Infinity : layout.h - 56; // 56 ~ alto del header
+  const availableH = layout.expanded ? Infinity : (liveH ?? layout.h) - 56; // 56 ~ alto del header
   const showMilestones = layout.expanded || availableH > 140;
   const showAgentsIcons = layout.expanded || availableH > 140;
   const showAgentsFull = layout.expanded || availableH > 320;
@@ -202,9 +217,14 @@ export function ProjectCard({
               </section>
             )}
 
-            {showAgentsIcons && (
+            {/* Montada siempre (nunca condicionada a showAgentsIcons) y oculta por
+                CSS cuando no toca mostrarla: el alto en vivo (liveH) puede cruzar
+                el umbral muchas veces en un solo gesto de resize, y desmontar/
+                remontar aqui dispararia el fetch de AgentsSection en cada cruce.
+                Ocultar por CSS mantiene sus datos ya cargados entre umbrales. */}
+            <div className={showAgentsIcons ? "" : "hidden"}>
               <AgentsSection projectId={project.id} size={showAgentsFull ? "full" : "icon"} />
-            )}
+            </div>
 
             {showAgentsFull && (
               <section>

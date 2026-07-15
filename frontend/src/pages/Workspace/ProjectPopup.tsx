@@ -1,7 +1,7 @@
 // pages/Workspace/ProjectPopup.tsx — editor de proyecto (V0.87 WPMS W2a)
 import { useState } from "react";
 import type { Project, ProjectDoc } from "@/lib/api";
-import { Modal, fieldLabel, fieldInput, btnPrimary, btnGhost } from "./Modal";
+import { Modal, ErrorBanner, fieldLabel, fieldInput, btnPrimary, btnGhost } from "./Modal";
 
 const STATUSES = [
   { value: "active", label: "Activo" },
@@ -26,6 +26,7 @@ export function ProjectPopup({ project, onSave, onDelete, onClose }: Props) {
   const [tags, setTags] = useState((project?.tags ?? []).join(", "));
   const [docs, setDocs] = useState<ProjectDoc[]>(project?.docs ?? []);
   const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const addDoc = () => setDocs((prev) => [...prev, { label: "", kind: "url", url_or_path: "" }]);
   const setDoc = (i: number, patch: Partial<ProjectDoc>) =>
@@ -34,6 +35,7 @@ export function ProjectPopup({ project, onSave, onDelete, onClose }: Props) {
   const handleSave = async () => {
     if (!name.trim()) return;
     setSaving(true);
+    setError(null);
     try {
       await onSave({
         name: name.trim(),
@@ -45,6 +47,8 @@ export function ProjectPopup({ project, onSave, onDelete, onClose }: Props) {
         tags: tags.split(",").map((t) => t.trim()).filter(Boolean),
         docs: docs.filter((d) => d.label.trim() && d.url_or_path.trim()),
       });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "No se pudo guardar el proyecto.");
     } finally {
       setSaving(false);
     }
@@ -68,6 +72,7 @@ export function ProjectPopup({ project, onSave, onDelete, onClose }: Props) {
         </>
       }
     >
+      <ErrorBanner message={error} />
       <div>
         <label className={fieldLabel}>Nombre</label>
         <input value={name} onChange={(e) => setName(e.target.value)} className={fieldInput} placeholder="Nombre del proyecto" autoFocus />

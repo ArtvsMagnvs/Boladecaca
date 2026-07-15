@@ -4,7 +4,8 @@
 // estado de esa página); duplicar unos campos es el precio de no tocarla.
 import { useEffect, useState } from "react";
 import { api, type Agent, type ToolInfo } from "@/lib/api";
-import { Modal, fieldLabel, fieldInput, btnPrimary, btnGhost } from "./Modal";
+import { Modal, ErrorBanner, fieldLabel, fieldInput, btnPrimary, btnGhost } from "./Modal";
+import { SkillPickerPopup } from "./SkillPickerPopup";
 
 const AGENT_TYPES = ["generic", "claude_code", "minimax", "ollama", "custom"];
 const EMOJI_CHOICES = ["🤖", "🧠", "⚙️", "🔧", "📊", "🔍", "✉️", "📅", "🗂️", "⚡"];
@@ -21,10 +22,12 @@ export function AgentCreatePopup({ projectId, onSave, onClose }: Props) {
   const [description, setDescription] = useState("");
   const [tools, setTools] = useState<ToolInfo[]>([]);
   const [allowedTools, setAllowedTools] = useState<string[]>([]);
-  const [skillsText, setSkillsText] = useState("");
+  const [skills, setSkills] = useState<string[]>([]);
+  const [skillPickerOpen, setSkillPickerOpen] = useState(false);
   const [icon, setIcon] = useState("🤖");
   const [isActive, setIsActive] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     api.getTools().then((r) => setTools(r.tools)).catch(() => {});
@@ -36,6 +39,7 @@ export function AgentCreatePopup({ projectId, onSave, onClose }: Props) {
   const handleSave = async () => {
     if (!name.trim()) return;
     setSaving(true);
+    setError(null);
     try {
       await onSave({
         name: name.trim(),
@@ -44,15 +48,21 @@ export function AgentCreatePopup({ projectId, onSave, onClose }: Props) {
         allowed_tools: allowedTools,
         is_active: isActive,
         project_id: projectId,
-        skills: skillsText.split(",").map((s) => s.trim()).filter(Boolean),
+        skills,
         icon,
       });
+    } catch (e) {
+      // Sin esto, un fallo (nombre duplicado, backend caido, etc.) se veia
+      // como "no pasa nada al pulsar Crear" — el popup se quedaba abierto
+      // sin ninguna pista de por que.
+      setError(e instanceof Error ? e.message : "No se pudo crear el agente.");
     } finally {
       setSaving(false);
     }
   };
 
   return (
+    <>
     <Modal
       title="Nuevo agente"
       onClose={onClose}
@@ -65,6 +75,7 @@ export function AgentCreatePopup({ projectId, onSave, onClose }: Props) {
         </>
       }
     >
+      <ErrorBanner message={error} />
       <div>
         <label className={fieldLabel}>Nombre</label>
         <input value={name} onChange={(e) => setName(e.target.value)} className={fieldInput} placeholder="Nombre del agente" autoFocus />
@@ -107,8 +118,22 @@ export function AgentCreatePopup({ projectId, onSave, onClose }: Props) {
       </div>
 
       <div>
-        <label className={fieldLabel}>Skills (separadas por coma)</label>
-        <input value={skillsText} onChange={(e) => setSkillsText(e.target.value)} className={fieldInput} placeholder="python, git, redacción" />
+        <div className="flex items-center justify-between mb-1.5">
+          <label className={fieldLabel} style={{ margin: 0 }}>Skills</label>
+          <button onClick={() => setSkillPickerOpen(true)} className="text-[11px] text-accent hover:text-accent-soft">+ Skill</button>
+        </div>
+        {skills.length > 0 ? (
+          <div className="flex flex-wrap gap-1.5">
+            {skills.map((s) => (
+              <span key={s} className="text-[11px] px-2 py-0.5 rounded bg-base-700/60 text-ink-dim flex items-center gap-1">
+                {s}
+                <button onClick={() => setSkills((prev) => prev.filter((x) => x !== s))} className="text-ink-faint hover:text-signal-error">×</button>
+              </span>
+            ))}
+          </div>
+        ) : (
+          <p className="text-[11px] text-ink-faint">Sin skills. Añade con "+ Skill".</p>
+        )}
       </div>
 
       <div>
@@ -124,5 +149,14 @@ export function AgentCreatePopup({ projectId, onSave, onClose }: Props) {
         </div>
       </div>
     </Modal>
+
+    {skillPickerOpen && (
+      <SkillPickerPopup
+        selected={skills}
+        onApply={(names) => { setSkills(names); setSkillPickerOpen(false); }}
+        onClose={() => setSkillPickerOpen(false)}
+      />
+    )}
+    </>
   );
 }

@@ -52,6 +52,18 @@ export function Modal({ title, onClose, children, footer, widthClass = "max-w-lg
   );
 }
 
+// Banner de error compartido: sin esto, un fallo al guardar (nombre
+// duplicado, backend caido, migracion sin aplicar...) se veia como "no pasa
+// nada al pulsar el boton" — el popup se quedaba abierto sin ninguna pista.
+export function ErrorBanner({ message }: { message: string | null }) {
+  if (!message) return null;
+  return (
+    <div className="text-xs text-signal-error bg-signal-error/10 border border-signal-error/30 rounded-lg px-3 py-2">
+      {message}
+    </div>
+  );
+}
+
 // Estilos compartidos de campos (para consistencia entre popups).
 export const fieldLabel = "text-[11px] uppercase tracking-wide text-ink-faint mb-1.5 block";
 export const fieldInput =

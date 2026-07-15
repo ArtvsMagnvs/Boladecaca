@@ -5,7 +5,7 @@
 // nunca saca de contexto (doc 18 §9.2). El board/drag&drop es W2b.
 import { useState } from "react";
 import type { Task, Milestone, Project, ChecklistItem, TaskLinks } from "@/lib/api";
-import { Modal, fieldLabel, fieldInput, btnPrimary, btnGhost } from "./Modal";
+import { Modal, ErrorBanner, fieldLabel, fieldInput, btnPrimary, btnGhost } from "./Modal";
 
 const STATUSES = [
   { value: "pending", label: "Pendiente" },
@@ -49,6 +49,7 @@ export function TaskPopup({
   const [newItem, setNewItem] = useState("");
   const [links, setLinks] = useState<TaskLinks>(task?.links ?? {});
   const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const setLink = (key: string, value: string) =>
     setLinks((prev) => {
@@ -68,6 +69,7 @@ export function TaskPopup({
   const handleSave = async () => {
     if (!title.trim()) return;
     setSaving(true);
+    setError(null);
     try {
       await onSave({
         title: title.trim(),
@@ -81,6 +83,8 @@ export function TaskPopup({
         checklist,
         links,
       });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "No se pudo guardar la tarea.");
     } finally {
       setSaving(false);
     }
@@ -109,6 +113,7 @@ export function TaskPopup({
         </>
       }
     >
+      <ErrorBanner message={error} />
       <div>
         <label className={fieldLabel}>Título</label>
         <input value={title} onChange={(e) => setTitle(e.target.value)} className={fieldInput} placeholder="¿Qué hay que hacer?" autoFocus />
