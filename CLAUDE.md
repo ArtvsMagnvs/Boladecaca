@@ -266,9 +266,36 @@ teclado a la par).
   no está disponible en este entorno): arrastre con delta exacto, 3 asas
   independientes, expandir/restaurar preserva el rect libre, minimizar, y
   soltar sobre la estantería la minimiza automáticamente.
-- ⏳ **W2c** — agentes embebidos + hueco de automatizaciones · **W3b** — board
-  Kanban + drag&drop de tareas + atajos + panel `(?)` · **W4** — integración
-  MOS/eventos/briefing + Hub + tag `v0.8.7`.
+- ✅ **Fix W2b (15-jul)**: 3 asas → **8 asas** (4 bordes + 4 esquinas);
+  `resolveResize()` reescrito — los bordes norte/oeste clampan tamaño primero
+  y derivan la posición de cuánto se movió REALMENTE el borde (evita que la
+  tarjeta "salte" al tocar el mínimo). `Shelf.tsx` gana arrastrar-para-sacar
+  (fantasma que sigue al cursor; la tarjeta real no existe hasta soltar,
+  patrón estándar cuando el objetivo del arrastre no está montado).
+- ✅ **W2c — Tarjetas de agente reordenables** (`frontend/src/pages/Workspace/`):
+  cada tarjeta de proyecto muestra sus agentes reales. Migración 16.ª
+  (aditiva): `Agent += project_id·skills·icon`. **Bug real encontrado en
+  pruebas de la migración**: `project_id` se intentó como ForeignKey real
+  primero (mismo archivo que `Project`, sin problema de orden) pero SQLite no
+  soporta añadir una columna con constraint FK vía `ALTER TABLE ADD COLUMN`
+  fuera de "batch mode" — confirmado con una migración de prueba que falló a
+  mitad camino; corregido a Integer suelto, mismo criterio que
+  `Milestone`/`Task.milestone_id` de W1, por un motivo distinto pero igual de
+  real. `AgentChip.tsx` (marco de estado gris/rojo/azul-animado vía
+  conic-gradient enmascarado, CSS puro) + `AgentsSection.tsx` (reorden 1D por
+  arrastre — busca el chip más cercano al puntero, persistido en
+  `localStorage`) + `AgentCreatePopup.tsx`/`AgentDetailPopup.tsx`. Hueco
+  "Automatizaciones" (stub V0.9). `tsc`/`vite build` limpios; suite backend
+  **254 passed**; migración verificada en los dos caminos reales (no-op +
+  ADD con datos). **Verificación en vivo pendiente**: el Browser pane quedó
+  bloqueado por un problema de entorno confirmado ajeno al cambio (fallaban
+  incluso páginas sin relación) — pendiente de que el usuario la confirme
+  manualmente.
+- ⏳ **W2d** (nueva, doc 03) — agente en pantalla completa + panel de proceso
+  (alcance honesto: la ejecución de agentes hoy es un placeholder de V0.5,
+  sin razonamiento real) · **W3b** — board Kanban + drag&drop de tareas +
+  atajos + panel `(?)` · **W4** — integración MOS/eventos/briefing + Hub +
+  tag `v0.8.7`.
 - **V0.9** — Automation Engine (APScheduler + reglas + sistema de aprobaciones)
 - **V1.0** — Orchestrator (intent analyzer + planner + Claude Code Agent)
 - **V1.1** — Hermes (Nous Research) como sistema de agentes bajo el Orchestrator
@@ -652,7 +679,7 @@ Definidos en `backend/app/db/database.py`:
 | `CalendarEvent` | `calendar_events` | Eventos (con `google_event_id`) | V0.2 + V0.7 |
 | `Conversation` | `conversations` | Sesiones de chat | V0.2 |
 | `ChatMessage` | `chat_messages` | Mensajes con `model_used`/`tokens_used` | V0.2 |
-| `Agent` | `agents` | Agentes con `allowed_tools`, `max_execution_time` | V0.5 |
+| `Agent` | `agents` | Agentes con `allowed_tools`, `max_execution_time` (V0.87 WPMS W2c: +`project_id`,`skills`,`icon`) | V0.5 + V0.87 |
 | `AgentExecution` | `agent_executions` | Log de ejecuciones async | V0.5 |
 | `EmailAutoReplyRule` | `email_auto_reply_rules` | Reglas de auto-respuesta | V0.7 |
 | `CalendarAvailability` | `calendar_availability` | Disponibilidad por tipo de actividad | V0.7 |
