@@ -11,6 +11,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { api, type Project, type Task, type Milestone, type WorkspaceProgress } from "@/lib/api";
 import { pct, MS_STATUS_LABEL } from "./shared";
 import { TaskList } from "./TaskList";
+import { TaskBoard, type TaskColumnKey, type TaskUpdatePatch } from "./TaskBoard";
 import { TaskPopup } from "./TaskPopup";
 import { MilestonePopup } from "./MilestonePopup";
 import { AgentsSection } from "./AgentsSection";
@@ -63,6 +64,9 @@ export function ProjectCard({
   const [loading, setLoading] = useState(true);
   const [taskEdit, setTaskEdit] = useState<Task | null | undefined>(undefined);
   const [milestoneEdit, setMilestoneEdit] = useState<Milestone | null | undefined>(undefined);
+  // V0.87 (WPMS W3b): columna de origen del alta rápida desde el Kanban (tecla
+  // "N" o el "+" de una columna) — la tarea nueva nace ya en esa columna.
+  const [taskQuickStatus, setTaskQuickStatus] = useState<TaskColumnKey>("pending");
 
   const activeMilestone = useMemo(
     () => milestones.find((m) => m.status === "active") ?? milestones[0] ?? null,
@@ -101,6 +105,19 @@ export function ProjectCard({
     await api.updateTask(t.id, { status: done ? "pending" : "completed" });
     await load();
     onProjectsRefresh();
+  };
+  // V0.87 (WPMS W3b): drag&drop en el board Kanban — TaskBoard ya calculó qué
+  // tareas cambian de order_index/status; aquí solo se persiste y se recarga
+  // desde el backend (fuente de verdad), mismo patrón no-optimista que el
+  // resto del Workspace.
+  const reorderTasks = async (updates: TaskUpdatePatch[]) => {
+    await Promise.all(updates.map((u) => api.updateTask(u.id, { order_index: u.order_index, status: u.status })));
+    await load();
+    onProjectsRefresh(); // el status pudo cambiar a/desde "completed" -> afecta al progreso
+  };
+  const quickCreateTask = (status: TaskColumnKey) => {
+    setTaskQuickStatus(status);
+    setTaskEdit(null);
   };
 
   const saveMilestone = async (data: Partial<Milestone>) => {
@@ -243,12 +260,27 @@ export function ProjectCard({
 
             {showTasksAndActivity && (
               <>
-                <section>
-                  <h3 className="text-xs font-medium text-ink-dim mb-1.5">
-                    Tareas {activeMilestone ? <span className="text-ink-faint font-normal">· {activeMilestone.name}</span> : ""}
-                  </h3>
-                  <TaskList tasks={tasks} activeMilestoneId={activeMilestone?.id ?? null} onToggle={toggleTaskDone} onOpen={(t) => setTaskEdit(t)} />
-                </section>
+                {/* V0.87 (WPMS W3b): el board Kanban necesita las 3 columnas
+                    lado a lado — solo tiene sentido con el ancho completo del
+                    lienzo (tarjeta expandida). Con la tarjeta compacta (alta
+                    pero estrecha) la lista plana sigue siendo la vista. */}
+                {layout.expanded ? (
+                  <TaskBoard
+                    tasks={tasks}
+                    milestones={milestones}
+                    onOpen={(t) => setTaskEdit(t)}
+                    onQuickCreate={quickCreateTask}
+                    onReorder={reorderTasks}
+                    disabled={taskEdit !== undefined || milestoneEdit !== undefined}
+                  />
+                ) : (
+                  <section>
+                    <h3 className="text-xs font-medium text-ink-dim mb-1.5">
+                      Tareas {activeMilestone ? <span className="text-ink-faint font-normal">· {activeMilestone.name}</span> : ""}
+                    </h3>
+                    <TaskList tasks={tasks} activeMilestoneId={activeMilestone?.id ?? null} onToggle={toggleTaskDone} onOpen={(t) => setTaskEdit(t)} />
+                  </section>
+                )}
 
                 {recentTasks.length > 0 && (
                   <section>
@@ -293,9 +325,10 @@ export function ProjectCard({
           milestones={milestones}
           defaultProjectId={project.id}
           defaultMilestoneId={activeMilestone?.id ?? null}
+          defaultStatus={taskQuickStatus}
           onSave={saveTask}
           onDelete={deleteTask}
-          onClose={() => setTaskEdit(undefined)}
+          onClose={() => { setTaskEdit(undefined); setTaskQuickStatus("pending"); }}
         />
       )}
       {milestoneEdit !== undefined && (

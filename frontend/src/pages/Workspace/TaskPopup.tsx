@@ -24,6 +24,9 @@ interface Props {
   milestones: Milestone[]; // del proyecto activo
   defaultProjectId?: number | null;
   defaultMilestoneId?: number | null;
+  // V0.87 (WPMS W3b): alta rápida desde una columna del Kanban — la tarea
+  // nueva nace ya en esa columna en vez de siempre en "Pendiente".
+  defaultStatus?: string;
   onSave: (data: Partial<Task>) => Promise<void>;
   onDelete?: (id: number) => Promise<void>;
   onClose: () => void;
@@ -35,11 +38,11 @@ function isoDateInput(value?: string | null): string {
 }
 
 export function TaskPopup({
-  task, projects, milestones, defaultProjectId, defaultMilestoneId, onSave, onDelete, onClose,
+  task, projects, milestones, defaultProjectId, defaultMilestoneId, defaultStatus, onSave, onDelete, onClose,
 }: Props) {
   const [title, setTitle] = useState(task?.title ?? "");
   const [description, setDescription] = useState(task?.description ?? "");
-  const [status, setStatus] = useState(task?.status ?? "pending");
+  const [status, setStatus] = useState(task?.status ?? defaultStatus ?? "pending");
   const [priority, setPriority] = useState(task?.priority ?? "medium");
   const [projectId, setProjectId] = useState<number | null>(task?.project_id ?? defaultProjectId ?? null);
   const [milestoneId, setMilestoneId] = useState<number | null>(task?.milestone_id ?? defaultMilestoneId ?? null);

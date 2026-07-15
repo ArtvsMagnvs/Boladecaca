@@ -1,5 +1,10 @@
 # CLAUDE.md — Memoria persistente y guía de desarrollo de Aithera
 
+<!-- SKILL: graphify (`.claude/skills/graphify/SKILL.md`) - knowledge graph del codebase. Trigger: `/graphify`
+When the user types `/graphify`, invoke the Skill tool with skill: "graphify" before doing anything else.
+Actualizar tras cada sesión: `graphify . --update` en terminal dentro de la carpeta Aithera.
+Auto-update por commit (instalar una vez): `graphify hook install` en terminal dentro de Aithera. -->
+
 > **Fuente de verdad del proyecto.** Construido exclusivamente a partir del estado
 > real del código, los modelos de BD, los routers activos y los docs de fase
 > existentes. Nada está inventado. Las secciones marcadas con `[pendiente]`
@@ -368,9 +373,41 @@ teclado a la par).
   edición completa guardando y reflejándose en el chip al cerrar, borde
   azul confirmado por `getComputedStyle`, punto del anillo confirmado
   (6×6px, con `box-shadow` de brillo).
-- ⏳ **W3b** — board Kanban + drag&drop de tareas + atajos + panel `(?)` ·
-  **W4** — integración MOS/eventos/briefing + Hub +
-  tag `v0.8.7`.
+- ✅ **W3b — Board Kanban + drag&drop de tareas + atajos + panel `(?)`**
+  (`TaskBoard.tsx`, nuevo): 3 columnas (Pendiente/En progreso/Hecha, los
+  mismos 3 valores que ya usaba `TaskPopup`) solo cuando la `ProjectCard` está
+  **expandida** (ancho completo del lienzo) — con la tarjeta compacta el
+  `TaskList` plano de W2b sigue siendo la vista, 3 columnas no caben con
+  sentido en poco ancho. **Arrastre**: mismo patrón nativo de Pointer Events
+  ya usado en `AgentsSection.tsx` (sin librería, doc 16 principio 5),
+  extendido de 1 a 3 columnas — `colsRef` espeja el estado en un ref para que
+  `endDrag` lea siempre el valor más reciente sin closures obsoletas (mismo
+  motivo que `orderRef` en W2c). Al soltar, solo se renumera `order_index` de
+  la columna de DESTINO (quitar un elemento no rompe el orden relativo de los
+  que quedan); el `status` de la tarea arrastrada cambia solo si cruzó de
+  columna. Persistencia no-optimista: `ProjectCard.reorderTasks()` hace los
+  `PATCH` y siempre recarga desde el backend después (mismo patrón que el
+  resto del Workspace). **Alta rápida por columna**: botón "+" en cada
+  columna + `TaskPopup` gana `defaultStatus` (la tarea nace ya en esa
+  columna). **Atajos de teclado** (mouse+teclado a la par, doc 18 decisión
+  W2a/W2b — el mismo criterio se extiende aquí): `N` nueva tarea en la
+  columna seleccionada, `Enter` abre la tarea seleccionada, `↑/↓` mueve
+  dentro de la columna, `←/→` cambia de columna, `1/2/3` mueve la tarea
+  seleccionada de columna sin arrastrar (accesibilidad), `?` abre/cierra el
+  panel de ayuda con la lista completa. El `<div tabIndex={0}>` del board
+  recibe foco al montar/cuando no hay un popup abierto encima (prop
+  `disabled`, evita que los atajos compitan con lo que se escribe en
+  `TaskPopup`/`MilestonePopup`); deliberadamente **sin atajo de borrar**
+  (una tecla que elimina sin confirmación es un riesgo, doc de seguridad del
+  proyecto — borrar sigue siendo solo el botón explícito del popup). Suite
+  backend **254 passed** (sin cambios de backend — `order_index`/`status`
+  ya existían desde W1, solo estaban sin usar). Verificado en vivo contra el
+  backend y frontend reales: crear tareas en las 3 columnas, arrastre entre
+  columnas confirmado por API (`status`/`order_index`/`closed_at`
+  persistidos), navegación con flechas, `1/2/3` moviendo de columna
+  (confirmado por API), `Enter` abriendo la tarea seleccionada, `N` con
+  `defaultStatus` correcto, panel `?` mostrando los 7 atajos.
+- ⏳ **W4** — integración MOS/eventos/briefing + Hub + tag `v0.8.7`.
 - **V0.9** — Automation Engine (APScheduler + reglas + sistema de aprobaciones)
 - **V1.0** — Orchestrator (intent analyzer + planner + Claude Code Agent)
 - **V1.1** — Hermes (Nous Research) como sistema de agentes bajo el Orchestrator
@@ -978,6 +1015,29 @@ npm run electron:build  # genera release/*.exe con electron-builder
    si se modifica el modelo sin generar nueva migración. Regla: cualquier
    cambio de modelo ⇒ nueva migración Alembic obligatoriamente.
 
+8. **[Graphify audit 2026-07-15] `AitheraApp` (god-object Tkinter legacy)** — el
+   grafo de conocimiento detectó que existe un nodo `AitheraApp` con referencias
+   a casi todos los módulos del backend. El proyecto migró de CustomTkinter a
+   Electron (ver `PLAN_HUB_VISUAL_Y_VOZ.md`) pero este código muerto sobrevivió.
+   **Localizar y eliminar antes de V1.0**. Buscar con: `grep -r "AitheraApp" backend/`.
+
+9. **[Graphify audit 2026-07-15] Tests de Telegram cruzan módulos** —
+   `test_format_proyectos_lista()` en los tests del adaptador Telegram importa
+   el modelo SQL `Project` directamente. Viola la disciplina modular (doc 16).
+   **Arreglar en V0.9** (antes del Automation Engine que añadirá más tests).
+
+10. **[Graphify audit 2026-07-15] Test fixture de email toca CalendarEvent** —
+    `_clean_email_tables()` borra filas de `CalendarEvent` (cross-domain). Puede
+    causar tests de calendario flaky si corren después de tests de email.
+    **Arreglar en V0.9** junto con la limpieza general de test isolation.
+
+11. **[Graphify audit 2026-07-15] EmailTool edges inferidos sin verificar** —
+    graphify infirió 10 edges desde `EmailTool` hacia `CredentialsPayload` y
+    `AutoReplyRulePayload` que no encontró como imports explícitos (posible duck
+    typing o acceso dinámico). **Auditar antes de V0.9** cuando el Automation
+    Engine empiece a interactuar con el email tool. Verificar con:
+    `grep -n "CredentialsPayload\|AutoReplyRulePayload" backend/app/tools/email_tool.py`.
+
 ---
 
 ## 17. Riesgos técnicos
@@ -1057,3 +1117,13 @@ Registro/arranque en el `lifespan` de `main.py` (`gateway.register(...)` +
 *Última actualización: 2026-07-04 — V0.8 (B21 + Gateway + Telegram + Security Hardening: CORS + API keys cifradas). Roadmap reordenado: Hub Visual → Voz → V0.85 Memory → V0.9 → V1.0 → V1.1 Hermes; Web+PWA post-V1.0*
 *Construido desde el estado real del repositorio (código + Alembic + docs de fase).*
 *Sustituye a la versión V0.2 anterior, que declaraba un estado obsoleto.*
+
+## graphify
+
+This project has a knowledge graph at graphify-out/ with god nodes, community structure, and cross-file relationships.
+
+Rules:
+- For codebase questions, first run `graphify query "<question>"` when graphify-out/graph.json exists. Use `graphify path "<A>" "<B>"` for relationships and `graphify explain "<concept>"` for focused concepts. These return a scoped subgraph, usually much smaller than GRAPH_REPORT.md or raw grep output.
+- If graphify-out/wiki/index.md exists, use it for broad navigation instead of raw source browsing.
+- Read graphify-out/GRAPH_REPORT.md only for broad architecture review or when query/path/explain do not surface enough context.
+- After modifying code, run `graphify update .` to keep the graph current (AST-only, no API cost).
