@@ -127,6 +127,15 @@ operativa del Project Memory, nunca una segunda memoria.
 
 ## 4. V0.9 — Automation Engine + ApprovalGate (diseño completo: doc 11 parte A)
 
+> **[Δ 2026-07-15] Plan de sesiones detallado, listo para ejecutar**:
+> `PLAN_MAESTRO_2026/20_V09_PLAN_SESIONES.md` traduce este diseño a sprints
+> **sin decisiones abiertas** (A1 · A2a · A2b · A3 · A4), auditado contra el
+> estado REAL del código de v0.8.7. Recoge los 10 deltas desde que se planificó
+> V0.9 (eventos WPMS, WorkspaceAction, briefing con workspace, lifecycle.py,
+> httpx persistente, cooldown, chat_service, push del Gateway, Decision.history,
+> stub por proyecto). A2 se divide en A2a/A2b por carga (mismo criterio que
+> W2→W2a-e). Artefacto visual acompañante en el scratchpad de la sesión.
+
 Arquitectura de 4 capas (Triggers/Conditions/Actions/Learner) con MVP funcional:
 
 - **ApprovalGate genérico** persistente y reanudable — EL primitivo que reusan
