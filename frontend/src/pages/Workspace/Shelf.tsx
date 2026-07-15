@@ -83,6 +83,9 @@ export function Shelf({ projects, getLayout, onOpen, onDragOut, onCreate }: Prop
               <div className="flex items-center gap-2">
                 {!layout.shelved && <span className="h-1.5 w-1.5 rounded-full bg-accent shrink-0" />}
                 <span className="truncate flex-1">{p.name}</span>
+                {p.archived_at && (
+                  <span className="text-[9px] px-1 py-0.5 rounded bg-base-700/60 text-ink-faint shrink-0" title="Archivado">Archivado</span>
+                )}
                 {p.current_version && <span className="text-[10px] text-ink-faint shrink-0">{p.current_version}</span>}
               </div>
               <div className="mt-1.5 h-1 bg-base-700 rounded-full overflow-hidden">

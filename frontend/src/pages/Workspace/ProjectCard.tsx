@@ -11,10 +11,11 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { api, type Project, type Task, type Milestone, type WorkspaceProgress } from "@/lib/api";
 import { pct, MS_STATUS_LABEL } from "./shared";
 import { TaskList } from "./TaskList";
-import { TaskBoard, type TaskColumnKey, type TaskUpdatePatch } from "./TaskBoard";
+import { TaskBoard, KANBAN_SHORTCUTS, type TaskColumnKey, type TaskUpdatePatch } from "./TaskBoard";
 import { TaskPopup } from "./TaskPopup";
 import { MilestonePopup } from "./MilestonePopup";
 import { AgentsSection } from "./AgentsSection";
+import { HelpButton, windowShortcuts } from "./HelpPanel";
 import { useDragResize, MIN_CARD_W, MIN_CARD_H, type CardLayout, type Rect } from "./useWindowCard";
 
 interface Props {
@@ -29,14 +30,16 @@ interface Props {
   isOverShelf: (clientX: number, clientY: number) => boolean;
   onEditProject: () => void;
   onProjectsRefresh: () => void;
-  onOpenAgentFullscreen: (agentId: number) => void; // W2d
-  agentsRefreshTick: number; // W2d: fuerza refetch de AgentsSection al cerrar la pantalla completa
+  // V0.87 (W4): abre (o trae al frente) la ventana-tarjeta del agente — ya
+  // no es "fullscreen", el usuario la redimensiona como una ProjectCard.
+  onOpenAgentWindow: (agentId: number) => void;
+  agentsRefreshTick: number; // fuerza refetch de AgentsSection cuando cambia algo en la ventana del agente
 }
 
 export function ProjectCard({
   project, allProjects, layout, bounds, onInteractStart, onCommit,
   onMinimize, onToggleExpanded, isOverShelf, onEditProject, onProjectsRefresh,
-  onOpenAgentFullscreen, agentsRefreshTick,
+  onOpenAgentWindow, agentsRefreshTick,
 }: Props) {
   // Alto "en vivo" mientras se arrastra un asa de resize — separado del
   // layout.h ya confirmado (el que vive en el padre + localStorage). Pedido
@@ -67,6 +70,10 @@ export function ProjectCard({
   // V0.87 (WPMS W3b): columna de origen del alta rápida desde el Kanban (tecla
   // "N" o el "+" de una columna) — la tarea nueva nace ya en esa columna.
   const [taskQuickStatus, setTaskQuickStatus] = useState<TaskColumnKey>("pending");
+  // V0.87 (W4): panel de ayuda (?) de la cabecera — un solo estado, tanto el
+  // botón visible como la tecla "?" del Kanban (delegada via onToggleHelp)
+  // abren/cierran lo mismo.
+  const [helpOpen, setHelpOpen] = useState(false);
 
   const activeMilestone = useMemo(
     () => milestones.find((m) => m.status === "active") ?? milestones[0] ?? null,
@@ -184,6 +191,13 @@ export function ProjectCard({
             <span className="text-[10px] px-1.5 py-0.5 rounded bg-accent/12 text-accent shrink-0">v{project.current_version}</span>
           )}
         </div>
+        <span onClick={(e) => e.stopPropagation()} onPointerDown={(e) => e.stopPropagation()}>
+          <HelpButton
+            open={helpOpen}
+            onToggle={() => setHelpOpen((v) => !v)}
+            extra={[...windowShortcuts(layout.expanded), ...(layout.expanded ? KANBAN_SHORTCUTS : [])]}
+          />
+        </span>
         <button onClick={(e) => { e.stopPropagation(); onEditProject(); }} className="text-ink-faint hover:text-ink text-xs px-1.5 shrink-0" title="Editar proyecto">✎</button>
         <button onClick={(e) => { e.stopPropagation(); onToggleExpanded(); }} className="text-ink-faint hover:text-ink text-xs px-1.5 shrink-0" title={layout.expanded ? "Restaurar" : "Expandir"}>
           {layout.expanded ? "⤡" : "⤢"}
@@ -218,7 +232,7 @@ export function ProjectCard({
               <section>
                 <div className="flex items-center justify-between mb-1.5">
                   <h3 className="text-xs font-medium text-ink-dim">Milestones</h3>
-                  <button onClick={() => setMilestoneEdit(null)} className="text-[11px] text-accent hover:text-accent-soft">+</button>
+                  <button onClick={() => setMilestoneEdit(null)} className="text-[11px] text-accent hover:text-accent-soft">+ Milestone</button>
                 </div>
                 <div className="flex flex-col gap-1">
                   {milestones.map((m) => (
@@ -246,7 +260,7 @@ export function ProjectCard({
               <AgentsSection
                 projectId={project.id}
                 size={showAgentsFull ? "full" : "icon"}
-                onOpenFullscreen={onOpenAgentFullscreen}
+                onOpenAgent={onOpenAgentWindow}
                 refreshTick={agentsRefreshTick}
               />
             </div>
@@ -272,6 +286,7 @@ export function ProjectCard({
                     onQuickCreate={quickCreateTask}
                     onReorder={reorderTasks}
                     disabled={taskEdit !== undefined || milestoneEdit !== undefined}
+                    onToggleHelp={() => setHelpOpen((v) => !v)}
                   />
                 ) : (
                   <section>

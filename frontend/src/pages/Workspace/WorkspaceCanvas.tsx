@@ -4,13 +4,22 @@
 // se modifica"), atenuado y sin interaccion. NO es el AVCS completo de doc 13
 // (ParticleEngine full-bleed, V0.82/V0.83, sin construir todavia) — es el
 // mismo lenguaje visual del Hub reusando el componente que ya existe.
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { Project } from "@/lib/api";
 import { AICore } from "@/components/hub/AICore";
 import { Shelf } from "./Shelf";
 import { ProjectCard } from "./ProjectCard";
-import { AgentFullscreen } from "./AgentFullscreen";
+import { AgentWindowCard } from "./AgentWindowCard";
 import { useWorkspaceLayouts } from "./useWindowCard";
+
+const AGENT_LAYOUTS_KEY = "aithera.workspace.agentCardLayouts";
+// V0.87 (W4): las ventanas de agente flotan SIEMPRE por encima de las
+// tarjetas de proyecto (offset plano de z-index) — son dos instancias
+// independientes de useWorkspaceLayouts (contadores de zIndex separados, ver
+// useWindowCard.ts), así que sus valores numéricos podrían solaparse; este
+// offset evita que una tarjeta de proyecto "tape" una ventana de agente
+// mientras cada tipo sigue respetando su propio orden de traer-al-frente.
+const AGENT_Z_OFFSET = 100000;
 
 interface Props {
   projects: Project[];
@@ -21,29 +30,31 @@ interface Props {
 
 export function WorkspaceCanvas({ projects, onCreateProject, onEditProject, onProjectsRefresh }: Props) {
   const { getLayout, setLayout, bringToFront, openFromShelf, sendToShelf, toggleExpanded } = useWorkspaceLayouts();
+  // V0.87 (W4): las tarjetas de agente reusan EXACTAMENTE la misma mecanica
+  // (arrastre/resize/expandir/"estanteria") sobre su PROPIA instancia del
+  // hook — pedido explicito del usuario. "shelved" para un agente = su
+  // ventana esta cerrada; el chip en AgentsSection sigue siendo como se
+  // vuelve a abrir (equivalente a sacar un proyecto de la estanteria).
+  const {
+    getLayout: getAgentLayout, setLayout: setAgentLayout, bringToFront: bringAgentToFront,
+    openFromShelf: openAgentWindow, sendToShelf: closeAgentWindow, toggleExpanded: toggleAgentExpanded,
+    openIds: openAgentIds,
+  } = useWorkspaceLayouts(AGENT_LAYOUTS_KEY);
+  // El chip pequeño en AgentsSection es OTRA instancia con sus propios datos
+  // ya cargados — no se entera sola de que is_active/icon/edicion cambiaron
+  // en la ventana. Subir este contador fuerza a TODAS las AgentsSection a
+  // refetch (barato: pocos agentes por proyecto) sin necesitar un bus de
+  // eventos para un caso tan puntual.
+  const [agentsRefreshTick, setAgentsRefreshTick] = useState(0);
+  const bumpAgentsRefresh = () => setAgentsRefreshTick((t) => t + 1);
+  const closeAgent = (agentId: number) => {
+    closeAgentWindow(agentId);
+    bumpAgentsRefresh();
+  };
+
   const canvasRef = useRef<HTMLDivElement>(null);
   const shelfWrapRef = useRef<HTMLDivElement>(null);
   const [bounds, setBounds] = useState({ width: 800, height: 600 });
-  // V0.87 W2d: el agente a pantalla completa vive AQUI (no dentro de la
-  // ProjectCard pequeña que lo abrio) porque debe ocupar el mismo espacio
-  // que una ProjectCard expandida — el area del Workspace, no los limites
-  // de una tarjeta chica. Por eso se renderiza como overlay del canvas con
-  // z-index por encima de CUALQUIER tarjeta de proyecto.
-  const [fullscreenAgentId, setFullscreenAgentId] = useState<number | null>(null);
-  // Al cerrar la pantalla completa, el AgentChip de la tarjeta pequena que la
-  // abrio es OTRA instancia con sus propios datos ya cargados — no se entera
-  // sola de que is_active/icon pudo cambiar. Subir este contador fuerza a
-  // TODAS las AgentsSection a refetch (barato: son pocos agentes por
-  // proyecto) sin necesitar un bus de eventos para un caso tan puntual.
-  const [agentsRefreshTick, setAgentsRefreshTick] = useState(0);
-  const closeFullscreenAgent = () => {
-    setFullscreenAgentId(null);
-    setAgentsRefreshTick((t) => t + 1);
-  };
-  const maxCardZ = useMemo(
-    () => Math.max(0, ...projects.map((p) => getLayout(p.id).zIndex)),
-    [projects, getLayout],
-  );
 
   useEffect(() => {
     const el = canvasRef.current;
@@ -117,17 +128,32 @@ export function WorkspaceCanvas({ projects, onCreateProject, onEditProject, onPr
               isOverShelf={isOverShelf}
               onEditProject={() => onEditProject(p)}
               onProjectsRefresh={onProjectsRefresh}
-              onOpenAgentFullscreen={setFullscreenAgentId}
+              onOpenAgentWindow={openAgentWindow}
               agentsRefreshTick={agentsRefreshTick}
             />
           );
         })}
 
-        {fullscreenAgentId != null && (
-          <div className="absolute inset-0" style={{ zIndex: maxCardZ + 1000 }}>
-            <AgentFullscreen agentId={fullscreenAgentId} onClose={closeFullscreenAgent} />
-          </div>
-        )}
+        {/* V0.87 (W4): ventanas de agente — mismo mecanismo que las tarjetas
+            de proyecto, en su propia instancia de useWorkspaceLayouts (ver
+            arriba). Flotan por encima de las tarjetas de proyecto a
+            proposito (AGENT_Z_OFFSET): se abren para trabajar con ellas. */}
+        {openAgentIds.map((agentId) => {
+          const layout = getAgentLayout(agentId);
+          return (
+            <AgentWindowCard
+              key={agentId}
+              agentId={agentId}
+              layout={{ ...layout, zIndex: layout.zIndex + AGENT_Z_OFFSET }}
+              bounds={bounds}
+              onInteractStart={() => bringAgentToFront(agentId)}
+              onCommit={(patch) => setAgentLayout(agentId, patch)}
+              onMinimize={() => closeAgent(agentId)}
+              onToggleExpanded={() => toggleAgentExpanded(agentId)}
+              onAgentChanged={bumpAgentsRefresh}
+            />
+          );
+        })}
       </div>
     </div>
   );

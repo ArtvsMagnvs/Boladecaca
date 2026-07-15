@@ -13,10 +13,13 @@ interface Props {
   project: Project | null; // null = crear
   onSave: (data: Partial<Project>) => Promise<void>;
   onDelete?: (id: number) => Promise<void>;
+  // V0.87 (WPMS W4, doc 18 §5.1): archivar es distinto de borrar — el
+  // proyecto sigue listado y consultable, solo deja de contar como activo.
+  onArchive?: (id: number) => Promise<void>;
   onClose: () => void;
 }
 
-export function ProjectPopup({ project, onSave, onDelete, onClose }: Props) {
+export function ProjectPopup({ project, onSave, onDelete, onArchive, onClose }: Props) {
   const [name, setName] = useState(project?.name ?? "");
   const [description, setDescription] = useState(project?.description ?? "");
   const [status, setStatus] = useState(project?.status ?? "active");
@@ -28,6 +31,7 @@ export function ProjectPopup({ project, onSave, onDelete, onClose }: Props) {
   const [tags, setTags] = useState((project?.tags ?? []).join(", "));
   const [docs, setDocs] = useState<ProjectDoc[]>(project?.docs ?? []);
   const [saving, setSaving] = useState(false);
+  const [archiving, setArchiving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   // V0.87 (WPMS W2e): solo existe dentro de Electron (preload.cjs). En el
@@ -66,6 +70,19 @@ export function ProjectPopup({ project, onSave, onDelete, onClose }: Props) {
     }
   };
 
+  const handleArchive = async () => {
+    if (!project || !onArchive) return;
+    setArchiving(true);
+    setError(null);
+    try {
+      await onArchive(project.id);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "No se pudo archivar el proyecto.");
+    } finally {
+      setArchiving(false);
+    }
+  };
+
   return (
     <Modal
       title={project ? "Editar proyecto" : "Nuevo proyecto"}
@@ -77,6 +94,11 @@ export function ProjectPopup({ project, onSave, onDelete, onClose }: Props) {
               Eliminar
             </button>
           )}
+          {project && onArchive && !project.archived_at && (
+            <button onClick={handleArchive} disabled={archiving} className="px-3 py-2 text-ink-faint hover:text-ink-dim text-sm">
+              {archiving ? "Archivando…" : "Archivar"}
+            </button>
+          )}
           <button onClick={onClose} className={btnGhost}>Cancelar</button>
           <button onClick={handleSave} disabled={!name.trim() || saving} className={btnPrimary}>
             {saving ? "Guardando…" : "Guardar"}
@@ -85,6 +107,11 @@ export function ProjectPopup({ project, onSave, onDelete, onClose }: Props) {
       }
     >
       <ErrorBanner message={error} />
+      {project?.archived_at && (
+        <p className="text-[11px] text-ink-faint bg-base-800/40 rounded-lg px-3 py-2">
+          Archivado el {project.archived_at.slice(0, 10)} — sigue consultable, ya no cuenta como activo.
+        </p>
+      )}
       <div>
         <label className={fieldLabel}>Nombre</label>
         <input value={name} onChange={(e) => setName(e.target.value)} className={fieldInput} placeholder="Nombre del proyecto" autoFocus />

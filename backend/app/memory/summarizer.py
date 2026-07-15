@@ -23,6 +23,7 @@ from app.core.events import emit
 from app.db.database import SessionLocal
 from app.db.models import EmailActivityLog, EmailTriage, MemoryJobRun
 from app.memory import MemoryType, memory_manager, memory_router, vault_write_daily_summary
+from app.workspace import workspace_service
 
 JOB_SUMMARIZER = "memory_summarize_daily"
 DAILY_HOUR, DAILY_MINUTE = 3, 30  # hora local del job nocturno (doc 07 §7)
@@ -156,7 +157,12 @@ def _conversations_count(target_date: date) -> int:
 
 def gather_day_data(target_date: date) -> dict[str, Any]:
     """TODO lo que necesita el resumen/briefing de un dia. Solo BD/Chroma
-    local — nunca Gmail ni Google Calendar en caliente (doc 07 §7/§8)."""
+    local — nunca Gmail ni Google Calendar en caliente (doc 07 §7/§8).
+
+    `workspace` [V0.87 W4, doc 18 §7]: milestone activo + progreso, deadlines
+    próximos, tareas de alta prioridad, bloqueos, actividad reciente — la
+    consulta la posee el WPMS (`workspace_service.briefing_snapshot`, API
+    publica del modulo, doc 16); aqui solo se mezcla en el mismo dict."""
     db = SessionLocal()
     try:
         triage_rows = _triage_rows_for_date(db, target_date)
@@ -165,6 +171,7 @@ def gather_day_data(target_date: date) -> dict[str, Any]:
             triage_counts[r.category] = triage_counts.get(r.category, 0) + 1
         urgent_items, urgent_total = _urgent_pending(db)
         top_senders = _top_senders(triage_rows)
+        workspace_snapshot = workspace_service.briefing_snapshot(db)
     finally:
         db.close()
 
@@ -176,6 +183,7 @@ def gather_day_data(target_date: date) -> dict[str, Any]:
         "agenda": _agenda_for_date(target_date),
         "top_senders": top_senders,
         "conversations_count": _conversations_count(target_date),
+        "workspace": workspace_snapshot,
     }
 
 

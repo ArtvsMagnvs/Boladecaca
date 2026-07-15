@@ -34,6 +34,13 @@ export default function Workspace() {
     setProjectEdit(undefined);
     await loadProjects();
   };
+  // V0.87 (WPMS W4, doc 18 §5.1): archivar, no borrar — el proyecto sigue
+  // listado y consultable, solo deja de contar como activo.
+  const archiveProject = async (id: number) => {
+    await api.archiveProject(id);
+    setProjectEdit(undefined);
+    await loadProjects();
+  };
 
   if (loading) {
     return <div className="h-full flex items-center justify-center text-ink-dim">Cargando…</div>;
@@ -53,6 +60,7 @@ export default function Workspace() {
           project={projectEdit}
           onSave={saveProject}
           onDelete={deleteProject}
+          onArchive={archiveProject}
           onClose={() => setProjectEdit(undefined)}
         />
       )}

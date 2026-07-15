@@ -92,11 +92,16 @@ export default function Hub() {
     pending: 0, counter_sent: 0, confirmed: 0,
   });
   // V0.85 (MOS M3): tarjeta Memoria — ultima ingesta, dias cubiertos, briefing de hoy.
+  // V0.87 (WPMS W4, doc 18 §7): + señales operativas del Workspace (deadlines
+  // próximos, tareas bloqueadas) — la misma consulta barata que ya hace
+  // /api/memory/briefing, sin llamada extra.
   const [memoryCard, setMemoryCard] = useState<{
     summary: string;
     urgentCount: number;
     daysCovered: number;
     lastIngestAt: string | null;
+    upcomingDeadlines: number;
+    blockedTasks: number;
   } | null>(null);
   /**
    * Carga simultánea de los datos del Hub. Centralizado en una sola
@@ -206,6 +211,8 @@ export default function Hub() {
         urgentCount: briefing?.urgent_pending.count ?? 0,
         daysCovered: stats?.mos_days_covered ?? 0,
         lastIngestAt,
+        upcomingDeadlines: briefing?.workspace?.upcoming_deadlines.length ?? 0,
+        blockedTasks: briefing?.workspace?.blocked.length ?? 0,
       });
     });
 
@@ -230,7 +237,10 @@ export default function Hub() {
   // ----- Filtros y derivados ---------------------------------------------
 
   // Proyectos activos: status === 'active' (V0.3 pide "top 5 proyectos activos").
-  const activeProjects = (projects ?? []).filter((p) => p.status === "active").slice(0, 5);
+  // V0.87 (WPMS W4): un proyecto archivado no cuenta como activo aunque su
+  // status siga en "active" — archivar (archived_at) es independiente del
+  // status, doc 18 §5.1.
+  const activeProjects = (projects ?? []).filter((p) => p.status === "active" && !p.archived_at).slice(0, 5);
 
   // Tareas pendientes: status === 'pending' o 'in_progress'.
   const pendingTasks = (tasks ?? [])
@@ -618,6 +628,17 @@ export default function Hub() {
                   {memoryCard.urgentCount} urgentes
                 </span>
               </div>
+              {/* V0.87 (WPMS W4): señales del Workspace, misma tarjeta */}
+              {(memoryCard.upcomingDeadlines > 0 || memoryCard.blockedTasks > 0) && (
+                <div className="mt-1.5 flex items-center gap-3 text-[10px] px-2">
+                  {memoryCard.upcomingDeadlines > 0 && (
+                    <span className="text-ink-faint">{memoryCard.upcomingDeadlines} deadlines próximos</span>
+                  )}
+                  {memoryCard.blockedTasks > 0 && (
+                    <span className="text-signal-warn">{memoryCard.blockedTasks} tareas bloqueadas</span>
+                  )}
+                </div>
+              )}
             </>
           )}
         </HubPanel>

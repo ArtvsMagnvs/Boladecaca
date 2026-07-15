@@ -61,24 +61,28 @@ interface Props {
   // true mientras hay un popup abierto encima (TaskPopup/MilestonePopup) —
   // los atajos de teclado se pausan para no competir con lo que se escribe ahi.
   disabled: boolean;
+  // V0.87 (W4): la tecla "?" delega en el botón (?) de la cabecera de la
+  // ProjectCard (mismo estado, un solo panel de ayuda) — antes el board
+  // tenía su propio botón/panel duplicado, escondido con la tarjeta compacta.
+  onToggleHelp?: () => void;
 }
 
-const SHORTCUTS: Array<[string, string]> = [
+// Exportado para que ProjectCard lo combine con windowShortcuts() en su
+// propio botón (?) de cabecera — un único panel de ayuda por tarjeta.
+export const KANBAN_SHORTCUTS: Array<[string, string]> = [
   ["N", "Nueva tarea (en la columna seleccionada)"],
   ["Enter", "Abrir la tarea seleccionada"],
   ["↑ / ↓", "Moverse dentro de la columna"],
   ["← / →", "Cambiar de columna"],
   ["1 / 2 / 3", "Mover la tarea seleccionada a Pendiente / En progreso / Hecha"],
-  ["?", "Mostrar/ocultar esta ayuda"],
   ["Arrastrar", "Mover una tarjeta entre columnas o reordenarla"],
 ];
 
-export function TaskBoard({ tasks, milestones, onOpen, onQuickCreate, onReorder, disabled }: Props) {
+export function TaskBoard({ tasks, milestones, onOpen, onQuickCreate, onReorder, disabled, onToggleHelp }: Props) {
   const [cols, setCols] = useState<Record<TaskColumnKey, Task[]>>(() => groupTasks(tasks));
   const colsRef = useRef(cols);
   const [draggingId, setDraggingId] = useState<number | null>(null);
   const [selected, setSelected] = useState<number | null>(null);
-  const [helpOpen, setHelpOpen] = useState(false);
 
   const columnRefs = useRef<Record<TaskColumnKey, HTMLDivElement | null>>({
     pending: null, in_progress: null, completed: null,
@@ -186,7 +190,7 @@ export function TaskBoard({ tasks, milestones, onOpen, onQuickCreate, onReorder,
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (disabled) return;
-    if (e.key === "?") { e.preventDefault(); setHelpOpen((v) => !v); return; }
+    if (e.key === "?") { e.preventDefault(); onToggleHelp?.(); return; }
     if (e.key === "n" || e.key === "N") {
       e.preventDefault();
       const col = selected != null ? COLUMN_KEYS.find((k) => cols[k].some((t) => t.id === selected)) : null;
@@ -234,28 +238,7 @@ export function TaskBoard({ tasks, milestones, onOpen, onQuickCreate, onReorder,
     >
       <div className="flex items-center justify-between mb-2">
         <h3 className="text-xs font-medium text-ink-dim">Tareas</h3>
-        <button
-          onClick={() => setHelpOpen((v) => !v)}
-          className="h-5 w-5 rounded-full border border-base-700 text-[10px] text-ink-faint hover:border-accent/40 hover:text-accent flex items-center justify-center"
-          title="Atajos de teclado"
-        >
-          ?
-        </button>
       </div>
-
-      {helpOpen && (
-        <div className="absolute top-7 right-0 z-20 glass-surface rounded-xl border border-base-700 p-3 w-64 shadow-glass">
-          <p className="text-[10px] uppercase tracking-wide text-ink-faint mb-2">Atajos de teclado</p>
-          <div className="flex flex-col gap-1.5">
-            {SHORTCUTS.map(([key, desc]) => (
-              <div key={key} className="flex items-start gap-2 text-[11px]">
-                <span className="shrink-0 px-1.5 py-0.5 rounded bg-base-700/60 text-ink-dim font-mono">{key}</span>
-                <span className="text-ink-faint">{desc}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
 
       <div className="grid grid-cols-3 gap-3">
         {COLUMNS.map(({ key, label }) => (
@@ -266,10 +249,10 @@ export function TaskBoard({ tasks, milestones, onOpen, onQuickCreate, onReorder,
                 <span className="text-[10px] text-ink-faint tabular-nums">{cols[key].length}</span>
                 <button
                   onClick={() => onQuickCreate(key)}
-                  className="text-[11px] text-accent hover:text-accent-soft leading-none"
+                  className="text-[11px] text-accent hover:text-accent-soft leading-none whitespace-nowrap"
                   title={`Nueva tarea en ${label}`}
                 >
-                  +
+                  + Tarea
                 </button>
               </div>
             </div>

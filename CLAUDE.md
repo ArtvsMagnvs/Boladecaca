@@ -202,11 +202,13 @@ Opción B (arquitectura definitiva, implementación mínima). Diseño completo e
   técnica): compactación/`lifecycle.py` (RFC-007) y `httpx` con conexiones
   persistentes (doc 12 A2) quedan para V0.9.
 
-**V0.87 — WPMS (Workspace & Project Management, doc 18) — EN CURSO sobre `master`**:
+**V0.87 — WPMS (Workspace & Project Management, doc 18) — CERRADA sobre `master`**:
 la capa operativa (estado en SQL) que organiza proyectos/milestones/tareas
 vara-Linear; el conocimiento permanente sigue en el MOS (`mem_project`). Sprints
-W1-W3 (W2 dividida en W2a/W2b por decisión de producto: drag&drop core + ratón y
-teclado a la par).
+W1 → W2a-W2e (W2 dividida por decisión de producto: drag&drop core + ratón y
+teclado a la par, luego pulido/edición completa de agentes/esqueleto GitHub-
+orquestador) → W3b (Kanban) → W4 (integración MOS/eventos/briefing/Hub).
+**Bloque completo, suite backend 260 passed.**
 - ✅ **W1 — Modelo + progreso + endpoints** (`app/workspace/`): extensión ADITIVA
   del modelo real `Project`/`Task` (no reescritura) + entidad nueva `Milestone`
   (el eje de versión). `Project +=` `repo_path·current_version·target_version·
@@ -407,7 +409,100 @@ teclado a la par).
   persistidos), navegación con flechas, `1/2/3` moviendo de columna
   (confirmado por API), `Enter` abriendo la tarea seleccionada, `N` con
   `defaultStatus` correcto, panel `?` mostrando los 7 atajos.
-- ⏳ **W4** — integración MOS/eventos/briefing + Hub + tag `v0.8.7`.
+- ✅ **Fixes post-W3b (15-jul, reportados por el usuario)**: (1) **etiquetas de
+  "+"** — el "+" de Milestones y el de cada columna del Kanban no decían qué
+  creaban; ahora "+ Milestone" y "+ Tarea". (2) **panel de ayuda (?) invisible**
+  — vivía escondido dentro del Kanban (solo con la tarjeta expandida, y ni
+  siquiera coloreado); se retira de ahí y nace `HelpPanel.tsx` (`HelpButton` +
+  `windowShortcuts()` compartidos): botón redondo AMARILLO (`signal.warn`,
+  `#E8B95E`) SIEMPRE visible en la cabecera de toda tarjeta-ventana (proyecto
+  Y agente), un único panel por tarjeta que combina los gestos de ventana
+  (arrastrar/redimensionar/expandir) con los atajos del Kanban cuando aplica;
+  la tecla `?` del board delega en el mismo estado del botón (`onToggleHelp`)
+  en vez de duplicar un panel propio. (3) **tarjetas de agente = tarjetas de
+  proyecto** — pedido explícito: abrir un agente ya NO es siempre pantalla
+  completa. `AgentFullscreen.tsx` (W2d/W2e) se retira; nace
+  `AgentWindowCard.tsx`, que reusa EXACTAMENTE la misma mecánica de
+  `useWindowCard.ts` (arrastre/8 asas de resize/expandir/"estantería") sobre
+  su PROPIA instancia de `useWorkspaceLayouts` (clave de localStorage
+  `aithera.workspace.agentCardLayouts` — los espacios de id de `Agent` y
+  `Project` son independientes, no pueden compartir clave). `useWorkspaceLayouts`
+  gana un `storageKey` parametrizable + `openIds` (deriva qué tarjetas no
+  están "guardadas" directamente del store persistido — los agentes no tienen
+  una estantería visual global, así que `WorkspaceCanvas` no tiene de otro
+  modo cómo saber cuáles reabrir al recargar la página). Ventanas de agente
+  flotan con un offset de z-index fijo (+100000) por encima de las tarjetas de
+  proyecto — dos instancias independientes del hook, dos contadores de zIndex
+  independientes, el offset evita ambigüedad de apilado sin compartir estado.
+  Contenido adaptativo por alto disponible (mismo patrón que `ProjectCard`):
+  solo cabecera si muy pequeña, +info (skills/tools/timeout o el formulario de
+  edición) a partir de 140px, +chat/proceso a partir de 320px o expandida
+  (ahí recupera el layout de dos columnas original). "Cerrar" un agente
+  equivale a `sendToShelf` (misma función que minimizar un proyecto) — no hay
+  estantería visual para agentes, pero el chip en `AgentsSection` sigue siendo
+  la forma de reabrirlo. Verificado en vivo con Pointer Events nativos
+  (herramienta de arrastre automatizado no disponible en este entorno): abrir
+  un agente nace en ventana 360×280 (no pantalla completa), redimensionar con
+  el asa SE (360×280 → 480×380 exacto), doble clic expande a `inset-0` con
+  layout de dos columnas, cerrar vuelve al chip, reabrir preserva el último
+  tamaño/posición (persistencia confirmada). `tsc`/`vite build` limpios.
+- ✅ **W4 — Integración MOS/eventos/briefing + Hub** (doc 18 §5, §7, §10):
+  cierra el bloque completo de WPMS. **Eventos** (`app/workspace/service.py`,
+  `app/core/events.py`): los 5 del diseño —`task.created`, `task.status_changed`
+  (`{task_id, from, to}`), `task.closed`, `milestone.completed`,
+  `project.progress_changed`— emitidos en los puntos reales (crear/editar/
+  borrar tarea, completar milestone). **Nota de concurrencia real**: `events.emit`
+  exige un event loop corriendo en el hilo (`asyncio.get_running_loop()`); los
+  endpoints de `workspace.py` que tocan eventos/MOS (`create_task`,
+  `update_task`, `delete_task`, `complete_milestone`, el nuevo
+  `archive_project`) pasan a `async def` para ejecutarse sobre el loop en vez
+  de en el threadpool de FastAPI —si se quedan `def` sync, `emit()` calla en
+  silencio (best-effort por diseño, doc 17, pero silenciosamente mudo no es
+  lo mismo que funcionando—. **Destilado a `mem_project`** (SOLO hechos
+  permanentes, nunca estado operativo, doc 18 §5.1 primera línea):
+  `_on_milestone_completed` (resumen del milestone, `dedup_key=milestone:{id}`),
+  nuevo **archivado de proyecto** (`POST /api/projects/{id}/archive` — sella
+  `archived_at`, idempotente, resumen final a mem_project
+  `dedup_key=project_archived:{id}`; antes `archived_at` era una columna sin
+  ninguna acción de usuario que la tocara desde W1 — cabo suelto real,
+  cerrado aquí con botón "Archivar" en `ProjectPopup.tsx` + badge "Archivado"
+  en `Shelf.tsx`). **Decision API**: `on_task_closed` — si la tarea trae
+  `links.decision`, registra el hecho en `decisions` vía `decision_service`
+  (fuente SQL + espejo `mem_decision`); sin decision, no escribe nada al MOS
+  (estado operativo puro). **Briefing** (`workspace_service.briefing_snapshot`,
+  vive en `app/workspace/` por disciplina modular, doc 16 — `summarizer.py`
+  solo la llama y mezcla el resultado): milestone activo + progreso por
+  proyecto no archivado, deadlines próximos (7 días), tareas de alta
+  prioridad abiertas, bloqueos (`depends_on` con alguna dependencia sin
+  cerrar), actividad reciente — exactamente lo pedido en doc 18 §7, sin
+  Gmail/LLM en caliente. `GET /api/memory/briefing` gana la clave `workspace`
+  (aditivo). **Hub**: tarjeta "Memoria" (M3) extendida con deadlines
+  próximos/tareas bloqueadas cuando hay alguno (sin llamada extra, mismo
+  briefing); "Proyectos activos" corregido para excluir archivados (archivar
+  es independiente de `status`, un proyecto archivado con `status="active"`
+  seguía apareciendo como activo — bug real encontrado en esta misma pasada
+  de auditoría). **Auditoría de cabos sueltos** (pedida explícitamente): (1)
+  `Project.github_url` (W2e) cross-referenciado en
+  `PLAN_MAESTRO_2026/03_ROADMAP_ACTUALIZADO.md` §7 (V1.2) con la conexión real
+  al MCP de GitHub. (2) doc 18 §7 prometía `WorkspaceAction` para el
+  Automation Engine — no existía en
+  `PLAN_MAESTRO_2026/11_AUTOMATION_ORCHESTRATOR_RFC.md`; añadido junto con los
+  5 nombres de evento concretos en la sección de `EventTrigger`. (3) doc 18
+  §7 prometía que el Learner (doc 15) consumiría estimado-vs-real/bloqueos del
+  WPMS — `15_LEARNING_SYSTEM_DISENO.md` no lo mencionaba; añadida la fila con
+  los campos reales (`Task.estimate`, `depends_on`, los 3 eventos de tarea).
+  (4) doc 11 §A.3 (`daily_briefing`) actualizado para reflejar que el briefing
+  ya trae `workspace` desde V0.87, no solo email/calendario. Tests nuevos en
+  `test_workspace_model.py` (Parte 7, 6 tests): milestone completado distila a
+  mem_project, tarea cerrada con/sin decision, eventos
+  task.created/status_changed/closed/project.progress_changed (via
+  monkeypatch de `emit`), archivar es idempotente y distila, briefing_snapshot
+  con datos reales. Suite completa: **260 passed** (234 previos + 6 nuevos de
+  W4, 20 acumulados de W2c-W3b). Verificado en vivo contra el backend y
+  frontend reales: crear/archivar un proyecto real, `GET /api/memory/briefing`
+  devolviendo `workspace` con el milestone activo real del usuario
+  ("Niide y El Círculo Dárico" 1/2) y actividad reciente real, Hub sin errores
+  de consola. **V0.87 WPMS — BLOQUE CERRADO.**
 - **V0.9** — Automation Engine (APScheduler + reglas + sistema de aprobaciones)
 - **V1.0** — Orchestrator (intent analyzer + planner + Claude Code Agent)
 - **V1.1** — Hermes (Nous Research) como sistema de agentes bajo el Orchestrator
@@ -705,7 +800,7 @@ Docs: `PLAN_MAESTRO_2026/10` (Hermes/AgentRuntime) + `15` (Learning System) + `0
 | Prefijo | Router | Tamaño | Descripción |
 |---------|--------|--------|-------------|
 | `/api/config` | `config.py` | 1.4KB | Configuración key-value |
-| `/api/projects` | `workspace.py` | — | CRUD proyectos (V0.87: absorbido en `workspace.py`, contrato idéntico) |
+| `/api/projects` | `workspace.py` | — | CRUD proyectos (V0.87: absorbido en `workspace.py`, contrato idéntico) + `/{id}/archive` (W4) |
 | `/api/tasks` | `workspace.py` | — | CRUD tareas + progreso automático por evento (V0.87) |
 | `/api/milestones` | `workspace.py` | ~10KB | V0.87 (WPMS W1): CRUD milestones + `/{id}/complete` (versionado) |
 | `/api/workspace` | `workspace.py` | (mismo) | V0.87: `/progress?project_id=` (overall + por milestone) |

@@ -214,6 +214,32 @@ export interface MemoryIngestStatus {
   jobs: Record<string, { interval_min: number; last_run: MemoryJobRunInfo | null; next_run_at: string | null }>;
 }
 
+// V0.87 (WPMS W4, doc 18 §7): lo que el briefing lee del Workspace — misma
+// forma que backend/app/workspace/service.py::briefing_snapshot.
+export interface WorkspaceBriefTask {
+  task_id: number;
+  project_id: number | null;
+  title: string;
+  priority: string;
+  due_date: string | null;
+}
+export interface WorkspaceBriefing {
+  active_milestones: Array<{
+    project_id: number;
+    project_name: string;
+    milestone_id: number;
+    name: string | null;
+    version: string | null;
+    done: number;
+    total: number;
+    ratio: number;
+  }>;
+  upcoming_deadlines: WorkspaceBriefTask[];
+  high_priority_open: WorkspaceBriefTask[];
+  blocked: Array<WorkspaceBriefTask & { blocked_by: number[] }>;
+  recent_activity: Array<WorkspaceBriefTask & { status: string; updated_at: string | null }>;
+}
+
 // V0.85 (MOS M3): briefing del dia — resumen + urgentes + agenda + top remitentes.
 export interface MemoryBriefing {
   date: string;
@@ -225,6 +251,8 @@ export interface MemoryBriefing {
   agenda: { title: string; start: string }[];
   top_senders: { sender: string; count: number }[];
   conversations_count: number;
+  // V0.87 (WPMS W4)
+  workspace: WorkspaceBriefing;
 }
 
 export interface ContextItem {
@@ -459,6 +487,9 @@ export const api = {
   updateProject: (id: number, data: Partial<Project>) =>
     request<Project>(`/projects/${id}`, { method: "PUT", body: JSON.stringify(data) }),
   deleteProject: (id: number) => request(`/projects/${id}`, { method: "DELETE" }),
+  // V0.87 (WPMS W4, doc 18 §5.1): archiva (no borra) — sella archived_at y
+  // destila un resumen final a mem_project.
+  archiveProject: (id: number) => request<Project>(`/projects/${id}/archive`, { method: "POST" }),
 
   // --- Tareas ---
   getTasks: (skip = 0, limit = 100) => request<Task[]>(`/tasks/?skip=${skip}&limit=${limit}`),

@@ -32,35 +32,35 @@ const DEFAULT_W = 360;
 const DEFAULT_H = 280;
 const CLICK_THRESHOLD_PX = 4;
 
-function readStore(): Record<number, CardLayout> {
+function readStore(storageKey: string): Record<number, CardLayout> {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const raw = localStorage.getItem(storageKey);
     return raw ? JSON.parse(raw) : {};
   } catch {
     return {};
   }
 }
 
-function writeStore(map: Record<number, CardLayout>) {
+function writeStore(storageKey: string, map: Record<number, CardLayout>) {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(map));
+    localStorage.setItem(storageKey, JSON.stringify(map));
   } catch {
     // localStorage lleno/bloqueado: la disposicion es preferencia visual, no
     // datos criticos — se pierde en silencio, nunca rompe el Workspace.
   }
 }
 
-// Se indexa por project_id (estable), NO por la posicion en el array de
-// proyectos: un indice de array puede pasarse distinto (o no pasarse) segun
-// desde donde se llame, lo que causaba que dos proyectos abiertos por primera
-// vez desde sitios distintos cayeran ambos en (40,40), exactamente superpuestos
-// (bug encontrado en verificacion en vivo de W2b). El project_id siempre esta
-// disponible en cualquier call site, así que el stagger es correcto sin
-// coordinar quien pasa que indice.
+// Se indexa por id (estable — project_id o agent_id segun el storageKey), NO
+// por la posicion en el array de proyectos: un indice de array puede pasarse
+// distinto (o no pasarse) segun desde donde se llame, lo que causaba que dos
+// proyectos abiertos por primera vez desde sitios distintos cayeran ambos en
+// (40,40), exactamente superpuestos (bug encontrado en verificacion en vivo
+// de W2b). El id siempre esta disponible en cualquier call site, así que el
+// stagger es correcto sin coordinar quien pasa que indice.
 function defaultLayout(projectId: number): CardLayout {
-  // Un proyecto nuevo nace en la estanteria (metafora: libros que aun no has
-  // sacado). x/y/w/h por defecto solo importan si el usuario lo saca sin
-  // haberlo movido nunca — stagger para que no nazcan todos superpuestos.
+  // Una tarjeta nueva nace en la estanteria/oculta (metafora: libros que aun
+  // no has sacado). x/y/w/h por defecto solo importan si el usuario la saca
+  // sin haberla movido nunca — stagger para que no nazcan todas superpuestas.
   const stagger = (projectId % 5) * 28;
   return {
     x: 40 + stagger,
@@ -73,14 +73,21 @@ function defaultLayout(projectId: number): CardLayout {
   };
 }
 
-/** Disposicion de TODAS las tarjetas — una sola instancia en WorkspaceCanvas. */
-export function useWorkspaceLayouts() {
-  const [layouts, setLayouts] = useState<Record<number, CardLayout>>(() => readStore());
-  const zCounter = useRef(1 + Math.max(0, ...Object.values(readStore()).map((l) => l.zIndex)));
+/** Disposicion de TODAS las tarjetas de un mismo tipo (proyectos o agentes) —
+ * una instancia por tipo en WorkspaceCanvas, cada una con su propia clave de
+ * localStorage (V0.87 W4: las tarjetas de agente reusan EXACTAMENTE esta
+ * mecanica — arrastre/resize/expandir/estanteria — pedido explicito del
+ * usuario: "exactamente el mismo funcionamiento que las tarjetas de
+ * proyecto". Los espacios de ids de Project y Agent son independientes
+ * (ambos autoincrementales desde 1), asi que NO pueden compartir la misma
+ * clave sin colisionar — de ahi el storageKey parametrizado). */
+export function useWorkspaceLayouts(storageKey: string = STORAGE_KEY) {
+  const [layouts, setLayouts] = useState<Record<number, CardLayout>>(() => readStore(storageKey));
+  const zCounter = useRef(1 + Math.max(0, ...Object.values(readStore(storageKey)).map((l) => l.zIndex)));
 
   useEffect(() => {
-    writeStore(layouts);
-  }, [layouts]);
+    writeStore(storageKey, layouts);
+  }, [storageKey, layouts]);
 
   const getLayout = useCallback(
     (projectId: number): CardLayout => layouts[projectId] ?? defaultLayout(projectId),
@@ -126,7 +133,18 @@ export function useWorkspaceLayouts() {
     [layouts, setLayout, bringToFront],
   );
 
-  return { getLayout, setLayout, bringToFront, openFromShelf, sendToShelf, toggleExpanded };
+  // Ids con una tarjeta actualmente NO guardada (visible en el lienzo).
+  // Deriva de la MISMA fuente persistida — para proyectos el caller ya tiene
+  // su propia lista completa (`projects`) y filtra sobre ella; para agentes
+  // (V0.87 W4) no existe un listado global equivalente en WorkspaceCanvas
+  // (son datos de cada proyecto, cargados perezosamente), asi que esto es lo
+  // que le permite saber cuales reabrir al recargar la pagina sin tener que
+  // mantener un estado de React aparte que se perderia al refrescar.
+  const openIds = Object.entries(layouts)
+    .filter(([, l]) => !l.shelved)
+    .map(([id]) => Number(id));
+
+  return { getLayout, setLayout, bringToFront, openFromShelf, sendToShelf, toggleExpanded, openIds };
 }
 
 type ResizeDir = "n" | "s" | "e" | "w" | "ne" | "nw" | "se" | "sw";

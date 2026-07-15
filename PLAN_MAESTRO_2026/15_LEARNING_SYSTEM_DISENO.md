@@ -45,6 +45,7 @@ Dos propiedades no negociables:
 | Prompts efectivos/ineficientes | pares (goal del nodo → validation.ok) en traces; NO se guardan prompts crudos, se destilan plantillas | V1.1 |
 | Workflows y automatizaciones | `automation_executions` + Automation Memory | V0.9 |
 | Documentación leída / código generado / bugs | resultados de nodos con `source="tie"` en el MOS + `mem_error` | V1.0+ |
+| **[Δ 2026-07-15]** Estimado vs real, bloqueos, retrasos por milestone (WPMS, doc 18 §7) | `Task.estimate` vs `created_at`→`closed_at`; `Task.depends_on` sin resolver; eventos `task.status_changed`/`task.closed`/`milestone.completed` (`app/core/events.py`, doc 18 §10) — el Learner se suscribe, **propone, nunca toca el Workspace** (doc 18 §7) | V0.87 (datos ya se emiten) → V1.1 (el Learner los consume) |
 
 Conclusión de auditoría: **cero instrumentación nueva** — el diseño de traces
 (11 B.1), Decision API y Error Memory ya era el collect del Learner. Único añadido:

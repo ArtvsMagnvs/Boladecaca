@@ -37,7 +37,12 @@ backend/app/automation/
 
 **Triggers** — V0.9 implementa `ScheduleTrigger` (cron/interval) y `EventTrigger`
 (reactivo: escucha el job de ingesta del MOS y el triaje de email — NUNCA hace su
-propio polling a Gmail/Calendar, P07 §6.2). Stubs con interfaz definida:
+propio polling a Gmail/Calendar, P07 §6.2). **[Δ 2026-07-15]** `EventTrigger`
+también puede suscribirse a los eventos del WPMS ya emitidos desde V0.87
+(`app/core/events.py`, doc 18 §10): `task.created`, `task.status_changed`
+(`{task_id, from, to}`), `task.closed`, `milestone.completed`,
+`project.progress_changed` — el WPMS "emite y sigue" (doc 18 §10), listo para
+que V0.9 se suscriba sin tocar `app/workspace/`. Stubs con interfaz definida:
 `ConditionTrigger`, `PatternTrigger` (lo alimentará el LLL, V1.2), `MemoryTrigger`
 (V1.2), `WebhookTrigger` (V1.x).
 
@@ -45,9 +50,15 @@ propio polling a Gmail/Calendar, P07 §6.2). Stubs con interfaz definida:
 And/Or/Not (la composición es barata y evita rediseño). Stub: `UserStateCondition`.
 
 **Actions** — V0.9: `TelegramMessageAction` (vía Gateway, no vía bot directo),
-`EmailSummaryAction`, `ChatQueryAction`, `AgentTaskAction`. Stubs:
-`SkillExecutionAction` (V1.1, LSL), `CalendarBlockAction`, `ChainedRuleAction`,
-`MemoryUpdateAction` (V1.x). Aislamiento: acción fallida → `mem_error` + siguiente.
+`EmailSummaryAction`, `ChatQueryAction`, `AgentTaskAction`. **[Δ 2026-07-15]**
+`WorkspaceAction` (crear/cerrar/mover tarea, recordatorio de deadline —
+prometida en doc 18 §7 fila "Automation Engine", implementación real aquí):
+usa la API pública `app.workspace.workspace_service` (`create`/`update`/
+`recompute_project_progress` ya hacen su propio recálculo de progreso y
+emiten sus propios eventos, doc 18 §8/§10 — el AE nunca recalcula progreso a
+mano). Stubs: `SkillExecutionAction` (V1.1, LSL), `CalendarBlockAction`,
+`ChainedRuleAction`, `MemoryUpdateAction` (V1.x). Aislamiento: acción fallida
+→ `mem_error` + siguiente.
 
 **Learner** — stub completo en V0.9 (`record_feedback/suggest_new_rule/
 suggest_rule_improvement` → NotImplementedError("V1.2")). El feedback SÍ se
@@ -70,7 +81,7 @@ captura desde V0.9 vía Decision API (ver A.3) — el Learner de V1.2 nace con d
 
 | Punto | API MOS | Detalle |
 |---|---|---|
-| `daily_briefing` | `GET /api/memory/briefing` + `context()` | **sin llamadas en caliente a Gmail** — consume lo que la ingesta de V0.85 ya indexó |
+| `daily_briefing` | `GET /api/memory/briefing` + `context()` | **sin llamadas en caliente a Gmail** — consume lo que la ingesta de V0.85 ya indexó. **[Δ 2026-07-15]** desde V0.87 el mismo JSON trae `workspace` (milestone activo, deadlines, alta prioridad, bloqueos, actividad reciente — `workspace_service.briefing_snapshot`, doc 18 §7): sin llamadas nuevas, la regla `daily_briefing` de V0.9 hereda esos datos gratis |
 | Resultado de cada regla | `Memory API.add(type=AUTOMATION)` | historial de automatizaciones |
 | Aprobación/rechazo | `Decision API.store_decision()` | aprendizaje de preferencias |
 | Error de acción | `Memory API.add(type=ERROR)` | base de errores para el LLL |

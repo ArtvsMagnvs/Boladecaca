@@ -85,6 +85,17 @@ def delete_project(project_id: int, db: Session = Depends(get_db)):
     return {"message": "Project deleted"}
 
 
+@projects_router.post("/{project_id}/archive", response_model=ProjectResponse)
+async def archive_project(project_id: int, db: Session = Depends(get_db)):
+    """Archiva un proyecto — sella `archived_at` y destila un resumen final a
+    mem_project (doc 18 §5.1). Los proyectos se archivan, no se borran; siguen
+    listados y consultables, solo dejan de contar como activos."""
+    project = await workspace_service.archive_project(project_id, db)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    return project
+
+
 # ===========================================================================
 # TASKS — contrato identico al viejo tasks.py + progreso automatico (§8)
 # ===========================================================================
@@ -99,14 +110,20 @@ def get_tasks(
 
 
 @tasks_router.post("/", response_model=TaskResponse, status_code=201)
-def create_task(task_data: TaskCreate, db: Session = Depends(get_db)):
-    """Create a new task. Recalcula el progreso del proyecto (doc 18 §8)."""
+async def create_task(task_data: TaskCreate, db: Session = Depends(get_db)):
+    """Create a new task. Recalcula el progreso del proyecto (doc 18 §8) y
+    emite `task.created` (+ `task.closed` si nace ya en un estado 'hecho',
+    doc 18 §10). `async def` a proposito: los eventos/MOS necesitan un event
+    loop corriendo en el hilo (ver nota de concurrencia en workspace/service.py)."""
     task = Task(**task_data.model_dump())
-    workspace_service.apply_task_status_side_effects(task)  # closed_at si nace 'done'
+    just_closed = workspace_service.apply_task_status_side_effects(task)  # closed_at si nace 'done'
     db.add(task)
     db.commit()
     db.refresh(task)
     workspace_service.recompute_project_progress(task.project_id, db)
+    workspace_service.emit_task_created(task)
+    if just_closed:
+        await workspace_service.on_task_closed(task, db)
     return task
 
 
@@ -120,17 +137,19 @@ def get_task(task_id: int, db: Session = Depends(get_db)):
 
 
 @tasks_router.put("/{task_id}", response_model=TaskResponse)
-def update_task(task_id: int, task_data: TaskUpdate, db: Session = Depends(get_db)):
-    """Update a task. Mantiene closed_at coherente y recalcula el progreso de
-    los proyectos afectados (el viejo y el nuevo si la tarea cambia de proyecto)."""
+async def update_task(task_id: int, task_data: TaskUpdate, db: Session = Depends(get_db)):
+    """Update a task. Mantiene closed_at coherente, recalcula el progreso de
+    los proyectos afectados (el viejo y el nuevo si la tarea cambia de
+    proyecto) y emite `task.status_changed`/`task.closed` (doc 18 §10)."""
     task = db.query(Task).filter(Task.id == task_id).first()
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
 
     old_project_id = task.project_id
+    old_status = task.status
     for key, value in task_data.model_dump(exclude_unset=True).items():
         setattr(task, key, value)
-    workspace_service.apply_task_status_side_effects(task)
+    just_closed = workspace_service.apply_task_status_side_effects(task)
 
     db.commit()
     db.refresh(task)
@@ -138,12 +157,18 @@ def update_task(task_id: int, task_data: TaskUpdate, db: Session = Depends(get_d
     workspace_service.recompute_project_progress(task.project_id, db)
     if old_project_id is not None and old_project_id != task.project_id:
         workspace_service.recompute_project_progress(old_project_id, db)
+
+    if task.status != old_status:
+        workspace_service.emit_task_status_changed(task, old_status, task.status)
+    if just_closed:
+        await workspace_service.on_task_closed(task, db)
     return task
 
 
 @tasks_router.delete("/{task_id}")
-def delete_task(task_id: int, db: Session = Depends(get_db)):
-    """Delete a task. Recalcula el progreso del proyecto que la contenia."""
+async def delete_task(task_id: int, db: Session = Depends(get_db)):
+    """Delete a task. Recalcula el progreso del proyecto que la contenia
+    (puede emitir `project.progress_changed`, doc 18 §10)."""
     task = db.query(Task).filter(Task.id == task_id).first()
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
@@ -211,10 +236,11 @@ def update_milestone(milestone_id: int, data: MilestoneUpdate, db: Session = Dep
 
 
 @milestones_router.post("/{milestone_id}/complete", response_model=MilestoneResponse)
-def complete_milestone(milestone_id: int, db: Session = Depends(get_db)):
-    """Marca un milestone como completado: propaga la version al proyecto y
-    activa el siguiente (doc 18 §6). El destilado al MOS + evento son W3."""
-    m = workspace_service.complete_milestone(milestone_id, db)
+async def complete_milestone(milestone_id: int, db: Session = Depends(get_db)):
+    """Marca un milestone como completado: propaga la version al proyecto,
+    activa el siguiente (doc 18 §6), destila un resumen a mem_project y emite
+    `milestone.completed` (doc 18 §5.1, §10)."""
+    m = await workspace_service.complete_milestone(milestone_id, db)
     if not m:
         raise HTTPException(status_code=404, detail="Milestone not found")
     return _milestone_out(m, db)

@@ -238,3 +238,132 @@ def test_borrar_milestone_deja_tareas_en_backlog(client):
     # la tarea sobrevive, sin milestone (backlog) — doc 18 §4
     back = client.get(f"/api/tasks/{t['id']}").json()
     assert back["milestone_id"] is None
+
+
+# ======================================================================
+# Parte 7 — integracion MOS/eventos (W4, doc 18 §5, §10)
+# ======================================================================
+import asyncio  # noqa: E402
+
+
+def test_completar_milestone_distila_a_mem_project(client):
+    from app.memory import MemoryType, memory_router
+
+    proj = client.post("/api/projects/", json={"name": "P W4"}).json()
+    m = client.post("/api/milestones/", json={
+        "project_id": proj["id"], "name": "M1", "version": "1.0", "description": "primer hito",
+    }).json()
+
+    r = client.post(f"/api/milestones/{m['id']}/complete")
+    assert r.status_code == 200
+
+    item = asyncio.run(memory_router.retrieve(f"{MemoryType.PROJECT.value}:milestone:{m['id']}"))
+    assert item is not None
+    assert "M1" in item.content
+    assert item.metadata.get("kind") == "milestone_completed"
+
+
+def test_tarea_cerrada_con_decision_crea_decision(client):
+    from app.db.database import SessionLocal
+    from app.db.models import Decision
+
+    proj = client.post("/api/projects/", json={"name": "P Decision"}).json()
+    t = client.post("/api/tasks/", json={"title": "Elegir DB", "project_id": proj["id"]}).json()
+
+    r = client.put(f"/api/tasks/{t['id']}", json={
+        "status": "completed",
+        "links": {"decision": "Usamos Postgres en vez de SQLite en produccion"},
+    })
+    assert r.status_code == 200
+
+    db = SessionLocal()
+    try:
+        found = db.query(Decision).filter(Decision.title == "Elegir DB").first()
+    finally:
+        db.close()
+    assert found is not None
+    assert "Postgres" in found.body
+    assert found.project == "P Decision"
+
+
+def test_tarea_cerrada_sin_decision_no_crea_decision(client):
+    from app.db.database import SessionLocal
+    from app.db.models import Decision
+
+    proj = client.post("/api/projects/", json={"name": "P Sin Decision"}).json()
+    t = client.post("/api/tasks/", json={"title": "Tarea simple", "project_id": proj["id"]}).json()
+    client.put(f"/api/tasks/{t['id']}", json={"status": "completed"})
+
+    db = SessionLocal()
+    try:
+        found = db.query(Decision).filter(Decision.title == "Tarea simple").first()
+    finally:
+        db.close()
+    assert found is None
+
+
+def test_eventos_task_created_status_changed_closed(client, monkeypatch):
+    emitted = []
+    monkeypatch.setattr(
+        "app.workspace.service.emit",
+        lambda name, source, payload=None: emitted.append((name, payload)),
+    )
+
+    proj = client.post("/api/projects/", json={"name": "P Events"}).json()
+    t = client.post("/api/tasks/", json={"title": "T Events", "project_id": proj["id"]}).json()
+    client.put(f"/api/tasks/{t['id']}", json={"status": "in_progress"})
+    client.put(f"/api/tasks/{t['id']}", json={"status": "completed"})
+
+    names = [n for n, _ in emitted]
+    assert "task.created" in names
+    assert "task.status_changed" in names
+    assert "task.closed" in names
+    assert "project.progress_changed" in names
+
+    status_changes = [p for n, p in emitted if n == "task.status_changed"]
+    assert {"task_id": t["id"], "project_id": proj["id"], "from": "pending", "to": "in_progress"} in status_changes
+
+
+def test_archivar_proyecto_distila_resumen_y_es_idempotente(client):
+    from app.memory import MemoryType, memory_router
+
+    proj = client.post("/api/projects/", json={"name": "P Archive", "current_version": "1.0"}).json()
+
+    r1 = client.post(f"/api/projects/{proj['id']}/archive")
+    assert r1.status_code == 200
+    first_archived_at = r1.json()["archived_at"]
+    assert first_archived_at is not None
+
+    # segunda llamada es idempotente: no reescribe archived_at
+    r2 = client.post(f"/api/projects/{proj['id']}/archive")
+    assert r2.json()["archived_at"] == first_archived_at
+
+    item = asyncio.run(memory_router.retrieve(f"{MemoryType.PROJECT.value}:project_archived:{proj['id']}"))
+    assert item is not None
+    assert "archivado" in item.content
+
+
+def test_briefing_snapshot_incluye_milestone_activo_y_deadlines(client):
+    from datetime import datetime, timedelta
+
+    from app.db.database import SessionLocal
+    from app.workspace import workspace_service
+
+    proj = client.post("/api/projects/", json={"name": "P Briefing"}).json()
+    m = client.post("/api/milestones/", json={
+        "project_id": proj["id"], "name": "Activo", "status": "active",
+    }).json()
+    due = (datetime.utcnow() + timedelta(days=2)).isoformat()
+    client.post("/api/tasks/", json={
+        "title": "Deadline cercano", "project_id": proj["id"], "due_date": due, "priority": "high",
+    })
+
+    db = SessionLocal()
+    try:
+        snap = workspace_service.briefing_snapshot(db)
+    finally:
+        db.close()
+
+    assert any(x["milestone_id"] == m["id"] for x in snap["active_milestones"])
+    assert any(x["title"] == "Deadline cercano" for x in snap["upcoming_deadlines"])
+    assert any(x["title"] == "Deadline cercano" for x in snap["high_priority_open"])

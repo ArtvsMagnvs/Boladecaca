@@ -31,17 +31,18 @@ function saveOrder(projectId: number, order: number[]) {
 interface Props {
   projectId: number;
   size: ChipSize; // calculado por ProjectCard segun el alto/ancho disponible
-  // W2d/W2e: un solo clic abre la pantalla completa del agente (vive en
-  // WorkspaceCanvas, no aqui — debe poder cubrir todo el canvas). Ya no hay
-  // popup de detalle de solo lectura como alternativa (retirado en W2e).
-  onOpenFullscreen: (agentId: number) => void;
-  // W2d: sube cada vez que se cierra la pantalla completa de un agente — la
-  // pantalla completa es OTRA instancia con sus propios datos, asi que esta
-  // seccion no se entera sola si is_active/icon cambiaron ahi.
+  // V0.87 (W4): un clic abre (o trae al frente) la ventana-tarjeta del
+  // agente — vive en WorkspaceCanvas, no aqui, con la misma mecanica de
+  // arrastre/resize/expandir que una ProjectCard (ya no es "pantalla
+  // completa" fija, el usuario elige el tamaño).
+  onOpenAgent: (agentId: number) => void;
+  // Sube cada vez que algo cambia en la ventana del agente (icono/estado/
+  // edicion) — esa ventana es OTRA instancia con sus propios datos, asi que
+  // esta seccion no se entera sola.
   refreshTick?: number;
 }
 
-export function AgentsSection({ projectId, size, onOpenFullscreen, refreshTick }: Props) {
+export function AgentsSection({ projectId, size, onOpenAgent, refreshTick }: Props) {
   const [agents, setAgents] = useState<Agent[]>([]);
   const [order, setOrder] = useState<number[]>(() => loadOrder(projectId));
   const [execByAgent, setExecByAgent] = useState<Record<number, AgentExecution[]>>({});
@@ -168,7 +169,7 @@ export function AgentsSection({ projectId, size, onOpenFullscreen, refreshTick }
                 lastExecutionFailed={lastFailed(a.id)}
                 executions={execByAgent[a.id] ?? []}
                 isDragging={dragId === a.id}
-                onOpen={() => onOpenFullscreen(a.id)}
+                onOpen={() => onOpenAgent(a.id)}
               />
             </div>
           ))}

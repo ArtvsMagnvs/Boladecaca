@@ -221,6 +221,12 @@ solo archivo propio; 0 menciones a "Hermes" en la UI. (4-5 sesiones + H0.)
 - **MCP server**: ToolManager expuesto (whitelist + gates intactos). **MCP client**:
   `MCPToolProxy` — tools externas con las mismas validaciones; Hermes las ve vía
   `AitheraToolProvider` sin cambios.
+- **[Δ 2026-07-15] GitHub vía MCP client**: `Project.github_url` (V0.87 WPMS
+  W2e, `frontend/.../ProjectPopup.tsx`) ya existe como campo — hoy solo
+  guarda el enlace, sin llamar a ninguna API. Aquí es donde se conecta de
+  verdad: crear repo (el botón stub "Crear repositorio" pasa a hacer la
+  llamada real), leer issues/PRs, y el TIE v2 pudiendo abrir/enlazar PRs
+  desde una misión. Cero migración nueva — el dato ya está.
 - **TIE v2** (doc 14 §5): olas paralelas con semáforo, retry + replan de subárbol
   (los nodos DONE son inmutables), presupuestos de coste DUROS por misión (medidos
   desde V1.0), Mission Manager persistente (tabla `missions` + panel en el Hub +
