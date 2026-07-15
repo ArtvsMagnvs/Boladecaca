@@ -108,11 +108,18 @@ reusa TODO el sistema".
 
 ## 4. Sprints
 
+Orden: **A1 · A2a · A2b · A3 · A3b · A4**.
+
 > **A2 se divide en A2a + A2b** por carga: los [Δ 2026-07-13] del doc 11 metieron
 > en A2 dos trabajos grandes de infra (construir `lifecycle.py` + httpx
 > persistente) que no estaban en el sprint original. Se parte igual que W2→W2a-e
 > del bloque anterior: **A2a = infraestructura**, **A2b = motor de reglas**.
 > Criterio de producto, no capricho.
+>
+> **A3b (Permisos & Autonomía)** se añade (petición del usuario, 2026-07-16): la
+> capa de política sobre el ApprovalGate (toggles de permisos + selector de
+> autonomía en Ajustes). Va después de A3 (hay que tener acciones que gobernar) y
+> antes de A4 (cierre).
 
 ### A1 — ApprovalGate + esquema + migración del email-confirm
 
@@ -282,6 +289,75 @@ Stubs con interfaz: `SkillExecutionAction` (V1.1), `CalendarBlockAction`,
 **Done**: se activa `daily_briefing` desde la UI, dispara a la hora, y (si requiere
 aprobación) aparece en pendientes y se resuelve; una `WorkspaceAction` cierra una
 tarea real y el progreso se recalcula solo; verificado en vivo contra el backend real.
+
+---
+
+### A3b — Permisos & Autonomía (capa de política sobre el ApprovalGate + UI en Ajustes)
+
+**Origen**: petición del usuario (2026-07-16). El ApprovalGate (A1) es el
+mecanismo HITL en tiempo de ejecución; A3b añade la **capa de política** que va
+encima: el usuario controla desde Ajustes qué acciones se pre-autorizan (pasan
+directas) y cuáles siguen abriendo el gate. Coherente con la "autonomía gradual"
+que el proyecto ya usa en el email (V0.7.3: propose→auto). **Va después de A3**
+(cuando ya existen las acciones que gobernar) y **antes de A4** (cierre).
+
+**Modelo recomendado**: Sonnet · Alto (toca el comportamiento del gate —
+auto-aprobar = saltar HITL— así que la corrección importa; la UI son toggles).
+
+**Archivos**: `app/automation/permissions.py` (NEW, catálogo declarativo +
+`permission_service`), `app/automation/approval.py` (consulta la política),
+`app/api/endpoints/automation.py` (endpoints de permisos), `frontend/src/
+pages/Settings.tsx` (sección "Permisos"), `frontend/src/components/` (toggle
+reutilizable), `lib/api.ts`.
+
+**Tareas**:
+- **Catálogo declarativo de permisos** (`permissions.py`): una lista de
+  `PermissionDef {id, label (humano, sin tecnicismos), description, group,
+  risk, available}` que se auto-registra. IDs por capacidad sensible:
+  `email.send`, `workspace.write`, `agent.execute`, `shell.run`,
+  `filesystem.write`, `git.write`, `telegram.send` (existentes) +
+  `browser.use`, `computer.use` (FUTUROS: aparecen ya en el catálogo con
+  `available=false` → la UI los muestra como "próximamente", y se activan solos
+  cuando la tool exista). Cada acción/tool declara qué permiso requiere → una
+  tool nueva aparece sola en la UI (mismo patrón que `api.getTools()`).
+- **Estado persistido**: en la tabla `Config` (key-value, patrón del proyecto):
+  `permission.<id> = on|off` + `autonomy_profile`. `permission_service`:
+  `is_pre_authorized(permission)`, `set(permission, on)`, `apply_profile(name)`,
+  `catalog()` (catálogo + estado).
+- **Perfiles de autonomía** (el selector rápido de arriba, tipo "omitir
+  permisos" de Claude): `manual` (todo OFF = pregunta todo, el default seguro),
+  `balanced` (bajo riesgo ON, sensibles OFF), `full` (todo ON = autónomo).
+  Aplicar un perfil setea los toggles; el usuario puede ajustar cada uno luego.
+- **Integración con el gate**: `request_approval` (o su caller) consulta
+  `permission_service.is_pre_authorized(...)`. Pre-autorizado → ejecuta directo
+  PERO deja rastro en `approvals` con `resolution="auto"` (transparencia: incluso
+  en modo autónomo hay auditoría, nunca se salta en silencio). No autorizado →
+  gate normal. Esto es EL punto de integración HITL — cuidado con la corrección.
+- **Endpoints**: `GET /api/automation/permissions` (catálogo + estado + perfil),
+  `POST /api/automation/permissions` (`{id, enabled}`), `POST /api/automation/
+  permissions/profile` (`{profile}`).
+- **UI (Ajustes → Permisos)**: (1) arriba, el selector de perfil (3 opciones:
+  "Preguntar siempre" / "Equilibrado" / "Autónomo", con aviso en la autónoma);
+  (2) debajo, los permisos agrupados por categoría, cada uno con un **toggle
+  on/off sin texto** (bolita que se desliza, azul —accent— cuando activo), el
+  componente reutilizable que pidió el usuario; (3) los permisos futuros
+  (`browser.use`, `computer.use`) aparecen deshabilitados con nota "próximamente".
+  Lenguaje sencillo, sin tecnicismos, para usuario común.
+
+**Tests**: `test_permissions.py` (catálogo; toggle persiste en Config; perfil
+setea todos; `is_pre_authorized` correcto; un permiso OFF abre el gate, ON lo
+auto-resuelve con `resolution="auto"` y rastro en `approvals`).
+
+**Done**: en Ajustes → Permisos se ven los toggles agrupados + el selector arriba;
+apagar `email.send` hace que un envío iniciado por IA pida aprobación; encenderlo
+lo deja pasar directo (con rastro `resolution="auto"`); cambiar a "Autónomo"
+pre-autoriza todo; verificado en vivo.
+
+**Conexión** — *atrás*: ApprovalGate (A1), acciones (A3), catálogo de tools
+(`api.getTools`, ya auto-actualizable), Config key-value. *Adelante*: cada tool
+futura (browser, computer use — V1.x) declara su permiso y aparece sola; el
+Orchestrator (V1.0) y Hermes (V1.1) consultan la MISMA política (un solo punto de
+verdad de permisos); el perfil "Autónomo" es el equivalente al "omitir permisos".
 
 ---
 
