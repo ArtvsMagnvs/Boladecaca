@@ -28,11 +28,14 @@ interface Props {
   isOverShelf: (clientX: number, clientY: number) => boolean;
   onEditProject: () => void;
   onProjectsRefresh: () => void;
+  onOpenAgentFullscreen: (agentId: number) => void; // W2d
+  agentsRefreshTick: number; // W2d: fuerza refetch de AgentsSection al cerrar la pantalla completa
 }
 
 export function ProjectCard({
   project, allProjects, layout, bounds, onInteractStart, onCommit,
   onMinimize, onToggleExpanded, isOverShelf, onEditProject, onProjectsRefresh,
+  onOpenAgentFullscreen, agentsRefreshTick,
 }: Props) {
   // Alto "en vivo" mientras se arrastra un asa de resize — separado del
   // layout.h ya confirmado (el que vive en el padre + localStorage). Pedido
@@ -223,7 +226,12 @@ export function ProjectCard({
                 remontar aqui dispararia el fetch de AgentsSection en cada cruce.
                 Ocultar por CSS mantiene sus datos ya cargados entre umbrales. */}
             <div className={showAgentsIcons ? "" : "hidden"}>
-              <AgentsSection projectId={project.id} size={showAgentsFull ? "full" : "icon"} />
+              <AgentsSection
+                projectId={project.id}
+                size={showAgentsFull ? "full" : "icon"}
+                onOpenFullscreen={onOpenAgentFullscreen}
+                refreshTick={agentsRefreshTick}
+              />
             </div>
 
             {showAgentsFull && (

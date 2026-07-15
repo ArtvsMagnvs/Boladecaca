@@ -32,14 +32,18 @@ function saveOrder(projectId: number, order: number[]) {
 interface Props {
   projectId: number;
   size: ChipSize; // calculado por ProjectCard segun el alto/ancho disponible
-  // W2d abrira aqui la pantalla completa del agente; hasta entonces el doble
-  // clic degrada con gracia al mismo popup de detalle que el clic simple
-  // (ver onDoubleClickAgent mas abajo) — no hace falta que ProjectCard sepa
-  // nada de esto todavia.
+  // W2d: doble clic abre la pantalla completa del agente (vive en
+  // WorkspaceCanvas, no aqui — debe poder cubrir todo el canvas). Si no se
+  // pasa (no deberia pasar en producción), degrada con gracia al mismo
+  // popup de detalle que el clic simple.
   onOpenFullscreen?: (agentId: number) => void;
+  // W2d: sube cada vez que se cierra la pantalla completa de un agente — la
+  // pantalla completa es OTRA instancia con sus propios datos, asi que esta
+  // seccion no se entera sola si is_active/icon cambiaron ahi.
+  refreshTick?: number;
 }
 
-export function AgentsSection({ projectId, size, onOpenFullscreen }: Props) {
+export function AgentsSection({ projectId, size, onOpenFullscreen, refreshTick }: Props) {
   const [agents, setAgents] = useState<Agent[]>([]);
   const [order, setOrder] = useState<number[]>(() => loadOrder(projectId));
   const [execByAgent, setExecByAgent] = useState<Record<number, AgentExecution[]>>({});
@@ -61,7 +65,7 @@ export function AgentsSection({ projectId, size, onOpenFullscreen }: Props) {
       need.map(async (a) => [a.id, await api.getAgentExecutions(a.id, 20).catch(() => [])] as const),
     );
     setExecByAgent(Object.fromEntries(pairs));
-  }, [projectId, size]);
+  }, [projectId, size, refreshTick]);
 
   useEffect(() => {
     load().catch(() => {});

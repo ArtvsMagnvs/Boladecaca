@@ -4,11 +4,12 @@
 // se modifica"), atenuado y sin interaccion. NO es el AVCS completo de doc 13
 // (ParticleEngine full-bleed, V0.82/V0.83, sin construir todavia) — es el
 // mismo lenguaje visual del Hub reusando el componente que ya existe.
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { Project } from "@/lib/api";
 import { AICore } from "@/components/hub/AICore";
 import { Shelf } from "./Shelf";
 import { ProjectCard } from "./ProjectCard";
+import { AgentFullscreen } from "./AgentFullscreen";
 import { useWorkspaceLayouts } from "./useWindowCard";
 
 interface Props {
@@ -23,6 +24,26 @@ export function WorkspaceCanvas({ projects, onCreateProject, onEditProject, onPr
   const canvasRef = useRef<HTMLDivElement>(null);
   const shelfWrapRef = useRef<HTMLDivElement>(null);
   const [bounds, setBounds] = useState({ width: 800, height: 600 });
+  // V0.87 W2d: el agente a pantalla completa vive AQUI (no dentro de la
+  // ProjectCard pequeña que lo abrio) porque debe ocupar el mismo espacio
+  // que una ProjectCard expandida — el area del Workspace, no los limites
+  // de una tarjeta chica. Por eso se renderiza como overlay del canvas con
+  // z-index por encima de CUALQUIER tarjeta de proyecto.
+  const [fullscreenAgentId, setFullscreenAgentId] = useState<number | null>(null);
+  // Al cerrar la pantalla completa, el AgentChip de la tarjeta pequena que la
+  // abrio es OTRA instancia con sus propios datos ya cargados — no se entera
+  // sola de que is_active/icon pudo cambiar. Subir este contador fuerza a
+  // TODAS las AgentsSection a refetch (barato: son pocos agentes por
+  // proyecto) sin necesitar un bus de eventos para un caso tan puntual.
+  const [agentsRefreshTick, setAgentsRefreshTick] = useState(0);
+  const closeFullscreenAgent = () => {
+    setFullscreenAgentId(null);
+    setAgentsRefreshTick((t) => t + 1);
+  };
+  const maxCardZ = useMemo(
+    () => Math.max(0, ...projects.map((p) => getLayout(p.id).zIndex)),
+    [projects, getLayout],
+  );
 
   useEffect(() => {
     const el = canvasRef.current;
@@ -96,9 +117,17 @@ export function WorkspaceCanvas({ projects, onCreateProject, onEditProject, onPr
               isOverShelf={isOverShelf}
               onEditProject={() => onEditProject(p)}
               onProjectsRefresh={onProjectsRefresh}
+              onOpenAgentFullscreen={setFullscreenAgentId}
+              agentsRefreshTick={agentsRefreshTick}
             />
           );
         })}
+
+        {fullscreenAgentId != null && (
+          <div className="absolute inset-0" style={{ zIndex: maxCardZ + 1000 }}>
+            <AgentFullscreen agentId={fullscreenAgentId} onClose={closeFullscreenAgent} />
+          </div>
+        )}
       </div>
     </div>
   );
