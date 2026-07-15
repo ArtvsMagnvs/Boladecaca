@@ -15,6 +15,7 @@ from pathlib import Path
 APP_DIR = Path(__file__).resolve().parent.parent / "app"
 MEMORY_DIR = APP_DIR / "memory"
 WORKSPACE_DIR = APP_DIR / "workspace"
+AUTOMATION_DIR = APP_DIR / "automation"
 
 # Internos que NADIE de fuera del propio modulo debe importar directamente.
 # Cada entrada: (prefijo de import prohibido, directorio propietario que SI puede).
@@ -26,6 +27,9 @@ FORBIDDEN_MODULES = (
     ("app.workspace.models", WORKSPACE_DIR),
     ("app.workspace.service", WORKSPACE_DIR),
     ("app.workspace.progress", WORKSPACE_DIR),
+    # V0.9 (Automation A1): fronteras del Automation Engine.
+    ("app.automation.models", AUTOMATION_DIR),
+    ("app.automation.approval", AUTOMATION_DIR),
 )
 
 
@@ -61,6 +65,21 @@ def test_workspace_public_api_completa():
     assert not faltan, f"app.workspace no exporta: {sorted(faltan)}"
     assert esperado.issubset(set(ws.__all__)), (
         f"faltan en __all__: {sorted(esperado - set(ws.__all__))}"
+    )
+
+
+def test_automation_public_api_completa():
+    """El barrel app.automation expone la API publica de A1 (doc 20 §2)."""
+    import app.automation as auto
+
+    esperado = {
+        "AutomationRule", "AutomationExecution", "Approval",
+        "ApprovalGate", "ApprovalResult", "approval_gate",
+    }
+    faltan = esperado - set(dir(auto))
+    assert not faltan, f"app.automation no exporta: {sorted(faltan)}"
+    assert esperado.issubset(set(auto.__all__)), (
+        f"faltan en __all__: {sorted(esperado - set(auto.__all__))}"
     )
 
 

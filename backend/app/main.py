@@ -13,6 +13,10 @@ from app.api.endpoints import config, calendar, ai, chat, agents, voice, tools, 
 # (rutas identicas por contrato) + /api/milestones + /api/workspace. Sustituye a
 # los viejos projects.py/tasks.py (eliminados). Mismo patron que el split de email.
 from app.api.endpoints import workspace
+# V0.9 (Automation Engine A1): router del ApprovalGate (/api/automation). El
+# import ademas registra los modelos de app.automation (approvals + automation_*)
+# ANTES del create_all del lifespan, para que se creen en BD nuevas.
+from app.api.endpoints import automation
 # V0.8 (Fase 5 Clientes): router de configuracion del canal Telegram.
 from app.api.endpoints import telegram as telegram_endpoints
 # V0.7.2 (Sprint 2, PLAN_MAESTRO_2026 B4): god-endpoint de email dividido en
@@ -78,6 +82,33 @@ async def lifespan(app: FastAPI):
             )
 
     asyncio.create_task(_init_memory_background())
+
+    # V0.9 (Automation A1): migracion del email-confirm al ApprovalGate. Se
+    # registra el ejecutor "email_send" para que agentes/automatizaciones puedan
+    # PEDIR aprobacion de un envio (request_approval -> al aprobar, este ejecutor
+    # envia de verdad). El /api/email/send con confirmed:true (contrato congelado
+    # por test_email_contracts) sigue intacto para el envio directo desde la UI.
+    # A3 registrara el resto de acciones reales (workspace, telegram, ...).
+    try:
+        from app.automation import approval_gate
+
+        async def _email_send_executor(payload: dict):
+            from app.services.email_service import _email_tool
+
+            tool = _email_tool()
+            return await tool.execute(
+                "send_email",
+                {
+                    "to": payload.get("to"),
+                    "subject": payload.get("subject"),
+                    "body": payload.get("body"),
+                },
+            )
+
+        approval_gate.register_executor("email_send", _email_send_executor)
+        log_info("startup", "ApprovalGate: ejecutor 'email_send' registrado")
+    except Exception as e:
+        log_error("startup", e, "No se pudo registrar el ejecutor email_send del ApprovalGate")
 
     # V0.8 (Fase 5 Clientes): arranque de canales sobre el Gateway. El adapter
     # de Telegram se registra SOLO si hay token en Config; si falta la lib
@@ -222,6 +253,8 @@ app.include_router(tools.router, prefix="/api")
 app.include_router(memory.router, prefix="/api")
 # V0.8 (Fase 5 Clientes): configuracion del canal Telegram (status/configure).
 app.include_router(telegram_endpoints.router, prefix="/api")
+# V0.9 (Automation Engine A1): ApprovalGate (listar/resolver aprobaciones).
+app.include_router(automation.router, prefix="/api")
 
 
 @app.get("/")

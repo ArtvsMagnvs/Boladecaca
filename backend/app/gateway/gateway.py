@@ -112,6 +112,32 @@ class Gateway:
         await adapter.deliver(outbound, envelope)
         return outbound
 
+    # -------------------- push saliente (V0.9) --------------------
+
+    async def notify(self, channel: str, target: Optional[str], message: OutboundMessage) -> bool:
+        """Entrega SALIENTE iniciada por el backend, sin envelope entrante (V0.9,
+        para el ApprovalGate y futuras notificaciones proactivas).
+
+        Construye un envelope sintético sólo con el destino (`user_ref=target`) y
+        llama a `adapter.deliver` — cero cambios en los adapters. El Hub NO es un
+        canal del Gateway (su UI sondea por HTTP), así que `channel="hub"` no
+        entrega nada aquí y devuelve False, como debe.
+
+        Fail-soft: devuelve False si el canal no está registrado o la entrega
+        falla; NUNCA lanza — quien notifica ya hizo su trabajo crítico (p.ej. el
+        gate ya persistió la aprobación), esto es best-effort.
+        """
+        adapter = self._adapters.get((channel or "").strip().lower())
+        if adapter is None or not target:
+            return False
+        try:
+            synthetic = MessageEnvelope(channel=channel, user_ref=str(target), text="")
+            await adapter.deliver(message, synthetic)
+            return True
+        except Exception as e:
+            logger.error(f"[gateway] notify a {channel!r} falló: {e!r}")
+            return False
+
     # -------------------- ciclo de vida --------------------
 
     async def start_all(self) -> None:

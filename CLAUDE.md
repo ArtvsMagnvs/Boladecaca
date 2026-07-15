@@ -505,7 +505,53 @@ orquestador) → W3b (Kanban) → W4 (integración MOS/eventos/briefing/Hub).
   devolviendo `workspace` con el milestone activo real del usuario
   ("Niide y El Círculo Dárico" 1/2) y actividad reciente real, Hub sin errores
   de consola. **V0.87 WPMS — BLOQUE CERRADO.**
-- **V0.9** — Automation Engine (APScheduler + reglas + sistema de aprobaciones)
+
+**V0.9 — Automation Engine + ApprovalGate (en curso sobre `master`; plan de
+sesiones detallado en `PLAN_MAESTRO_2026/20_V09_PLAN_SESIONES.md`, sprints
+A1·A2a·A2b·A3·A4).**
+- ✅ **A1 — ApprovalGate (el primitivo genérico) + esquema v0.9 + migración del
+  email-confirm** (`app/automation/`, módulo nuevo): el ApprovalGate es EL
+  cimiento que reusan V0.9 (acciones), V1.0 (steps del Orchestrator con
+  `approval_required`) y V1.1 (Hermes/skills). Migración Alembic 18.ª
+  `d0e1f2a3b4c5_v09_automation_schema` (esquema-primero, patrón M1/W1, aplicada
+  al Postgres real de inmediato y verificada — datos intactos 7/6/9): crea las 3
+  tablas de V0.9 por adelantado (`approvals`, `automation_rules`,
+  `automation_executions` —estas dos últimas se USAN en A2b, aquí solo se crean—)
+  + columna aditiva `agent_executions.checkpoint_data` (para que en V1.0 los
+  planes multi-paso reanuden con el MISMO gate sin migración nueva). Modelos en
+  `app/automation/models.py` (disciplina modular doc 16: API pública en
+  `__init__.py`, fronteras en `test_module_boundaries.py`). **`ApprovalGate`**
+  (`approval.py`, singleton `approval_gate`): `request_approval` (persiste
+  `Approval(status=pending)`, notifica por el canal de origen best-effort, emite
+  `approval.requested`) · `resolve` (**idempotente por claim atómico** —un
+  `UPDATE ... WHERE status=pending` reclama la transición, solo el primer resolver
+  ejecuta; reconstruye la acción desde `(action_type, action_payload)` vía el
+  **registro de ejecutores** inyectable —para que A3 enchufe acciones reales sin
+  que el gate importe `actions.py`, evita ciclo—; escribe en la **Decision API**;
+  emite `approval.resolved`) · `list_pending` · `get`. **Reanudable tras
+  reinicio**: todo el estado vive en la fila `approvals`, así que un gate nuevo
+  resuelve una aprobación creada antes (probado). **Δ8 `gateway.notify(channel,
+  target, OutboundMessage)`**: push saliente sin envelope entrante (envelope
+  sintético → `adapter.deliver`, cero cambios en adapters; el Hub no es canal del
+  Gateway → sondea `GET /api/automation/approvals`). Endpoints `automation.py`
+  (`/api/automation`): `GET /approvals`, `GET /approvals/{id}`, `POST
+  /approvals/{id}/resolve`. **Migración del email-confirm**: `/api/email/send`
+  con `confirmed:true` sigue INTACTO (contrato congelado por
+  `test_email_contracts`); se registra en el `lifespan` el ejecutor `email_send`
+  para que agentes/automatizaciones pidan aprobación de un envío (A3 conectará el
+  resto de acciones). Tests: `test_approval_gate.py` (10: pending, aprobado
+  ejecuta + escribe decision, rechazado no ejecuta, **reanudación tras reinicio**,
+  **idempotencia doble-resolve**, sin-ejecutor no rompe, eventos, endpoints,
+  ejecutor email_send registrado) + `test_module_boundaries` extendido.
+  **Verificado en vivo contra el Postgres real** (no solo SQLite de tests):
+  crear→pending→resolver ejecuta con el payload correcto, doble-resolve
+  idempotente, decisión escrita y enlazada, limpieza sin ensuciar la BD. Suite:
+  **279 passed** (269 previos + 10 de A1), 1 fallo **pre-existente y ajeno**
+  (`test_summarize_filtra_por_rango_de_fechas`, ChromaDB del MOS V0.85 — reproduce
+  sin los cambios de A1, trazado como tarea aparte).
+- **V0.9 pendiente**: A2a (APScheduler + `lifecycle.py` + httpx persistente), A2b
+  (motor + triggers + conditions), A3 (5 acciones + 5 reglas + UI), A4
+  (integración MOS + Learner stub + cierre/tag v0.9.0).
 - **V1.0** — Orchestrator (intent analyzer + planner + Claude Code Agent)
 - **V1.1** — Hermes (Nous Research) como sistema de agentes bajo el Orchestrator
 

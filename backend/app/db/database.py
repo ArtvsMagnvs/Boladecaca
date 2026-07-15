@@ -310,6 +310,12 @@ class AgentExecution(Base):
     tool_calls = Column(Text)
     started_at = Column(DateTime)
     completed_at = Column(DateTime)
+    # V0.9 (Automation A1, doc 11 §A.2): estado de reanudación para cuando un
+    # step de ejecución queda 'waiting_approval' (el patrón interrupt() del
+    # ApprovalGate). Aditivo y nullable — en V0.9 el AE usa la tabla `approvals`;
+    # esta columna existe ya para que en V1.0 los planes multi-paso del
+    # Orchestrator reanuden con el MISMO gate sin migración nueva.
+    checkpoint_data = Column(JSON)
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
