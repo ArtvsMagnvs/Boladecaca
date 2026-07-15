@@ -170,9 +170,9 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="Aithera API",
     description="Sistema Operativo de IA - Backend API",
-    # V0.85 (MOS M5, cierre de fase - bump sincronizado con root(),
-    # core/config.py y frontend/package.json). Tag v0.8.5.
-    version="0.8.5",
+    # V0.87 (WPMS, cierre de bloque W1-W4 - bump sincronizado con root(),
+    # core/config.py y frontend/package.json). Tag v0.8.7.
+    version="0.8.7",
     lifespan=lifespan
 )
 
@@ -226,11 +226,11 @@ app.include_router(telegram_endpoints.router, prefix="/api")
 
 @app.get("/")
 def root():
-    """V0.85 (MOS M5, cierre de fase - bump sincronizado con FastAPI
-    app.version y core/config.py). Tag v0.8.5."""
+    """V0.87 (WPMS, cierre de bloque - bump sincronizado con FastAPI
+    app.version y core/config.py). Tag v0.8.7."""
     return {
         "name": "Aithera",
-        "version": "0.8.5",
+        "version": "0.8.7",
         "status": "running"
     }
 

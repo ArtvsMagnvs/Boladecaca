@@ -88,6 +88,7 @@ Detalle por fase en `03_ROADMAP_ACTUALIZADO.md` (reescrito 2026-07-09).
 | `16_PRINCIPIOS_MODULARES_NO_FRAMEWORKITIS.md` | Principios Maestros aplicados: mapa de módulos, reglas de frontera, eventos, viabilidad — **prioridad sobre todo RFC** |
 | `17_EVENT_BUS_OBSERVABILIDAD.md` | Event Bus (`app/core/events.py`, spec canónica): contrato `Event`, naming, semilla de eventos por módulo, punto de conexión reservado para Runtime Telemetry/Intelligence (V2.0+) |
 | `18_WPMS_WORKSPACE_DISENO.md` | WPMS (V0.87): estado operativo del trabajo (Project/Milestone/Task vara-Linear) sobre el Project Memory del MOS; progreso automático, versionado, integración TIE/AE/Learner/briefing |
+| `19_MEL_DISENO_MAESTRO.md` | MEL — capa universal de ejecución de modelos: capacidades, políticas, Decision Engine (Rule/Learning/Recommendation), fallbacks, Custom drag&drop |
 | `FABLE5_PROMPTS/` | los 7 briefings de origen |
 
 ## 6. Fuentes

@@ -5,6 +5,33 @@ from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from datetime import datetime
 
+
+class WindowsSafeRotatingFileHandler(RotatingFileHandler):
+    """
+    RotatingFileHandler que maneja PermissionError en Windows durante el rollover.
+
+    En Windows, si el proceso anterior fue matado a la fuerza (taskkill), el SO
+    puede seguir teniendo el archivo de log bloqueado cuando arranca el nuevo
+    proceso. El RotatingFileHandler estándar explota con WinError 32 al intentar
+    hacer os.rename(). Esta subclase captura ese error y trunca el archivo actual
+    en lugar de rotar, evitando el spam de "Logging error" en la consola.
+    """
+
+    def doRollover(self):
+        try:
+            super().doRollover()
+        except PermissionError:
+            # El archivo sigue bloqueado por el proceso anterior.
+            # Cerramos y truncamos en lugar de rotar.
+            if self.stream:
+                self.stream.close()
+                self.stream = None
+            try:
+                open(self.baseFilename, 'w').close()
+            except PermissionError:
+                pass  # Si ni siquiera podemos truncar, seguimos sin crashear
+            self.stream = self._open()
+
 # Crear directorio de logs si no existe
 LOGS_DIR = Path(__file__).parent.parent.parent / "logs"
 LOGS_DIR.mkdir(exist_ok=True)
@@ -42,7 +69,7 @@ def setup_logger(name: str, log_file: Path, level=logging.INFO) -> logging.Logge
     )
     
     # Handler para archivo con rotación (max 5MB por archivo, máximo 3 archivos)
-    file_handler = RotatingFileHandler(
+    file_handler = WindowsSafeRotatingFileHandler(
         log_file,
         maxBytes=5 * 1024 * 1024,  # 5MB
         backupCount=3,

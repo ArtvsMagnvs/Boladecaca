@@ -12,7 +12,7 @@ cd /d "%~dp0"
 echo.
 echo ============================================================
 echo           A I T H E R A   -   L A U N C H E R
-echo                       Version 0.8.5
+echo                       Version 0.8.7
 echo ============================================================
 echo.
 echo Iniciando backend y frontend Electron...

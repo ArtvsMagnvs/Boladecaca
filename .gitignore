@@ -67,3 +67,13 @@ TripoSR/
 /src_root.json
 # .bat temporales que NO son los lanzadores (iniciar_*, install_*, migrar_*)
 /_commit_voz.bat
+
+# --- Salida generada por el hook de graphify (se reconstruye en cada commit) ---
+graphify-out/
+backend/graphify-out/
+.graphify_detect.json
+
+# --- Archivos de bloqueo temporales de Office (Word/Excel abiertos) ---
+~$*.docx
+~$*.xlsx
+~$*.pptx

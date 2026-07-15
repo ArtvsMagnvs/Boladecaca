@@ -1,249 +1,193 @@
-# Aithera V2 — Plan Maestro de Evolución
-## Sistema Operativo Personal de IA
+# Aithera — Roadmap (actualizado 2026-07-09)
 
-> **Este documento es la fuente de verdad del proyecto.**
-> Construido a partir del estado real del código existente y los principios definidos por el usuario.
-> Todo aquí tiene una justificación. Nada está inventado.
-> Última revisión: junio 2026 — sustituye a la versión anterior del Plan AOS.
+> **Fuente de verdad**: estado real del código (CLAUDE.md) + PLAN_MAESTRO_2026 + JWIKI wiki-map.
+> **Versión actual**: V0.8.0 (Gateway + Telegram + DPAPI + voz + CORS hardening).
+> **Wiki**: 271/267 docs verificados (100%). Ver `JWIKI/00_INDEX/wiki-map.md`.
 
 ---
 
-## 1. Punto de partida: qué existe y funciona
+## Fases completadas ✅
 
-Aithera V0.2.0 es una aplicación de escritorio funcional (Electron + React + FastAPI + SQLite).
-
-| Módulo | Estado real | Decisión V2 |
-|--------|------------|-------------|
-| Chat con streaming SSE | ✅ Funcional | Mantener, conectar al Orchestrator en Fase 7 |
-| Proyectos (CRUD) | ✅ Funcional | Mantener sin cambios |
-| Tareas (CRUD) | ✅ Funcional | Mantener sin cambios |
-| Calendario (CRUD) | ✅ Funcional (fix V0.2) | Evolucionar: disponibilidad + Google Calendar |
-| Settings / Proveedores IA | ✅ Funcional | Mantener, añadir config de Execution Engine |
-| 8 proveedores IA (ai_manager) | ✅ Funcional | Mantener, refactorizar interfaz BaseAIProvider |
-| Agentes (CRUD básico) | ⚠️ Base existe, incompleta | Evolucionar con AgentManager + Tools |
-| Email Assistant | ⚠️ Esqueleto backend | Evolucionar (nunca reemplazar) |
-| Voice (ElevenLabs + eSpeak) | ⚠️ Backend OK, UI esqueleto | Evolucionar UI cuando sea prioritario |
-| Hub (AI Core 3D) | ⚠️ Centro OK, paneles vacíos | Completar paneles con datos reales (Fase 1) |
-| SQLite | ✅ Funcional | Migrar a PostgreSQL en Fase 1b |
-
-**Conclusión**: hay una base sólida. El trabajo es evolución, no construcción desde cero.
+- ✅ **V0.2** Base (FastAPI + SQLAlchemy + Pydantic v2 + Zustand).
+- ✅ **V0.3** Hub responsivo (AICore 3D con R3F + custom shaders).
+- ✅ **V0.4** PostgreSQL + Alembic (12+ migrations).
+- ✅ **V0.5** AgentManager + ToolManager + 8 tools.
+- ✅ **V0.6** ChromaDB memory (3 collections).
+- ✅ **V0.7** Email + Calendar (Google OAuth2 + PKCE).
+- ✅ **V0.7.1** Fase 4b Email Assistant refactor (urgencias sin regla, AMD GAIA, conflict detection).
+- ✅ **V0.7.2** God-endpoint split (email_assistant → 7 routers), bug json/log_activity fixed.
+- ✅ **V0.7.3** Email Assistant TERMINADO (7 categorías triaje, autonomía gradual Inbox Zero).
+- ✅ **V0.8** Gateway + Telegram + DPAPI + voz (Whisper + 4 TTS) + CORS + conversación continua.
 
 ---
 
-## 2. Principios que rigen cada decisión
+## Fases pendientes (orden roadmap 2026-07-04)
 
-**1. Nunca romper lo que funciona.** La app debe estar en estado usable en cada fase. No existe un periodo donde "todo esté roto". Cada commit deja un producto funcional. **Aclaración (2026-07-13, revisión crítica de principios)**: esto protege comportamiento CORRECTO y contratos públicos ya acordados (rutas, schemas, comportamiento esperado por el usuario) — nunca protege un bug, una vulnerabilidad o una configuración insegura solo porque nadie se había quejado todavía. Restringir un CORS abierto a `*` o cifrar una API key que estaba en texto plano NO es "romper lo que funciona": es corregir lo que nunca debió funcionar así. La pregunta correcta no es "¿esto cambia algo?" sino "¿esto le quita al usuario algo que dependía intencionadamente tener?".
+### 🎯 V0.82 — Hub Visual (pulido UI)
 
-**2. Evolución, no reescritura.** Antes de reemplazar un módulo, la pregunta es: ¿puede evolucionar con cambios menores? Si la respuesta es sí, se evoluciona. Solo se reemplaza cuando el módulo existente impide el avance de forma demostrable.
+- Animación de conversación en el Hub (chat con vida).
+- Modo pantalla completa con botones para desplegar/plegar barras laterales.
+- Polish de AICore.tsx + custom shaders.
+- Refactor de Framer Motion transitions.
 
-**3. Un único backend, múltiples clientes.** FastAPI es el único lugar con lógica de negocio. Electron, web, Telegram y PWA son interfaces — envían peticiones y muestran resultados. Nunca se duplica lógica entre clientes.
+### 🎯 V0.83 — Voz completa
 
-**4. La IA razona, Aithera decide.** Ningún proveedor de IA contiene lógica de negocio. La IA recibe un prompt y devuelve texto o JSON. Aithera interpreta ese resultado y decide qué herramienta usar, qué agente ejecutar, qué dato guardar.
+- Terminar configuración de voces ElevenLabs.
+- STT real (faster-whisper `distil-large-v3`).
+- TTS multi-proveedor (ElevenLabs primary, EdgeTTS fallback, Kokoro local, eSpeak ultra-fallback).
+- Wake word opcional ("Hey Aithera") V0.83+ con Porcupine u openWakeWord.
+- Barge-in (interrupción de user durante TTS).
 
-**5. Ejecución controlada, nunca arbitraria.** El Execution Engine solo ejecuta herramientas de una whitelist registrada. La IA nunca puede generar un comando y ejecutarlo directamente. Toda acción con efectos externos pasa por una herramienta validada.
+### 🎯 V0.85 — MOS Memory Operating System
 
-**6. Optimizar para un usuario, no para cientos.** No hay multi-tenancy, no hay balanceo de carga. La arquitectura es la mínima necesaria para que un usuario avanzado trabaje de forma potente y fluida. **Aclaración (2026-07-13)**: esto gobierna infraestructura de escala (multi-tenancy, balanceo, sharding) — nunca seguridad, y no contradice `PLAN_MAESTRO_2026/16` principio 17 ("diseñar a cinco años"): ese principio habla de la calidad de las fronteras del código, no de construir para mil usuarios. Un solo usuario también necesita credenciales cifradas y una red que no esté abierta por defecto.
+- **Ingesta proactiva** desde Gmail/Calendar (sync cada N min).
+- **Briefings diarios** automáticos.
+- **Skills capture** (auto-detección de skills del user).
+- **Context de proyectos** (memory por proyecto).
+- **Patrones de trabajo** (ML para detectar hábitos).
+- **Hybrid search** BM25 + semantic + RRF.
+- **Reranking** con cross-encoder (BAAI/bge-reranker).
+- **Oblivion** (selective memory pruning).
+- **pgvector migration** desde ChromaDB (opcional, hybrid).
+- Diseño completo en `PLAN_MAESTRO_2026/07_MOS_V085_DISENO.md` y `08_MOS_ARQUITECTURA_COMPLETA.md`.
 
-**7. Cada fase deja el producto usable.** Las fases duran días, no semanas. Si una fase crece demasiado, se parte en dos.
+### 🎯 V0.9 — Automation Engine
 
-**8. Sin sobreingeniería.** Si hay dos soluciones y la simple funciona, se usa la simple. Sin Celery (asyncio.Queue suficiente), sin GraphQL (REST ya funciona), sin frameworks de agentes (custom en ~200 líneas).
+- **APScheduler** + SQLAlchemy jobstore.
+- **Rule engine** JSON-based (trigger, condition, action, approval_required).
+- **Approval gates** formales (Hub UI + Telegram inline).
+- **Trigger types**: cron, interval, event, webhook, manual.
+- **Action types**: email.*, calendar.*, chat.*, agent.run, custom.
+- **Reglas predefinidas** (1-click enable).
+- Diseño en `PLAN_MAESTRO_2026/11_AUTOMATION_ORCHESTRATOR_RFC.md`.
 
----
+### 🎯 V1.0 — Orchestrator + Claude Code Agent (MVP BETA)
 
-## 3. Arquitectura objetivo (V2)
+- **Intent classifier** (clasificación: query, create, execute, automate, conversational).
+- **Task Planner** (sobre AI Manager, multi-step).
+- **Response Builder**.
+- **Claude Code Agent** (coding tasks).
+- **State machine** (checkpointing + resume).
+- **Routing por complejidad** (cheap local model para triage, premium para deep).
+- **Approval gates** generalizados.
+- **Trace logging** (P5 del Plan Maestro).
+- Cambio clave: `gateway.set_handler(orchestrator)` reemplaza chat_message_handler.
+- Diseño en `PLAN_MAESTRO_2026/11_AUTOMATION_ORCHESTRATOR_RFC.md` + `12_AUDITORIA_OPTIMIZACION.md`.
 
-```
-CLIENTES (interfaces puras, sin lógica de negocio)
-├── Electron App (Windows desktop) ← ya existe
-├── Web App     (mismo React, servido por FastAPI) ← Fase 5
-├── Telegram Bot (python-telegram-bot v21) ← Fase 5
-└── PWA         (manifest + service worker) ← Fase 5
+### 🎯 V1.1 — Hermes Integration
 
-          │ HTTP / SSE
-          ▼
+- Hermes Agent (Nous Research) como runtime de agents.
+- **Skills/SKILL.md** system借鉴 obra/superpowers.
+- **MCP server/client** para tools.
+- **Local Skill Library (LSL)** + **Local Learning Loop (LLL)**.
+- Diseño en `PLAN_MAESTRO_2026/10_HERMES_INTEGRATION_RFC.md` + `09_LSL_LLL_RFC.md`.
 
-BACKEND FastAPI (único, puerto 8000)
-│
-├── ORCHESTRATOR (Fase 7)
-│   ├── Intent Analyzer  ← usa AIManager para clasificar intención
-│   ├── Task Planner     ← usa AIManager para planificar pasos
-│   └── Response Builder ← sintetiza resultados en lenguaje natural
-│
-├── AGENT MANAGER (Fase 2)
-│   ├── AgentExecutor    ← lanza y gestiona tareas de agentes
-│   └── ClaudeCodeAgent  ← agente externo para tareas de código
-│
-├── EXECUTION ENGINE (Fase 2)
-│   ├── FilesystemTool   ← leer/escribir archivos (rutas permitidas)
-│   ├── ShellTool        ← whitelist: python, git, npm, uvicorn
-│   ├── GitTool          ← status, log, diff, commit
-│   └── PowerShellTool   ← scripts específicos aprobados
-│
-├── TOOL MANAGER (Fase 2)
-│   ├── EmailTool        ← Gmail REST API (Fase 4)
-│   ├── CalendarTool     ← Google Calendar (Fase 4)
-│   └── MemoryTool       ← búsqueda en ChromaDB (Fase 3)
-│
-├── AI MANAGER (ya existe — mantener, refactorizar interfaz)
-│   └── MiniMax, Ollama, Anthropic, OpenAI, Gemini, DeepSeek, OpenRouter, Grok
-│
-├── MEMORY MANAGER (Fase 3)
-│   └── ChromaDB local: conversaciones, contexto usuario, documentos
-│
-└── AUTOMATION ENGINE (Fase 6)
-    └── APScheduler: reglas cron/interval, sistema de aprobaciones
+### 🎯 V1.2 — MCP + potenciación
 
-          │
-          ▼
+- Aithera como **MCP server** (exponer memory + tools).
+- Consumir **MCP servers externos** (filesystem, github, postgres).
+- Marketplace de skills.
 
-PERSISTENCIA
-├── PostgreSQL (Fase 1b — migrar desde SQLite)
-│   └── projects, tasks, calendar_events, agents, agent_executions,
-│       automation_rules, conversations, chat_messages, config, ai_provider_configs
-└── ChromaDB (Fase 3 — directorio local %APPDATA%/Aithera/chroma/)
-    └── memoria semántica vectorial
-```
+### 🎯 V1.5 — AVCS MVP1
 
----
+- **AVCS** (Aithera Visual Conversational State) — 7 ritmos.
+- UI rediseñada.
+- **TIE Cognitive Runtime** (memoria a largo plazo personalizada).
+- **LSLL** (Learning System Layer).
+- Diseño en `PLAN_MAESTRO_2026/13_AVCS_DISENO_MAESTRO.md` + `14_TIE_COGNITIVE_RUNTIME_DISENO.md` + `15_LEARNING_SYSTEM_DISENO.md`.
 
-## 4. Decisiones técnicas clave
+### 🎯 V2.0+ — GSN + CIE + Guardians
 
-### SQLite → PostgreSQL (Fase 1b)
+- **GSN** (Global State Network).
+- **CIE** (Cognitive Integration Engine).
+- **Guardians** (safety agents).
 
-**Por qué migrar**: SQLite es suficiente ahora, pero PostgreSQL ofrece búsqueda full-text nativa, mejor soporte para JSON complejo (configs de automatizaciones, tool configs), y es el estándar para cualquier crecimiento futuro. La migración es la mejor inversión técnica del proyecto: se hace una vez y habilita todo lo que viene.
+### 🔮 Post-V1.0 — Web + PWA + PIN
 
-**Cómo**: script Python one-shot que lee todas las tablas de SQLite y las inserta en PostgreSQL. Los modelos SQLAlchemy no cambian, solo el engine. Se inicializa Alembic para gestionar migraciones futuras. SQLite se mantiene como backup durante una fase.
-
-**Riesgo**: bajo. El código de la app no se toca.
-
-### Execution Engine (Fase 2)
-
-No es `subprocess` directo. Es una clase que: (1) valida que la herramienta está en el registro, (2) valida los parámetros (sin path traversal, sin comandos dinámicos), (3) ejecuta con timeout, (4) registra la ejecución en la BD, (5) devuelve resultado estructurado. La IA nunca ve el comando ejecutado, solo el resultado.
-
-### Agentes: arquitectura mínima escalable (Fase 2)
-
-No se construyen decenas de agentes. Se define una interfaz `BaseAgent` con 3 implementaciones iniciales:
-- `GenericAgent`: usa el proveedor IA activo
-- `ProviderAgent`: fuerza un proveedor específico (MiniMax, Ollama)
-- `ClaudeCodeAgent`: delega a Claude Code CLI para tareas de código
-
-Cada agente tiene `allowed_tools`: lista de herramientas que puede usar. El AgentManager gestiona el ciclo de vida (lanzar, cancelar, consultar estado).
-
-### Frontend: evolución del React existente
-
-No se reconstruye. Se añaden componentes progresivamente. El stack (React 18 + Vite + Zustand + Tailwind + Three.js) se mantiene exactamente igual.
-
-### Clientes adicionales: cero cambios en el backend (Fase 5)
-
-El web client es el mismo build de React servido como `StaticFiles` por FastAPI. Telegram es un cliente Python que llama directamente a los servicios internos. Ningún cliente contiene lógica de negocio.
+- Build de React servido por FastAPI en `/app`.
+- PWA (manifest + service worker).
+- PIN/token de red.
+- Microsoft Store MSIX.
+- Mac/Linux desktop (electron-builder cross-compile).
 
 ---
 
-## 5. Roadmap por fases
+## Backlog (Sprint planning)
 
-### Tabla resumen
+### Sprint V0.82 (próximo)
 
-| Fase | Versión | Objetivo principal | Doc de implementación |
-|------|---------|-------------------|----------------------|
-| 1 | V0.3 | Bugs conocidos + Hub completo con datos reales | `Fase_1_Estabilizacion_Hub_V03.md` |
-| 1b | V0.4 | Migración SQLite → PostgreSQL + Alembic | `Fase_1b_PostgreSQL_Migration_V04.md` |
-| 2 | V0.5 | AgentManager + Execution Engine + ToolManager | `Fase_2_AgentManager_ExecutionEngine_V05.md` |
-| 3 | V0.6 | Memory System (ChromaDB) + contexto en chat | `Fase_3_Memory_ChromaDB_V06.md` |
-| 4 | V0.7 | Email + Calendar evolucionados (Google OAuth) | `Fase_4_Email_Calendar_V07.md` |
-| 5 | V0.8 | Clientes: Telegram + Web App (mismo backend) | `Fase_5_Clients_Telegram_Web_V08.md` |
-| 6 | V0.9 | Automation Engine (reglas + APScheduler) | `Fase_6_Automation_V09.md` |
-| 7 | V1.0 | Orchestrator + Claude Code Agent | `Fase_7_Orchestrator_V10.md` |
+- [ ] Animación de conversación en el Hub.
+- [ ] Polish AICore.tsx shaders.
+- [ ] Optimizar render performance (CLAUDE.md §1 "perf hub" pendiente).
 
-### Fase 1 — V0.3: Estabilización + Hub completo
+### Sprint V0.83
 
-Cierra los 6 bugs documentados en `CLAUDE.md` sección 19 (AgentResponse incompleto, voice status anidado, .gitignore, aithera.db en git, modelo MiniMax, versión inconsistente). Completa el Hub Layout con datos reales de la API (proyectos, tareas, agentes, calendario, barra de estado). La app pasa de V0.2 a V0.3 estable.
+- [ ] ElevenLabs setup final.
+- [ ] faster-whisper production setup.
+- [ ] Kokoro integration tests.
+- [ ] Conversation continua VAD con Silero VAD.
 
-### Fase 1b — V0.4: Migración PostgreSQL
+### Sprint V0.85 (CRÍTICO)
 
-Script de migración SQLite → PostgreSQL, configuración de Alembic para migraciones futuras, actualización del engine en database.py. Los modelos SQLAlchemy no cambian. El frontend no se toca. Al terminar, la app funciona exactamente igual pero sobre PostgreSQL.
+- [ ] MOS Skeleton (Plan Maestro §07).
+- [ ] Briefings diarios.
+- [ ] Ingesta Gmail/Calendar.
+- [ ] Hybrid search + reranking.
+- [ ] Oblivion pattern.
 
-### Fase 2 — V0.5: AgentManager + Execution Engine + ToolManager
+### Sprint V0.9
 
-Sistema de agentes real. Rediseño del modelo Agent (añadir allowed_tools, max_execution_time). Nueva tabla AgentExecution. BaseTool + FilesystemTool + ShellTool + GitTool + PowerShellTool. ToolManager (registro centralizado). ExecutionEngine (validación + ejecución controlada). AgentManager (ciclo de vida). UI de Agentes completa. Endpoints nuevos.
+- [ ] APScheduler con SQLAlchemy jobstore.
+- [ ] Approval flow UI.
+- [ ] 8+ reglas predefinidas.
 
-### Fase 3 — V0.6: Memory System
+### Sprint V1.0 (BETA distribuible)
 
-ChromaDB local + sentence-transformers. MemoryManager con 3 colecciones (conversations, user_context, documents). Integración en chat.py: contexto automático en cada mensaje. Endpoints /api/memory/*. Sección en Settings. La primera vez descarga el modelo de embeddings (~80MB, 1-2 min).
-
-### Fase 4 — V0.7: Email + Calendar (Google OAuth)
-
-Completar el flujo OAuth de Google (backend ya existe en email_assistant.py). EmailTool real con Gmail REST API: list_inbox, get_email, search_emails, create_draft, send_email (siempre con confirmación), classify_email (IA). CalendarTool: list_events, create_event (con confirmación), find_free_slots. UI de Email funcional (evolucionar el esqueleto existente). Configuración de disponibilidad por tipo de actividad.
-
-### Fase 5 — V0.8: Clientes adicionales (Telegram + Web)
-
-Telegram bot con python-telegram-bot v21 en modo polling. Autenticación por chat_id. Comandos: /proyectos, /tareas, /estado + chat natural. Web client: build de React servido por FastAPI en /app. Sistema de PIN para acceso desde la red local. Manifest PWA + service worker básico. El backend no cambia.
-
-### Fase 6 — V0.9: Automation Engine
-
-Modelos AutomationRule y AutomationExecution en PostgreSQL. APScheduler integrado en el lifespan de FastAPI. Tipos de acción: telegram_message, email_summary, agent_task, chat_query. Sistema de aprobaciones para acciones sensibles. UI de automatizaciones. Reglas de ejemplo predefinidas (desactivadas).
-
-### Fase 7 — V1.0: Orchestrator
-
-Orchestrator que analiza intención (query/create/execute/automate/conversational), planifica pasos, ejecuta usando ToolManager y AgentManager, sintetiza respuesta. ClaudeCodeAgent para tareas de programación (llama a Claude Code CLI si está disponible). Integración en el chat: el Orchestrator decide si la tarea necesita herramientas o es conversación directa. UI de aprobación de planes.
+- [ ] Intent classifier.
+- [ ] Task Planner.
+- [ ] Claude Code Agent integration.
+- [ ] Trace logging.
+- [ ] Orchestrator vs chat handler swap.
 
 ---
 
-## 6. Qué NO se hace (decisiones de scope)
+## JWIKI Status (referencia)
 
-| Elemento | Decisión | Razón |
-|----------|----------|-------|
-| Reescritura del frontend | ❌ No | El React existente se evoluciona |
-| Autenticación de usuarios | ❌ No | App personal, un solo usuario |
-| Multi-tenancy | ❌ No | Fuera del objetivo |
-| Despliegue en cloud | ❌ No | Offline-first, datos personales locales |
-| LangChain / AutoGen | ❌ No | Sobreingeniería; AutoGen en maintenance mode 2026 |
-| Celery / Redis | ❌ No | asyncio.Queue suficiente para un usuario |
-| GraphQL | ❌ No | REST funciona, no hay razón para migrar |
-| Tests automáticos (ahora) | ❌ Deuda aceptada | Prioridad: funcionalidad. Tests en V1.1 |
-| Aplicación móvil nativa | ❌ No (ahora) | La PWA cubre el caso de uso |
+- **271/267 docs verificados** (100%).
+- **16 dominios completos**.
+- Wiki-map es mapa de **interconexiones por temas** (no por IDs).
+- **Skill `jwiki-tick`** mantiene el loop de actualización continua.
+- Audit cadence: cada 2-3 días (cron `jwiki-tick-a`).
 
 ---
 
-## 7. Gestión de riesgos
+## Tareas abiertas por sub-equipo
 
-| Riesgo | Probabilidad | Mitigación |
-|--------|-------------|-----------|
-| Migración PostgreSQL rompe algo | Baja | Mantener SQLite como backup durante una fase |
-| ChromaDB + PyTorch pesa ~1.5GB | Media | Documentar, descarga automática primer arranque |
-| Claude Code CLI no disponible | Media | ClaudeCodeAgent falla con mensaje claro, no bloquea nada |
-| MiniMax cambia su API de nuevo | Media | minimax_provider.py aislado, fácil de actualizar |
-| Una fase se vuelve demasiado grande | Alta | Cortar cuando supere 2 sesiones de Claude Code estimadas |
-| Deuda técnica acumulada | Media | Reservar inicio de cada fase para resolver deuda del anterior |
+### Backend
 
----
+- [ ] Continuar separación routers (ya hecho en email).
+- [ ] DB query optimization (CLAUDE.md §16 "Auditoría optimización" pendiente).
+- [ ] Observability: Prometheus metrics (V0.85+).
 
-## 8. Protocolo de trabajo con Claude Code
+### Frontend
 
-Este documento es la entrada para cada sesión de Claude Code. El flujo es:
+- [ ] Hub animation polish (V0.82).
+- [ ] TTS streaming player (V0.83+).
+- [ ] Approval flow UI components (V0.9).
 
-1. Entregar a Claude Code el documento de la fase actual (ej. `Fase_1b_PostgreSQL_Migration_V04.md`)
-2. Claude Code debe leer `CLAUDE.md` antes de empezar (contexto del proyecto)
-3. Claude Code implementa tarea por tarea del documento
-4. Al terminar cada tarea, verificar los criterios de aceptación del documento
-5. Si todo pasa, pasar a la siguiente fase
+### Memory (V0.85)
 
-**Regla de oro**: si en algún momento la app deja de arrancar, revertir y reducir el scope antes de continuar.
+- [ ] Hybrid search BM25 + semantic.
+- [ ] Reranker integration.
+- [ ] Oblivion pattern.
+- [ ] Migration tooling ChromaDB ↔ pgvector.
 
-**IMPORTANTE**: Claude Code NO debe modificar la base de datos de producción directamente. Todos los cambios de esquema van a través de migraciones Alembic (a partir de Fase 1b).
+### Agents (V1.0)
 
----
-
-## 9. Responsabilidades
-
-| Responsable | Qué hace |
-|-------------|----------|
-| Aithera (el sistema) | Orquesta. Decide qué usar, cuándo y cómo. |
-| MiniMax / IA activa | Razona. Clasifica intenciones, planifica pasos, genera texto. |
-| Claude Code | Implementa. Escribe el código de cada fase bajo instrucciones explícitas. |
-| Claude Cowork | Documenta. Crea y actualiza los documentos del proyecto. |
-| El usuario | Configura, aprueba acciones sensibles, y define prioridades. |
+- [ ] Orchestrator.
+- [ ] Multi-agent handoffs (OpenAI Agents SDK借鉴).
+- [ ] State machine + checkpointing.
 
 ---
 
-*Un solo usuario. Máximo potencial. Mínima complejidad.*
-*Diseñado para ejecutarse íntegramente con IA en cada fase.*
+*Última actualización: 2026-07-09 (WIKI 100% completa + roadmap actualizado).*
