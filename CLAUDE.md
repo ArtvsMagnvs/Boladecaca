@@ -287,10 +287,25 @@ teclado a la par).
   `localStorage`) + `AgentCreatePopup.tsx`/`AgentDetailPopup.tsx`. Hueco
   "Automatizaciones" (stub V0.9). `tsc`/`vite build` limpios; suite backend
   **254 passed**; migración verificada en los dos caminos reales (no-op +
-  ADD con datos). **Verificación en vivo pendiente**: el Browser pane quedó
-  bloqueado por un problema de entorno confirmado ajeno al cambio (fallaban
-  incluso páginas sin relación) — pendiente de que el usuario la confirme
-  manualmente.
+  ADD con datos).
+- ✅ **Fixes post-W2c (15-jul, reportados por el usuario)**: (1) **crear agente
+  no funcionaba** — causa raíz confirmada: la migración 16.ª nunca se aplicó
+  al Postgres real (mismo patrón que el incidente de W1: probada solo contra
+  SQLite de usar-y-tirar). `alembic upgrade head` aplicado contra el Postgres
+  real, datos intactos. (2) **errores de guardado silenciosos en los 4 popups**
+  del Workspace — `request()` descartaba el `detail` real de FastAPI y los
+  popups no tenían `catch`, así que cualquier fallo se veía como "no pasa
+  nada". Arreglado en la raíz (`request()` parsea el detail; `ErrorBanner`
+  compartido en los 4 popups). (3) **reorganización EN VIVO al redimensionar**
+  — `useDragResize` gana `onLiveResize` (dispara en cada `pointermove` de un
+  resize, desacoplado de `onCommit`); `AgentsSection` pasa a montarse siempre
+  y ocultarse por CSS (evita refetch en cada cruce de umbral durante el
+  gesto). (4) **catálogo de skills con filtro por categoría**
+  (`SkillPickerPopup.tsx`, `frontend/src/data/skillsCatalog.json`, generado
+  de `msitarzewski/agency-agents` — 254 entradas/17 categorías, catálogo
+  estático sin backend). Verificado en vivo contra el backend real: crear
+  agente completo, filtro de skills (Marketing → 36 resultados), y el
+  contenido de la tarjeta cambiando ANTES de soltar el ratón al redimensionar.
 - ⏳ **W2d** (nueva, doc 03) — agente en pantalla completa + panel de proceso
   (alcance honesto: la ejecución de agentes hoy es un placeholder de V0.5,
   sin razonamiento real) · **W3b** — board Kanban + drag&drop de tareas +
