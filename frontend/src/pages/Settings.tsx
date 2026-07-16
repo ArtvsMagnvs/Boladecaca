@@ -4,9 +4,10 @@
 // V0.6 (Fase 3 Memory System): nueva seccion "Memoria" con stats, gestion
 // de preferencias del usuario y borrado del historial de ChromaDB.
 import { useState, useEffect } from "react";
-import { api, type AIProviderEntry, type ContextItem, type MemoryStats, type TelegramStatus, type ElevenLabsCfgStatus } from "@/lib/api";
+import { api, type AIProviderEntry, type ContextItem, type MemoryStats, type TelegramStatus, type ElevenLabsCfgStatus, type PermissionCatalog } from "@/lib/api";
 import { useAppStore } from "@/store/useAppStore";
 import type { QualityTier } from "@/avcs";
+import { Toggle } from "@/components/Toggle";
 
 /**
  * AVCS S3 (doc 13 §16 PerformanceManager v0): selector manual de tier de
@@ -531,6 +532,140 @@ function TelegramSettings() {
 }
 
 /**
+ * V0.9 (Automation Engine A3b, doc 20 §A3b): Permisos & Autonomía — la capa
+ * de política sobre el ApprovalGate (A1). El gate es el mecanismo HITL en
+ * tiempo de ejecución; aquí el usuario decide qué se pre-autoriza (pasa
+ * directo) y qué sigue preguntando. Selector de perfil rápido arriba
+ * (equivalente a "omitir permisos") + toggles individuales agrupados abajo.
+ */
+const AUTONOMY_PROFILES: Array<{ id: string; label: string; hint: string }> = [
+  { id: "manual", label: "Preguntar siempre", hint: "Aithera pide tu aprobación para cada acción sensible." },
+  { id: "balanced", label: "Equilibrado", hint: "Autoriza lo de bajo riesgo, sigue preguntando para lo delicado." },
+  { id: "full", label: "Autónomo", hint: "Aithera actúa sin preguntar. Revisa el historial cuando quieras." },
+];
+
+function PermissionsSettings() {
+  const [catalog, setCatalog] = useState<PermissionCatalog | null>(null);
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [busyProfile, setBusyProfile] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = async () => {
+    try {
+      setCatalog(await api.getPermissions());
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "No se pudieron cargar los permisos.");
+    }
+  };
+
+  useEffect(() => {
+    load();
+  }, []);
+
+  const toggle = async (id: string, enabled: boolean) => {
+    setBusyId(id);
+    setError(null);
+    try {
+      setCatalog(await api.setPermission(id, enabled));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "No se pudo cambiar el permiso.");
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const applyProfile = async (profile: string) => {
+    setBusyProfile(true);
+    setError(null);
+    try {
+      setCatalog(await api.setAutonomyProfile(profile));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "No se pudo aplicar el perfil.");
+    } finally {
+      setBusyProfile(false);
+    }
+  };
+
+  if (!catalog) {
+    return <p className="text-xs text-ink-faint">Cargando…</p>;
+  }
+
+  const groups = Array.from(new Set(catalog.permissions.map((p) => p.group)));
+
+  return (
+    <div className="space-y-4">
+      <p className="text-xs text-ink-dim">
+        Decide qué puede hacer Aithera sin preguntarte primero. Ajusta cada permiso por
+        separado o elige un perfil rápido.
+      </p>
+
+      {error && (
+        <div className="text-xs text-signal-error bg-signal-error/10 border border-signal-error/30 rounded-lg px-3 py-2">
+          {error}
+        </div>
+      )}
+
+      {/* Selector de perfil — el equivalente a "omitir permisos" */}
+      <div className="grid grid-cols-3 gap-2">
+        {AUTONOMY_PROFILES.map((opt) => (
+          <button
+            key={opt.id}
+            onClick={() => applyProfile(opt.id)}
+            disabled={busyProfile}
+            className={`text-left rounded-xl border px-3 py-2.5 transition-colors disabled:opacity-50 ${
+              catalog.profile === opt.id ? "border-accent/50 bg-accent/10" : "border-base-700 hover:border-base-600"
+            }`}
+          >
+            <p className={`text-xs font-medium ${catalog.profile === opt.id ? "text-accent" : "text-ink"}`}>
+              {opt.label}
+            </p>
+            <p className="text-[10px] text-ink-faint mt-0.5">{opt.hint}</p>
+          </button>
+        ))}
+      </div>
+      {catalog.profile === "full" && (
+        <p className="text-[10px] text-signal-warn">
+          Modo autónomo: Aithera ejecutará acciones sensibles sin pedirte confirmación.
+          Puedes volver a "Preguntar siempre" cuando quieras.
+        </p>
+      )}
+
+      {/* Permisos agrupados por categoría */}
+      <div className="space-y-3">
+        {groups.map((group) => (
+          <div key={group}>
+            <h4 className="text-[10px] uppercase tracking-wide text-ink-faint mb-1.5">{group}</h4>
+            <div className="divide-y divide-base-700/40">
+              {catalog.permissions
+                .filter((p) => p.group === group)
+                .map((p) => (
+                  <div key={p.id} className="flex items-center gap-3 py-2">
+                    <div className="min-w-0 flex-1">
+                      <p className={`text-xs ${p.available ? "text-ink" : "text-ink-faint"}`}>
+                        {p.label}
+                        {!p.available && (
+                          <span className="ml-1.5 text-[10px] text-ink-faint">(próximamente)</span>
+                        )}
+                      </p>
+                      <p className="text-[10px] text-ink-faint">{p.description}</p>
+                    </div>
+                    <Toggle
+                      checked={p.enabled}
+                      onChange={(v) => toggle(p.id, v)}
+                      disabled={!p.available || busyId === p.id}
+                      label={p.label}
+                    />
+                  </div>
+                ))}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/**
  * V0.83: configuración de la API key de ElevenLabs desde Ajustes. La key se
  * guarda CIFRADA en el backend (secrets.py) y nunca se devuelve; aquí solo se
  * ve una máscara. Con la key puesta, las voces profesionales aparecen en el
@@ -848,6 +983,13 @@ export default function Settings() {
             </p>
           </div>
         </div>
+      </div>
+
+      {/* V0.9 (Automation Engine A3b): Permisos & Autonomía — arriba del todo
+          a propósito, es el control que decide si Aithera actúa sola o pregunta. */}
+      <div className="glass-surface rounded-2xl p-4">
+        <h3 className="text-sm font-medium text-ink mb-3">Permisos</h3>
+        <PermissionsSettings />
       </div>
 
       {/* Modal edición de proveedor */}

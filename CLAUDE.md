@@ -688,8 +688,62 @@ A1·A2a·A2b·A3·A4).**
   verificación) se audita como `failed` con motivo claro tras el fix; una
   `WorkspaceAction.close_task` sobre una tarea real recalculó el progreso del
   proyecto a 1.0 correctamente. Suite: **324 passed** (294 previos + 30 de A3).
-- **V0.9 pendiente**: A3b (Permisos & Autonomía — panel en Ajustes, doc 20),
-  A4 (integración MOS + Learner stub + cierre/tag v0.9.0).
+- ✅ **A3b — Permisos & Autonomía** (doc 20 §A3b, petición directa del usuario
+  intercalada durante A2a): la capa de POLÍTICA sobre el `ApprovalGate` —
+  el gate sigue siendo el primitivo genérico y sigue existiendo siempre; lo
+  nuevo es que ahora puede auto-resolverse cuando el usuario ya dio permiso
+  de antemano para ese tipo de acción, en vez de preguntar cada vez.
+  `app/automation/permissions.py` (NEW): `PermissionDef` (catálogo congelado,
+  9 entradas — `email.send`, `telegram.send`, `agent.execute`,
+  `workspace.write`, `calendar.write`, `automation.rules`, `memory.write`,
+  y 2 marcadas `available=False` a propósito como reservas de futuro,
+  `browser.use`/`computer.use`, pedidas explícitamente por el usuario para
+  cuando existan esas tools), `PROFILES` (`manual`=nada activo,
+  `balanced`=solo riesgo bajo, `full`=todo lo disponible — el equivalente a
+  "omitir permisos" de Claude Code, pedido explícitamente como selector
+  rápido arriba del panel). Estado persistido en la tabla `Config` existente
+  (`permission.<id>`="on"/"off", `autonomy_profile`), mismo patrón
+  `_get`/`_set` que ya usaba `telegram.py` — sin migración nueva.
+  **Fail-CLOSED por diseño**: `is_pre_authorized(kind)` devuelve `False` para
+  cualquier id desconocido y para cualquier permiso con `available=False` —
+  el default seguro es siempre preguntar. **Regla de oro** (comentada en el
+  código): "pre-autorizado NUNCA significa silencioso" — `ApprovalGate.
+  request_approval()` (`approval.py`, MODIFICADO) persiste SIEMPRE la fila
+  `Approval` primero: si el permiso está pre-autorizado, se auto-resuelve
+  llamando internamente a `resolve()` con `note="auto (permiso
+  pre-autorizado)"` — reusa el mismo claim atómico/ejecución/Decision
+  API/evento que una resolución manual del usuario, nunca duplica esa lógica.
+  Hay rastro de auditoría en `approvals` incluso en modo autónomo total.
+  **Endpoints** (`automation.py`): `GET /permissions` (catálogo + estado +
+  perfil activo, una sola llamada), `POST /permissions` (toggle individual),
+  `POST /permissions/profile` (aplica un perfil de golpe). **Frontend**:
+  `components/Toggle.tsx` (NEW) — interruptor deslizante genérico, sin texto
+  ON/OFF (petición explícita: solo la bolita se desliza y el fondo pasa a
+  azul-accent), reutilizable por cualquier ajuste booleano futuro de la app,
+  no solo Permisos. Sección **"Permisos"** nueva en `Settings.tsx` — selector
+  rápido de perfil (manual/balanced/full) arriba, lista de los 9 permisos con
+  su Toggle debajo (los 2 `available=False` se muestran atenuados con
+  "próximamente"), agrupados por `group`. Tests: `test_permissions.py` (NEW,
+  21 — catálogo, fail-closed por defecto, persistencia del toggle, los 3
+  perfiles, invariante `PROFILES⊆CATALOG`, y los 4 tests críticos de
+  integración con el gate: OFF sigue preguntando, ON auto-resuelve CON
+  `resolution_note` verificado, un permiso no afecta a un `kind` distinto,
+  revertir a OFF vuelve a preguntar). Suite completa: **345 passed** (324
+  previos + 21 de A3b). **Verificado en vivo contra el Postgres real**
+  (script directo, `DATABASE_URL` real): permiso OFF → `request_approval`
+  deja la fila en `pending`; activar el permiso → la siguiente petición del
+  mismo `kind` se auto-resuelve al instante con el `resolution_note` correcto
+  y la acción registrada se ejecuta; desactivarlo de nuevo vuelve a preguntar.
+  `tsc --noEmit` y `npm run build` limpios. **Nota de transparencia**: no se
+  pudo completar el click-through visual en navegador para este sprint — el
+  puerto 8000 ya estaba ocupado por un proceso Python ajeno a esta sesión
+  (backend arrancado manualmente por el usuario, sirviendo código viejo sin
+  `/api/automation/permissions`); no se reinició ese proceso para no
+  interferir con él. La verificación de A3b se apoya en el script contra
+  Postgres real + la suite completa (que ejercita el HTTP real vía
+  `TestClient`) + build limpio; pendiente un vistazo visual rápido del panel
+  de Ajustes en la próxima sesión con el backend real relanzado.
+- **V0.9 pendiente**: A4 (integración MOS + Learner stub + cierre/tag v0.9.0).
 - **V1.0** — Orchestrator (intent analyzer + planner + Claude Code Agent)
 - **V1.1** — Hermes (Nous Research) como sistema de agentes bajo el Orchestrator
 

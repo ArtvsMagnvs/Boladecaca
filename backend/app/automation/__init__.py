@@ -8,7 +8,9 @@
 # V0.9 A1: modelos del esquema + ApprovalGate (primitivo genérico).
 # V0.9 A2a: SchedulerService (planificador único, APScheduler).
 # V0.9 A2b: motor de reglas + triggers + conditions.
-# V0.9 A3: acciones + reglas predefinidas. `learner.py` se añade en A4.
+# V0.9 A3: acciones + reglas predefinidas.
+# V0.9 A3b: permission_service (Permisos & Autonomía, capa de política sobre
+# el gate). `learner.py` se añade en A4.
 
 from app.automation.models import AutomationRule, AutomationExecution, Approval
 from app.automation.approval import ApprovalGate, ApprovalResult, approval_gate
@@ -52,6 +54,8 @@ from app.automation.actions import (
     register_default_actions,
 )
 from app.automation.rules_builtin import BUILTIN_RULES, seed_builtin_rules
+import app.automation.permissions as permission_service
+from app.automation.permissions import PermissionDef, PermissionState, PermissionCatalog
 
 __all__ = [
     # modelos (esquema V0.9)
@@ -105,4 +109,9 @@ __all__ = [
     # reglas predefinidas (A3)
     "BUILTIN_RULES",
     "seed_builtin_rules",
+    # permisos & autonomía (A3b)
+    "permission_service",
+    "PermissionDef",
+    "PermissionState",
+    "PermissionCatalog",
 ]

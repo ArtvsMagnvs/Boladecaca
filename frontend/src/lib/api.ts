@@ -512,6 +512,23 @@ export interface ApprovalResolveResult {
   error: string | null;
 }
 
+// V0.9 (Automation Engine A3b): Permisos & Autonomía — la capa de política
+// sobre el ApprovalGate.
+export interface PermissionState {
+  id: string;
+  label: string;
+  description: string;
+  group: string;
+  risk: "low" | "medium" | "high";
+  available: boolean;
+  enabled: boolean;
+}
+
+export interface PermissionCatalog {
+  permissions: PermissionState[];
+  profile: "manual" | "balanced" | "full" | string;
+}
+
 export const api = {
   // --- Salud del backend ---
   async health(): Promise<boolean> {
@@ -1119,6 +1136,19 @@ export const api = {
     request<ApprovalResolveResult>(`/automation/approvals/${gateId}/resolve`, {
       method: "POST",
       body: JSON.stringify({ approved, note }),
+    }),
+
+  // --- Permisos & Autonomía (V0.9 A3b) ---
+  getPermissions: () => request<PermissionCatalog>("/automation/permissions"),
+  setPermission: (id: string, enabled: boolean) =>
+    request<PermissionCatalog>("/automation/permissions", {
+      method: "POST",
+      body: JSON.stringify({ id, enabled }),
+    }),
+  setAutonomyProfile: (profile: string) =>
+    request<PermissionCatalog>("/automation/permissions/profile", {
+      method: "POST",
+      body: JSON.stringify({ profile }),
     }),
 };
 

@@ -108,6 +108,20 @@ class ApprovalGate:
         finally:
             db.close()
 
+        # V0.9 (A3b, doc 20 §A3b): capa de política SOBRE el gate. Si el usuario
+        # ya pre-autorizó este `kind` (permiso), resolvemos de inmediato —
+        # reusando resolve() tal cual, NUNCA duplicando su lógica (claim
+        # atómico, ejecución, Decision API, evento). Regla de oro: pre-
+        # autorizado no es lo mismo que silencioso — `resolve()` deja el mismo
+        # rastro de auditoría en `approvals`, solo que con
+        # `resolution_note="auto (permiso pre-autorizado)"` y sin pasar por
+        # `pending` de cara al usuario.
+        from app.automation.permissions import is_pre_authorized
+
+        if is_pre_authorized(kind):
+            await self.resolve(gate_id, approved=True, note="auto (permiso pre-autorizado)")
+            return gate_id
+
         await self._notify(gate_id, kind, title, summary, channel, target)
         emit(
             "approval.requested",

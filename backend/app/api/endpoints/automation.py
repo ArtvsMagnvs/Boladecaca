@@ -3,13 +3,21 @@
 # A1: superficie del ApprovalGate (aprobaciones pendientes, el Hub sondea — no
 # recibe push). A3: reglas (listar + activar/desactivar EN CALIENTE, sin
 # reiniciar el backend) + historial de ejecuciones, para la UI de
-# Automatizaciones y el stub por proyecto de ProjectCard.tsx (Δ10).
+# Automatizaciones y el stub por proyecto de ProjectCard.tsx (Δ10). A3b:
+# permisos + perfiles de autonomía (la capa de política sobre el gate).
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
-from app.automation import Approval, AutomationExecution, AutomationRule, approval_gate, automation_engine
+from app.automation import (
+    Approval,
+    AutomationExecution,
+    AutomationRule,
+    approval_gate,
+    automation_engine,
+    permission_service,
+)
 
 router = APIRouter(prefix="/automation", tags=["automation"])
 
@@ -160,3 +168,60 @@ def list_executions(rule_id: Optional[int] = Query(None), limit: int = Query(50,
         ]
     finally:
         db.close()
+
+
+# ---------------------------------------------------------------------------
+# Permisos & Autonomía (A3b) — la capa de política sobre el ApprovalGate.
+# ---------------------------------------------------------------------------
+def _catalog_out(catalog) -> dict:
+    return {
+        "permissions": [
+            {
+                "id": p.id,
+                "label": p.label,
+                "description": p.description,
+                "group": p.group,
+                "risk": p.risk,
+                "available": p.available,
+                "enabled": p.enabled,
+            }
+            for p in catalog.permissions
+        ],
+        "profile": catalog.profile,
+    }
+
+
+@router.get("/permissions")
+def get_permissions():
+    """Catálogo completo + estado actual + perfil activo — una sola llamada
+    para la sección Permisos de Ajustes."""
+    return _catalog_out(permission_service.get_catalog())
+
+
+class PermissionTogglePayload(BaseModel):
+    id: str
+    enabled: bool
+
+
+@router.post("/permissions")
+def set_permission(payload: PermissionTogglePayload):
+    try:
+        permission_service.set_permission(payload.id, payload.enabled)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return _catalog_out(permission_service.get_catalog())
+
+
+class AutonomyProfilePayload(BaseModel):
+    profile: str
+
+
+@router.post("/permissions/profile")
+def set_autonomy_profile(payload: AutonomyProfilePayload):
+    """Aplica un perfil rápido (manual/balanced/full) — setea todos los
+    permisos disponibles de una vez, el equivalente a "omitir permisos"."""
+    try:
+        permission_service.apply_profile(payload.profile)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return _catalog_out(permission_service.get_catalog())
