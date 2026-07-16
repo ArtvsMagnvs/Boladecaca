@@ -16,6 +16,7 @@ APP_DIR = Path(__file__).resolve().parent.parent / "app"
 MEMORY_DIR = APP_DIR / "memory"
 WORKSPACE_DIR = APP_DIR / "workspace"
 AUTOMATION_DIR = APP_DIR / "automation"
+TIE_DIR = APP_DIR / "tie"
 
 # Internos que NADIE de fuera del propio modulo debe importar directamente.
 # Cada entrada: (prefijo de import prohibido, directorio propietario que SI puede).
@@ -38,6 +39,13 @@ FORBIDDEN_MODULES = (
     ("app.automation.rules_builtin", AUTOMATION_DIR),
     ("app.automation.permissions", AUTOMATION_DIR),
     ("app.automation.learner", AUTOMATION_DIR),
+    # V1.0 (TIE v1, T1): fronteras del Task Intelligence Engine.
+    ("app.tie.contracts", TIE_DIR),
+    ("app.tie.runtime", TIE_DIR),
+    ("app.tie.intents", TIE_DIR),
+    ("app.tie.tracer", TIE_DIR),
+    ("app.tie.missions", TIE_DIR),
+    ("app.tie.pipeline", TIE_DIR),
 )
 
 
@@ -110,6 +118,29 @@ def test_automation_public_api_completa():
     assert not faltan, f"app.automation no exporta: {sorted(faltan)}"
     assert esperado.issubset(set(auto.__all__)), (
         f"faltan en __all__: {sorted(esperado - set(auto.__all__))}"
+    )
+
+
+def test_tie_public_api_completa():
+    """El barrel app.tie expone la API publica del TIE v1 (doc 21 T1)."""
+    import app.tie as tie
+
+    esperado = {
+        # contratos congelados
+        "NodeState", "IntentType", "Intent", "MEL_CAPABILITIES",
+        "TaskNode", "TaskGraph", "Mission",
+        # runtime (doc 10)
+        "AgentRuntime", "AgentTask", "AgentResult", "AgentChunk", "RuntimeHealth",
+        "NullRuntime", "register_runtime", "get_runtime", "list_runtimes",
+        # intent + misiones + trazas
+        "classify", "new_mission", "tracer",
+        # pipeline (interfaz de orquestacion)
+        "handle", "submit_mission",
+    }
+    faltan = esperado - set(dir(tie))
+    assert not faltan, f"app.tie no exporta: {sorted(faltan)}"
+    assert esperado.issubset(set(tie.__all__)), (
+        f"faltan en __all__: {sorted(esperado - set(tie.__all__))}"
     )
 
 

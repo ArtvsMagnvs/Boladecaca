@@ -585,6 +585,38 @@ class Decision(Base):
     created_at = Column(DateTime, default=datetime.utcnow, index=True)
 
 
+class OrchestratorTrace(Base):
+    """
+    V1.0 (TIE v1, T1): traza de ejecución del Task Intelligence Engine. Es el
+    estado OPERATIVO del TIE (no vive en el MOS — Principio 8: la memoria
+    recuerda conocimiento, no ejecuta). En V1.0 la misión es implícita: 1 query
+    compleja = 1 misión = 1 grafo = 1 fila de esta tabla (doc 14 §3.6).
+
+    `plan` guarda el TaskGraph serializado y se ACTUALIZA en cada transición de
+    estado de nodo (checkpoint por transición, T3) — reanudar tras un reinicio =
+    cargar las filas en estado running/waiting_* y recomputar el ready-set.
+
+    El espejo destilado (outcome, decisiones, errores) va al MOS/Decision API por
+    las APIs públicas; aquí queda el detalle de ejecución que el Learner (V1.1)
+    analiza para el LLL (doc 15 §4).
+    """
+    __tablename__ = "orchestrator_traces"
+    id = Column(String(36), primary_key=True)  # UUID hex
+    mission_id = Column(String(36), index=True)
+    channel = Column(String(40))
+    intent = Column(JSON)          # el Intent serializado (qué quería el usuario)
+    model_used = Column(String(80))
+    plan = Column(JSON)            # TaskGraph serializado; se actualiza por transición (T3)
+    context_query_id = Column(String(36))  # enlace al contexto del MOS (T2)
+    decision_id = Column(String(36), index=True)  # enlace a la Decision API (T2)
+    steps = Column(JSON)           # timing/tokens por nodo (T3)
+    result = Column(Text)          # resultado bruto
+    outcome = Column(Text)         # resumen del responder (T4)
+    state = Column(String(20), index=True, default="running")  # running|waiting|done|failed|cancelled
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+    updated_at = Column(DateTime, default=datetime.utcnow)
+
+
 class AIProviderConfig(Base):
     """
     Fase 2 - Sistema de IA: proveedores configurados por el usuario.

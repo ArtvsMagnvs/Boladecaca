@@ -34,6 +34,11 @@ class Settings:
     # corta un loop de mensajes (un canal que reenvia en bucle).
     GATEWAY_COOLDOWN_S = float(os.getenv("GATEWAY_COOLDOWN_S", "1.0"))
 
+    # V1.0 (TIE v1): kill-switch del Task Intelligence Engine. Con False, el
+    # Gateway sigue usando el chat_message_handler legacy (el switch a tie.handle
+    # es T4). En T1 el TIE existe pero no está enganchado todavía.
+    TIE_ENABLED = os.getenv("TIE_ENABLED", "true").lower() == "true"
+
     # V0.8 (hardening): CORS restringido. Además de localhost (cubierto por
     # regex) y file:// de Electron (origen 'null'), se pueden declarar orígenes
     # extra por env como CSV — p.ej. la IP de la red local al exponer la web:

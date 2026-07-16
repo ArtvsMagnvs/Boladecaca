@@ -805,8 +805,76 @@ A1·A2a·A2b·A3·A4).**
   --noEmit` limpio (sin cambios de frontend en A4 más allá del bump de
   versión). **V0.9 (Automation Engine + ApprovalGate) — BLOQUE CERRADO. Tag
   `v0.9.0`.**
-- **V1.0** — Orchestrator (intent analyzer + planner + Claude Code Agent)
-- **V1.1** — Hermes (Nous Research) como sistema de agentes bajo el Orchestrator
+
+**V1.0 — TIE v1 (Task Intelligence Engine, en curso sobre `master`; plan de
+sesiones detallado en `PLAN_MAESTRO_2026/21_V10_TIE_PLAN_SESIONES.md`, sprints
+T1-T5; artefacto visual acompañante).** El motor cognitivo: entender →
+planificar → ejecutar el grafo → responder. **Alcance del plan doc 21: SOLO el
+TIE** — el MEL (doc 19, E1-E2), el HermesRuntime (V1.1), el Learner/LLL (V1.1) y
+el empaquetado MVP-beta (O5) son planes aparte. Decisión de versión (usuario
+2026-07-16): el desarrollo de V1.0 se hace por bloques — el cierre del TIE queda
+en **`0.9.2`** (T5), luego MEL → Orchestrator/integración → MVP-beta, que cierra
+la fase en `1.0.0`. Durante T1-T4 la versión se mantiene en `0.9.0`.
+- ✅ **T1 — Esqueleto + contratos congelados + runtime + intent + camino corto**
+  (`app/tie/`, módulo nuevo): el TIE existe con sus contratos CONGELADOS y el
+  camino corto funcionando de punta a punta, **sin enganchar todavía al Gateway**
+  (el switch `gateway.set_handler(tie.handle)` es T4). **Auditoría del código real
+  antes de empezar** (doc 21 §1, corrige supuestos de los docs): la tabla
+  `orchestrator_traces` **NO existía** pese a que el doc 11-B la daba por "ya
+  prevista" → se crea aquí (migración 19.ª `e1f2a3b4c5d6_v10_tie_traces`, aplicada
+  al Postgres real en el mismo paso y verificada — la lección dura del proyecto);
+  no había settings `fast/smart` (los añade T2); `gateway.set_handler()` SÍ existe
+  ya (V0.8) con firma `MessageHandler = envelope → str|OutboundMessage`.
+  **`contracts.py` CONGELADO**: `NodeState` (9 estados), `TaskNode`/`TaskGraph`
+  (grafo-como-datos serializable, `to_dict`/`from_dict`), `Mission` (implícita en
+  V1.0), y **`Intent` ENRIQUECIDO** (petición del usuario): responde ya las 7
+  preguntas — `type`+`goal` (qué quiere), `requires_tools` (qué herramientas),
+  `requires_planning` (si planner), `requires_browser`+`requires_computer` (si
+  browser/PC — mapean a los permisos `browser.use`/`computer.use` reservados en
+  A3b), `requires_automation` (si debe volverse regla del AE), `model_capability`
+  ∈ `MEL_CAPABILITIES` (qué pedir al MEL — hint congelado alineado con la
+  taxonomía del doc 19, sin acoplar el TIE a nombres de modelo), y
+  `requires_memory`+`memory_types`+`context_query` (qué pedir al MOS). Propiedad
+  derivada `is_short_path` (conversational siempre; query simple sin planning/
+  browser/computer/automation). **`runtime.py`** (doc 10, la interfaz que usará
+  el Orchestrator y que HermesRuntime V1.1 implementará sin tocar el executor):
+  `AgentRuntime(ABC)` (`execute_task`/`stream_task`/`health_check`/`capabilities`)
+  + contratos `AgentTask`/`AgentResult`/`AgentChunk`/`RuntimeHealth` + `NullRuntime`
+  (capabilities `{chat,tool_use_basic}`; delega el chat en `chat_service.answer()`
+  —el pipeline único de V0.85 M4, reusa memoria del MOS— y puede ejecutar una tool
+  simple por el `ToolManager` inyectado con whitelist) + registro `{name:runtime}`
+  (el "Agent Factory" = un dict, doc 14 §3.1). **`intents.py`**: `classify()` con
+  modelo barato (en T1 proveedor activo; T2 → `router.fast()`; E1 →
+  `mel.complete(capability="classify")`) → `Intent` completo validado; umbral
+  `<0.55` → fuerza conversational (fail-safe); extracción robusta de JSON
+  (bloques markdown), fallback conversational ante CUALQUIER fallo (nunca romper).
+  **`tracer.py`** (base): escribe/actualiza `orchestrator_traces` (best-effort,
+  nunca rompe el pipeline); `record_start`/`record_intent`/`record_end`, con
+  `record_plan`/`update_graph` listos para T2/T3. **`pipeline.py`**: `handle`
+  (entrada channel-agnostic con la firma exacta de `MessageHandler`) +
+  `submit_mission` (entrada programática del AE/WPMS que salta el intent) — en T1
+  resuelven el camino corto (vía `AgentRuntime`, no `chat_service` directo, para
+  ejercitar ya la interfaz) y **degradan honestamente** la rama compleja
+  (planner/executor son T2-T4). **`missions.py`** (`new_mission`, misión
+  implícita). Disciplina modular (doc 16): API pública en `app/tie/__init__.py`
+  (`handle`, `submit_mission`, `classify`, contratos, runtime, `tracer`),
+  fronteras vigiladas por `test_module_boundaries.py` extendido (`app.tie.*`
+  internos). `config.py` += `TIE_ENABLED` (kill-switch; con False el Gateway
+  sigue en el `chat_message_handler` legacy). Tests: `test_tie_contracts.py`
+  (18 — round-trip de contratos, las 7 preguntas del Intent, `is_short_path`,
+  clasificador con `ai_manager` fake incl. umbral/JSON-basura/error/markdown,
+  NullRuntime, registro, `handle`/`submit_mission` dejando traza). Suite completa:
+  **369 passed** (351 previos + 18 de T1). **Verificado en vivo contra el backend
+  real** (MiniMax activo + Postgres real): el clasificador respondió las 7
+  preguntas correctamente en mensajes reales (incl. `requires_browser=True` en
+  "busca en internet", `model_capability='extract'`, `memory_types=['mem_project']`),
+  el camino corto respondió de verdad ("Soy Aithera…"), la traza quedó en
+  `orchestrator_traces`, `submit_mission` funcionó, limpieza sin ensuciar la BD.
+- **V1.0 pendiente**: T2 (enricher + router + planner + validación DAG), T3
+  (executor + checkpoint + gates + kill-switch), T4 (responder + el switch +
+  frontend), T5 (tests/perf + cierre a `0.9.2`). Luego MEL, integración
+  Orchestrator, MVP-beta (→ `1.0.0`).
+- **V1.1** — Hermes (Nous Research) como sistema de agentes bajo el TIE + Learner
 
 **Estado del git**: branch `master` con historia activa. V0.7.1 commiteado
 (commit `abf4493`, tag `v0.7.1`). Trabajo V0.8 sobre `master`: B21
