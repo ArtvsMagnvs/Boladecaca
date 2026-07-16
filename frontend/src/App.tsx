@@ -10,6 +10,8 @@ import Settings from "@/pages/Settings";
 import VoiceCenter from "@/pages/VoiceCenter";
 import Agents from "@/pages/Agents";
 import EmailAssistant from "@/pages/EmailAssistant";
+// V0.9 (Automation Engine A3): reglas + historial + aprobaciones.
+import Automation from "@/pages/Automation";
 
 // HashRouter (no BrowserRouter): cuando Electron carga el build empaquetado
 // via file://, no hay servidor que resuelva rutas tipo /chat - el hash
@@ -29,6 +31,7 @@ export default function App() {
           <Route path="/tasks" element={<Navigate to="/workspace" replace />} />
           <Route path="/calendar" element={<CalendarPage />} />
           <Route path="/agents" element={<Agents />} />
+          <Route path="/automation" element={<Automation />} />
           <Route path="/voice" element={<VoiceCenter />} />
           <Route path="/settings" element={<Settings />} />
         </Route>

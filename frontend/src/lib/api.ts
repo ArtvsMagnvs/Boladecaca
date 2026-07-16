@@ -464,6 +464,54 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return (text ? JSON.parse(text) : (undefined as unknown)) as T;
 }
 
+// V0.9 (Automation Engine A1/A3): reglas + ejecuciones + aprobaciones.
+export interface AutomationRule {
+  id: number;
+  name: string;
+  enabled: boolean;
+  trigger_type: string; // "schedule" | "event" | ...
+  trigger_config: Record<string, unknown> | null;
+  condition_config: Record<string, unknown> | null;
+  action_type: string; // "telegram_message" | "email_summary" | "chat_query" | "agent_task" | "workspace" | ...
+  action_config: Record<string, unknown> | null;
+  project_id?: number | null;
+  cooldown_s: number;
+  created_at?: string | null;
+  updated_at?: string | null;
+}
+
+export interface AutomationExecution {
+  id: number;
+  rule_id: number;
+  trigger_source: string | null;
+  event_key: string | null;
+  status: "ok" | "failed" | "skipped" | "waiting_approval";
+  result: string | null;
+  error: string | null;
+  duration_ms: number | null;
+  created_at: string | null;
+}
+
+export interface Approval {
+  gate_id: string;
+  kind: string;
+  title: string;
+  summary: string | null;
+  action_type: string;
+  status: "pending" | "approved" | "rejected" | "expired";
+  channel: string | null;
+  requested_at: string | null;
+  resolved_at: string | null;
+}
+
+export interface ApprovalResolveResult {
+  gate_id: string;
+  status: string;
+  executed: boolean;
+  result: unknown;
+  error: string | null;
+}
+
 export const api = {
   // --- Salud del backend ---
   async health(): Promise<boolean> {
@@ -1053,6 +1101,25 @@ export const api = {
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     return response.json();
   },
+
+  // --- Automation Engine (V0.9 A1/A3) ---
+  getAutomationRules: (projectId?: number) =>
+    request<AutomationRule[]>(`/automation/rules${projectId != null ? `?project_id=${projectId}` : ""}`),
+  toggleAutomationRule: (ruleId: number, enabled: boolean) =>
+    request<AutomationRule>(`/automation/rules/${ruleId}`, {
+      method: "PATCH",
+      body: JSON.stringify({ enabled }),
+    }),
+  getAutomationExecutions: (ruleId?: number, limit = 50) =>
+    request<AutomationExecution[]>(
+      `/automation/executions?limit=${limit}${ruleId != null ? `&rule_id=${ruleId}` : ""}`,
+    ),
+  getApprovals: () => request<Approval[]>("/automation/approvals"),
+  resolveApproval: (gateId: string, approved: boolean, note = "") =>
+    request<ApprovalResolveResult>(`/automation/approvals/${gateId}/resolve`, {
+      method: "POST",
+      body: JSON.stringify({ approved, note }),
+    }),
 };
 
 export interface VoiceInfo {

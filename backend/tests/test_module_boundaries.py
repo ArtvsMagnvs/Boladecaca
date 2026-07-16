@@ -27,13 +27,15 @@ FORBIDDEN_MODULES = (
     ("app.workspace.models", WORKSPACE_DIR),
     ("app.workspace.service", WORKSPACE_DIR),
     ("app.workspace.progress", WORKSPACE_DIR),
-    # V0.9 (Automation A1/A2a/A2b): fronteras del Automation Engine.
+    # V0.9 (Automation A1/A2a/A2b/A3): fronteras del Automation Engine.
     ("app.automation.models", AUTOMATION_DIR),
     ("app.automation.approval", AUTOMATION_DIR),
     ("app.automation.scheduler", AUTOMATION_DIR),
     ("app.automation.engine", AUTOMATION_DIR),
     ("app.automation.triggers", AUTOMATION_DIR),
     ("app.automation.conditions", AUTOMATION_DIR),
+    ("app.automation.actions", AUTOMATION_DIR),
+    ("app.automation.rules_builtin", AUTOMATION_DIR),
 )
 
 
@@ -73,7 +75,7 @@ def test_workspace_public_api_completa():
 
 
 def test_automation_public_api_completa():
-    """El barrel app.automation expone la API publica de A1/A2a/A2b (doc 20)."""
+    """El barrel app.automation expone la API publica de A1/A2a/A2b/A3 (doc 20)."""
     import app.automation as auto
 
     esperado = {
@@ -90,6 +92,13 @@ def test_automation_public_api_completa():
         "Condition", "CooldownCondition", "TimeWindowCondition",
         "And", "Or", "Not", "UserStateCondition", "build_conditions",
         "AutomationEngine", "automation_engine",
+        # A3
+        "Action", "ActionResult",
+        "TelegramMessageAction", "EmailSummaryAction", "ChatQueryAction",
+        "AgentTaskAction", "WorkspaceAction",
+        "SkillExecutionAction", "CalendarBlockAction", "ChainedRuleAction", "MemoryUpdateAction",
+        "DEFAULT_ACTIONS", "register_default_actions",
+        "BUILTIN_RULES", "seed_builtin_rules",
     }
     faltan = esperado - set(dir(auto))
     assert not faltan, f"app.automation no exporta: {sorted(faltan)}"

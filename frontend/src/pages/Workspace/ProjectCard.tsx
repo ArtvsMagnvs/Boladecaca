@@ -15,6 +15,7 @@ import { TaskBoard, KANBAN_SHORTCUTS, type TaskColumnKey, type TaskUpdatePatch }
 import { TaskPopup } from "./TaskPopup";
 import { MilestonePopup } from "./MilestonePopup";
 import { AgentsSection } from "./AgentsSection";
+import { AutomationSection } from "./AutomationSection";
 import { HelpButton, windowShortcuts } from "./HelpPanel";
 import { useDragResize, MIN_CARD_W, MIN_CARD_H, type CardLayout, type Rect } from "./useWindowCard";
 
@@ -265,12 +266,7 @@ export function ProjectCard({
               />
             </div>
 
-            {showAgentsFull && (
-              <section>
-                <h3 className="text-xs font-medium text-ink-dim mb-1.5">Automatizaciones</h3>
-                <p className="text-[11px] text-ink-faint px-1">Sin automatizaciones todavía — llega con el Automation Engine (V0.9).</p>
-              </section>
-            )}
+            {showAgentsFull && <AutomationSection projectId={project.id} />}
 
             {showTasksAndActivity && (
               <>

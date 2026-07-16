@@ -189,6 +189,20 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         log_error("startup", e, "No se pudo iniciar el planificador (el backend sigue; los jobs del MOS quedan sin programar)")
 
+    # V0.9 (Automation A3): siembra las 5 reglas predefinidas (idempotente, sin
+    # duplicar en arranques posteriores) y registra el catalogo de acciones
+    # reales ANTES de armar nada — arm_rule() de una regla event/schedule no
+    # necesita el registro listo, pero coherente hacerlo en este orden.
+    try:
+        from app.automation import automation_engine, register_default_actions, seed_builtin_rules
+
+        n_seeded = seed_builtin_rules()
+        register_default_actions(automation_engine)
+        if n_seeded:
+            log_info("startup", f"Automation Engine: {n_seeded} regla(s) predefinida(s) sembrada(s)")
+    except Exception as e:
+        log_error("startup", e, "No se pudo sembrar/registrar el catalogo del Automation Engine")
+
     # V0.9 (Automation A2b): arma las reglas `enabled=True` — DESPUES de
     # APScheduler (ScheduleTrigger necesita el scheduler vivo) y de registrar los
     # adapters del Gateway (doc 20 §A2b). Sin reglas activas todavia es el caso

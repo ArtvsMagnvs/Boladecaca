@@ -199,6 +199,59 @@ async def test_sin_ejecutor_registra_skipped():
 
 
 # ---------------------------------------------------------------------------
+# ActionResult.ok=False (fallo de negocio SIN excepción) -> status="failed"
+# (regresión: engine.py solo miraba si el ejecutor lanzaba, no si el propio
+# ActionResult reportaba ok=False — encontrado en la verificación en vivo de A3)
+# ---------------------------------------------------------------------------
+@pytest.mark.anyio
+async def test_action_result_ok_false_sin_excepcion_se_registra_como_failed():
+    from dataclasses import dataclass
+
+    @dataclass
+    class _FakeActionResult:
+        ok: bool
+        detail: str = ""
+
+    async def _exec(config, trigger_event):
+        return _FakeActionResult(ok=False, detail="sin chat_id configurado")
+
+    automation_engine.register_action_executor("test_business_fail_action", _exec)
+    rule = _make_rule("test_business_fail_action")
+    automation_engine._armed[rule.id] = _FixedTrigger(event_key="biz-fail")
+
+    await automation_engine.handle_trigger(rule.id, TriggerContext())
+
+    execs = _executions(rule.id)
+    assert len(execs) == 1
+    assert execs[0].status == "failed"
+    assert execs[0].error == "sin chat_id configurado"
+
+
+@pytest.mark.anyio
+async def test_action_result_ok_true_se_registra_como_ok_con_detail():
+    from dataclasses import dataclass
+
+    @dataclass
+    class _FakeActionResult:
+        ok: bool
+        detail: str = ""
+
+    async def _exec(config, trigger_event):
+        return _FakeActionResult(ok=True, detail="entregado correctamente")
+
+    automation_engine.register_action_executor("test_business_ok_action", _exec)
+    rule = _make_rule("test_business_ok_action")
+    automation_engine._armed[rule.id] = _FixedTrigger(event_key="biz-ok")
+
+    await automation_engine.handle_trigger(rule.id, TriggerContext())
+
+    execs = _executions(rule.id)
+    assert len(execs) == 1
+    assert execs[0].status == "ok"
+    assert execs[0].result == "entregado correctamente"
+
+
+# ---------------------------------------------------------------------------
 # Condiciones no cumplidas -> skipped, sin ejecutar la accion
 # ---------------------------------------------------------------------------
 @pytest.mark.anyio

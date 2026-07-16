@@ -7,8 +7,8 @@
 #
 # V0.9 A1: modelos del esquema + ApprovalGate (primitivo genérico).
 # V0.9 A2a: SchedulerService (planificador único, APScheduler).
-# V0.9 A2b: motor de reglas + triggers + conditions. `actions.py`/`learner.py`
-# se añaden en A3/A4.
+# V0.9 A2b: motor de reglas + triggers + conditions.
+# V0.9 A3: acciones + reglas predefinidas. `learner.py` se añade en A4.
 
 from app.automation.models import AutomationRule, AutomationExecution, Approval
 from app.automation.approval import ApprovalGate, ApprovalResult, approval_gate
@@ -36,6 +36,22 @@ from app.automation.conditions import (
     build_conditions,
 )
 from app.automation.engine import AutomationEngine, automation_engine
+from app.automation.actions import (
+    Action,
+    ActionResult,
+    TelegramMessageAction,
+    EmailSummaryAction,
+    ChatQueryAction,
+    AgentTaskAction,
+    WorkspaceAction,
+    SkillExecutionAction,
+    CalendarBlockAction,
+    ChainedRuleAction,
+    MemoryUpdateAction,
+    DEFAULT_ACTIONS,
+    register_default_actions,
+)
+from app.automation.rules_builtin import BUILTIN_RULES, seed_builtin_rules
 
 __all__ = [
     # modelos (esquema V0.9)
@@ -72,4 +88,21 @@ __all__ = [
     # motor (A2b)
     "AutomationEngine",
     "automation_engine",
+    # acciones (A3)
+    "Action",
+    "ActionResult",
+    "TelegramMessageAction",
+    "EmailSummaryAction",
+    "ChatQueryAction",
+    "AgentTaskAction",
+    "WorkspaceAction",
+    "SkillExecutionAction",
+    "CalendarBlockAction",
+    "ChainedRuleAction",
+    "MemoryUpdateAction",
+    "DEFAULT_ACTIONS",
+    "register_default_actions",
+    # reglas predefinidas (A3)
+    "BUILTIN_RULES",
+    "seed_builtin_rules",
 ]

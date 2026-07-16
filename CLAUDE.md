@@ -633,9 +633,63 @@ A1·A2a·A2b·A3·A4).**
   hecho NO duplica (idempotencia confirmada en Postgres, no solo SQLite de
   tests) → limpieza sin ensuciar la BD. Suite: **294 passed** (278 previos + 16
   de A2b).
-- **V0.9 pendiente**: A3 (5 acciones + 5 reglas + UI), A3b (Permisos &
-  Autonomía — panel en Ajustes, doc 20), A4 (integración MOS + Learner stub +
-  cierre/tag v0.9.0).
+- ✅ **A3 — Acciones + reglas predefinidas + UI** (doc 20 §4·A3): que el AE por
+  fin haga cosas. `app/automation/actions.py`: `Action(ABC)` congelado + 5
+  acciones reales, todas cableando sobre APIs YA EXISTENTES (el AE nunca
+  reimplementa lógica de negocio): **`TelegramMessageAction`** (`gateway.notify`
+  de A1; `config.text` literal o `config.source` ∈ `daily_briefing`/
+  `system_monitor`/`urgent_email` para construir el texto en el momento —
+  `daily_briefing` reusa `gather_day_data`+`get_cached_summary` de `summarizer.py`
+  con el bloque `workspace` ya incluido, `system_monitor` usa
+  `ai_manager.health_check()`, `urgent_email` resuelve remitente/asunto contra
+  `EmailTriage` porque el evento solo trae `email_id`); **`EmailSummaryAction`**
+  (reusa literalmente `GET /api/email/digest`, V0.7.3 B7 — cero lógica
+  duplicada); **`ChatQueryAction`** (reusa `chat_service.answer()`, V0.85 M4);
+  **`AgentTaskAction`** (`agent_manager.create_execution()` — el ÚNICO punto que
+  V1.0 reconecta al Orchestrator, doc 11 §B.4, deliberadamente sin lógica extra
+  alrededor); **`WorkspaceAction`** (Δ2 — `create_task`/`close_task`/
+  `move_task`/`update_task`, reusando EXACTAMENTE los side effects del endpoint
+  HTTP: `apply_task_status_side_effects`+`recompute_project_progress`+
+  `emit_task_created`/`emit_task_status_changed`+`on_task_closed`; el AE nunca
+  recalcula progreso a mano). 4 stubs registrados a propósito (para que fallen
+  CLARO con `NotImplementedError("V1.1"/"V1.x")` si una regla mal configurada
+  los usa, no con el genérico "sin ejecutor"): `SkillExecutionAction`,
+  `CalendarBlockAction`, `ChainedRuleAction`, `MemoryUpdateAction`.
+  `app/automation/rules_builtin.py`: 5 reglas predefinidas sembradas de forma
+  idempotente en el arranque (por `name`, nunca duplica ni pisa una regla que
+  el usuario ya haya creado con ese nombre) — TODAS `enabled=False` (HITL):
+  `daily_briefing` (08:00), `system_monitor` (cada 30min, cooldown 5min,
+  estilo Mark-XLVII), `urgent_email_alert` (evento `email.triaged` +
+  `category=urgente`), `email_summary` (18:00), `agent_task` (plantilla
+  genérica con `agent_id=None` — inofensiva incluso si alguien la activa sin
+  configurarla). **Endpoints** (`automation.py`): `GET /rules` (+filtro
+  `project_id`, Δ10), `PATCH /rules/{id}` (activa/desactiva **EN CALIENTE** —
+  arma/desarma el trigger en el motor sin reiniciar el backend), `GET
+  /executions` (historial). **Frontend**: `pages/Automation.tsx` (nueva página
+  `/automation` + ítem de Sidebar) — aprobaciones pendientes con ✓/✗, lista de
+  reglas con toggle simple (el interruptor deslizante azul + selector de
+  autonomía es A3b, deliberadamente no adelantado aquí), historial con
+  filtro por regla. `AutomationSection.tsx` rellena el stub de
+  `ProjectCard.tsx` (Δ10) con las reglas filtradas por `project_id` — hoy
+  casi siempre vacío (las 5 predefinidas nacen globales, sin UI de creación
+  de reglas por proyecto todavía). **Bug real encontrado en la verificación en
+  vivo**: `engine.py` solo miraba si el ejecutor lanzaba una excepción, nunca
+  si el propio `ActionResult` devuelto reportaba `ok=False` (fallo de negocio
+  controlado, p.ej. "sin chat_id configurado") — una regla que fallaba
+  silenciosamente se auditaba como `status=ok`. Corregido con
+  `_interpret_result()` (duck-typing sobre `.ok`/`.detail`, sin importar
+  `actions.py` desde `engine.py` — evita el ciclo): ahora un `ok=False` se
+  registra como `status=failed` con el `detail` como error. Tests: 33 nuevos
+  (`test_automation_actions.py` 19 + `test_rules_builtin.py` 14, incluye
+  endpoints HTTP) + 2 de regresión del bug de `ActionResult.ok`. **Verificado
+  en vivo contra el Postgres real**: activar `daily_briefing` de verdad
+  (arranque real, siembra idempotente confirmada), disparar a mano, confirmar
+  que el fallo de negocio (sin canal Telegram registrado en el script de
+  verificación) se audita como `failed` con motivo claro tras el fix; una
+  `WorkspaceAction.close_task` sobre una tarea real recalculó el progreso del
+  proyecto a 1.0 correctamente. Suite: **324 passed** (294 previos + 30 de A3).
+- **V0.9 pendiente**: A3b (Permisos & Autonomía — panel en Ajustes, doc 20),
+  A4 (integración MOS + Learner stub + cierre/tag v0.9.0).
 - **V1.0** — Orchestrator (intent analyzer + planner + Claude Code Agent)
 - **V1.1** — Hermes (Nous Research) como sistema de agentes bajo el Orchestrator
 

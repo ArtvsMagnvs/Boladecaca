@@ -148,7 +148,15 @@ class AutomationEngine:
         try:
             result = await executor(rule.action_config or {}, trigger_event)
             duration_ms = int((time.monotonic() - start) * 1000)
-            self._record(rule_id, trigger_event, status="ok", result=_to_text(result), duration_ms=duration_ms)
+            ok, text = _interpret_result(result)
+            if ok:
+                self._record(rule_id, trigger_event, status="ok", result=text, duration_ms=duration_ms)
+            else:
+                # la acción NO lanzó, pero reportó un fallo de negocio controlado
+                # (p.ej. "sin chat_id configurado") — status="failed" con el
+                # detail como error, para que la auditoría/UI lo distinga de un
+                # éxito real (doc 20 §A3, contrato ActionResult.ok).
+                self._record(rule_id, trigger_event, status="failed", error=text, duration_ms=duration_ms)
         except Exception as e:
             duration_ms = int((time.monotonic() - start) * 1000)
             self._record(
@@ -206,10 +214,19 @@ class AutomationEngine:
             db.close()
 
 
-def _to_text(value: Any) -> str:
-    """Serializa el resultado de una acción para la columna Text de auditoría."""
-    text = str(value)
-    return text[:2000]
+def _interpret_result(result: Any) -> tuple[bool, str]:
+    """Traduce lo que devolvió el ejecutor a (ok, texto) para la auditoría.
+
+    Los ejecutores reales devuelven `ActionResult` (actions.py) — engine.py
+    NUNCA lo importa (evita el ciclo actions<->engine, mismo motivo que el
+    registro de ejecutores del ApprovalGate en A1), así que se hace duck-typing
+    sobre `.ok`/`.detail`: si el resultado los tiene, se usan; si no (un
+    ejecutor de test devuelve un str suelto, p.ej.), se trata como éxito y se
+    serializa a texto sin más."""
+    ok = getattr(result, "ok", True)
+    detail = getattr(result, "detail", None)
+    text = detail if isinstance(detail, str) and detail else str(result)
+    return bool(ok), text[:2000]
 
 
 # Singleton — mismo patrón que approval_gate / gateway / scheduler_service.

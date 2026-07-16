@@ -72,6 +72,16 @@ const NAV_ITEMS: NavItem[] = [
     ),
   },
   {
+    // V0.9 (Automation Engine A3): reglas + historial + aprobaciones.
+    to: "/automation",
+    label: "Automatizaciones",
+    icon: (
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M13 2 L4 14h6l-1 8 9-12h-6l1-8z" />
+      </svg>
+    ),
+  },
+  {
     to: "/voice",
     label: "Voz",
     icon: (
