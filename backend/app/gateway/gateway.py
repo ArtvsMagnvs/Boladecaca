@@ -7,6 +7,7 @@
 # mismo que usa Electron via /api/chat. En V1.0 el handler pasara a ser el
 # Orchestrator SIN tocar ni un adapter: esa es la gracia del envelope.
 
+import time
 from typing import Awaitable, Callable, Dict, Optional, Union
 
 from app.core.logging_config import get_system_logger
@@ -49,6 +50,12 @@ class Gateway:
     def __init__(self, handler: Optional[MessageHandler] = None) -> None:
         self._adapters: Dict[str, ChannelAdapter] = {}
         self._handler: MessageHandler = handler or chat_message_handler
+        # V0.9 (A2a, doc 12 A8): guard anti-flood por (canal, user_ref). Un
+        # reloj monotónico por remitente; mensajes que llegan MUY seguidos (dentro
+        # de la ventana) se rechazan sin llamar al handler. Protege contra loops
+        # de mensajes (un canal que reenvía en bucle) sin molestar al chat normal
+        # (una persona espera la respuesta: nunca dispara dos en <1s).
+        self._last_dispatch: Dict[str, float] = {}
 
     # -------------------- registro --------------------
 
@@ -82,6 +89,25 @@ class Gateway:
         adapter = self._adapters.get(envelope.channel)
         if adapter is None:
             raise GatewayError(f"canal no registrado: {envelope.channel!r}")
+
+        # V0.9 (A2a, doc 12 A8): flood guard. Ventana configurable (0 = off).
+        from app.core.config import settings
+
+        window = float(getattr(settings, "GATEWAY_COOLDOWN_S", 1.0) or 0.0)
+        if window > 0:
+            key = f"{envelope.channel}:{envelope.user_ref}"
+            now = time.monotonic()
+            if now - self._last_dispatch.get(key, 0.0) < window:
+                logger.warning(f"[gateway] cooldown: mensaje descartado de {key} (flood)")
+                outbound = OutboundMessage(
+                    text="Voy demasiado rápido, dame un segundo e inténtalo de nuevo.",
+                    envelope_id=envelope.envelope_id,
+                    error=True,
+                    metadata={"reason": "cooldown"},
+                )
+                await adapter.deliver(outbound, envelope)
+                return outbound
+            self._last_dispatch[key] = now
 
         if not await adapter.authorize(envelope):
             outbound = OutboundMessage(

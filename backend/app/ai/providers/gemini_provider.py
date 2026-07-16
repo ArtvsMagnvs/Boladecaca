@@ -35,18 +35,18 @@ class GeminiProvider(BaseAIProvider):
     async def generate(self, prompt: str, system_prompt: Optional[str] = None) -> Dict[str, Any]:
         url = f"{self.base_url}/{self.model}:generateContent?key={self.api_key}"
         try:
-            async with httpx.AsyncClient(timeout=180.0) as client:
-                response = await client.post(url, json=self._build_payload(prompt, system_prompt))
-                response.raise_for_status()
-                data = response.json()
-                text = data["candidates"][0]["content"]["parts"][0]["text"]
-                usage = data.get("usageMetadata", {})
-                return {
-                    "response": text,
-                    "model": self.model,
-                    "provider": self.provider_name,
-                    "tokens": usage.get("totalTokenCount", 0),
-                }
+            client = self._get_client()  # V0.9 A2a: cliente persistente por proveedor
+            response = await client.post(url, json=self._build_payload(prompt, system_prompt), timeout=180.0)
+            response.raise_for_status()
+            data = response.json()
+            text = data["candidates"][0]["content"]["parts"][0]["text"]
+            usage = data.get("usageMetadata", {})
+            return {
+                "response": text,
+                "model": self.model,
+                "provider": self.provider_name,
+                "tokens": usage.get("totalTokenCount", 0),
+            }
         except Exception as e:
             return {
                 "response": f"Error connecting to Gemini: {str(e)}",
@@ -58,25 +58,25 @@ class GeminiProvider(BaseAIProvider):
     async def generate_stream(self, prompt: str, system_prompt: Optional[str] = None) -> AsyncIterator[str]:
         url = f"{self.base_url}/{self.model}:streamGenerateContent?alt=sse&key={self.api_key}"
         try:
-            async with httpx.AsyncClient(timeout=180.0) as client:
-                async with client.stream("POST", url, json=self._build_payload(prompt, system_prompt)) as response:
-                    response.raise_for_status()
-                    async for line in response.aiter_lines():
-                        if not line.startswith("data:"):
-                            continue
-                        data_str = line[len("data:"):].strip()
-                        if not data_str:
-                            continue
-                        try:
-                            data = json.loads(data_str)
-                        except json.JSONDecodeError:
-                            continue
-                        try:
-                            chunk = data["candidates"][0]["content"]["parts"][0]["text"]
-                        except (KeyError, IndexError):
-                            chunk = ""
-                        if chunk:
-                            yield chunk
+            client = self._get_client()  # V0.9 A2a: cliente persistente por proveedor
+            async with client.stream("POST", url, json=self._build_payload(prompt, system_prompt), timeout=180.0) as response:
+                response.raise_for_status()
+                async for line in response.aiter_lines():
+                    if not line.startswith("data:"):
+                        continue
+                    data_str = line[len("data:"):].strip()
+                    if not data_str:
+                        continue
+                    try:
+                        data = json.loads(data_str)
+                    except json.JSONDecodeError:
+                        continue
+                    try:
+                        chunk = data["candidates"][0]["content"]["parts"][0]["text"]
+                    except (KeyError, IndexError):
+                        chunk = ""
+                    if chunk:
+                        yield chunk
         except Exception as e:
             yield f"[Error conectando con Gemini: {str(e)}]"
 
@@ -84,8 +84,8 @@ class GeminiProvider(BaseAIProvider):
         if not self.api_key:
             return False
         try:
-            async with httpx.AsyncClient(timeout=5.0) as client:
-                response = await client.get(f"{self.base_url}?key={self.api_key}")
-                return response.status_code == 200
+            client = self._get_client()  # V0.9 A2a: cliente persistente por proveedor
+            response = await client.get(f"{self.base_url}?key={self.api_key}", timeout=5.0)
+            return response.status_code == 200
         except Exception:
             return False

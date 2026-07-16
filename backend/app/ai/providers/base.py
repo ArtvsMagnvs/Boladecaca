@@ -2,6 +2,8 @@
 from abc import ABC, abstractmethod
 from typing import Optional, Dict, Any, AsyncIterator
 
+import httpx
+
 
 class BaseAIProvider(ABC):
     """Base class for all AI providers."""
@@ -9,6 +11,32 @@ class BaseAIProvider(ABC):
     def __init__(self, api_key: Optional[str] = None, model: Optional[str] = None):
         self.api_key = api_key
         self.model = model or self.get_default_model()
+        # V0.9 (A2a, doc 12 A2): un unico httpx.AsyncClient POR PROVEEDOR, creado
+        # lazy y reutilizado entre requests (mantiene vivas las conexiones TLS en
+        # vez de rehacer el handshake en cada chat — antes se abria un
+        # `async with httpx.AsyncClient(...)` por llamada, +100-300ms en el
+        # primer chunk). Se cierra en shutdown via AIManager.aclose(). El timeout
+        # sigue siendo POR REQUEST (se pasa en cada .post/.stream), no del cliente.
+        self._http: Optional[httpx.AsyncClient] = None
+
+    def _get_client(self) -> httpx.AsyncClient:
+        """Cliente HTTP compartido del proveedor (lazy). Si se cerro (shutdown)
+        se recrea, para que el proveedor siga siendo utilizable si el proceso
+        vuelve a necesitarlo."""
+        if self._http is None or self._http.is_closed:
+            self._http = httpx.AsyncClient()
+        return self._http
+
+    async def aclose(self) -> None:
+        """Cierra el cliente compartido (llamado por AIManager.aclose() en el
+        shutdown del lifespan). Fail-soft: nunca lanza."""
+        try:
+            if self._http is not None and not self._http.is_closed:
+                await self._http.aclose()
+        except Exception:
+            pass
+        finally:
+            self._http = None
 
     @abstractmethod
     def get_default_model(self) -> str:

@@ -289,26 +289,8 @@ async def run_summarizer(target_date: Optional[date] = None) -> dict[str, Any]:
         return {"job": JOB_SUMMARIZER, "status": "error", "date": target.isoformat(), "reason": str(e)}
 
 
-# ---------------------------------------------------------------------------
-# Loop de background (03:30 local)
-# ---------------------------------------------------------------------------
-def _seconds_until_next(hour: int, minute: int) -> float:
-    now = datetime.now()  # hora LOCAL a proposito (doc 07 §7)
-    target = datetime.combine(now.date(), time(hour, minute))
-    if target <= now:
-        target += timedelta(days=1)
-    return (target - now).total_seconds()
-
-
-async def _loop() -> None:
-    while True:
-        try:
-            await asyncio.sleep(_seconds_until_next(DAILY_HOUR, DAILY_MINUTE))
-            await run_summarizer()
-        except Exception as e:
-            print(f"[summarizer] loop fallo (se reintenta manana): {e}")
-            await asyncio.sleep(3600)  # red de seguridad: no busy-loop si algo va mal
-
-
-def start_summarizer_job():
-    return asyncio.create_task(_loop())
+# V0.9 (A2a): la programacion nocturna (03:30 local) se movio a APScheduler
+# (CronTrigger, wiring en el lifespan de main.py). `run_summarizer` (arriba) sigue
+# siendo la funcion de trabajo — la llama el scheduler y tambien el endpoint
+# POST /api/memory/ingest/run?job=... . El antiguo `_loop`/`start_summarizer_job`
+# (asyncio + _seconds_until_next) se retiro: un solo planificador, mejor gestion.

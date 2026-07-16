@@ -78,6 +78,12 @@ anyio==4.14.0
 # Trae su propio httpx; ya esta fijado arriba en version compatible.
 python-telegram-bot==21.10
 
+# --- Planificador de jobs (V0.9 Automation A2a) ---
+# APScheduler: el planificador unico del backend. Absorbe los jobs asyncio de
+# V0.85 (ingesta, resumen nocturno) + el nuevo lifecycle del MOS. 3.x (linea
+# estable con AsyncIOScheduler); 4.x es una reescritura beta, no se usa.
+APScheduler==3.11.0
+
 # --- Desktop app (CustomTkinter) ---
 customtkinter==5.2.2
 darkdetect==0.8.0

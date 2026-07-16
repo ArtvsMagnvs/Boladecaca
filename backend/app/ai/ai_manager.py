@@ -518,15 +518,25 @@ class AIManager:
         ollama = self.providers.get("ollama")
         if not isinstance(ollama, OllamaProvider):
             return []
-        import httpx
         try:
-            async with httpx.AsyncClient(timeout=5.0) as client:
-                response = await client.get(f"{ollama.base_url}/api/tags")
-                response.raise_for_status()
-                data = response.json()
-                return [m.get("name", "") for m in data.get("models", []) if m.get("name")]
+            # V0.9 A2a: reutiliza el cliente httpx persistente del proveedor ollama
+            # (en vez de abrir uno nuevo por llamada); timeout por-request.
+            client = ollama._get_client()
+            response = await client.get(f"{ollama.base_url}/api/tags", timeout=5.0)
+            response.raise_for_status()
+            data = response.json()
+            return [m.get("name", "") for m in data.get("models", []) if m.get("name")]
         except Exception:
             return []
+
+    async def aclose(self) -> None:
+        """V0.9 (A2a, doc 12 A2): cierra los httpx.AsyncClient persistentes de
+        TODOS los proveedores (llamado en el shutdown del lifespan). Fail-soft."""
+        for provider in list(self.providers.values()):
+            try:
+                await provider.aclose()
+            except Exception:
+                pass
 
     # ------------------------------------------------------------------
     # Chat (con fallback automatico integrado)

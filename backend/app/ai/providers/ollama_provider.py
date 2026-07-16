@@ -33,16 +33,16 @@ class OllamaProvider(BaseAIProvider):
             payload["system"] = system_prompt
 
         try:
-            async with httpx.AsyncClient(timeout=180.0) as client:
-                response = await client.post(url, json=payload)
-                response.raise_for_status()
-                data = response.json()
+            client = self._get_client()  # V0.9 A2a: cliente persistente por proveedor
+            response = await client.post(url, json=payload, timeout=180.0)
+            response.raise_for_status()
+            data = response.json()
 
-                return {
-                    "response": data.get("response", ""),
-                    "model": self.model,
-                    "provider": self.provider_name
-                }
+            return {
+                "response": data.get("response", ""),
+                "model": self.model,
+                "provider": self.provider_name
+            }
         except Exception as e:
             return {
                 "response": f"Error connecting to Ollama: {str(e)}",
@@ -65,29 +65,29 @@ class OllamaProvider(BaseAIProvider):
             payload["system"] = system_prompt
 
         try:
-            async with httpx.AsyncClient(timeout=180.0) as client:
-                async with client.stream("POST", url, json=payload) as response:
-                    response.raise_for_status()
-                    async for line in response.aiter_lines():
-                        if not line.strip():
-                            continue
-                        try:
-                            data = json.loads(line)
-                        except json.JSONDecodeError:
-                            continue
-                        chunk = data.get("response", "")
-                        if chunk:
-                            yield chunk
-                        if data.get("done"):
-                            break
+            client = self._get_client()  # V0.9 A2a: cliente persistente por proveedor
+            async with client.stream("POST", url, json=payload, timeout=180.0) as response:
+                response.raise_for_status()
+                async for line in response.aiter_lines():
+                    if not line.strip():
+                        continue
+                    try:
+                        data = json.loads(line)
+                    except json.JSONDecodeError:
+                        continue
+                    chunk = data.get("response", "")
+                    if chunk:
+                        yield chunk
+                    if data.get("done"):
+                        break
         except Exception as e:
             yield f"[Error conectando con Ollama: {str(e)}]"
 
     async def health_check(self) -> bool:
         """Check if Ollama is running."""
         try:
-            async with httpx.AsyncClient(timeout=5.0) as client:
-                response = await client.get(f"{self.base_url}/api/tags")
-                return response.status_code == 200
-        except:
+            client = self._get_client()  # V0.9 A2a: cliente persistente por proveedor
+            response = await client.get(f"{self.base_url}/api/tags", timeout=5.0)
+            return response.status_code == 200
+        except Exception:
             return False

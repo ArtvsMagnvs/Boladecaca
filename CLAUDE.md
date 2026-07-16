@@ -549,8 +549,46 @@ A1·A2a·A2b·A3·A4).**
   **279 passed** (269 previos + 10 de A1), 1 fallo **pre-existente y ajeno**
   (`test_summarize_filtra_por_rango_de_fechas`, ChromaDB del MOS V0.85 — reproduce
   sin los cambios de A1, trazado como tarea aparte).
-- **V0.9 pendiente**: A2a (APScheduler + `lifecycle.py` + httpx persistente), A2b
-  (motor + triggers + conditions), A3 (5 acciones + 5 reglas + UI), A4
+- ✅ **A2a — Infraestructura de jobs: APScheduler + lifecycle.py + httpx persistente**
+  (doc 20 §4·A2a; A2 se dividió A2a/A2b por carga, igual que W2→W2a-e):
+  **APScheduler** (`app/automation/scheduler.py`, singleton `scheduler_service`,
+  `AsyncIOScheduler` con `coalesce`/`max_instances=1`/`misfire_grace`) entra como
+  el planificador ÚNICO — los jobs asyncio de V0.85 (ingesta M2, resumen nocturno
+  M3) dejan de ser `asyncio.create_task(_loop())` y pasan a `add_interval_job`/
+  `add_cron_job`; el wiring vive en el `lifespan` de `main.py` (composition root,
+  para que el scheduler NO dependa de `app.memory`); `run_summarizer`/
+  `ingest_email`/`ingest_calendar` siguen siendo las funciones de trabajo (las
+  llama el scheduler y el endpoint `/api/memory/ingest/run`); se retiraron los
+  `_loop`/`start_background_jobs`/`start_summarizer_job` (código muerto).
+  **`app/memory/lifecycle.py`** (`MemoryLifecycleManager`, singleton
+  `lifecycle_manager`, doc 08 RFC-007 — NUNCA se construyó en V0.85, [Δ] doc 11):
+  job nocturno (04:00 local, tras el summarizer) que **destila** la memoria —
+  (1) **dedup** semántico (coseno >0.97 mismo tipo → fusiona, conserva el de
+  metadata más rica, numpy), (2/3) **prune** de items crudos viejos (fuera de la
+  ventana HOT 30d) **cuyo día YA tiene resumen** (el summarizer lo garantiza) —
+  con salvaguardas DURAS (nunca borra `pinned`, `category=urgente`,
+  `kind=daily_summary`, ni `mem_decision`/`mem_skill`; `mem_error`/`mem_automation`
+  detalle 90d), (4) **archive** al vault Markdown antes de podar
+  (`vault.append_archive_entries`); **presupuesto** `MEMORY_BUDGET_MB` (512): si
+  la BD vectorial lo supera, aprieta la ventana HOT (30→21→14→7). Micro-batch
+  ≤500/noche, escribe `MemoryJobRun`, emite `memory.compacted {pruned,merged,tier}`.
+  **httpx persistente** (doc 12 A2): un `AsyncClient` por proveedor IA (lazy en
+  `BaseAIProvider._get_client`, cerrado en shutdown vía `ai_manager.aclose()`),
+  timeout POR REQUEST — antes se abría un `async with httpx.AsyncClient()` por
+  llamada (+100-300ms de handshake TLS en el primer chunk); tocados los 5
+  providers + `list_ollama_models`. **Cooldown del Gateway** (doc 12 A8):
+  `Gateway.dispatch` gana un guard anti-flood por `(canal, user_ref)` con reloj
+  monotónico (`GATEWAY_COOLDOWN_S`, default 1s, 0=off) — corta loops de mensajes
+  sin molestar al chat humano. Settings nuevos: `MEMORY_BUDGET_MB`,
+  `MEMORY_LIFECYCLE_HOUR`, `AUTOMATION_ENABLED`, `GATEWAY_COOLDOWN_S`.
+  `requirements.txt +APScheduler==3.11.0`. Tests: `test_lifecycle.py` (8: dedup
+  fusiona/respeta distintos, prune borra-con-resumen pero respeta pinned/urgente/
+  resumen, prune NO borra sin resumen, `mem_decision` intacta, presupuesto aprieta
+  ventana, `MemoryJobRun`, evento `memory.compacted`). Suite: **278 passed**
+  (el pre-existente `test_summarize_filtra…` era un flake de ChromaDB frío;
+  además la tarea de fondo lo arregló con reloj local en `store()` — commit aparte).
+- **V0.9 pendiente**: A2b (motor + triggers + conditions), A3 (5 acciones + 5
+  reglas + UI), A3b (Permisos & Autonomía — panel en Ajustes, doc 20), A4
   (integración MOS + Learner stub + cierre/tag v0.9.0).
 - **V1.0** — Orchestrator (intent analyzer + planner + Claude Code Agent)
 - **V1.1** — Hermes (Nous Research) como sistema de agentes bajo el Orchestrator

@@ -231,35 +231,8 @@ async def ingest_calendar() -> dict:
         return {"job": JOB_CALENDAR, "status": "error", "items_new": 0, "reason": str(e)}
 
 
-# ---------------------------------------------------------------------------
-# Loops de background (arrancados desde el lifespan, patron Gateway)
-# ---------------------------------------------------------------------------
-async def _loop(fn, interval_minutes: int, initial_jitter_s: int = 30) -> None:
-    """Bucle infinito: jitter inicial (no competir con el arranque) -> pasada
-    -> espera. try/except total: un fallo NUNCA mata el loop (doc 07 §6)."""
-    import asyncio
-    import random
-
-    await asyncio.sleep(initial_jitter_s + random.uniform(0, 10))
-    while True:
-        try:
-            await fn()
-        except Exception as e:
-            print(f"[ingestion] loop de {getattr(fn, '__name__', fn)} fallo: {e}")
-        await asyncio.sleep(interval_minutes * 60)
-
-
-def start_background_jobs(email_interval_min: Optional[int] = None, calendar_interval_min: Optional[int] = None):
-    """Arranca los dos loops como asyncio.create_task (patron del Gateway en
-    main.py). Devuelve las tasks para que el lifespan pueda cancelarlas en
-    shutdown si algun dia hace falta (no imprescindible: son daemon-like).
-    Intervalos por defecto: Settings.MEMORY_INGEST_INTERVAL_MIN / _CALENDAR_."""
-    import asyncio
-
-    from app.core.config import settings
-
-    email_min = email_interval_min or settings.MEMORY_INGEST_INTERVAL_MIN
-    cal_min = calendar_interval_min or settings.MEMORY_INGEST_CALENDAR_INTERVAL_MIN
-    t1 = asyncio.create_task(_loop(ingest_email, email_min))
-    t2 = asyncio.create_task(_loop(ingest_calendar, cal_min))
-    return t1, t2
+# V0.9 (A2a): la programacion de estos jobs se movio a APScheduler (wiring en el
+# lifespan de main.py). `ingest_email`/`ingest_calendar` (arriba) siguen siendo
+# las funciones de trabajo — las llama el scheduler y tambien el endpoint
+# POST /api/memory/ingest/run. Los antiguos `_loop`/`start_background_jobs`
+# (asyncio.create_task) se retiraron: un solo planificador, mejor gestion.

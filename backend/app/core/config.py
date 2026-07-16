@@ -21,6 +21,19 @@ class Settings:
     MEMORY_INGEST_INTERVAL_MIN = int(os.getenv("MEMORY_INGEST_INTERVAL_MIN", "20"))
     MEMORY_INGEST_CALENDAR_INTERVAL_MIN = int(os.getenv("MEMORY_INGEST_CALENDAR_INTERVAL_MIN", "60"))
 
+    # V0.9 (Automation A2a): lifecycle del MOS (compactacion, doc 08 RFC-007).
+    # MEMORY_BUDGET_MB: presupuesto global de la memoria vectorial; si se supera,
+    # el lifecycle aprieta las ventanas de retencion. MEMORY_LIFECYCLE_HOUR: hora
+    # LOCAL del job nocturno (tras el summarizer de las 03:30, doc 07 §7).
+    MEMORY_BUDGET_MB = int(os.getenv("MEMORY_BUDGET_MB", "512"))
+    MEMORY_LIFECYCLE_HOUR = int(os.getenv("MEMORY_LIFECYCLE_HOUR", "4"))
+    # V0.9: kill-switch global del Automation Engine (jobs + motor de reglas).
+    AUTOMATION_ENABLED = os.getenv("AUTOMATION_ENABLED", "true").lower() == "true"
+    # V0.9 (A2a, doc 12 A8): ventana (segundos) del guard anti-flood del Gateway
+    # por (canal, user_ref). 0 = desactivado. 1s no molesta al chat humano y
+    # corta un loop de mensajes (un canal que reenvia en bucle).
+    GATEWAY_COOLDOWN_S = float(os.getenv("GATEWAY_COOLDOWN_S", "1.0"))
+
     # V0.8 (hardening): CORS restringido. Además de localhost (cubierto por
     # regex) y file:// de Electron (origen 'null'), se pueden declarar orígenes
     # extra por env como CSV — p.ej. la IP de la red local al exponer la web:

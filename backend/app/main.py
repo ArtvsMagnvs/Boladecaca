@@ -151,35 +151,56 @@ async def lifespan(app: FastAPI):
             "No se pudo iniciar el canal Telegram (backend sigue sin ese canal)",
         )
 
-    # V0.85 (MOS M2): arranque de la ingesta proactiva (email + calendario)
-    # sobre el MOS. Mismo patron que el Gateway: create_task + try/except
-    # total — un fallo aqui NUNCA debe impedir que el backend arranque. Cada
-    # loop tiene su propio jitter inicial y su propio try/except interno
-    # (app/memory/ingestion.py), asi que un fallo de una pasada tampoco mata
-    # el loop.
+    # V0.9 (Automation A2a): APScheduler es ahora el planificador ÚNICO. Absorbe
+    # los jobs asyncio de V0.85 (ingesta M2, resumen nocturno M3) + el nuevo
+    # lifecycle del MOS (compactacion, doc 08 RFC-007). El wiring vive aqui (el
+    # composition root), no dentro de app.memory, para que el scheduler no dependa
+    # del MOS. try/except total: un fallo al programar NUNCA impide el arranque, y
+    # cada job corre aislado (max_instances=1, misfire_grace). Los endpoints
+    # /api/memory/ingest/run siguen llamando a las funciones de trabajo directamente.
     try:
-        from app.memory.ingestion import start_background_jobs
+        from app.automation.scheduler import scheduler_service
+        from app.memory.ingestion import ingest_email, ingest_calendar
+        from app.memory.summarizer import run_summarizer
+        from app.memory.lifecycle import lifecycle_manager
 
-        start_background_jobs()
-        log_info("startup", "Ingesta de memoria (MOS) iniciada — email + calendario")
+        scheduler_service.start()
+        # Ingesta (M2): intervalos configurables + jitter + primer disparo retrasado
+        # (no competir con el arranque, como el jitter inicial de los _loop de V0.85).
+        scheduler_service.add_interval_job(
+            ingest_email, minutes=settings.MEMORY_INGEST_INTERVAL_MIN,
+            id="mos_ingest_email", jitter=30, first_run_delay_s=40,
+        )
+        scheduler_service.add_interval_job(
+            ingest_calendar, minutes=settings.MEMORY_INGEST_CALENDAR_INTERVAL_MIN,
+            id="mos_ingest_calendar", jitter=30, first_run_delay_s=60,
+        )
+        # Resumen nocturno (M3): 03:30 local.
+        scheduler_service.add_cron_job(run_summarizer, hour=3, minute=30, id="mos_summarizer")
+        # Lifecycle (A2a): tras el summarizer, hora local configurable (default 04:00).
+        scheduler_service.add_cron_job(
+            lifecycle_manager.run, hour=settings.MEMORY_LIFECYCLE_HOUR, minute=0, id="mos_lifecycle"
+        )
+        log_info(
+            "startup",
+            "APScheduler iniciado — ingesta (email/cal), resumen nocturno 03:30, lifecycle "
+            f"{settings.MEMORY_LIFECYCLE_HOUR:02d}:00 (local)",
+        )
     except Exception as e:
-        log_error("startup", e, "No se pudo iniciar la ingesta de memoria (MOS sigue disponible sin ingesta automatica)")
-
-    # V0.85 (MOS M3): resumen nocturno (03:30 local). GET /api/memory/briefing
-    # no depende de este loop (genera el resumen determinista al vuelo si no
-    # hay cache), asi que un fallo aqui nunca deja el briefing sin respuesta.
-    try:
-        from app.memory.summarizer import start_summarizer_job
-
-        start_summarizer_job()
-        log_info("startup", "Resumen nocturno (MOS) programado — 03:30 local")
-    except Exception as e:
-        log_error("startup", e, "No se pudo programar el resumen nocturno (briefing sigue disponible en modo determinista)")
+        log_error("startup", e, "No se pudo iniciar el planificador (el backend sigue; los jobs del MOS quedan sin programar)")
 
     yield
 
     # Shutdown: parada limpia de los canales del Gateway (polling de Telegram).
     log_info("shutdown", "Cerrando Aithera Backend...")
+
+    # V0.9 (A2a): parar el planificador antes que nada (deja de disparar jobs).
+    try:
+        from app.automation.scheduler import scheduler_service
+        scheduler_service.shutdown()
+    except Exception as e:
+        log_error("shutdown", e, "Error deteniendo el planificador (APScheduler)")
+
     try:
         from app.gateway.gateway import gateway
         await gateway.stop_all()
@@ -195,6 +216,14 @@ async def lifespan(app: FastAPI):
         await _el_client.close()
     except Exception as e:
         log_error("shutdown", e, "Error cerrando el cliente HTTP de ElevenLabs")
+
+    # V0.9 (A2a, doc 12 A2): cierra los httpx.AsyncClient persistentes de los
+    # proveedores IA (uno por proveedor, creado lazy en el primer chat).
+    try:
+        from app.ai.ai_manager import ai_manager
+        await ai_manager.aclose()
+    except Exception as e:
+        log_error("shutdown", e, "Error cerrando los clientes HTTP de los proveedores IA")
 
 
 # Create FastAPI app

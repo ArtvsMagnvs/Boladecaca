@@ -41,6 +41,44 @@ def write_daily_summary(target: date_cls, content: str) -> Optional[Path]:
         return None
 
 
+def append_archive_entries(memory_type: str, entries: list) -> Optional[Path]:
+    """V0.9 (lifecycle, doc 08 RFC-007): antes de podar items crudos viejos, el
+    lifecycle los vuelca aquí — un archivo Markdown por mes/tipo, legible y fuera
+    del índice vectorial. La poda pierde resolución en la búsqueda, no el hecho.
+
+    `entries`: lista de (date_iso, content). Se AGRUPA por mes (deriva del date_iso
+    de cada entrada) y se APPENDEA (no sobreescribe: el archive es acumulativo).
+    Best-effort: None si falla (la poda ya está cubierta por el resumen diario)."""
+    try:
+        if not entries:
+            return None
+        last_path: Optional[Path] = None
+        # agrupa por (año, mes) para no abrir un archivo por entrada
+        by_month: dict[tuple[int, int], list] = {}
+        for d_iso, content in entries:
+            try:
+                d = date_cls.fromisoformat(str(d_iso)[:10])
+            except (ValueError, TypeError):
+                d = datetime.utcnow().date()
+            by_month.setdefault((d.year, d.month), []).append((str(d_iso), content))
+        for (year, month), rows in by_month.items():
+            target = date_cls(year, month, 1)
+            path = _month_dir(target) / f"{year:04d}-{month:02d}-{memory_type}-archive.md"
+            lines = []
+            if not path.exists():
+                lines.append(f"# Archivo {memory_type} — {year:04d}-{month:02d}\n")
+            for d_iso, content in rows:
+                snippet = (content or "").strip().replace("\n", " ")
+                lines.append(f"- **{d_iso}** · {snippet}")
+            with path.open("a", encoding="utf-8") as fh:
+                fh.write("\n".join(lines) + "\n")
+            last_path = path
+        return last_path
+    except Exception as e:
+        print(f"[vault] no se pudo escribir el archive (no critico): {e}")
+        return None
+
+
 def write_decision(decision: Any) -> Optional[Path]:
     """Espejo de una Decision (app.db.models.Decision). Mismo decision.id ->
     mismo archivo, se sobreescribe (soporta el re-espejo de link_outcome).

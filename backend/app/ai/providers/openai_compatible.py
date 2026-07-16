@@ -60,16 +60,16 @@ class OpenAICompatibleProvider(BaseAIProvider):
             self.max_tokens_param: self.max_tokens_value,
         }
         try:
-            async with httpx.AsyncClient(timeout=180.0) as client:
-                response = await client.post(self.api_url, json=payload, headers=self._headers())
-                response.raise_for_status()
-                data = response.json()
-                return {
-                    "response": data["choices"][0]["message"]["content"],
-                    "model": self.model,
-                    "provider": self.provider_name,
-                    "tokens": data.get("usage", {}).get("total_tokens", 0),
-                }
+            client = self._get_client()  # V0.9 A2a: cliente persistente por proveedor
+            response = await client.post(self.api_url, json=payload, headers=self._headers(), timeout=180.0)
+            response.raise_for_status()
+            data = response.json()
+            return {
+                "response": data["choices"][0]["message"]["content"],
+                "model": self.model,
+                "provider": self.provider_name,
+                "tokens": data.get("usage", {}).get("total_tokens", 0),
+            }
         except Exception as e:
             return {
                 "response": f"Error connecting to {self.provider_name}: {str(e)}",
@@ -86,28 +86,28 @@ class OpenAICompatibleProvider(BaseAIProvider):
             "stream": True,
         }
         try:
-            async with httpx.AsyncClient(timeout=180.0) as client:
-                async with client.stream("POST", self.api_url, json=payload, headers=self._headers()) as response:
-                    response.raise_for_status()
-                    async for line in response.aiter_lines():
-                        if not line.startswith("data:"):
-                            continue
-                        data_str = line[len("data:"):].strip()
-                        if data_str == "[DONE]" or not data_str:
-                            if data_str == "[DONE]":
-                                break
-                            continue
-                        try:
-                            data = json.loads(data_str)
-                        except json.JSONDecodeError:
-                            continue
-                        choices = data.get("choices", [])
-                        if not choices:
-                            continue
-                        delta = choices[0].get("delta", {})
-                        chunk = delta.get("content")
-                        if chunk:
-                            yield chunk
+            client = self._get_client()  # V0.9 A2a: cliente persistente por proveedor
+            async with client.stream("POST", self.api_url, json=payload, headers=self._headers(), timeout=180.0) as response:
+                response.raise_for_status()
+                async for line in response.aiter_lines():
+                    if not line.startswith("data:"):
+                        continue
+                    data_str = line[len("data:"):].strip()
+                    if data_str == "[DONE]" or not data_str:
+                        if data_str == "[DONE]":
+                            break
+                        continue
+                    try:
+                        data = json.loads(data_str)
+                    except json.JSONDecodeError:
+                        continue
+                    choices = data.get("choices", [])
+                    if not choices:
+                        continue
+                    delta = choices[0].get("delta", {})
+                    chunk = delta.get("content")
+                    if chunk:
+                        yield chunk
         except Exception as e:
             yield f"[Error conectando con {self.provider_name}: {str(e)}]"
 
@@ -131,28 +131,29 @@ class OpenAICompatibleProvider(BaseAIProvider):
         if not self.api_key:
             return False
         try:
-            async with httpx.AsyncClient(timeout=10.0) as client:
-                response = await client.post(
-                    self.api_url,
-                    json={
-                        "model": self.model,
-                        "messages": [{"role": "user", "content": "ping"}],
-                        self.max_tokens_param: 1,
-                    },
-                    headers=self._headers(),
-                )
-                if response.status_code != 200:
+            client = self._get_client()  # V0.9 A2a: cliente persistente por proveedor
+            response = await client.post(
+                self.api_url,
+                json={
+                    "model": self.model,
+                    "messages": [{"role": "user", "content": "ping"}],
+                    self.max_tokens_param: 1,
+                },
+                headers=self._headers(),
+                timeout=10.0,
+            )
+            if response.status_code != 200:
+                return False
+            try:
+                data = response.json()
+            except Exception:
+                return True  # 200 sin cuerpo JSON parseable: se da por bueno.
+            if isinstance(data, dict):
+                if data.get("error"):
                     return False
-                try:
-                    data = response.json()
-                except Exception:
-                    return True  # 200 sin cuerpo JSON parseable: se da por bueno.
-                if isinstance(data, dict):
-                    if data.get("error"):
-                        return False
-                    base_resp = data.get("base_resp")
-                    if isinstance(base_resp, dict) and base_resp.get("status_code", 0) != 0:
-                        return False
-                return True
+                base_resp = data.get("base_resp")
+                if isinstance(base_resp, dict) and base_resp.get("status_code", 0) != 0:
+                    return False
+            return True
         except Exception:
             return False
