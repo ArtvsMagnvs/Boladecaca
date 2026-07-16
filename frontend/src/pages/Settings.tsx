@@ -970,28 +970,6 @@ export default function Settings() {
         </div>
       </div>
 
-      {/* Estado de IA */}
-      <div className="glass-surface rounded-2xl p-4">
-        <h3 className="text-sm font-medium text-ink mb-3">Estado del Sistema de IA</h3>
-        <div className="flex items-center gap-4">
-          <div className={`w-3 h-3 rounded-full ${aiStatus?.healthy ? "bg-signal-ok" : "bg-signal-error"}`} />
-          <div>
-            <p className="text-sm text-ink">
-              {aiStatus?.healthy ? "Conectado" : "Desconectado"}
-              {aiStatus?.provider && ` — ${aiStatus.provider}`}
-              {aiStatus?.model && ` / ${aiStatus.model}`}
-            </p>
-          </div>
-        </div>
-      </div>
-
-      {/* V0.9 (Automation Engine A3b): Permisos & Autonomía — arriba del todo
-          a propósito, es el control que decide si Aithera actúa sola o pregunta. */}
-      <div className="glass-surface rounded-2xl p-4">
-        <h3 className="text-sm font-medium text-ink mb-3">Permisos</h3>
-        <PermissionsSettings />
-      </div>
-
       {/* Modal edición de proveedor */}
       {editState && (
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
@@ -1049,8 +1027,33 @@ export default function Settings() {
         </div>
       )}
 
-      {/* Proveedores */}
+      {/* Contenido con scroll — todo lo que no es cabecera/modal vive aquí,
+          para que "Estado"/"Permisos" no le roben altura fija al resto
+          (bug real: antes vivían fuera de este contenedor y, al crecer
+          Permisos en A3b, dejaban el área scrolleable con 0px de alto). */}
       <div className="flex-1 overflow-y-auto">
+        <div className="flex flex-col gap-4">
+          {/* Estado de IA */}
+          <div className="glass-surface rounded-2xl p-4">
+            <h3 className="text-sm font-medium text-ink mb-3">Estado del Sistema de IA</h3>
+            <div className="flex items-center gap-4">
+              <div className={`w-3 h-3 rounded-full ${aiStatus?.healthy ? "bg-signal-ok" : "bg-signal-error"}`} />
+              <div>
+                <p className="text-sm text-ink">
+                  {aiStatus?.healthy ? "Conectado" : "Desconectado"}
+                  {aiStatus?.provider && ` — ${aiStatus.provider}`}
+                  {aiStatus?.model && ` / ${aiStatus.model}`}
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* V0.9 (Automation Engine A3b): Permisos & Autonomía */}
+          <div className="glass-surface rounded-2xl p-4">
+            <h3 className="text-sm font-medium text-ink mb-3">Permisos</h3>
+            <PermissionsSettings />
+          </div>
+
         {loading ? (
           <div className="text-center text-ink-dim py-10">Cargando...</div>
         ) : (
@@ -1266,6 +1269,7 @@ export default function Settings() {
             </div>
           </div>
         )}
+        </div>
       </div>
     </div>
   );
