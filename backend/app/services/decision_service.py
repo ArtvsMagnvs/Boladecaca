@@ -110,6 +110,35 @@ async def link_outcome(decision_id: str, outcome: str, db=None) -> Optional[Deci
     return decision
 
 
+async def history(
+    *,
+    project: Optional[str] = None,
+    mission_id: Optional[str] = None,
+    status: Optional[str] = None,
+    limit: int = 50,
+) -> list[Decision]:
+    """Historial cronológico (más reciente primero) desde la tabla `decisions`
+    — la pieza que faltaba de la Decision API (RFC-002 Δ9). A diferencia de
+    `search_decisions` (semántica, sobre el espejo mem_decision), esto es un
+    listado exacto por filtros estructurados sobre la fuente de verdad SQL:
+    lo que consumirá el futuro Learner (V1.1+) y cualquier UI de auditoría."""
+    db = SessionLocal()
+    try:
+        q = db.query(Decision)
+        if project is not None:
+            q = q.filter(Decision.project == project)
+        if mission_id is not None:
+            q = q.filter(Decision.mission_id == mission_id)
+        if status is not None:
+            q = q.filter(Decision.status == status)
+        rows = q.order_by(Decision.created_at.desc()).limit(limit).all()
+        for r in rows:
+            db.expunge(r)
+        return rows
+    finally:
+        db.close()
+
+
 async def search_decisions(query: str, top_k: int = 5) -> list[dict]:
     """Busqueda semantica sobre el espejo mem_decision. Devuelve dicts ligeros
     con la metadata de cada decision (decision_id, project, impact, status...)."""

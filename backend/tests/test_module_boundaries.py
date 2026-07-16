@@ -37,6 +37,7 @@ FORBIDDEN_MODULES = (
     ("app.automation.actions", AUTOMATION_DIR),
     ("app.automation.rules_builtin", AUTOMATION_DIR),
     ("app.automation.permissions", AUTOMATION_DIR),
+    ("app.automation.learner", AUTOMATION_DIR),
 )
 
 
@@ -76,7 +77,7 @@ def test_workspace_public_api_completa():
 
 
 def test_automation_public_api_completa():
-    """El barrel app.automation expone la API publica de A1/A2a/A2b/A3/A3b (doc 20)."""
+    """El barrel app.automation expone la API publica de A1/A2a/A2b/A3/A3b/A4 (doc 20)."""
     import app.automation as auto
 
     esperado = {
@@ -102,6 +103,8 @@ def test_automation_public_api_completa():
         "BUILTIN_RULES", "seed_builtin_rules",
         # A3b
         "permission_service", "PermissionDef", "PermissionState", "PermissionCatalog",
+        # A4
+        "AutomationLearner", "automation_learner",
     }
     faltan = esperado - set(dir(auto))
     assert not faltan, f"app.automation no exporta: {sorted(faltan)}"

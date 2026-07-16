@@ -1,6 +1,6 @@
 {
   "name": "aithera-frontend",
-  "version": "0.8.7",
+  "version": "0.9.0",
   "private": true,
   "description": "Aithera - Hub Visual y Voice Center (Electron + React)",
   "main": "electron/main.cjs",

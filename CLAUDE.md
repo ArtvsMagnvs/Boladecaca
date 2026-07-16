@@ -14,8 +14,10 @@ Auto-update por commit (instalar una vez): `graphify hook install` en terminal d
 
 ## 1. Estado actual del proyecto
 
-**Versión real**: `0.8.7` (consistente en `backend/app/main.py`,
-`backend/app/core/config.py` y `frontend/package.json`; tag de git `v0.8.7`).
+**Versión real**: `0.9.0` (consistente en `backend/app/main.py`,
+`backend/app/core/config.py` y `frontend/package.json`; tag de git `v0.9.0`).
+Bump 0.8.7 → 0.9.0 (2026-07-16) al **cerrar V0.9 completa (Automation Engine +
+ApprovalGate, sprints A1 → A2a → A2b → A3 → A3b → A4)** — ver más abajo.
 Bump 0.7.3 → 0.8.0 (2026-07-09) al cerrar el grueso de V0.8: Gateway +
 Telegram + hardening (CORS/DPAPI) + voz (STT Whisper, TTS multi-proveedor
 EdgeTTS/ElevenLabs/Kokoro/eSpeak, conversación continua) + Hub responsivo.
@@ -743,7 +745,66 @@ A1·A2a·A2b·A3·A4).**
   Postgres real + la suite completa (que ejercita el HTTP real vía
   `TestClient`) + build limpio; pendiente un vistazo visual rápido del panel
   de Ajustes en la próxima sesión con el backend real relanzado.
-- **V0.9 pendiente**: A4 (integración MOS + Learner stub + cierre/tag v0.9.0).
+- ✅ **A4 — Integración MOS + Learner stub + cierre (tag v0.9.0)** (doc 20 §A4):
+  el AE deja rastro consultable, para que el Learner de V1.1/V1.2 nazca con
+  datos reales en vez de arrancar en blanco. **Memoria de automatización/error**
+  (doc 11 §A.3): `engine.py` gana `_remember()`, invocado tras CUALQUIER
+  ejecución REAL (el executor llegó a correr — ok o failed; nunca "skipped":
+  condiciones no cumplidas, sin ejecutor, o idempotencia ya cubierta antes no
+  cuentan como "disparo"). Éxito → `memory_router.store(MemoryType.AUTOMATION)`;
+  fallo (excepción real O `ActionResult.ok=False`, mismo camino, doc 20 §A3) →
+  `memory_router.store(MemoryType.ERROR)`. Best-effort a propósito: la ejecución
+  YA quedó auditada en `automation_executions` antes de llegar a `_remember()`,
+  así que un fallo de memoria/evento ahí nunca debe hacer parecer que la regla
+  falló. **Evento `automation.rule_fired`** (doc 17 §4, `{rule_id, trigger, ok,
+  duration_ms}`) emitido en el mismo punto — completa los 4 eventos del AE
+  (`approval.requested/resolved` de A1, `memory.compacted` de A2a).
+  **Decision API completa (Δ9)**: `decision_service.history(project=,
+  mission_id=, status=, limit=)` — listado cronológico exacto sobre la tabla
+  `decisions` (fuente SQL), a diferencia de `search_decisions()` (semántica,
+  sobre el espejo `mem_decision`); la pieza que RFC-002 listaba y faltaba desde
+  V0.85 M1. Cada aprobación/rechazo ya escribía en `decisions` desde A1 — aquí
+  se verifica que ese saldo alimenta a `history()` sin cambios en `approval.py`.
+  **`AutomationLearner` stub** (`app/automation/learner.py`, NEW, singleton
+  `automation_learner`): `record_feedback`/`suggest_new_rule`/
+  `suggest_rule_improvement` → `NotImplementedError("V1.2")`. Interfaz
+  congelada documentando de qué datos YA acumulados en V0.9 se alimentará cada
+  método (docstring por método, no solo "TODO V1.2") — el feedback real ya se
+  captura vía Decision API + MOS desde V0.9, este módulo es el punto de
+  enganche, no el cerebro. Registrado en el barrel + `test_module_boundaries.py`
+  (mismo patrón que `permission_service` en A3b). **Auditoría de cabos sueltos**
+  (pedida explícitamente, doc 20 §A4): docs 11/14/15 revisados contra el código
+  real — los 3 ya apuntaban correctamente al AE (doc 14 §4.2 TIE↔AE, doc 15 §8/9
+  "AutomationLearner del doc 11 A.1 ES este módulo", doc 11 líneas 16-19/61-65
+  con la interfaz exacta que se implementó) — **nada que corregir**, Fable 5 los
+  había dejado bien planificados de antemano. **Bug real encontrado en tests
+  (no en producción)**: al ejercitar la suite completa (no solo
+  `test_automation_mos.py` aislado), un test de A2b/A3 anterior (que dispara
+  reglas reales contra `engine.py` sin conocer el MOS) dejaba residuos en
+  `mem_automation` que colaban en el primer test de A4 — SQLite reutiliza el id
+  1 en cuanto la tabla `automation_rules` queda vacía, así que un `rule_id=1`
+  de OTRO archivo de test coincidía con el de éste. Corregido limpiando
+  `mem_automation`/`mem_error` tanto al ENTRAR como al SALIR de cada test (antes
+  solo al salir) — ningún archivo de test previo necesitó tocarse, la limpieza
+  extra en `test_automation_mos.py` basta. **Bump de versión** 0.8.7 → 0.9.0 en
+  las 3 ubicaciones sincronizadas + los 3 `.bat` (`iniciar_backend.bat`,
+  `iniciar_todo.bat`, `iniciar_frontend_react.bat`; `backend/iniciar_app.bat`
+  sigue con su banner `0.3.0` heredado, deuda menor ya documentada). Tests:
+  `test_automation_mos.py` (6 — regla ok escribe `mem_automation`, acción
+  fallida con `ActionResult.ok=False` Y con excepción real escriben
+  `mem_error` por el mismo camino, "skipped" NUNCA deja rastro, el evento
+  `automation.rule_fired` se emite con el payload correcto, una aprobación
+  resuelta aparece en `decision_service.history()` incluyendo el filtro por
+  `status`). Suite completa: **351 passed** (345 previos + 6 de A4).
+  **Verificado en vivo contra el Postgres real** (script directo,
+  `DATABASE_URL` real, limpieza final confirmada — 0 filas residuales): regla
+  OK escribe en `mem_automation` con metadata correcta, acción fallida escribe
+  en `mem_error`, regla `skipped` no deja rastro en ningún lado, el evento
+  `automation.rule_fired` llega con `ok=True`, una aprobación resuelta aparece
+  en `decision_service.history()` y en el filtro `status="active"`. `tsc
+  --noEmit` limpio (sin cambios de frontend en A4 más allá del bump de
+  versión). **V0.9 (Automation Engine + ApprovalGate) — BLOQUE CERRADO. Tag
+  `v0.9.0`.**
 - **V1.0** — Orchestrator (intent analyzer + planner + Claude Code Agent)
 - **V1.1** — Hermes (Nous Research) como sistema de agentes bajo el Orchestrator
 
@@ -995,14 +1056,24 @@ Salto de memoria de verdad, previo a la automatización y al TIE. Diseño comple
   M5): compactación/`lifecycle.py` (RFC-007), `httpx` con conexiones
   persistentes (doc 12 A2).
 
-### ⏳ V0.9 — Automation Engine + ApprovalGate
-Doc: `PLAN_MAESTRO_2026/11` parte A (sustituye a `Fase_6_Automation_V08.md`).
+### ✅ V0.9 — Automation Engine + ApprovalGate (CERRADA, tag `v0.9.0`)
+Doc: `PLAN_MAESTRO_2026/11` parte A (sustituye a `Fase_6_Automation_V08.md`) +
+plan de sesiones detallado `PLAN_MAESTRO_2026/20_V09_PLAN_SESIONES.md`.
 - 4 capas (Triggers/Conditions/Actions/Learner-stub); **APScheduler** en el
   `lifespan` (absorbe los jobs asyncio de V0.85).
 - **ApprovalGate genérico** persistente/reanudable — el primitivo que reusan TIE,
   Hermes y skills. `EventTrigger` reactivo sobre los eventos de la ingesta.
+- **Permisos & Autonomía (A3b)**: capa de política sobre el gate — permisos
+  pre-autorizados auto-resuelven sin preguntar, siempre con rastro de
+  auditoría; panel en Ajustes con perfiles rápidos (manual/balanced/full).
+- El AE deja rastro en el MOS (`mem_automation`/`mem_error`) y en la Decision
+  API (A4) para que el Learner de V1.1/V1.2 nazca con datos reales.
 - El AE NO contiene inteligencia: desde V1.0 `AgentTaskAction` delega en el TIE.
-- **Estado**: solo documentado, sin implementar.
+- **Estado**: **A1-A4 HECHOS, fase CERRADA** (ApprovalGate + APScheduler +
+  lifecycle.py + httpx persistente + motor de reglas/triggers/conditions +
+  5 acciones reales + 5 reglas predefinidas + UI de Automatizaciones + Permisos
+  & Autonomía + rastro en MOS/Decision API + `AutomationLearner` stub; ver §1
+  para el detalle completo por sprint). Suite completa: 351 passed.
 
 ### ⏳ V1.0 — TIE v1 (Orchestrator) + MVP BETA
 Docs: `PLAN_MAESTRO_2026/14` (TIE/Cognitive Runtime) + `11` parte B (perfil v1) +
@@ -1449,7 +1520,11 @@ Registro/arranque en el `lifespan` de `main.py` (`gateway.register(...)` +
 
 ---
 
-*Última actualización: 2026-07-04 — V0.8 (B21 + Gateway + Telegram + Security Hardening: CORS + API keys cifradas). Roadmap reordenado: Hub Visual → Voz → V0.85 Memory → V0.9 → V1.0 → V1.1 Hermes; Web+PWA post-V1.0*
+*Última actualización: 2026-07-16 — V0.9 (Automation Engine + ApprovalGate,
+sprints A1-A4: ApprovalGate + APScheduler/lifecycle + motor de reglas + acciones
+reales + Permisos & Autonomía + rastro en MOS/Decision API). Tag `v0.9.0`.
+Bloques cerrados hasta ahora: V0.2 → V0.7.3 → V0.8 → V0.85 (MOS) → V0.87 (WPMS)
+→ V0.9 (Automation Engine). Siguiente: V1.0 TIE (Orchestrator) + MVP BETA.*
 *Construido desde el estado real del repositorio (código + Alembic + docs de fase).*
 *Sustituye a la versión V0.2 anterior, que declaraba un estado obsoleto.*
 

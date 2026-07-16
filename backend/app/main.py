@@ -264,9 +264,9 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="Aithera API",
     description="Sistema Operativo de IA - Backend API",
-    # V0.87 (WPMS, cierre de bloque W1-W4 - bump sincronizado con root(),
-    # core/config.py y frontend/package.json). Tag v0.8.7.
-    version="0.8.7",
+    # V0.9 (Automation Engine + ApprovalGate, cierre de bloque A1-A4 - bump
+    # sincronizado con root(), core/config.py y frontend/package.json). Tag v0.9.0.
+    version="0.9.0",
     lifespan=lifespan
 )
 
@@ -322,11 +322,11 @@ app.include_router(automation.router, prefix="/api")
 
 @app.get("/")
 def root():
-    """V0.87 (WPMS, cierre de bloque - bump sincronizado con FastAPI
-    app.version y core/config.py). Tag v0.8.7."""
+    """V0.9 (Automation Engine, cierre de bloque - bump sincronizado con
+    FastAPI app.version y core/config.py). Tag v0.9.0."""
     return {
         "name": "Aithera",
-        "version": "0.8.7",
+        "version": "0.9.0",
         "status": "running"
     }
 

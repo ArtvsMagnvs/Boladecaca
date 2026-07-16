@@ -10,7 +10,9 @@
 # V0.9 A2b: motor de reglas + triggers + conditions.
 # V0.9 A3: acciones + reglas predefinidas.
 # V0.9 A3b: permission_service (Permisos & Autonomía, capa de política sobre
-# el gate). `learner.py` se añade en A4.
+# el gate).
+# V0.9 A4: AutomationLearner (stub congelado) + mem_automation/mem_error +
+# evento automation.rule_fired (en engine.py, sin API pública nueva).
 
 from app.automation.models import AutomationRule, AutomationExecution, Approval
 from app.automation.approval import ApprovalGate, ApprovalResult, approval_gate
@@ -56,6 +58,7 @@ from app.automation.actions import (
 from app.automation.rules_builtin import BUILTIN_RULES, seed_builtin_rules
 import app.automation.permissions as permission_service
 from app.automation.permissions import PermissionDef, PermissionState, PermissionCatalog
+from app.automation.learner import AutomationLearner, automation_learner
 
 __all__ = [
     # modelos (esquema V0.9)
@@ -114,4 +117,7 @@ __all__ = [
     "PermissionDef",
     "PermissionState",
     "PermissionCatalog",
+    # learner (A4, stub congelado — V1.2)
+    "AutomationLearner",
+    "automation_learner",
 ]

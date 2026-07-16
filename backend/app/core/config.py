@@ -8,9 +8,9 @@ load_dotenv()
 class Settings:
     # App settings
     APP_NAME = "Aithera"
-    # V0.87 (WPMS, cierre de bloque W1-W4) - bump sincronizado con main.py y
-    # frontend/package.json. Tag v0.8.7.
-    VERSION = "0.8.7"
+    # V0.9 (Automation Engine + ApprovalGate, cierre de bloque A1-A4) - bump
+    # sincronizado con main.py y frontend/package.json. Tag v0.9.0.
+    VERSION = "0.9.0"
     DEBUG = os.getenv("DEBUG", "false").lower() == "true"
 
     # API settings

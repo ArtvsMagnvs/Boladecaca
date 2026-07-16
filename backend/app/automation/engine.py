@@ -13,8 +13,12 @@
 #   - AUDITORÍA COMPLETA: toda evaluación que llega a tener un TriggerEvent
 #     válido escribe una fila en `automation_executions` (ok/failed/skipped).
 #
-# La emisión de `automation.rule_fired` (doc 17 §4) es trabajo de A4 — aquí NO
-# se emite todavía (evita adelantar un evento sin su consumidor aún definido).
+# A4 (doc 20 §A4): tras cada ejecución REAL (el executor llegó a correr, ok o
+# failed — nunca "skipped"), el motor deja rastro consultable: emite
+# `automation.rule_fired` (doc 17 §4) y escribe en el MOS (mem_automation en
+# éxito, mem_error en fallo, doc 11 §A.3) para que el futuro Learner (V1.1/
+# V1.2) nazca con datos reales. Todo en `_remember()`, best-effort — un fallo
+# ahí jamás debe tapar que la regla YA quedó auditada en `automation_executions`.
 from __future__ import annotations
 
 import time
@@ -24,8 +28,10 @@ from typing import Any, Awaitable, Callable, Optional
 from app.automation.conditions import build_conditions
 from app.automation.models import AutomationExecution, AutomationRule
 from app.automation.triggers import Trigger, TriggerContext, TriggerEvent, build_trigger
+from app.core.events import emit
 from app.core.logging_config import get_system_logger
 from app.db.database import SessionLocal
+from app.memory import MemoryType, memory_router
 
 logger = get_system_logger("engine")
 
@@ -157,12 +163,15 @@ class AutomationEngine:
                 # detail como error, para que la auditoría/UI lo distinga de un
                 # éxito real (doc 20 §A3, contrato ActionResult.ok).
                 self._record(rule_id, trigger_event, status="failed", error=text, duration_ms=duration_ms)
+            await self._remember(rule, trigger_event, ok=ok, duration_ms=duration_ms, detail=text)
         except Exception as e:
             duration_ms = int((time.monotonic() - start) * 1000)
+            error_text = f"{type(e).__name__}: {e}"
             self._record(
                 rule_id, trigger_event, status="failed",
-                error=f"{type(e).__name__}: {e}", duration_ms=duration_ms,
+                error=error_text, duration_ms=duration_ms,
             )
+            await self._remember(rule, trigger_event, ok=False, duration_ms=duration_ms, detail=error_text)
 
     # ------------------------------------------------------------------
     # Idempotencia + auditoría
@@ -212,6 +221,57 @@ class AutomationEngine:
             logger.error(f"[engine] no se pudo registrar la ejecución de la regla {rule_id}: {e!r}")
         finally:
             db.close()
+
+    # ------------------------------------------------------------------
+    # Rastro en el MOS + evento (A4, doc 11 §A.3 / doc 17 §4)
+    # ------------------------------------------------------------------
+    async def _remember(
+        self,
+        rule: AutomationRule,
+        trigger_event: TriggerEvent,
+        *,
+        ok: bool,
+        duration_ms: Optional[int],
+        detail: str,
+    ) -> None:
+        """Solo se llama cuando el executor SÍ llegó a correr (nunca en
+        "skipped" — condiciones no cumplidas, sin ejecutor, o idempotencia ya
+        cubierta antes). Best-effort: la ejecución ya quedó auditada en
+        `automation_executions` vía `_record()` antes de llegar aquí, así que
+        un fallo de memoria/evento aquí no debe hacer parecer que la regla
+        falló."""
+        emit(
+            "automation.rule_fired",
+            source="automation",
+            payload={"rule_id": rule.id, "trigger": trigger_event.name, "ok": ok, "duration_ms": duration_ms},
+        )
+        try:
+            if ok:
+                await memory_router.store(
+                    content=f'Regla "{rule.name}" se ejecutó ({trigger_event.name}): {detail}'[:2000],
+                    memory_type=MemoryType.AUTOMATION,
+                    source="automation",
+                    metadata={
+                        "rule_id": rule.id,
+                        "rule_name": rule.name,
+                        "trigger": trigger_event.name,
+                        "duration_ms": duration_ms,
+                    },
+                )
+            else:
+                await memory_router.store(
+                    content=f'Regla "{rule.name}" falló ({trigger_event.name}): {detail}'[:2000],
+                    memory_type=MemoryType.ERROR,
+                    source="automation",
+                    metadata={
+                        "rule_id": rule.id,
+                        "rule_name": rule.name,
+                        "trigger": trigger_event.name,
+                        "duration_ms": duration_ms,
+                    },
+                )
+        except Exception as e:
+            logger.error(f"[engine] no se pudo dejar rastro en el MOS para la regla {rule.id} (no crítico): {e!r}")
 
 
 def _interpret_result(result: Any) -> tuple[bool, str]:
