@@ -587,9 +587,55 @@ A1·A2a·A2b·A3·A4).**
   ventana, `MemoryJobRun`, evento `memory.compacted`). Suite: **278 passed**
   (el pre-existente `test_summarize_filtra…` era un flake de ChromaDB frío;
   además la tarea de fondo lo arregló con reloj local en `store()` — commit aparte).
-- **V0.9 pendiente**: A2b (motor + triggers + conditions), A3 (5 acciones + 5
-  reglas + UI), A3b (Permisos & Autonomía — panel en Ajustes, doc 20), A4
-  (integración MOS + Learner stub + cierre/tag v0.9.0).
+- ✅ **A2b — Motor de reglas + Triggers + Conditions** (doc 20 §4·A2b): el
+  corazón del AE. `app/automation/triggers.py`: `Trigger(ABC)` congelado
+  (`evaluate(ctx)`+`arm(engine,rule_id)`+`disarm()`) — trigger nuevo =
+  implementar la interfaz, cero cambios en `engine.py` (P06 §4, probado
+  literalmente en un test). **`ScheduleTrigger`** (cron/interval, arma un job
+  real en `scheduler_service` de A2a — el propio disparo del cron ES el hecho,
+  `evaluate()` siempre da `TriggerEvent`). **`EventTrigger`** (se suscribe a
+  `app/core/events.py` por nombre exacto + `payload_filter` opcional;
+  `event_key_field` deriva el `event_key` de idempotencia del payload) —
+  **consume sin cambios los eventos que el WPMS (V0.87) ya emite**
+  (`task.created/status_changed/closed`, `milestone.completed`,
+  `project.progress_changed`, Δ1 doc 20 §1) además de los del MOS
+  (`memory.ingested`, `email.triaged`). Stubs con interfaz: `ConditionTrigger`,
+  `PatternTrigger` (V1.2, LLL), `MemoryTrigger` (V1.2), `WebhookTrigger` (V1.x).
+  `app/automation/conditions.py`: `Condition(ABC)` + `And`/`Or`/`Not`
+  composables; `CooldownCondition` (lee `automation_executions`, sin estado en
+  memoria — sobrevive a un reinicio) y `TimeWindowCondition` (franja horaria
+  LOCAL, soporta cruzar medianoche). Stub `UserStateCondition` (V1.x).
+  `app/automation/engine.py`: `AutomationEngine` — `load_rules()` arma todas
+  las `enabled=True` (arrancado en el `lifespan` TRAS APScheduler y TRAS los
+  adapters del Gateway, como pide el doc); `handle_trigger(rule_id, ctx)` es el
+  punto de entrada único de CUALQUIER trigger armado, con **aislamiento total**
+  (una regla rota jamás mata al motor ni afecta a otras — ni siquiera propaga al
+  handler de `events.py`/job de APScheduler que la invocó) e **idempotencia**
+  real (`(rule_id, event_key)` con un `ok` previo nunca se re-ejecuta). El
+  registro `action_type→executor` es inyectable (A3 lo rellena; en A2b vacío →
+  se audita como `skipped` con motivo, nunca rompe). La emisión de
+  `automation.rule_fired` queda para A4 a propósito (doc 17 §4, su turno). Barrel
+  `app/automation/__init__.py` ampliado con la API completa de A2a/A2b (incluye
+  `scheduler_service`, antes importado directo — ya no, fronteras coherentes);
+  `test_module_boundaries` extendido (`scheduler`/`engine`/`triggers`/
+  `conditions` internos). Tests: `test_automation_isolation.py` (10: trigger
+  nuevo sin tocar el engine, idempotencia, aislamiento ante excepción propia,
+  aislamiento ante trigger roto, sin-ejecutor→skipped, condición no
+  cumplida→skipped, And/Or/Not, TimeWindow con reloj fijado por monkeypatch,
+  Cooldown con BD real) + `test_event_trigger.py` (6: dispara al emitir,
+  **dispara con un evento real del WPMS** (`milestone.completed`), filtra por
+  payload, disarm dejar de escuchar, ScheduleTrigger arma/desarma un job real y
+  dispara a mano, `ScheduleTrigger()` sin cron/interval lanza). **Verificado en
+  vivo contra el Postgres real** (primera vez que el motor lee/escribe de
+  verdad `automation_rules`/`automation_executions`, creadas en A1 pero nunca
+  ejercitadas contra Postgres): crea regla real → arma → emite evento real →
+  ejecuta con el payload correcto → escribe la ejecución → reemitir el mismo
+  hecho NO duplica (idempotencia confirmada en Postgres, no solo SQLite de
+  tests) → limpieza sin ensuciar la BD. Suite: **294 passed** (278 previos + 16
+  de A2b).
+- **V0.9 pendiente**: A3 (5 acciones + 5 reglas + UI), A3b (Permisos &
+  Autonomía — panel en Ajustes, doc 20), A4 (integración MOS + Learner stub +
+  cierre/tag v0.9.0).
 - **V1.0** — Orchestrator (intent analyzer + planner + Claude Code Agent)
 - **V1.1** — Hermes (Nous Research) como sistema de agentes bajo el Orchestrator
 

@@ -106,6 +106,16 @@ class SchedulerService:
             return []
         return [j.id for j in self._scheduler.get_jobs()]
 
+    def remove_job(self, id: str) -> None:
+        """Quita un job (V0.9 A2b: `ScheduleTrigger.disarm()` al desactivar una
+        regla). Silencioso si no existe (idempotente)."""
+        if self._scheduler is None:
+            return
+        try:
+            self._scheduler.remove_job(id)
+        except Exception:
+            pass  # ya no existia — no es un error para el caller
+
 
 # Singleton — mismo patrón que gateway / approval_gate / memory_router.
 scheduler_service = SchedulerService()

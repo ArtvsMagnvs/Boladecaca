@@ -159,7 +159,7 @@ async def lifespan(app: FastAPI):
     # cada job corre aislado (max_instances=1, misfire_grace). Los endpoints
     # /api/memory/ingest/run siguen llamando a las funciones de trabajo directamente.
     try:
-        from app.automation.scheduler import scheduler_service
+        from app.automation import scheduler_service
         from app.memory.ingestion import ingest_email, ingest_calendar
         from app.memory.summarizer import run_summarizer
         from app.memory.lifecycle import lifecycle_manager
@@ -189,14 +189,34 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         log_error("startup", e, "No se pudo iniciar el planificador (el backend sigue; los jobs del MOS quedan sin programar)")
 
+    # V0.9 (Automation A2b): arma las reglas `enabled=True` — DESPUES de
+    # APScheduler (ScheduleTrigger necesita el scheduler vivo) y de registrar los
+    # adapters del Gateway (doc 20 §A2b). Sin reglas activas todavia es el caso
+    # normal (todas nacen enabled=False, doc 11 §A.4/HITL) — 0 armadas no es error.
+    try:
+        from app.automation import automation_engine
+
+        n = automation_engine.load_rules()
+        log_info("startup", f"Automation Engine: {n} regla(s) armada(s)")
+    except Exception as e:
+        log_error("startup", e, "No se pudo arrancar el Automation Engine (el backend sigue sin reglas activas)")
+
     yield
 
     # Shutdown: parada limpia de los canales del Gateway (polling de Telegram).
     log_info("shutdown", "Cerrando Aithera Backend...")
 
+    # V0.9 (A2b): desarma las reglas ANTES de parar el scheduler (evita que un
+    # job dispare hacia un engine ya sin sentido durante el propio shutdown).
+    try:
+        from app.automation import automation_engine
+        automation_engine.disarm_all()
+    except Exception as e:
+        log_error("shutdown", e, "Error desarmando las reglas del Automation Engine")
+
     # V0.9 (A2a): parar el planificador antes que nada (deja de disparar jobs).
     try:
-        from app.automation.scheduler import scheduler_service
+        from app.automation import scheduler_service
         scheduler_service.shutdown()
     except Exception as e:
         log_error("shutdown", e, "Error deteniendo el planificador (APScheduler)")
