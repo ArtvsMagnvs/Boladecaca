@@ -9,9 +9,10 @@
 # Fail-safe barato (doc 11 B.1): ante CUALQUIER duda (LLM caído, JSON inválido,
 # confianza < 0.55) → conversational. Nunca romper; siempre responder algo.
 #
-# En T1 la llamada al modelo va por `ai_manager` directo (proveedor activo). En
-# T2 `router.fast()` la enruta al modelo barato como política; cuando exista el
-# MEL (E1), será `mel.complete(capability="classify")`. Un solo punto que tocar.
+# La llamada al modelo va por `router.complete(capability="classify")` (T2) — el
+# punto ÚNICO de llamada al LLM del TIE. Hoy el router delega en el proveedor
+# activo del AIManager; cuando exista el MEL (E1) pasa a `mel.complete(...)` sin
+# tocar este módulo. "classify" es una capacidad barata (doc 19 §3).
 from __future__ import annotations
 
 import json
@@ -135,10 +136,9 @@ async def classify(text: str, *, channel: Optional[str] = None) -> Intent:
         return Intent.conversational_fallback(goal="")
 
     try:
-        # T1: proveedor activo directo. T2 → router.fast(); E1 → mel(capability="classify").
-        from app.ai.ai_manager import ai_manager
+        from app.tie import router
 
-        result = await ai_manager.chat(message=text, system_prompt=_SYSTEM_PROMPT)
+        result = await router.complete(text, system_prompt=_SYSTEM_PROMPT, capability="classify")
         if result.get("error"):
             logger.info(f"[intents] clasificador devolvió error, fallback conversational: {result.get('response','')[:80]}")
             return Intent.conversational_fallback(goal=text)

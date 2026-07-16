@@ -870,10 +870,56 @@ la fase en `1.0.0`. Durante T1-T4 la versión se mantiene en `0.9.0`.
   "busca en internet", `model_capability='extract'`, `memory_types=['mem_project']`),
   el camino corto respondió de verdad ("Soy Aithera…"), la traza quedó en
   `orchestrator_traces`, `submit_mission` funcionó, limpieza sin ensuciar la BD.
-- **V1.0 pendiente**: T2 (enricher + router + planner + validación DAG), T3
-  (executor + checkpoint + gates + kill-switch), T4 (responder + el switch +
-  frontend), T5 (tests/perf + cierre a `0.9.2`). Luego MEL, integración
-  Orchestrator, MVP-beta (→ `1.0.0`).
+- ✅ **T2 — Enricher + Router (mínimo) + Planner + Graph (validación DAG)**
+  (doc 21 §3·T2): dado un intent complejo, el TIE construye contexto, elige
+  modelo potente, y el Planner emite un **TaskGraph validado por schema** que
+  `graph.py` valida como DAG antes de que nada se ejecute (planificar jamás
+  ejecuta side effects, regla 11-B). **`enricher.py`**: `enrich(query,
+  memory_types)` → `memory_router.context()` con **presupuesto de latencia DURO**
+  (`asyncio.wait_for(TIE_CONTEXT_BUDGET_MS)`, 300ms — si excede, contexto vacío,
+  el TIE nunca espera; mismo patrón que chat_service M4) + caché 60s por
+  (query, tipos); mapea los strings del Intent (`mem_project`…) a `MemoryType`,
+  ignorando desconocidos. **`router.py`** (Model Router mínimo, doc 14 §3.5):
+  fachada honesta — `fast()`/`smart()` devuelven hints de Settings o el modelo
+  activo; **`complete(prompt, capability)` es el punto ÚNICO de llamada al LLM
+  del TIE** (intents/planner pasan por aquí). En T2 delega en `ai_manager.chat()`
+  (el AIManager no permite override de modelo per-call, así que fast/smart son
+  hints; el reparto real por modelo llega con el MEL); **shim diseñado para que
+  E1 lo convierta en `mel.complete(capability=...)` con un cambio de una línea**
+  sin tocar el resto del TIE. `intents.py` refactorizado para usar
+  `router.complete(capability="classify")` en vez de `ai_manager` directo
+  (centraliza el LLM call). **`planner.py`**: `plan(goal, intent, context,
+  mission_id, trace_id)` con modelo potente (capability `reason`); prompt que
+  pide grafo de 2-3 nodos con la lista real de tools disponibles (para que no
+  invente herramientas); salida del LLM **validada contra el schema + las
+  invariantes DAG**; grafo inválido → **1 reintento con el error como feedback**
+  → si vuelve a fallar, devuelve `None` (el caller degrada a camino corto, nunca
+  rompe); registra el plan en la **Decision API** (`store_decision` con
+  `mission_id`, best-effort) + `tracer.record_plan`. **`graph.py`** (el motor
+  propio, doc 14 §1.5/§3.4.1, sin NetworkX): `build()` + `validate()` —
+  **Kahn/topological** para ciclos (~30 líneas, dict + in-degree), `depends_on`
+  solo a ids existentes (sin autodependencias), `tools` de cada nodo ⊆ catálogo
+  del `ToolManager` — + `ready_set()` (nodos PENDING con `depends_on` en DONE,
+  orden determinista prioridad desc/id asc — lo consumirá el executor en T3).
+  `config.py` += `TIE_FAST_MODEL`/`TIE_SMART_MODEL`/`TIE_CONTEXT_BUDGET_MS`/
+  `TIE_MAX_PARALLEL`. Disciplina modular: `app.tie.router/graph/enricher/planner`
+  internos (fronteras vigiladas). Tests: `test_tie_graph.py` (13 — DAG lineal/
+  ramas/ciclos de 2 y 3/autodep/id inexistente/tool fuera de catálogo/ready_set/
+  orden) + `test_tie_planner.py` (9 — plan válido 2-3 nodos, registra decisión,
+  reintento ante inválido, degrada a None tras 2 fallos, JSON basura, escribe en
+  la traza, y el enricher: presupuesto agotado→vacío, caché, error del MOS no
+  rompe). Suite completa: **391 passed** (369 previos + 22 de T2). **Verificado
+  en vivo contra el backend real** (MiniMax + Postgres): el enricher trajo 1761
+  chars de contexto real; un goal complejo real ("revisa mis emails urgentes y
+  prepárame un borrador…") produjo un **grafo válido de 3 nodos** con
+  dependencias n1→n2→n3, tools `email`/`calendar`, y `approval_required` marcado
+  en el paso sensible (ejecutar la acción → gate); el reintento se disparó (1ª
+  respuesta no era JSON válido) y el plan quedó persistido con `decision_id`
+  enlazado; limpieza sin ensuciar la BD. Nada se ejecuta todavía (el executor es
+  T3).
+- **V1.0 pendiente**: T3 (executor + checkpoint + gates + kill-switch), T4
+  (responder + el switch + frontend), T5 (tests/perf + cierre a `0.9.2`). Luego
+  MEL, integración Orchestrator, MVP-beta (→ `1.0.0`).
 - **V1.1** — Hermes (Nous Research) como sistema de agentes bajo el TIE + Learner
 
 **Estado del git**: branch `master` con historia activa. V0.7.1 commiteado

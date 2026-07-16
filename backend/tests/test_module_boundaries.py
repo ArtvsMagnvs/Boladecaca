@@ -39,13 +39,17 @@ FORBIDDEN_MODULES = (
     ("app.automation.rules_builtin", AUTOMATION_DIR),
     ("app.automation.permissions", AUTOMATION_DIR),
     ("app.automation.learner", AUTOMATION_DIR),
-    # V1.0 (TIE v1, T1): fronteras del Task Intelligence Engine.
+    # V1.0 (TIE v1, T1/T2): fronteras del Task Intelligence Engine.
     ("app.tie.contracts", TIE_DIR),
     ("app.tie.runtime", TIE_DIR),
     ("app.tie.intents", TIE_DIR),
     ("app.tie.tracer", TIE_DIR),
     ("app.tie.missions", TIE_DIR),
     ("app.tie.pipeline", TIE_DIR),
+    ("app.tie.router", TIE_DIR),
+    ("app.tie.graph", TIE_DIR),
+    ("app.tie.enricher", TIE_DIR),
+    ("app.tie.planner", TIE_DIR),
 )
 
 

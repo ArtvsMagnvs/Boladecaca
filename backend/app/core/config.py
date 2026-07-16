@@ -38,6 +38,18 @@ class Settings:
     # Gateway sigue usando el chat_message_handler legacy (el switch a tie.handle
     # es T4). En T1 el TIE existe pero no está enganchado todavía.
     TIE_ENABLED = os.getenv("TIE_ENABLED", "true").lower() == "true"
+    # V1.0 (TIE v1, T2): Model Router mínimo. Hints de modelo barato/potente. Si
+    # vacíos, el router cae al modelo del proveedor activo del AIManager. Cuando
+    # exista el MEL (E1, plan aparte), estos settings los gestionan sus políticas
+    # y `router.py` pasa a delegar en `mel.complete(capability=...)`.
+    TIE_FAST_MODEL = os.getenv("TIE_FAST_MODEL", "")   # intent/clasificación (barato)
+    TIE_SMART_MODEL = os.getenv("TIE_SMART_MODEL", "")  # planner (potente)
+    # Presupuesto de latencia DURO del contexto del MOS (ms). Si el enricher lo
+    # excede, contexto vacío — el TIE nunca espera (mismo patrón que chat_service M4).
+    TIE_CONTEXT_BUDGET_MS = int(os.getenv("TIE_CONTEXT_BUDGET_MS", "300"))
+    # Concurrencia de olas del executor (T3/V1.2). En V1.0 la ola es de tamaño 1
+    # (secuencial); el semáforo entra en V1.2 con las olas paralelas.
+    TIE_MAX_PARALLEL = int(os.getenv("TIE_MAX_PARALLEL", "3"))
 
     # V0.8 (hardening): CORS restringido. Además de localhost (cubierto por
     # regex) y file:// de Electron (origen 'null'), se pueden declarar orígenes
