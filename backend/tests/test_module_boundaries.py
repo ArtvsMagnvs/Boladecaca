@@ -52,6 +52,18 @@ FORBIDDEN_MODULES = (
     ("app.tie.planner", TIE_DIR),
     ("app.tie.executor", TIE_DIR),
     ("app.tie.responder", TIE_DIR),
+    # V1.0 (MEL v1, E1): fronteras del Model Execution Layer. NADIE de fuera de
+    # app.mel importa sus internos — y en particular solo app.mel.registry
+    # importa ai_manager (doc 19 §1.2), vigilado por test aparte más abajo.
+    ("app.mel.contracts", APP_DIR / "mel"),
+    ("app.mel.registry", APP_DIR / "mel"),
+    ("app.mel.decision", APP_DIR / "mel"),
+    ("app.mel.policies", APP_DIR / "mel"),
+    ("app.mel.fallback", APP_DIR / "mel"),
+    ("app.mel.executor", APP_DIR / "mel"),
+    ("app.mel.catalog", APP_DIR / "mel"),
+    ("app.mel.capabilities", APP_DIR / "mel"),
+    ("app.mel.models", APP_DIR / "mel"),
 )
 
 
@@ -169,6 +181,41 @@ def test_tie_handle_respeta_la_firma_de_messagehandler():
     gw = Gateway()
     gw.set_handler(handle)
     assert gw._handler is handle
+
+
+def test_mel_public_api_completa():
+    """El barrel app.mel expone la API publica del MEL v1 (doc 19 §1.2, E1)."""
+    import app.mel as mel
+
+    esperado = {
+        # contratos congelados
+        "Capability", "PolicyName", "ModelRef", "Constraints",
+        "ExecutionRequest", "ExecutionResult", "ServedBy", "Usage", "DecisionTrace",
+        # API publica
+        "complete", "stream", "decision_trace", "recent_decisions",
+        "policies", "set_active_policy", "resolve_model_name", "ensure_ready",
+    }
+    faltan = esperado - set(dir(mel))
+    assert not faltan, f"app.mel no exporta: {sorted(faltan)}"
+    assert esperado.issubset(set(mel.__all__)), (
+        f"faltan en __all__: {sorted(esperado - set(mel.__all__))}"
+    )
+
+
+def test_solo_el_registry_del_mel_importa_ai_manager():
+    """Frontera dura del doc 19 §1.2: NADIE fuera de `app.mel.registry` importa
+    `ai_manager` desde dentro de `app/mel/` — el resto del MEL habla con
+    proveedores SOLO a traves del registry. (Fuera del MEL, chat_service/tie/etc.
+    aun usan ai_manager directo hasta la migracion de E2 — eso es esperado.)"""
+    mel_dir = APP_DIR / "mel"
+    offenders: list[str] = []
+    for py in mel_dir.rglob("*.py"):
+        if py.name == "registry.py":
+            continue
+        text = py.read_text(encoding="utf-8", errors="ignore")
+        if re.search(r"\b(from|import)\s+app\.ai\.ai_manager\b", text):
+            offenders.append(py.name)
+    assert not offenders, f"modulos del MEL que importan ai_manager sin ser el registry: {offenders}"
 
 
 def test_nadie_de_fuera_importa_internos_de_un_modulo():
