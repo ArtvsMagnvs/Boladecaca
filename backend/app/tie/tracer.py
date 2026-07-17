@@ -68,6 +68,39 @@ def record_end(trace_id: str, *, outcome: str, state: str = "done",
     _update(trace_id, outcome=outcome, result=result, state=state)
 
 
+# ---------------------------------------------------------------------------
+# Eventos mission.* (doc 17 §4, T4) — METADATOS, nunca contenido
+# ---------------------------------------------------------------------------
+# Consumidores: el Learner (V1.1, Mission Learning — doc 15 §4), la telemetría
+# de V2.0+ (`subscribe("*")`) y el Hub. Best-effort: `emit` es no bloqueante y
+# aísla a sus handlers (doc 17); un consumidor roto jamás afecta a la misión.
+def emit_started(mission: Mission) -> None:
+    _emit("mission.started", {"mission_id": mission.id, "source": mission.source,
+                              "channel": mission.channel})
+
+
+def emit_completed(mission: Mission, *, ok: bool, nodes: int) -> None:
+    _emit("mission.completed", {"mission_id": mission.id, "ok": ok, "nodes": nodes,
+                                "spent_tokens": mission.spent_tokens})
+
+
+def emit_failed(mission: Mission) -> None:
+    _emit("mission.failed", {"mission_id": mission.id, "partial": bool(mission.outcome)})
+
+
+def emit_cancelled(mission: Mission) -> None:
+    _emit("mission.cancelled", {"mission_id": mission.id})
+
+
+def _emit(name: str, payload: dict) -> None:
+    try:
+        from app.core.events import emit
+
+        emit(name, source="tie", payload=payload)
+    except Exception as e:  # un bus roto no rompe una misión
+        logger.error(f"[tracer] emit({name}) falló (no crítico): {type(e).__name__}: {e}")
+
+
 def set_state(trace_id: str, state: str) -> None:
     """Cambia el estado de la traza (running|waiting|done|failed|cancelled). Lo
     usa el executor al pausar en un gate (waiting) o al cancelar."""

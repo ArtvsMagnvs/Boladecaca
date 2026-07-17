@@ -38,6 +38,10 @@ class Settings:
     # Gateway sigue usando el chat_message_handler legacy (el switch a tie.handle
     # es T4). En T1 el TIE existe pero no está enganchado todavía.
     TIE_ENABLED = os.getenv("TIE_ENABLED", "true").lower() == "true"
+    # V1.0 (T4): si un plan toca algo sensible, se aprueba EL PLAN entero antes de
+    # ejecutar nada (transparencia estilo plan-mode). Con False, cada nodo sensible
+    # pide su propio permiso durante la ejecución (el gate de nodo de T3 sigue ahí).
+    TIE_PLAN_APPROVAL = os.getenv("TIE_PLAN_APPROVAL", "true").lower() == "true"
     # V1.0 (TIE v1, T2): Model Router mínimo. Hints de modelo barato/potente. Si
     # vacíos, el router cae al modelo del proveedor activo del AIManager. Cuando
     # exista el MEL (E1, plan aparte), estos settings los gestionan sus políticas

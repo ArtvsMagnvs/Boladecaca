@@ -973,9 +973,63 @@ la fase en `1.0.0`. Durante T1-T4 la versión se mantiene en `0.9.0`.
   ejecutar, checkpoint `n1=done/n2=waiting_approval` confirmado en Postgres) →
   aprobar → reanuda en background → `n2=done, n3=done`; kill-switch cancelando;
   limpieza sin ensuciar la BD.
-- **V1.0 pendiente**: T4 (responder + el switch `gateway.set_handler(tie.handle)`
-  + streaming + frontend), T5 (tests/perf + cierre a `0.9.2`). Luego MEL,
-  integración Orchestrator, MVP-beta (→ `1.0.0`).
+- ✅ **T4a — Responder + pipeline completo + gate del plan + EL SWITCH + eventos
+  `mission.*` + endpoints** (doc 21 §3·T4; **T4 se dividió en T4a/T4b por carga**,
+  mismo criterio que W2→W2a-e y A2→A2a/A2b: T4a es el backend —el TIE piensa y
+  ejecuta de verdad, verificable por API—, T4b será el frontend —vista de misión,
+  aprobación de plan y streaming de estado—). **`responder.py`**: `build(mission,
+  graph)` sintetiza el outcome desde los nodos DONE con `router.complete(capability
+  ="summarize")`; **degradación graciosa** (entrega lo conseguido Y explica lo que
+  no, jamás finge éxito total) + **plantilla determinista si el LLM falla** (mismo
+  patrón que el summarizer de V0.85 M3: nunca dejar al usuario sin respuesta).
+  `plan_summary(graph)` para la UI/gate. **`pipeline.py` COMPLETO** (doc 14 §3.3):
+  `handle` = clasificar ∥ pre-fetch de contexto **en paralelo** (`asyncio.gather`,
+  doc 11 B.2) → camino corto (~80%, sin planner ni grafo) **o** planner → gate del
+  plan → `executor.run` → `responder`. Si el planner no logra grafo válido ni tras
+  el reintento → degrada al camino corto (regla 11-B: el usuario siempre recibe
+  algo). `submit_mission` (entrada del AE/WPMS) **nunca va por el camino corto**:
+  una misión explícita no es charla, siempre planifica. **Gate del PLAN** (nuevo,
+  `action_type="tie_plan"`, distinto del gate de nodo de T3): si el plan toca algo
+  sensible se aprueba ENTERO antes de ejecutar nada (transparencia estilo
+  plan-mode; nada se ha ejecutado aún — planificar no tiene side effects).
+  **Decisión de diseño clave**: aprobar el plan **autoriza sus pasos sensibles** —
+  el usuario ya vio la lista completa, así que no se le vuelve a preguntar nodo por
+  nodo; se implementa marcando `node.gate_id = <gate del plan>` (la condición del
+  executor para abrir gate es `gate_id is None`, T3), lo que además deja **rastro
+  de auditoría**: cada nodo apunta a la aprobación que lo autorizó. `TIE_PLAN_
+  APPROVAL` (default true) permite desactivarlo y volver a los gates por nodo.
+  Reanudación event-driven (mismo criterio que T3: nunca dentro del `resolve()`
+  del gate, que vive en un request HTTP). **EL SWITCH** (`main.py` lifespan):
+  `gateway.set_handler(tie.handle)` + `tie.register_handlers()` (gates de nodo +
+  del plan) + `executor.resume_pending()` — va DESPUÉS de los adapters y del AE
+  (el AE delega en el TIE, no al revés); con `TIE_ENABLED=false` queda el
+  `chat_message_handler` legacy (kill-switch real), y si el TIE no arranca el chat
+  sigue con el handler legacy (degradación graciosa). **Eventos `mission.*`**
+  (doc 17 §4): `started`/`completed`/`failed`/`cancelled` — metadatos, nunca
+  contenido; el Learner (V1.1) se suscribirá. **Endpoints** `/api/tie`:
+  `GET /missions` (las que esperan aprobación primero), `GET /missions/{id}`
+  (+grafo con el estado de cada paso), `POST /missions/{id}/cancel` (kill-switch),
+  `POST /missions/{id}/approve-plan`. **Dos hallazgos reales de los tests** (no de
+  producción): (1) el test de fronteras cazó que `endpoints/tie.py` importaba
+  `app.tie.pipeline` directamente — corregido moviendo la lógica al TIE
+  (`tie.resolve_plan()`, fachada) en vez de silenciar el test; (2) un test de T1
+  asumía que `submit_mission` iba por el camino corto — quedó obsoleto por el
+  cambio de diseño de T4a y se actualizó para reflejar el contrato real. Tests:
+  `test_tie_handle.py` (13 — el camino corto responde idéntico y **no invoca el
+  planner**, `handle` nunca lanza, query compleja planifica/ejecuta/responde,
+  sin plan válido degrada, plan sensible pide aprobación **sin ejecutar nada**,
+  plan aprobado ejecuta sin re-preguntar con rastro del gate, plan rechazado no
+  ejecuta nada, `submit_mission` siempre planifica, eventos, 4 de endpoints).
+  Suite completa: **420 passed** (407 previos + 13). **Verificado en vivo contra
+  el backend real** (MiniMax + Postgres): camino corto real respondiendo ("Soy
+  Aithera…"), **el planner REAL generó un grafo coherente de 2 nodos**
+  ("Recuperar los 3 últimos emails" → "Guardar nota con resumen") que se ejecutó
+  y el **responder REAL** sintetizó en lenguaje natural; el gate del plan pausó
+  con **nada ejecutado**, al aprobar ejecutó los 2 pasos, `n2.gate_id` = el gate
+  del plan y **no se abrió un segundo gate**; limpieza sin ensuciar la BD.
+- **V1.0 pendiente**: T4b (frontend: vista de misión + aprobación de plan +
+  streaming de estado en `/api/chat/stream`), T5 (tests/perf + cierre a `0.9.2`).
+  Luego MEL, integración Orchestrator, MVP-beta (→ `1.0.0`).
 - **V1.1** — Hermes (Nous Research) como sistema de agentes bajo el TIE + Learner
 
 **Estado del git**: branch `master` con historia activa. V0.7.1 commiteado

@@ -255,14 +255,24 @@ async def test_handle_camino_corto_responde_y_deja_traza(monkeypatch):
 
 
 @pytest.mark.anyio
-async def test_submit_mission_camino_corto(monkeypatch):
+async def test_submit_mission_crea_la_mision_y_deja_traza(monkeypatch):
+    """`submit_mission` es la entrada PROGRAMÁTICA (AE/WPMS). Desde T4 nunca va
+    por el camino corto —una misión explícita no es "charla"—: siempre planifica.
+    Aquí se comprueba lo que T1 congeló (identidad de la misión + traza); que
+    planifique y ejecute de verdad lo cubre test_tie_handle.py (T4)."""
     from app.tie import submit_mission
-    import app.tie.intents as intents_mod
-    from app.services import chat_service
+    import app.tie.pipeline as pipeline_mod
 
     async def _classify(text, *, channel=None):
         return Intent(type=IntentType.CONVERSATIONAL, goal=text, confidence=0.9)
-    monkeypatch.setattr(intents_mod, "classify", _classify)
+    monkeypatch.setattr(pipeline_mod.intents, "classify", _classify)
+
+    async def _plan(goal, intent, *, context="", mission_id=None, trace_id=None):
+        assert intent.requires_planning is True  # T4: la misión explícita se planifica
+        return None                              # sin plan válido → degrada
+    monkeypatch.setattr(pipeline_mod.planner, "plan", _plan)
+
+    from app.services import chat_service
 
     class _Ans:
         text = "misión atendida"
@@ -273,5 +283,12 @@ async def test_submit_mission_camino_corto(monkeypatch):
     monkeypatch.setattr(chat_service, "answer", _answer)
 
     m = await submit_mission("haz algo", source="automation", channel="hub")
-    assert m.state == "done" and m.outcome == "misión atendida"
-    assert m.source == "automation"
+    assert m.source == "automation" and m.state == "done"
+    assert m.outcome == "misión atendida"
+
+    s = SessionLocal()
+    try:
+        traces = s.query(OrchestratorTrace).all()
+        assert len(traces) == 1 and traces[0].mission_id == m.id
+    finally:
+        s.close()

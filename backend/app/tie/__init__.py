@@ -40,10 +40,19 @@ from app.tie.runtime import (
 from app.tie import intents
 from app.tie import tracer
 from app.tie import executor
+from app.tie import responder
 from app.tie.missions import new_mission
 
 # --- Pipeline (la interfaz de orquestación) ---
-from app.tie.pipeline import handle, submit_mission
+from app.tie.pipeline import handle, submit_mission, resolve_plan, register_plan_handlers
+
+
+def register_handlers() -> None:
+    """Cablea el TIE con el ApprovalGate y el bus de eventos: gates de NODO
+    (executor, T3) + gate del PLAN (pipeline, T4). Lo llama el `lifespan`.
+    Idempotente."""
+    executor.register_gate_handlers()
+    register_plan_handlers()
 
 # `classify` promovido al top-level por comodidad (lo usan el pipeline y quien
 # quiera "entender" un mensaje sin ejecutarlo — p.ej. el AE al decidir delegar).
@@ -74,7 +83,11 @@ __all__ = [
     "tracer",
     # motor de ejecución del grafo (T3): run/cancel/resume_pending/register_gate_handlers
     "executor",
+    # response builder (T4)
+    "responder",
     # pipeline (interfaz de orquestación)
     "handle",
     "submit_mission",
+    "resolve_plan",
+    "register_handlers",
 ]

@@ -17,6 +17,9 @@ from app.api.endpoints import workspace
 # import ademas registra los modelos de app.automation (approvals + automation_*)
 # ANTES del create_all del lifespan, para que se creen en BD nuevas.
 from app.api.endpoints import automation
+# V1.0 (TIE v1, T4): router de misiones del Task Intelligence Engine. El import
+# registra ademas el modelo OrchestratorTrace antes del create_all del lifespan.
+from app.api.endpoints import tie as tie_endpoints
 # V0.8 (Fase 5 Clientes): router de configuracion del canal Telegram.
 from app.api.endpoints import telegram as telegram_endpoints
 # V0.7.2 (Sprint 2, PLAN_MAESTRO_2026 B4): god-endpoint de email dividido en
@@ -215,6 +218,30 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         log_error("startup", e, "No se pudo arrancar el Automation Engine (el backend sigue sin reglas activas)")
 
+    # V1.0 (TIE v1, T4): EL SWITCH. A partir de aqui el chat de los canales del
+    # Gateway (Telegram y los que vengan) pasa por el TIE: entiende -> camino
+    # corto (~80%, identico al chat de siempre) o planifica/ejecuta un grafo.
+    # Va DESPUES de los adapters (el handler debe estar listo antes del primer
+    # mensaje) y del Automation Engine (el AE delega en el TIE, no al reves).
+    # `TIE_ENABLED=false` deja el chat_message_handler legacy: kill-switch real.
+    try:
+        import app.tie as tie
+
+        if settings.TIE_ENABLED:
+            tie.register_handlers()   # gates de nodo (T3) + gate del plan (T4)
+            gateway.set_handler(tie.handle)
+            # Misiones a medias de un arranque anterior: se reanudan leyendo el
+            # grafo de disco (doc 14 §3.4.3). Incluye los gates que el usuario
+            # resolvio con el backend caido (el bus no persiste, doc 17).
+            resumed = await tie.executor.resume_pending()
+            log_info("startup", f"TIE v1 activo (Gateway -> tie.handle); {resumed} mision(es) reanudada(s)")
+        else:
+            log_info("startup", "TIE desactivado (TIE_ENABLED=false): el Gateway sigue con el chat legacy")
+    except Exception as e:
+        # Si el TIE no arranca, el Gateway conserva su handler legacy: el chat
+        # sigue funcionando. Degradacion graciosa (regla 11-B).
+        log_error("startup", e, "No se pudo activar el TIE (el chat sigue con el handler legacy)")
+
     yield
 
     # Shutdown: parada limpia de los canales del Gateway (polling de Telegram).
@@ -318,6 +345,8 @@ app.include_router(memory.router, prefix="/api")
 app.include_router(telegram_endpoints.router, prefix="/api")
 # V0.9 (Automation Engine A1): ApprovalGate (listar/resolver aprobaciones).
 app.include_router(automation.router, prefix="/api")
+# V1.0 (TIE v1, T4): misiones, grafo, kill-switch y aprobacion de planes.
+app.include_router(tie_endpoints.router, prefix="/api")
 
 
 @app.get("/")

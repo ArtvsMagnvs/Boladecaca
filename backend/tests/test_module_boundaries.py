@@ -51,6 +51,7 @@ FORBIDDEN_MODULES = (
     ("app.tie.enricher", TIE_DIR),
     ("app.tie.planner", TIE_DIR),
     ("app.tie.executor", TIE_DIR),
+    ("app.tie.responder", TIE_DIR),
 )
 
 
@@ -137,10 +138,10 @@ def test_tie_public_api_completa():
         # runtime (doc 10)
         "AgentRuntime", "AgentTask", "AgentResult", "AgentChunk", "RuntimeHealth",
         "NullRuntime", "register_runtime", "get_runtime", "list_runtimes",
-        # intent + misiones + trazas + motor de ejecución
-        "classify", "new_mission", "tracer", "executor",
+        # intent + misiones + trazas + motor de ejecución + responder
+        "classify", "new_mission", "tracer", "executor", "responder",
         # pipeline (interfaz de orquestacion)
-        "handle", "submit_mission",
+        "handle", "submit_mission", "register_handlers",
     }
     faltan = esperado - set(dir(tie))
     assert not faltan, f"app.tie no exporta: {sorted(faltan)}"
