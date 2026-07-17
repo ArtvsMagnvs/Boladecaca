@@ -1047,29 +1047,43 @@ export const api = {
       return false;
     };
 
-    while (true) {
-      const { value, done } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
+    // [Fix bug real 2026-07-17] El `return` al ver [DONE] abandonaba el
+    // `reader` sin liberarlo — el socket quedaba medio cerrado (CLOSE_WAIT)
+    // hasta que el GC lo recogiera, sin plazo garantizado. Con varios mensajes
+    // enviados se agotaba el límite de conexiones al mismo origen (6 en
+    // Chromium/Electron) y CUALQUIER fetch nuevo (incluido el que Chat.tsx
+    // hace al montar) se quedaba en cola hasta que el SO expiraba una de esas
+    // conexiones colgadas — de ahí los 30s-1min de input "atascado" al volver
+    // al chat tras navegar. `reader.cancel()` en el `finally` libera el socket
+    // YA, salga del bucle por [DONE], por el fin natural del stream, o por
+    // una excepción.
+    try {
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
 
-      const lines = buffer.split("\n");
-      buffer = lines.pop() ?? "";
+        const lines = buffer.split("\n");
+        buffer = lines.pop() ?? "";
 
-      for (const rawLine of lines) {
-        if (rawLine === "") {
-          if (dispatch()) return; // línea en blanco = fin del bloque SSE
-          continue;
-        }
-        if (rawLine.startsWith("event:")) {
-          eventName = rawLine.slice("event:".length).trim();
-        } else if (rawLine.startsWith("data:")) {
-          let chunk = rawLine.slice("data:".length);
-          if (chunk.startsWith(" ")) chunk = chunk.slice(1);
-          dataLines.push(chunk);
+        for (const rawLine of lines) {
+          if (rawLine === "") {
+            if (dispatch()) return; // línea en blanco = fin del bloque SSE
+            continue;
+          }
+          if (rawLine.startsWith("event:")) {
+            eventName = rawLine.slice("event:".length).trim();
+          } else if (rawLine.startsWith("data:")) {
+            let chunk = rawLine.slice("data:".length);
+            if (chunk.startsWith(" ")) chunk = chunk.slice(1);
+            dataLines.push(chunk);
+          }
         }
       }
+      dispatch(); // por si el stream acaba sin línea en blanco final
+    } finally {
+      try { await reader.cancel(); } catch { /* ya cerrado, no pasa nada */ }
     }
-    dispatch(); // por si el stream acaba sin línea en blanco final
   },
 
   // --- Voice Synthesis (ElevenLabs) ---
