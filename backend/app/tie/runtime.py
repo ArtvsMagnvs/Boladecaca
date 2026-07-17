@@ -171,12 +171,28 @@ class NullRuntime(AgentRuntime):
             )
 
     async def stream_task(self, task, memory, tools, approval_gate) -> AsyncIterator[AgentChunk]:
-        # V1.0: streaming mínimo — un status + el resultado completo. El streaming
-        # real por tokens del camino corto lo lleva /api/chat/stream (T4); aquí se
-        # cumple el contrato para que el executor pueda consumirlo uniforme.
-        yield AgentChunk(task_id=task.id, kind="status", payload="running")
-        result = await self.execute_task(task, memory, tools, approval_gate)
-        yield AgentChunk(task_id=task.id, kind="text", payload=result.output)
+        """[T4b] Streaming REAL por tokens: es lo que el usuario ve en el chat de
+        Electron (`/api/chat/stream`). Mismo system prompt que el camino no
+        streaming (`chat_service.build_system_prompt` — memoria del MOS con
+        atribución de fuente) y mismo filtro incremental de razonamiento (B21):
+        el bloque <think> de los modelos razonadores NUNCA se emite."""
+        from app.ai.ai_manager import ai_manager
+        from app.ai.reasoning_filter import StreamingReasoningFilter
+        from app.services import chat_service
+
+        try:
+            system_prompt = await chat_service.build_system_prompt(task.instruction)
+            filt = StreamingReasoningFilter()
+            async for raw in ai_manager.chat_stream(task.instruction, system_prompt):
+                visible = filt.feed(raw)
+                if visible:
+                    yield AgentChunk(task_id=task.id, kind="text", payload=visible)
+            tail = filt.flush()
+            if tail:
+                yield AgentChunk(task_id=task.id, kind="text", payload=tail)
+        except Exception as e:
+            logger.error(f"[NullRuntime] stream_task falló: {type(e).__name__}: {e}")
+            yield AgentChunk(task_id=task.id, kind="status", payload=f"error: {e}")
 
     async def health_check(self) -> RuntimeHealth:
         try:

@@ -1027,9 +1027,48 @@ la fase en `1.0.0`. Durante T1-T4 la versión se mantiene en `0.9.0`.
   y el **responder REAL** sintetizó en lenguaje natural; el gate del plan pausó
   con **nada ejecutado**, al aprobar ejecutó los 2 pasos, `n2.gate_id` = el gate
   del plan y **no se abrió un segundo gate**; limpieza sin ensuciar la BD.
-- **V1.0 pendiente**: T4b (frontend: vista de misión + aprobación de plan +
-  streaming de estado en `/api/chat/stream`), T5 (tests/perf + cierre a `0.9.2`).
-  Luego MEL, integración Orchestrator, MVP-beta (→ `1.0.0`).
+- ✅ **T4b — Frontend: vista de misión + aprobación de plan + streaming de estado**
+  (doc 21 §3·T4, segunda mitad): el TIE por fin se VE. **Streaming de estado**
+  (doc 11 B.5, primer feedback ≤1s): `/api/chat/stream` (el camino real de
+  `Chat.tsx`) pasa por el TIE vía `tie.handle_stream()` — el camino corto (~80%)
+  sigue streameando **tokens de verdad** (`NullRuntime.stream_task` reescrito:
+  usa el mismo `build_system_prompt` + `chat_stream` + filtro incremental B21 que
+  el endpoint legacy), y el complejo emite estados ("analizando" →
+  "planificando") + la respuesta del responder. **Hallazgo real y arreglado**:
+  `api.streamChat` ignoraba las líneas `event:` pero SÍ procesaba su `data:` como
+  texto — con eventos tipados eso habría metido "analizando" dentro de la
+  respuesta del chat; el parser se reescribió a SSE de verdad (acumula el bloque
+  hasta la línea en blanco y despacha por `event:`), con callbacks
+  `onStatus`/`onMission`. Con `TIE_ENABLED=false` el endpoint conserva su camino
+  legacy intacto. **`pages/Missions.tsx`** (NEW): lista (las que esperan
+  respuesta van primero) + detalle con el **grafo paso a paso** (punto de color
+  por `NodeState`, dependencias, duración, error, salida), **aprobación de plan**
+  (Aprobar y ejecutar / Descartar) y **kill-switch** ("Parar"); sondeo cada 2s
+  SOLO si hay algo vivo (el estado real vive en disco por el checkpoint de T3, así
+  que preguntar es barato y siempre da la verdad — sin websockets). Ítem
+  "Misiones" en el Sidebar + ruta `/missions`. **`Chat.tsx`**: el placeholder
+  mudo "Pensando..." pasa a mostrar lo que el TIE está haciendo de verdad, y una
+  respuesta que vino de una misión muestra "Ver el plan y sus pasos →".
+  `lib/api.ts` += tipos `Mission`/`MissionDetail`/`TaskGraph`/`TaskNode`/
+  `NodeState` + `getMissions`/`getMission`/`cancelMission`/`approvePlan`. Tests:
+  3 nuevos de streaming en `test_tie_handle.py` (el camino corto emite status +
+  tokens y NO crea misión; el complejo emite `mission` + respuesta;
+  `handle_stream` nunca lanza). Suite: **423 passed**; `tsc` y `vite build`
+  limpios. **Verificado EN VIVO en el navegador contra el backend real**
+  (arrancado con el código nuevo; el log confirmó `TIE v1 activo (Gateway →
+  tie.handle)`): el chat mostró "analizando…" y respondió limpio ("Soy Aithera,
+  tu sistema operativo personal de IA") **sin que el estado se colara en el
+  texto**; una petición real ("revisa mis emails urgentes… y envíalo") hizo que
+  el **planner real** generase un plan de 2 pasos, marcase el envío como
+  sensible y **pidiese visto bueno sin ejecutar nada**; la vista de Misiones
+  mostró la misión "Esperando tu respuesta" la primera, su plan, el paso "pide
+  permiso", y **Descartar** dejó todo en `Cancelada` con "No he ejecutado nada".
+  Se probó el rechazo y NO la aprobación a propósito: ese plan enviaba un email
+  real del usuario — no se disparan acciones reales para validar la UI. Limpieza
+  de las trazas/gates/decisiones de prueba confirmada.
+- **V1.0 pendiente**: T5 (tests de contrato + perf + verificación e2e + cierre
+  del bloque TIE a `0.9.2`). Luego MEL (E1-E2), integración Orchestrator,
+  MVP-beta (→ `1.0.0`).
 - **V1.1** — Hermes (Nous Research) como sistema de agentes bajo el TIE + Learner
 
 **Estado del git**: branch `master` con historia activa. V0.7.1 commiteado

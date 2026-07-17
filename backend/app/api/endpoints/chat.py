@@ -10,6 +10,7 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 from app.ai.ai_manager import ai_manager
+from app.core.config import settings
 from app.db.database import get_db, SessionLocal
 from app.db.models import ChatMessage
 from app.db.schemas import ChatRequest, ChatResponse
@@ -64,18 +65,39 @@ async def chat_stream(request: ChatRequest):
         # NO se emite; el historial y la memoria guardan la respuesta limpia.
         reasoning_filter = StreamingReasoningFilter()
         try:
-            async for chunk in ai_manager.chat_stream(request.message, system_prompt):
-                visible = reasoning_filter.feed(chunk)
-                if not visible:
-                    continue
-                full_response += visible
-                safe_chunk = visible.replace("\r", "").replace("\n", "\\n")
-                yield f"data: {safe_chunk}\n\n"
-            tail = reasoning_filter.flush()
-            if tail:
-                full_response += tail
-                safe_tail = tail.replace("\r", "").replace("\n", "\\n")
-                yield f"data: {safe_tail}\n\n"
+            if settings.TIE_ENABLED:
+                # [V1.0 T4b] El chat de Electron pasa por el TIE: entiende antes de
+                # responder. El camino corto (~80%) streamea tokens igual que
+                # siempre — el TIE ya aplica el filtro B21 dentro del runtime, así
+                # que aquí NO se vuelve a filtrar. El complejo emite estados
+                # ("analizando", "planificando") y luego la respuesta.
+                import app.tie as tie
+
+                async for kind, payload in tie.handle_stream(request.message, channel="web"):
+                    if not payload:
+                        continue
+                    safe = str(payload).replace("\r", "").replace("\n", "\\n")
+                    if kind == "text":
+                        full_response += str(payload)
+                        yield f"data: {safe}\n\n"
+                    else:
+                        # "status" | "mission": eventos SSE tipados. El cliente los
+                        # distingue por el `event:` (api.streamChat) y NUNCA los
+                        # mete en el texto de la respuesta.
+                        yield f"event: {kind}\ndata: {safe}\n\n"
+            else:
+                async for chunk in ai_manager.chat_stream(request.message, system_prompt):
+                    visible = reasoning_filter.feed(chunk)
+                    if not visible:
+                        continue
+                    full_response += visible
+                    safe_chunk = visible.replace("\r", "").replace("\n", "\\n")
+                    yield f"data: {safe_chunk}\n\n"
+                tail = reasoning_filter.flush()
+                if tail:
+                    full_response += tail
+                    safe_tail = tail.replace("\r", "").replace("\n", "\\n")
+                    yield f"data: {safe_tail}\n\n"
         finally:
             # V0.6: almacenamos la respuesta del asistente.
             if full_response:

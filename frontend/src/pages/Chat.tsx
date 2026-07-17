@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from "react";
+import { Link } from "react-router-dom";
 import { api } from "@/lib/api";
 import { useAppStore } from "@/store/useAppStore";
 import MicButton from "@/components/voice/MicButton";
@@ -7,6 +8,9 @@ import { attachVoiceAudio } from "@/avcs";
 interface Message {
   role: "user" | "assistant";
   content: string;
+  // [V1.0 T4b] Si la respuesta vino de una misión del TIE (varios pasos), su id
+  // para poder abrir el plan y su estado.
+  missionId?: string;
 }
 
 export default function Chat() {
@@ -16,6 +20,12 @@ export default function Chat() {
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [streamingText, setStreamingText] = useState("");
+  // [V1.0 T4b] Lo que el TIE está haciendo mientras aún no hay texto
+  // ("analizando", "planificando") + la misión asociada, si la hay.
+  const [tieStatus, setTieStatus] = useState("");
+  const [missionId, setMissionId] = useState<string | null>(null);
+  const missionIdRef = useRef<string | null>(null);
+  missionIdRef.current = missionId;
   // FIX V0.2: ref para acumular el texto del stream sin depender del closure
   // de estado (que capturaría siempre el valor inicial "").
   const accumulatedRef = useRef("");
@@ -146,16 +156,30 @@ export default function Chat() {
     accumulatedRef.current = "";
     setCoreState("thinking");
 
+    setTieStatus("");
+    setMissionId(null);
+
     try {
-      await api.streamChat(userMessage, (chunk) => {
-        // FIX V0.2: acumular en ref para evitar el bug de closure donde
-        // streamingText siempre era "" al finalizar (valor inicial del render).
-        accumulatedRef.current += chunk;
-        setStreamingText(accumulatedRef.current);
-      });
+      await api.streamChat(
+        userMessage,
+        (chunk) => {
+          // FIX V0.2: acumular en ref para evitar el bug de closure donde
+          // streamingText siempre era "" al finalizar (valor inicial del render).
+          accumulatedRef.current += chunk;
+          setStreamingText(accumulatedRef.current);
+        },
+        {
+          // [V1.0 T4b] El TIE avisa de lo que está haciendo antes de tener
+          // respuesta ("analizando" → "planificando"): feedback inmediato en vez
+          // de un "Pensando..." mudo mientras clasifica y planifica.
+          onStatus: (s) => setTieStatus(s),
+          onMission: (id) => setMissionId(id),
+        },
+      );
       const reply = accumulatedRef.current || "Sin respuesta";
-      setMessages(prev => [...prev, { role: "assistant", content: reply }]);
+      setMessages(prev => [...prev, { role: "assistant", content: reply, missionId: missionIdRef.current ?? undefined }]);
       setStreamingText("");
+      setTieStatus("");
       // V0.8.1 (Paso 2): thinking -> idle explicito antes del finally.
       setCoreState("idle");
       // El caller decide si habla la respuesta (voz / conversación).
@@ -330,13 +354,25 @@ export default function Chat() {
                   : "bg-base-700/50 text-ink"
               }`}>
                 {msg.content}
+                {/* [V1.0 T4b] La respuesta vino de una misión de varios pasos:
+                    enlace para ver el plan, su estado, o aprobarlo. */}
+                {msg.missionId && (
+                  <Link
+                    to="/missions"
+                    className="block mt-2 text-[10px] text-accent hover:underline"
+                  >
+                    Ver el plan y sus pasos →
+                  </Link>
+                )}
               </div>
             </div>
           ))}
           {loading && (
             <div className="flex justify-start">
               <div className="bg-base-700/50 px-3 py-2 rounded-xl text-xs text-ink-dim max-w-[85%]">
-                {streamingText || "Pensando..."}
+                {/* Mientras el TIE entiende/planifica aún no hay texto: se
+                    muestra QUÉ está haciendo en vez de un "Pensando..." mudo. */}
+                {streamingText || (tieStatus ? `${tieStatus}…` : "Pensando...")}
                 <span className="animate-pulse">|</span>
               </div>
             </div>

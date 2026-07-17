@@ -45,6 +45,64 @@ async def handle(envelope) -> str:
         return "He tenido un problema interno procesando eso. Inténtalo otra vez."
 
 
+async def handle_stream(text: str, *, channel: str = "web"):
+    """[T4b] Entrada STREAMING — la que usa `/api/chat/stream` (el chat de
+    Electron). Emite tuplas `(kind, payload)`:
+      ("status", "analizando"|"planificando"|…)  → feedback inmediato (≤1 s, doc 11 B.5)
+      ("mission", trace_id)                       → hay una misión que se puede seguir/aprobar
+      ("text", token|respuesta)                   → lo que el usuario lee
+
+    El camino corto (~80%) streamea TOKENS de verdad (mismo UX de siempre); el
+    complejo emite estados gruesos y la respuesta final del responder — el detalle
+    paso a paso, en vivo, se ve en la vista de misión (que sondea el grafo).
+    """
+    from app.automation import approval_gate
+    from app.memory import memory_router
+    from app.tools import tool_manager
+
+    yield ("status", "analizando")
+    try:
+        intent_task = asyncio.create_task(intents.classify(text, channel=channel))
+        ctx_task = asyncio.create_task(_prefetch_context(text))
+        intent = await intent_task
+        prefetched = await ctx_task
+    except Exception as e:
+        logger.error(f"[tie] handle_stream: clasificación falló: {type(e).__name__}: {e}")
+        intent, prefetched = Intent.conversational_fallback(text), ""
+
+    mission = new_mission(goal=intent.goal or text, source="user", channel=channel)
+    trace_id = tracer.record_start(mission, channel=channel)
+    tracer.record_intent(trace_id, intent)
+    tracer.emit_started(mission)
+
+    # --- camino corto: tokens de verdad ---
+    if intent.is_short_path:
+        acc = ""
+        task = AgentTask(id=AgentTask.new_id(), instruction=text, channel=channel,
+                         tools=intent.requires_tools)
+        runtime = get_runtime("null")
+        async for chunk in runtime.stream_task(
+            task, memory=memory_router, tools=tool_manager, approval_gate=approval_gate
+        ):
+            if chunk.kind == "text" and chunk.payload:
+                acc += chunk.payload
+                yield ("text", chunk.payload)
+        tracer.record_end(trace_id, outcome=acc[:2000])
+        tracer.emit_completed(mission, ok=bool(acc), nodes=0)
+        return
+
+    # --- camino complejo ---
+    yield ("status", "planificando")
+    yield ("mission", trace_id)
+    context = prefetched if not intent.memory_types else await _context_for(intent, text)
+    try:
+        await _complex_path(text, intent, mission, trace_id, context)
+    except Exception as e:
+        logger.error(f"[tie] handle_stream: pipeline complejo falló: {type(e).__name__}: {e}")
+        mission.outcome = "He tenido un problema procesando eso."
+    yield ("text", mission.outcome or "(sin respuesta)")
+
+
 async def submit_mission(
     goal: str,
     *,

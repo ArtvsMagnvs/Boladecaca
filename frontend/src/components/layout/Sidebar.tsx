@@ -72,6 +72,20 @@ const NAV_ITEMS: NavItem[] = [
     ),
   },
   {
+    // V1.0 (TIE v1, T4b): misiones — el plan, cada paso y su estado.
+    to: "/missions",
+    label: "Misiones",
+    icon: (
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+        <circle cx="12" cy="12" r="3" />
+        <circle cx="5" cy="5" r="2" />
+        <circle cx="19" cy="5" r="2" />
+        <circle cx="12" cy="21" r="2" />
+        <path d="M7 6.5 10 10M17 6.5 14 10M12 15v4" />
+      </svg>
+    ),
+  },
+  {
     // V0.9 (Automation Engine A3): reglas + historial + aprobaciones.
     to: "/automation",
     label: "Automatizaciones",

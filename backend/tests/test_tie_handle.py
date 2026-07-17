@@ -350,3 +350,76 @@ def test_endpoint_approve_plan_sin_plan_pendiente_404(client):
     trace_id = tracer.record_start(m, channel="hub")
     r = client.post(f"/api/tie/missions/{trace_id}/approve-plan", json={"approved": True})
     assert r.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# Streaming (T4b) — lo que ve el chat de Electron
+# ---------------------------------------------------------------------------
+@pytest.mark.anyio
+async def test_handle_stream_camino_corto_emite_status_y_tokens(monkeypatch):
+    """El camino corto debe seguir streameando TOKENS (el UX de siempre), con un
+    'analizando' delante para que el primer feedback sea inmediato (doc 11 B.5)."""
+    from app.tie import handle_stream
+    from app.tie.runtime import AgentChunk
+
+    _fake_intent(monkeypatch, Intent(type=IntentType.CONVERSATIONAL, goal="hola", confidence=0.9))
+
+    async def _stream(self, task, memory, tools, approval_gate):
+        for tok in ("Hola", ", ", "soy Aithera"):
+            yield AgentChunk(task_id=task.id, kind="text", payload=tok)
+    from app.tie.runtime import NullRuntime
+    monkeypatch.setattr(NullRuntime, "stream_task", _stream)
+
+    kinds, texts = [], ""
+    async for kind, payload in handle_stream("hola", channel="web"):
+        kinds.append(kind)
+        if kind == "text":
+            texts += payload
+
+    assert kinds[0] == "status" and kinds.count("text") == 3
+    assert texts == "Hola, soy Aithera"
+    assert "mission" not in kinds          # el camino corto no crea misión que seguir
+
+
+@pytest.mark.anyio
+async def test_handle_stream_complejo_emite_mission_y_respuesta(monkeypatch):
+    """El camino complejo avisa de que hay una misión (para poder verla/aprobarla)
+    y entrega la respuesta del responder."""
+    from app.tie import handle_stream
+
+    rt = _Rt()
+    register_runtime("t4rt", rt)
+    _fake_intent(monkeypatch, Intent(
+        type=IntentType.EXECUTE, goal="haz A", confidence=0.9, requires_planning=True,
+    ))
+    g = TaskGraph(id="gs", mission_id="ms", nodes={
+        "n1": TaskNode(id="n1", goal="paso A", runtime="t4rt"),
+    })
+    _fake_plan(monkeypatch, g)
+    _fake_responder(monkeypatch)
+
+    events = [(k, p) async for k, p in handle_stream("haz A", channel="web")]
+    kinds = [k for k, _ in events]
+
+    assert kinds[0] == "status"                     # "analizando"
+    assert "planificando" in [p for k, p in events if k == "status"]
+    assert "mission" in kinds                       # hay misión que seguir
+    assert any(k == "text" and "1 paso" in p for k, p in events)
+
+
+@pytest.mark.anyio
+async def test_handle_stream_nunca_lanza(monkeypatch):
+    from app.tie import handle_stream
+
+    async def _boom(text, *, channel=None):
+        raise RuntimeError("clasificador roto")
+    monkeypatch.setattr(pipeline_mod.intents, "classify", _boom)
+    _fake_short_chat(monkeypatch, "igualmente respondo")
+
+    from app.tie.runtime import AgentChunk, NullRuntime
+    async def _stream(self, task, memory, tools, approval_gate):
+        yield AgentChunk(task_id=task.id, kind="text", payload="igualmente respondo")
+    monkeypatch.setattr(NullRuntime, "stream_task", _stream)
+
+    out = "".join([p async for k, p in handle_stream("x", channel="web") if k == "text"])
+    assert out == "igualmente respondo"   # degradó a conversational y respondió

@@ -465,6 +465,59 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 // V0.9 (Automation Engine A1/A3): reglas + ejecuciones + aprobaciones.
+// --- TIE (Task Intelligence Engine, V1.0 T4b) ---
+// Una "misión" es lo que el TIE hace con una petición compleja: la planifica
+// como un grafo de pasos y lo ejecuta. En V1.0 la misión es implícita (1 misión
+// = 1 grafo = 1 traza), por eso el id que maneja la UI es el `trace_id`.
+export type NodeState =
+  | "pending" | "ready" | "running" | "waiting_approval" | "waiting_event"
+  | "done" | "failed" | "skipped" | "cancelled";
+
+export type MissionState = "running" | "waiting" | "done" | "failed" | "cancelled";
+
+export interface TaskNode {
+  id: string;
+  goal: string;
+  depends_on: string[];
+  state: NodeState;
+  approval_required: boolean;
+  gate_id?: string | null;
+  tools: string[];
+  result?: Record<string, unknown> | null;
+  validation?: { ok: boolean; method: string; notes: string } | null;
+  error?: string | null;
+  duration_ms?: number | null;
+  tokens?: number | null;
+}
+
+export interface TaskGraph {
+  id: string;
+  mission_id: string;
+  nodes: Record<string, TaskNode>;
+  created_by: string;
+  state: string; // draft | approved | running | done | failed | cancelled
+}
+
+export interface Mission {
+  mission_id: string;
+  trace_id: string;
+  goal: string;
+  type?: string | null;
+  channel?: string | null;
+  state: MissionState;
+  outcome?: string | null;
+  model_used?: string | null;
+  decision_id?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+  node_count: number;
+}
+
+export interface MissionDetail extends Mission {
+  intent?: Record<string, unknown> | null;
+  graph?: TaskGraph | null;
+}
+
 export interface AutomationRule {
   id: number;
   name: string;
@@ -947,7 +1000,22 @@ export const api = {
    * solo se recorta el espacio obligatorio tras "data:", nunca un .trim()
    * completo (eso se comia los espacios entre palabras).
    */
-  async streamChat(message: string, onChunk: (text: string) => void): Promise<void> {
+  /**
+   * Chat en streaming.
+   *
+   * [V1.0 T4b] El backend ya no emite solo texto: con el TIE activo manda
+   * eventos SSE TIPADOS — `status` ("analizando", "planificando") y `mission`
+   * (el id de una misión que se puede seguir/aprobar). Por eso este parser
+   * respeta el formato SSE de verdad: acumula un bloque hasta la línea en
+   * blanco y despacha según su `event:`. Antes se ignoraba la línea `event:`
+   * pero se procesaba su `data:` como texto — con eventos tipados eso metería
+   * "analizando" dentro de la respuesta del chat.
+   */
+  async streamChat(
+    message: string,
+    onChunk: (text: string) => void,
+    opts?: { onStatus?: (status: string) => void; onMission?: (traceId: string) => void },
+  ): Promise<void> {
     const response = await fetch(`${API_URL}/chat/stream`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -959,6 +1027,25 @@ export const api = {
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
     let buffer = "";
+    let eventName = "";
+    let dataLines: string[] = [];
+
+    // Despacha un bloque SSE completo. Devuelve true si el stream terminó.
+    const dispatch = (): boolean => {
+      if (dataLines.length === 0) {
+        eventName = "";
+        return false;
+      }
+      const data = dataLines.join("\n");
+      dataLines = [];
+      const name = eventName;
+      eventName = "";
+      if (data === "[DONE]") return true;
+      if (name === "status") opts?.onStatus?.(data.replace(/\\n/g, "\n"));
+      else if (name === "mission") opts?.onMission?.(data);
+      else if (name === "" ) onChunk(data.replace(/\\n/g, "\n"));
+      return false;
+    };
 
     while (true) {
       const { value, done } = await reader.read();
@@ -969,16 +1056,20 @@ export const api = {
       buffer = lines.pop() ?? "";
 
       for (const rawLine of lines) {
-        if (!rawLine) continue;
-        if (rawLine.startsWith("event:")) continue;
-        if (rawLine.startsWith("data:")) {
+        if (rawLine === "") {
+          if (dispatch()) return; // línea en blanco = fin del bloque SSE
+          continue;
+        }
+        if (rawLine.startsWith("event:")) {
+          eventName = rawLine.slice("event:".length).trim();
+        } else if (rawLine.startsWith("data:")) {
           let chunk = rawLine.slice("data:".length);
           if (chunk.startsWith(" ")) chunk = chunk.slice(1);
-          if (chunk === "[DONE]") return;
-          onChunk(chunk.replace(/\\n/g, "\n"));
+          dataLines.push(chunk);
         }
       }
     }
+    dispatch(); // por si el stream acaba sin línea en blanco final
   },
 
   // --- Voice Synthesis (ElevenLabs) ---
@@ -1150,6 +1241,21 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ profile }),
     }),
+
+  // --- TIE: misiones (V1.0 T4b) ---
+  getMissions: (state?: MissionState) =>
+    request<Mission[]>(`/tie/missions${state ? `?state=${state}` : ""}`),
+  getMission: (traceId: string) => request<MissionDetail>(`/tie/missions/${traceId}`),
+  cancelMission: (traceId: string) =>
+    request<{ cancelled: boolean; state?: string; detail?: string }>(
+      `/tie/missions/${traceId}/cancel`,
+      { method: "POST" },
+    ),
+  approvePlan: (traceId: string, approved: boolean, note = "") =>
+    request<{ trace_id: string; gate_id: string; status: string; approved: boolean }>(
+      `/tie/missions/${traceId}/approve-plan`,
+      { method: "POST", body: JSON.stringify({ approved, note }) },
+    ),
 };
 
 export interface VoiceInfo {

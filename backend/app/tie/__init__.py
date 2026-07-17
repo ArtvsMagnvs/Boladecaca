@@ -44,7 +44,7 @@ from app.tie import responder
 from app.tie.missions import new_mission
 
 # --- Pipeline (la interfaz de orquestación) ---
-from app.tie.pipeline import handle, submit_mission, resolve_plan, register_plan_handlers
+from app.tie.pipeline import handle, handle_stream, submit_mission, resolve_plan, register_plan_handlers
 
 
 def register_handlers() -> None:
@@ -87,6 +87,7 @@ __all__ = [
     "responder",
     # pipeline (interfaz de orquestación)
     "handle",
+    "handle_stream",
     "submit_mission",
     "resolve_plan",
     "register_handlers",

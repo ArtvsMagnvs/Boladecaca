@@ -12,6 +12,8 @@ import Agents from "@/pages/Agents";
 import EmailAssistant from "@/pages/EmailAssistant";
 // V0.9 (Automation Engine A3): reglas + historial + aprobaciones.
 import Automation from "@/pages/Automation";
+// V1.0 (TIE v1, T4b): misiones — plan, pasos, aprobación y kill-switch.
+import Missions from "@/pages/Missions";
 
 // HashRouter (no BrowserRouter): cuando Electron carga el build empaquetado
 // via file://, no hay servidor que resuelva rutas tipo /chat - el hash
@@ -32,6 +34,7 @@ export default function App() {
           <Route path="/calendar" element={<CalendarPage />} />
           <Route path="/agents" element={<Agents />} />
           <Route path="/automation" element={<Automation />} />
+          <Route path="/missions" element={<Missions />} />
           <Route path="/voice" element={<VoiceCenter />} />
           <Route path="/settings" element={<Settings />} />
         </Route>
