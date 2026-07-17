@@ -116,7 +116,16 @@ export default function Missions() {
   };
 
   const nodes: TaskNode[] = detail?.graph ? Object.values(detail.graph.nodes) : [];
+  // Dos mecanismos de gate distintos y AMBOS necesitan botones (bug real
+  // reportado: el panel solo cubría el gate del PLAN — `graph.state==="draft"` —
+  // y dejaba sin ninguna acción posible al gate de NODO, que pausa un paso
+  // suelto en mitad de la ejecución con su propio `gate_id` y no toca
+  // `graph.state`. Sin esto, una misión podía quedar "Esperando tu respuesta"
+  // sin que hubiera ningún botón en la UI para responder.
   const awaitingPlan = detail?.state === "waiting" && detail?.graph?.state === "draft";
+  const awaitingNode = !awaitingPlan
+    ? nodes.find((n) => n.state === "waiting_approval" && n.gate_id)
+    : undefined;
 
   return (
     <div className="h-full flex flex-col gap-4">
@@ -229,6 +238,33 @@ export default function Missions() {
                       className="text-xs px-3 py-2 rounded-lg bg-signal-error/10 text-signal-error border border-signal-error/30 hover:bg-signal-error/20 disabled:opacity-50"
                     >
                       Descartar
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Aprobación de un paso suelto — se abrió DURANTE la ejecución
+                  (no en el plan completo, TIE_PLAN_APPROVAL desactivado o caso
+                  límite). Mismo patrón que el gate del plan, pero resuelve
+                  directamente el gate_id de este nodo. */}
+              {awaitingNode && (
+                <div className="rounded-2xl p-5 bg-signal-warn/10 border border-signal-warn/30">
+                  <h3 className="text-sm font-medium text-signal-warn">Este paso necesita tu permiso</h3>
+                  <p className="text-xs text-ink-dim mt-1">{awaitingNode.goal}</p>
+                  <div className="flex gap-2 mt-4">
+                    <button
+                      onClick={() => act(() => api.resolveApproval(awaitingNode.gate_id!, true))}
+                      disabled={busy}
+                      className="text-xs px-3 py-2 rounded-lg bg-signal-ok/15 text-signal-ok border border-signal-ok/30 hover:bg-signal-ok/25 disabled:opacity-50"
+                    >
+                      Aprobar
+                    </button>
+                    <button
+                      onClick={() => act(() => api.resolveApproval(awaitingNode.gate_id!, false))}
+                      disabled={busy}
+                      className="text-xs px-3 py-2 rounded-lg bg-signal-error/10 text-signal-error border border-signal-error/30 hover:bg-signal-error/20 disabled:opacity-50"
+                    >
+                      Rechazar
                     </button>
                   </div>
                 </div>

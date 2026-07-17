@@ -2,39 +2,22 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import { Link } from "react-router-dom";
 import { api } from "@/lib/api";
 import { useAppStore } from "@/store/useAppStore";
+import { useChatStore } from "@/store/useChatStore";
 import MicButton from "@/components/voice/MicButton";
 import { attachVoiceAudio } from "@/avcs";
 
-interface Message {
-  role: "user" | "assistant";
-  content: string;
-  // [V1.0 T4b] Si la respuesta vino de una misión del TIE (varios pasos), su id
-  // para poder abrir el plan y su estado.
-  missionId?: string;
-}
-
 export default function Chat() {
-  const [messages, setMessages] = useState<Message[]>([
-    { role: "assistant", content: "Hola! Soy Aithera, tu asistente de IA. Puedo ayudarte con proyectos, tareas, calendario y más. ¿En qué puedo ayudarte hoy?" }
-  ]);
+  // [Fix bug real 2026-07-17] La conversación vive en useChatStore (singleton
+  // fuera del árbol de React), no en useState local: navegar a otra página
+  // (p.ej. "Misiones" para ver un plan) y volver ya no reinicia el chat, y una
+  // respuesta que sigue en camino cuando el usuario navega fuera ya NO se
+  // pierde (antes, su setMessages apuntaba al componente desmontado y React
+  // descartaba la actualización en silencio).
+  const messages = useChatStore((s) => s.messages);
+  const streamingText = useChatStore((s) => s.streamingText);
+  const tieStatus = useChatStore((s) => s.tieStatus);
+  const sending = useChatStore((s) => s.sending);
   const [input, setInput] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [streamingText, setStreamingText] = useState("");
-  // [V1.0 T4b] Lo que el TIE está haciendo mientras aún no hay texto
-  // ("analizando", "planificando") + la misión asociada, si la hay.
-  const [tieStatus, setTieStatus] = useState("");
-  const [missionId, setMissionId] = useState<string | null>(null);
-  const missionIdRef = useRef<string | null>(null);
-  missionIdRef.current = missionId;
-  // FIX V0.2: ref para acumular el texto del stream sin depender del closure
-  // de estado (que capturaría siempre el valor inicial "").
-  const accumulatedRef = useRef("");
-  // Guard sincrono de re-entrancia: `loading` (estado) llega con un render
-  // de retraso, asi que dos eventos disparados casi a la vez (doble keydown
-  // de Enter por prediccion de texto de Windows, doble click, etc.) pueden
-  // leer loading=false en ambos y colarse los dos. El ref se lee/escribe en
-  // el mismo tick, sin depender de un re-render.
-  const sendingRef = useRef(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   // V0.8.1 (Paso 2): selector granular para no re-renderizar el componente
   // en cada cambio de coreState/aiStatus (pitfall #4 de aithera-hub-corestate).
@@ -124,12 +107,14 @@ export default function Chat() {
   }, [messages, streamingText]);
 
   // V0.8.1 (Paso 2): cleanup defensivo del estado del nucleo al desmontar.
-  // Si el usuario navega a otra pagina mientras el stream esta en vuelo
-  // (loading=true), el useEffect de cleanup de abajo lo deja en idle
-  // en lugar de dejar el nucleo enganado en "thinking".
+  // [Fix bug real 2026-07-17] Solo fuerza "idle" si de verdad no queda nada en
+  // vuelo (`chat.sending`). Antes navegar fuera con un envío en curso siempre
+  // reseteaba el núcleo, aunque el envío ahora SÍ sigue vivo en el store y
+  // termina de verdad — forzar "idle" aquí lo dejaría desincronizado hasta que
+  // `sendMessage` corrigiera el estado igualmente al terminar.
   useEffect(() => {
     return () => {
-      if (useAppStore.getState().coreState === "thinking") {
+      if (useAppStore.getState().coreState === "thinking" && !useChatStore.getState().sending) {
         setCoreState("idle");
       }
     };
@@ -138,60 +123,64 @@ export default function Chat() {
   // Envío centralizado: recibe el texto explícito (no depende del estado
   // `input`, que es asíncrono). Así lo pueden llamar tanto el botón Enviar
   // como el micro (auto-envío) sin bugs de closure.
+  //
+  // Lee/escribe SIEMPRE vía `useChatStore.getState()` (nunca vía el hook de
+  // selección) — igual que ya se hacía con `useAppStore.getState()` arriba
+  // para el guard de coreState. Esto es lo que hace que el envío sobreviva a
+  // que el componente se desmonte a mitad de camino (navegar a "Misiones" y
+  // volver): el guard de re-entrancia y las actualizaciones de estado viven
+  // en el store singleton, no en refs/useState atados a ESTA instancia del
+  // componente. `getState().streamingText` al terminar el stream sustituye al
+  // viejo `accumulatedRef` (FIX V0.2): ya no puede quedar obsoleto porque no
+  // es un closure de render, es una lectura directa del store.
   const sendMessage = useCallback(async (text: string): Promise<string | null> => {
+    const chat = useChatStore.getState();
     const userMessage = text.trim();
-    if (!userMessage || sendingRef.current) return null;
+    if (!userMessage || chat.sending) return null;
     if (!backendConnected) {
-      setMessages(prev => [...prev, { role: "user", content: userMessage }, { role: "assistant", content: "Error: No hay conexión con el backend." }]);
+      chat.appendMessage({ role: "user", content: userMessage });
+      chat.appendMessage({ role: "assistant", content: "Error: No hay conexión con el backend." });
       setInput("");
       pulseError();
       return null;
     }
 
-    sendingRef.current = true;
+    chat.setSending(true);
     setInput("");
-    setMessages(prev => [...prev, { role: "user", content: userMessage }]);
-    setLoading(true);
-    setStreamingText("");
-    accumulatedRef.current = "";
+    chat.appendMessage({ role: "user", content: userMessage });
+    chat.setStreamingText("");
+    chat.setTieStatus("");
+    chat.setMissionId(null);
     setCoreState("thinking");
-
-    setTieStatus("");
-    setMissionId(null);
 
     try {
       await api.streamChat(
         userMessage,
-        (chunk) => {
-          // FIX V0.2: acumular en ref para evitar el bug de closure donde
-          // streamingText siempre era "" al finalizar (valor inicial del render).
-          accumulatedRef.current += chunk;
-          setStreamingText(accumulatedRef.current);
-        },
+        (chunk) => useChatStore.getState().appendStreamingText(chunk),
         {
           // [V1.0 T4b] El TIE avisa de lo que está haciendo antes de tener
           // respuesta ("analizando" → "planificando"): feedback inmediato en vez
           // de un "Pensando..." mudo mientras clasifica y planifica.
-          onStatus: (s) => setTieStatus(s),
-          onMission: (id) => setMissionId(id),
+          onStatus: (s) => useChatStore.getState().setTieStatus(s),
+          onMission: (id) => useChatStore.getState().setMissionId(id),
         },
       );
-      const reply = accumulatedRef.current || "Sin respuesta";
-      setMessages(prev => [...prev, { role: "assistant", content: reply, missionId: missionIdRef.current ?? undefined }]);
-      setStreamingText("");
-      setTieStatus("");
+      const final = useChatStore.getState();
+      const reply = final.streamingText || "Sin respuesta";
+      final.appendMessage({ role: "assistant", content: reply, missionId: final.missionId ?? undefined });
+      final.setStreamingText("");
+      final.setTieStatus("");
       // V0.8.1 (Paso 2): thinking -> idle explicito antes del finally.
       setCoreState("idle");
       // El caller decide si habla la respuesta (voz / conversación).
       return reply;
     } catch (error) {
       console.error("Error en streamChat:", error);
-      setMessages(prev => [...prev, { role: "assistant", content: "Lo siento, hubo un error al procesar tu mensaje." }]);
+      useChatStore.getState().appendMessage({ role: "assistant", content: "Lo siento, hubo un error al procesar tu mensaje." });
       pulseError();
       return null;
     } finally {
-      sendingRef.current = false;
-      setLoading(false);
+      useChatStore.getState().setSending(false);
     }
   }, [backendConnected, setCoreState, pulseError]);
 
@@ -367,7 +356,7 @@ export default function Chat() {
               </div>
             </div>
           ))}
-          {loading && (
+          {sending && (
             <div className="flex justify-start">
               <div className="bg-base-700/50 px-3 py-2 rounded-xl text-xs text-ink-dim max-w-[85%]">
                 {/* Mientras el TIE entiende/planifica aún no hay texto: se
@@ -391,11 +380,11 @@ export default function Chat() {
               onKeyDown={(e) => e.key === "Enter" && handleSend()}
               placeholder="Escribe tu mensaje..."
               className="flex-1 min-w-0 bg-base-800 border border-base-700 rounded-lg px-3 py-2 text-xs text-ink placeholder:text-ink-faint focus:outline-none focus:border-accent/40"
-              disabled={loading}
+              disabled={sending}
             />
             <button
               onClick={handleSend}
-              disabled={loading || !input.trim()}
+              disabled={sending || !input.trim()}
               className="shrink-0 px-3 py-2 bg-accent/15 text-accent rounded-lg text-xs font-medium border border-accent/30 hover:bg-accent/25 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               Enviar

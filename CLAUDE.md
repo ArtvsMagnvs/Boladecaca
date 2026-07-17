@@ -1066,6 +1066,49 @@ la fase en `1.0.0`. Durante T1-T4 la versión se mantiene en `0.9.0`.
   Se probó el rechazo y NO la aprobación a propósito: ese plan enviaba un email
   real del usuario — no se disparan acciones reales para validar la UI. Limpieza
   de las trazas/gates/decisiones de prueba confirmada.
+- ✅ **Fixes post-T4b (2026-07-17, reportados por el usuario)**: dos bugs reales
+  de la primera pasada de T4b, ambos con reproducción exacta del usuario.
+  **(1) La conversación se perdía al navegar** — `Chat.tsx` guardaba los
+  mensajes en `useState` local; React Router desmonta la página al navegar (p.
+  ej. a "Misiones" para ver un plan), así que volver al chat lo reiniciaba
+  desde el saludo. Peor aún: si una respuesta seguía en camino (streaming o
+  misión compleja) cuando el usuario navegaba fuera, su `setMessages` apuntaba
+  a un componente YA desmontado — React descarta esa actualización en
+  silencio y la respuesta se perdía **aunque el backend la hubiera generado
+  bien**. Arreglado con `store/useChatStore.ts` (NEW, Zustand): mensajes,
+  `streaming`/`tieStatus`/`missionId`/`sending` viven en el store singleton
+  (mismo patrón ya usado por `presenceMode` en `useAppStore` — "vive en el
+  store para que persista por página"). `sendMessage` en `Chat.tsx` pasa a
+  leer/escribir SIEMPRE vía `useChatStore.getState()` (nunca el hook de
+  selección) dentro de los callbacks async, así que sobrevive a que el
+  componente se desmonte a media petición. Efecto colateral bueno: el viejo
+  `accumulatedRef`/FIX-V0.2 (un workaround para el closure obsoleto de
+  `streamingText`) deja de hacer falta — `getState().streamingText` nunca
+  puede quedar obsoleto porque no es un closure de render. **(2) En "Misiones"
+  no había botones para aprobar/rechazar** — `Missions.tsx` solo detectaba el
+  gate del PLAN (`graph.state === "draft"`, T4a), pero el TIE tiene DOS
+  mecanismos de gate independientes: el del plan y el gate de NODO (T3, se
+  abre en mitad de la ejecución si `TIE_PLAN_APPROVAL=false` o en casos
+  límite) — un nodo en `waiting_approval` con su propio `gate_id` no tocaba
+  `graph.state`, así que `awaitingPlan` daba `false` y la UI no ofrecía NINGÚN
+  botón aunque la misión estuviera realmente esperando al usuario. Arreglado
+  añadiendo `awaitingNode = nodes.find(n => n.state==="waiting_approval" &&
+  n.gate_id)` + un panel "Este paso necesita tu permiso" que resuelve
+  directamente `api.resolveApproval(node.gate_id, ...)` — el mismo endpoint
+  genérico de A1 que ya usa `Automation.tsx`, sin backend nuevo. **Verificado
+  en vivo contra el backend real del usuario** (su propio proceso, sin
+  reiniciarlo): navegar Chat→Misiones→Chat conservó la conversación completa;
+  navegar a otra página **milisegundos después de enviar** (antes de que
+  llegara ningún token) y volver mostró la respuesta completa igualmente — la
+  condición de carrera exacta queda cerrada. El fix del gate de nodo se
+  verificó por revisión de código + reutilización de un endpoint ya cubierto
+  por los 10 tests de A1 (no se forzó el escenario en vivo porque habría
+  exigido reiniciar el backend del usuario con `TIE_PLAN_APPROVAL=false`, sin
+  permiso para tocar su proceso). `tsc`/`vite build` limpios. Suite backend
+  sin cambios (fix 100% frontend); un test de perf preexistente
+  (`test_import_app_main_no_bloquea_en_memoria`) parpadeó por carga del
+  sistema (backend+frontend del usuario corriendo en paralelo) — no
+  relacionado con este fix.
 - **V1.0 pendiente**: T5 (tests de contrato + perf + verificación e2e + cierre
   del bloque TIE a `0.9.2`). Luego MEL (E1-E2), integración Orchestrator,
   MVP-beta (→ `1.0.0`).
