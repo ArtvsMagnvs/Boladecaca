@@ -47,17 +47,21 @@ API interna, el MEL absorbe la política. Nada se rompe; todo se recoloca.
 ```
 backend/app/mel/
 ├── __init__.py     # API pública: mel.complete(), mel.stream(), mel.policies(),
-│                   #   mel.decision_trace(id) — NADA más es importable
+│                   #   mel.decision_trace(id), mel.resolve_model_name(text)
+│                   #   [§7b.2], mel.set_project_override(...)/mel.overrides_for(
+│                   #   project_id) [§7b.1] — NADA más es importable
 ├── contracts.py    # Capability, ExecutionRequest/Result, Policy, DecisionTrace — CONGELADOS
 ├── capabilities.py # taxonomía (§3) + mapeo de call-sites
 ├── policies.py     # Economy/Quality/Offline/Custom + compilador de políticas (§4-6)
 ├── decision.py     # Rule Engine (§9.1) — determinista, sin LLM, sin I/O
 ├── fallback.py     # clasificación de fallos + circuit breakers (§8)
 ├── executor.py     # ejecución + streaming + registro async de mel_executions
-├── registry.py     # Provider Registry (envuelve ai_manager en v1)
+├── registry.py     # Provider Registry (envuelve ai_manager en v1) + resolve_model_name() (§7b.2)
 ├── learning.py     # Learning Engine (§9.2) — job periódico (v2)
 ├── recommender.py  # Recommendation Engine (§9.3) — propuestas HITL (v2)
-└── catalog.py      # scores base por (modelo, capacidad) + coste relativo (§5.1)
+├── catalog.py      # scores base por (modelo, capacidad) + coste relativo (§5.1)
+├── research.py     # [Δ] Auto-Research Catalog (§5.4) — job + prompt RESEARCH + mel_capability_reports
+└── overrides.py    # [Δ] Override explícito del usuario (§7b) — mel_overrides + resolución de alcance
 ```
 
 Frontera dura: ningún módulo fuera de `app/mel/` importa `ai_manager` ni providers
@@ -75,6 +79,9 @@ class ExecutionRequest:
     context_tags: dict = ...          # dominio/proyecto/origen — SOLO para métricas
                                       # y aprendizaje; jamás para seleccionar en v1
     policy_override: str | None = None  # "offline" p.ej. para jobs nocturnos; raro
+    model_override: str | None = None   # [Δ 2026-07-18, §7b] id concreto pedido
+                                         # EXPLÍCITAMENTE por el usuario — máxima
+                                         # prioridad, por encima de política y catálogo
 
 @dataclass(frozen=True)
 class ExecutionResult:
@@ -89,7 +96,8 @@ class ExecutionResult:
 (mismo pipeline de decisión; el streaming aplica `StreamingReasoningFilter`).
 Reglas: el caller JAMÁS conoce el modelo elegido salvo leyendo `served_by`
 (observabilidad, no control); `context_tags` alimentan el aprendizaje, nunca la
-selección determinista de v1 (evita acoplamiento negocio→MEL).
+selección determinista de v1 (evita acoplamiento negocio→MEL). Excepción única:
+`model_override` — ver §7b, es control explícito del USUARIO, no del caller.
 
 ## 3. Sistema de Capacidades (taxonomía)
 
@@ -190,6 +198,87 @@ propuesta de configuración de modelos pendiente") + panel de diff con
 Aceptar/Rechazar por política. Sin popups modales, sin interrupciones: filosofía
 calm-tech coherente con el AVCS y con la cuarentena HITL del Learner (doc 15 §3).
 
+## 5.4 [Δ 2026-07-18] Catálogo auto-investigado por modelo conectado
+
+**Pedido explícito del usuario.** El catálogo de §5.1 es hoy DATO CURADO por el
+equipo (archivo del repo, editado en cada release) — válido como prior, pero
+genérico: no sabe qué modelos tiene ESTE usuario ni si sus scores siguen vigentes
+(los proveedores cambian de versión sin avisar). Esta sección añade una capa
+personal encima, sin sustituir el catálogo curado: lo **complementa por usuario**.
+
+### 5.4.1 Disparo
+
+El MEL se suscribe (además de a los eventos de §5.3) a `provider.model_configured`
+— evento NUEVO, emitido por el Provider Registry cuando `POST /configured` o
+`PUT /configured/{provider}` deja un `(provider, model)` distinto al que había
+(alta o cambio de modelo; activar/desactivar/borrar NO dispara esto — no hay
+modelo nuevo que investigar). Ver delta a doc 17 §4 más abajo.
+
+Al recibir el evento: si `(provider, model)` ya tiene un informe con menos de 14
+días, no hace nada (evita investigar dos veces por un simple toggle). Si no, encola
+un job **asíncrono, fuera del critical path** (mismo patrón que la ingesta del MOS,
+doc 07 §6): investigar ESE modelo.
+
+### 5.4.2 Quién investiga (capacidad `RESEARCH`, activada aquí)
+
+La taxonomía de §3 ya reservaba `RESEARCH` sin activar ("se activan sin
+migración"). Esta es su activación. El propio MEL ejecuta la investigación **a
+través de sí mismo** (`mel.complete(capability=RESEARCH, ...)`, respetando la
+política activa — igual que hace el Learning Engine con `ANALYZE`, §9.2): el
+Rule Engine elige, para `RESEARCH`, el modelo con mejor score de razonamiento/
+conocimiento general disponible (nunca el modelo que se está investigando a sí
+mismo, si es evitable — desempate simple: excluir el propio candidato de la
+cadena elegible para esa llamada concreta).
+
+**Verificación honesta del alcance real (auditado antes de diseñar, no después):**
+a fecha de este documento, **ningún proveedor de Aithera tiene una tool de
+búsqueda web conectada** (`grep` en `app/ai/providers/` y `app/tools/` — cero
+resultados; `browser.use`/`computer.use` siguen `available=False`, doc 20 A3b).
+Por tanto, en v1 el informe se genera con el **conocimiento entrenado del modelo
+investigador** (bien perfilado con un prompt que pide honestidad explícita sobre
+la fecha de corte y evitar inventar benchmarks que no recuerda con certeza) —
+**no** con navegación en vivo. Es exactamente el mismo método con el que hoy se
+cura el catálogo de §5.1 (un modelo capaz, bien preguntado), solo que automatizado
+y personalizado a los modelos REALES del usuario en vez de a una lista genérica.
+Cuando exista una tool de búsqueda web real conectada al backend (roadmap:
+`browser.use`, V1.2+), este job la usa automáticamente sin cambiar de forma —
+mismo contrato `mel.complete(capability=RESEARCH)`, el executor por debajo mejora
+solo. No se construye infraestructura de scraping/browsing aquí: sería adelantar
+trabajo de un permiso que todavía no existe (anti-sobreingeniería, doc 16).
+
+### 5.4.3 El informe
+
+Prompt estructurado que pide, en JSON validado (patrón 9, toda frontera LLM):
+por capacidad de la taxonomía (§3), un score 0-100 + una justificación de 1
+línea + el nivel de confianza del propio modelo investigador en su respuesta
+("alto" si es un modelo muy conocido y estable; "bajo" si es una versión rara o
+muy reciente que el investigador puede no conocer bien). Se persiste en una tabla
+nueva del MEL, `mel_capability_reports` (`provider, model, capability, score,
+rationale, confidence, researched_by_model, created_at`) — **NUNCA sustituye**
+los `capability_scores` curados de §5.1: los **desplaza** exactamente igual que
+lo hace el aprendizaje real (§9.2 — prior bayesiano, cambio acotado ±10 puntos,
+mínimo de confianza antes de influir). Un informe con `confidence="bajo"` no
+mueve nada por sí solo.
+
+**Documento legible para el usuario**: `GET /api/mel/capability-report` (o su
+equivalente cuando exista el módulo) devuelve, por modelo conectado, un resumen
+en prosa corta ("MiniMax-M2.7: fuerte en chat/draft, razonamiento decente,
+código flojo — confianza alta") — la pantalla **Inteligencia → Modelos** de §11
+lo muestra. Es exactamente el "reporte/documento interno" pedido: consultable,
+no solo usado internamente por el Rule Engine.
+
+### 5.4.4 Refresco periódico
+
+Job APScheduler cada 14 días (`MEL_RESEARCH_REFRESH_DAYS`, configurable,
+default 14 — el número que pidió el usuario, no hardcodeado sin nombre) que
+re-investiga TODOS los modelos configurados actualmente (no solo los nuevos):
+los proveedores cambian de versión sin aviso, así que un informe de hace un mes
+puede estar describiendo un modelo que ya no es el mismo. Mismo mecanismo de
+5.4.1-5.4.3, disparado por tiempo en vez de por evento. Igual que el resto de
+jobs del proyecto (MOS, lifecycle, mission cleanup): micro-batch, Ollama-first
+si hay un local sano (coste 0), nunca bloquea el arranque, escribe su propio
+registro de ejecución (mismo patrón `MemoryJobRun`/`AutomationExecution`).
+
 ## 6. Botón Restaurar
 
 En Economy/Quality/Offline editadas: "Restaurar configuración recomendada" →
@@ -217,6 +306,63 @@ Pantalla "Inteligencia → Personalizado":
 - Estados de validez: bloque sin modelo → borde ámbar + no se puede activar
   Custom hasta resolverlo. Guardado = nueva versión (undo disponible).
 - Accesible sin ratón: cada acción de drag tiene equivalente por menú contextual.
+
+## 7b. [Δ 2026-07-18] Override explícito del usuario — por encima del MEL
+
+**Pedido explícito del usuario, con una regla dura**: si el usuario nombra un
+modelo concreto para una tarea, esa elección manda — el MEL (política, catálogo,
+aprendizaje) queda por debajo. Pero el pedido tiene que ser **concreto** (un
+modelo real, identificable) y su **alcance tiene que quedar resuelto sin
+ambigüedad** antes de aplicarse. Este apartado es el contrato del lado MEL; el
+lado que DETECTA la petición y pregunta el alcance es el TIE (delta en doc 14
+§3.5 — el Orquestador, en el sentido en que este documento y CLAUDE.md usan la
+palabra: TIE v1 = "Orchestrator", doc 11-B).
+
+### 7b.1 Los tres niveles de alcance (los dos que pidió el usuario + el que ya existía)
+
+| Alcance | Vive en | Cómo se aplica |
+|---|---|---|
+| **Una tarea/misión concreta** | `TaskNode.model_hint` (doc 14, YA EXISTE — "id concreto" es una rama ya prevista de `router.choose()`) → se traduce a `ExecutionRequest.model_override` SOLO para los nodos de esa misión | Ephemeral: vive en el grafo de esa misión, no se persiste en el MEL |
+| **Todo un proyecto (WPMS)** | tabla nueva `mel_overrides` (`id, scope="project", project_id (ix, entero suelto — mismo patrón que `Milestone.project_id`, doc 18 W1: sin ForeignKey, la integridad la llevan los endpoints), capability (nullable = todas), model_id, source="user_explicit", created_at`) — **propiedad del MEL**, no del WPMS (frontera dura, doc 16: el MEL no importa `app.workspace`, solo guarda un entero suelto igual que ya hace WPMS con sus propias referencias cruzadas) | Escritura: `mel.set_project_override(project_id, model_id, capability=None)` (API pública, §1.2) — la llama el TIE cuando confirma el alcance "proyecto". Lectura: el constructor de `ExecutionRequest` del TIE, cuando la misión trae `project_id` (`source="workspace"`, doc 14 §4.3b), consulta `mel.overrides_for(project_id)` antes de enviar la petición |
+| **Política global (Custom)** | ya existe: §7, Modo Custom | No es parte de este delta — ya resuelto por el diseño existente; se menciona solo para que quede explícito que el usuario YA tenía una vía para "siempre" |
+
+Precedencia en el Rule Engine (§9.1, se actualiza el algoritmo):
+`model_override` de la request > pin de proyecto (`mel_overrides`) > cadena de la
+política activa. Un `model_override` que apunta a un modelo NO disponible
+(desconectado, sin salud) → error tipado al caller (`ExplicitModelUnavailable`)
+— el MEL NUNCA sustituye en silencio una elección explícita del usuario por otra
+(eso rompería la regla dura de arriba); el TIE decide cómo comunicarlo (§3.5 doc 14).
+
+**Un cuarto "alcance" ya existente, reconciliado**: `Agent.agent_type` (WPMS
+W2e) es hoy la selección de modelo **por agente** (el dropdown "Modelo IA" al
+crear/editar un Agent). No es parte de este delta ni cambia — pero su
+precedencia frente a `model_override` queda explícita para cuando V1.1
+(HermesRuntime, multi-agente real) lo haga colisionar de verdad: **el override
+explícito del usuario para una tarea/proyecto SIEMPRE gana sobre el modelo por
+defecto de un Agent** — un Agent configurado con un modelo es una preferencia
+de fondo (equivalente a un pin de proyecto de baja prioridad); pedir "usa X
+para esto" es una instrucción directa y más reciente. En V1.0 (NullRuntime,
+sin Agents ejecutando nodos todavía) esto no aplica en la práctica — se deja
+anotado para no tener que revisitar la precedencia cuando llegue V1.1.
+
+### 7b.2 Verificación obligatoria (nunca asumir un nombre)
+
+Antes de aceptar cualquier `model_override`, el MEL resuelve el nombre pedido
+contra el Provider Registry REAL (fuzzy-match tolerante a como la gente nombra
+modelos coloquialmente — "GPT-5", "el modelo de OpenAI", "Sonnet" — contra los
+`(provider, model)` realmente configurados) y devuelve el id EXACTO o un error
+claro con sugerencias ("no tienes GPT-5 configurado; tienes: ..."). Esta
+resolución vive en el MEL (`registry.resolve_model_name(text) -> str | None`)
+porque es el único módulo que conoce el Provider Registry — el TIE la llama, no
+la reimplementa (frontera dura, doc 16).
+
+### 7b.3 Auditoría y gestión
+
+Cada override activo (de proyecto) es visible y borrable desde **Inteligencia →
+Modelos** (§11, misma pantalla del informe de capacidades de §5.4.3) — nunca
+oculto. Se registra en la Decision API (`decision_service.store_decision`,
+igual que ya hace el planner del TIE con sus planes, doc 21 T2) para que quede
+en el historial de decisiones del sistema, no solo en una tabla técnica.
 
 ## 8. Sistema de respaldos (fallback)
 
@@ -263,10 +409,19 @@ cuando importa, sin el usuario.
 ### 9.1 Rule Engine (tiempo real, sin LLM, sin I/O)
 
 - Entrada: `ExecutionRequest` + estado en memoria (política activa COMPILADA a
-  tabla `capability → cadena`, breakers, cuotas, semáforos locales, prioridad).
-- Algoritmo: lookup O(1) de la cadena → primer candidato **viable** (breaker
-  cerrado, no exhausted, local con hueco) → decisión. Coste: < 1 ms, cero I/O
-  (todo estado vive en memoria; la persistencia es asíncrona).
+  tabla `capability → cadena`, breakers, cuotas, semáforos locales, prioridad,
+  overrides de proyecto de `mel_overrides` §7b cacheados en memoria como el resto
+  del estado — invalidados por el mismo evento que los crea/borra).
+- Algoritmo **[Δ 2026-07-18: precedencia de override, §7b]**: (0) si
+  `req.model_override` está presente → resolver directo a ESE modelo, viable o
+  `ExplicitModelUnavailable`, FIN (no se consulta política); (0.5) si no hay
+  override en la request pero `req.context_tags["project_id"]` tiene un pin en
+  `mel_overrides` para esta `capability` (o global de proyecto) → igual que (0)
+  pero como origen "project_pin" en vez de "user_explicit" en el trace; (1) si
+  no hay override de ningún tipo → lookup O(1) de la cadena de la política →
+  primer candidato **viable** (breaker cerrado, no exhausted, local con hueco) →
+  decisión. Coste: < 1 ms, cero I/O (todo estado vive en memoria; la
+  persistencia es asíncrona).
 - **Determinista y reproducible**: misma petición + mismo estado ⇒ mismo modelo.
 - **Explicable**: produce `DecisionTrace {capability, policy, chain, skipped:
   [(modelo, razón)], chosen, ts}` — en memoria (ring buffer 500) + muestreo
@@ -356,13 +511,23 @@ y señales del Learner (V1.1/V1.2) — separar v1/v2 es obligatorio de todos mod
 | Versión | Alcance MEL | Sesiones |
 |---|---|---|
 | **V1.0 (E1)** | contratos + capacidades + registry (envuelve ai_manager) + Rule Engine + fallback/breakers + políticas Economy/Quality/Offline con compilador + `policy_override` | 1-1.5 |
+| **V1.0 (E1b)** *(Δ 2026-07-18)* | capacidad `RESEARCH` activada + Catálogo auto-investigado por modelo conectado (§5.4): evento `provider.model_configured`, job de investigación, `mel_capability_reports`, refresco cada 14 días | 1 |
 | **V1.0 (E2)** | migración de los ~9 call-sites (chat_service, triaje, ai_reply, meetings, summarizer, TIE intents/planner/responder vía shim de router.py) + pantalla Políticas v1 + wizard integrado en O5 + `mel_executions` (solo registro) + tests de contrato | 1-1.5 |
+| **V1.0 (E2b)** *(Δ 2026-07-18)* | Override explícito del usuario (§7b): `model_override` en el contrato, `mel_overrides` (alcance proyecto), `resolve_model_name()`/`set_project_override()`/`overrides_for()`, precedencia en el Rule Engine, `chat_service.answer()` gana `model_override` (cierra el hueco del camino corto, doc 14 §3.5 delta), pantalla Inteligencia → Modelos (informe §5.4 + overrides activos) | 1 |
 | **V1.2 (v2)** | Learning Engine + Recommendation Engine (con el Learner y `model_stats`) + Custom builder drag&drop + Actividad/Recomendaciones + reconfiguración automática por eventos + presupuestos de coste | 2-3 |
-| **V1.5+ (v3, solo si aporta)** | perfiles por proyecto (WPMS: "este proyecto usa Quality"), shadow-testing A/B de un modelo nuevo en % de tráfico, capacidad `VISION`/`RESEARCH` activadas, voz como capacidad | según demanda |
+| **V1.5+ (v3, solo si aporta)** | perfiles por proyecto (WPMS: "este proyecto usa Quality" — sin relación con el pin de §7b, que es de MODELO no de política completa), shadow-testing A/B de un modelo nuevo en % de tráfico, capacidad `VISION` activada, voz como capacidad | según demanda |
 
 No hay v4 previsible: proveedores nuevos = plug-in; modelos nuevos = catálogo +
 aprendizaje; capacidades nuevas = enum append-only. La arquitectura no necesita
 rediseño para crecer — esa es la prueba de que está terminada.
+
+**Nota de alcance (Δ 2026-07-18)**: el bloque E1-E2 original (doc 19, 2-3
+sesiones) crece a E1-E1b-E2-E2b (4.5-5 sesiones) por dos peticiones explícitas
+del usuario — auto-investigación de capacidades y override explícito con
+confirmación de alcance. Sigue siendo el MISMO bloque del roadmap (V1.0, entre
+O4 y O5, cierra en `1.0.0` junto con la integración del Orchestrator y el
+MVP-beta) — no se mueve de fase, solo crece en sesiones, igual que T4 del TIE
+se dividió en T4a/T4b por carga (doc 21) sin mover de bloque.
 
 ## 13. Revisión crítica final (obligatoria)
 

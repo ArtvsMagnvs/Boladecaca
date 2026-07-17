@@ -371,6 +371,60 @@ PRÓXIMA MISIÓN — el planner y el router arrancan con mejor contexto, mejores
   al 80% → aviso en el streaming de estado; al 100% → pausa + gate ("llevo X
   tokens, ¿continúo?"). Presupuesto default por `source`: automation < user.
 
+**[Δ 2026-07-18] Override explícito del usuario — la mitad que le toca al TIE**
+(la mitad del MEL está en doc 19 §7b; esta es la contraparte: DETECTAR la
+petición y RESOLVER su alcance antes de pasarle nada al MEL). Pedido explícito
+del usuario: si nombra un modelo concreto, esa elección manda sobre el MEL —
+pero el TIE tiene que confirmar el alcance antes de aplicarla, nunca asumirlo.
+
+- **Detección** (`intents.py`, extensión del prompt del clasificador, §Goal
+  Analyzer arriba): el `Intent` gana un campo nuevo, append-only sobre el
+  contrato ya congelado (regla de evolución del doc, §3.2) —
+  `explicit_model: {name: str, scope: "task"|"project"|"unspecified"} | None`.
+  El clasificador ya lee el mensaje entero; extraer "usa Claude para esto" o
+  "a partir de ahora todo este proyecto con DeepSeek" es la misma llamada, sin
+  I/O extra — coherente con "Collect es gratis" (doc 15 §1).
+- **Resolución del nombre**: el TIE NUNCA adivina qué modelo concreto es "el de
+  OpenAI" o "Sonnet" — delega en `mel.resolve_model_name(text)` (doc 19 §7b.2,
+  el MEL es el único que conoce el Provider Registry real). Nombre no resuelto
+  → el TIE responde con lo que SÍ hay configurado (nunca inventa un id).
+- **Si `scope == "unspecified"`**: el TIE NO planifica ni ejecuta ese turno.
+  Responde por el camino corto con la pregunta de alcance ("¿lo uso solo para
+  esto, o para todas las tareas de este proyecto?") — **sin gate nuevo**: no es
+  una aprobación de algo sensible (ApprovalGate es para eso, doc 11 A.2), es una
+  aclaración conversacional normal. La respuesta del usuario en su SIGUIENTE
+  mensaje ya trae el contexto suficiente (el clasificador ve el historial
+  reciente de la conversación vía `chat_service.build_system_prompt`, V0.85 M4 —
+  sin estado nuevo que mantener entre turnos, mismo principio de simplicidad que
+  ya usa el resto del TIE). Si la ambigüedad persiste tras la aclaración, se
+  aplica el alcance más conservador (tarea única) y se informa de que puede
+  pedir "para todo el proyecto" explícitamente.
+- **Si `scope == "task"`**: dos caminos según si la query planifica o no —
+  **camino complejo** (hay grafo): se traduce a `TaskNode.model_hint` = el id
+  resuelto (rama YA EXISTENTE de `router.choose()`, doc 14 §3.5 arriba — "id
+  concreto"). Cero código nuevo en el executor. **Camino corto** (~80% de
+  queries, sin grafo — el caso más probable de "resume esto con DeepSeek"):
+  `AgentTask` YA tiene el campo `model_hint` (doc 10, `runtime.py`) pero HOY no
+  lo rellena `_short_path`/`handle_stream` (verificado: se construye sin él) ni
+  `NullRuntime.execute_task/stream_task` lo pasa a `chat_service.answer()`
+  (que hoy ni siquiera acepta un parámetro de modelo). Esto es un hueco real,
+  no una supuesta ya cubierta — se cierra en la MISMA sesión que migra
+  `chat_service` al MEL (doc 19 E2/E2b): `chat_service.answer()` gana un
+  parámetro `model_override: str | None` que reenvía a
+  `ExecutionRequest.model_override`; `_short_path` pasa
+  `intent.explicit_model`'s id resuelto → `AgentTask.model_hint` →
+  `NullRuntime` → `chat_service.answer(..., model_override=task.model_hint)`.
+  Sin este cierre, un override de alcance "tarea" en una query conversacional
+  simple no tendría efecto — anotado explícitamente para que E2b no lo dé por
+  hecho.
+- **Si `scope == "project"`**: el TIE llama a `mel.set_project_override(...)`
+  (doc 19 §7b.1) — la persistencia y el precedence del Rule Engine son 100% del
+  MEL; el TIE solo confirma el alcance y delega.
+- **Camino corto SIN afectar**: una query conversational simple nunca pasa por
+  esta detección con coste — el clasificador ya evalúa el mensaje completo en
+  una sola pasada barata; no hay una segunda llamada dedicada a "detectar
+  overrides". Mismo presupuesto de latencia de siempre (doc 14 §6).
+
 ### 3.6 Mission Manager
 
 - **V1.0**: misión implícita — 1 query compleja = 1 misión = 1 grafo = 1 fila de

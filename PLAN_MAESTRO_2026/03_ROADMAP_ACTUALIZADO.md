@@ -9,7 +9,8 @@
 > **07** MOS V0.85 · **08** MOS arquitectura completa · **09** LSL/LLL · **10** Hermes
 > · **11** Automation+Orchestrator · **12** Auditoría/optimización · **13** AVCS
 > (sistema visual) · **14** TIE/Cognitive Runtime · **15** Learning System ·
-> **16** Principios Modulares · **17** Event Bus/Observabilidad · **18** WPMS/Workspace · **19** MEL/Model Execution Layer.
+> **16** Principios Modulares · **17** Event Bus/Observabilidad · **18** WPMS/Workspace · **19** MEL/Model Execution Layer ·
+> **21** plan de sesiones del TIE (T1-T5, CERRADO) · **22** plan de sesiones del MEL (E1-E2b).
 >
 > **La estrella polar**: V1.0 es un **MVP bien hecho — completamente autónomo y
 > distribuible a usuarios BETA** — alcanzable en semanas, no meses. Todo lo que no
@@ -216,7 +217,14 @@ call-sites (chat, triaje, ai_reply, summarizer, TIE). El aprendizaje (Learning +
 Recommendation Engines) y el builder Custom drag&drop llegan en V1.2 con el
 Learner (comparten la tabla `model_stats`).
 
-Sprints O1-O5 + E1-E2 (7-8 sesiones). Tag `v1.0.0-beta`.
+**[Δ 2026-07-18] MEL crece a E1-E1b-E2-E2b** (plan de sesiones detallado: doc
+22) por dos peticiones explícitas del usuario: catálogo auto-investigado por
+modelo conectado (refresco cada 14 días) y override explícito del usuario con
+confirmación de alcance (tarea vs. proyecto) — el override manda sobre el MEL,
+pero el TIE tiene que confirmar el alcance antes de aplicarlo. Mismo bloque del
+roadmap, 4.5-5 sesiones en vez de 2-3.
+
+Sprints O1-O5 + E1-E1b-E2-E2b (8.5-9.5 sesiones). Tag `v1.0.0-beta`.
 
 ## 6. V1.1 — Hermes Runtime + **Learning System operativo** (docs 10 + 15)
 

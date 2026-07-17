@@ -161,6 +161,7 @@ tiene, y a nadie le importa si alguien escucha.** Cero cambios de lógica.
 | Skills (`skills`) | `skill.created` / `skill.status_changed` | `{skill_id, status, from}` | V1.1 |
 | Learner (`learner`) | `learning.proposed` / `learning.consolidated` | `{kind, ref_id, risk_class}` | V1.1 |
 | TIE | `node.state_changed` | `{mission_id, node_id, state}` | V1.2 — cuando exista su consumidor real (vista del grafo en el Hub); hasta entonces NO se emite |
+| AI (`ai`) | `provider.model_configured` | `{provider, model}` | **[Δ 2026-07-18, doc 19 §5.4]** V1.0 (MEL E1b) — lo emite `POST/PUT /api/ai/configured` cuando el `(provider, model)` resultante es nuevo o distinto (activar/desactivar/borrar NO lo emite). Único consumidor previsto: el job de Auto-Research Catalog del MEL |
 | Gateway (`gateway`) | — nada — | los traces ya cubren la actividad de canal; se añadirá si la telemetría lo pide | — |
 
 **AVCS (caso especial)**: el bus vive en el proceso del backend; el AVCS es
@@ -175,7 +176,8 @@ exista un consumidor que los necesite.
 **Consumidores internos ya previstos** (los que justificaron `events.py` en el
 doc 16): `EventTrigger` del AE se suscribe a `memory.ingested`/`email.triaged`
 (V0.9); el Learner a `mission.completed` (V1.1); el executor del TIE a
-`approval.resolved` (V1.0). Nótese la simetría: los módulos usan el bus
+`approval.resolved` (V1.0); el MEL a `provider.model_configured` (V1.0, MEL E1b,
+doc 19 §5.4). Nótese la simetría: los módulos usan el bus
 exactamente igual que lo usaría la telemetría futura — no hay dos mecanismos.
 
 ## 5. Runtime Telemetry — solo la infraestructura (que ya quedó descrita)
