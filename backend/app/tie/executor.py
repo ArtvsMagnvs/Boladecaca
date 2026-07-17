@@ -44,7 +44,9 @@ GATE_ACTION_TYPE = "tie_resume"
 # ---------------------------------------------------------------------------
 # API pública del executor
 # ---------------------------------------------------------------------------
-async def run(graph: TaskGraph, mission: Mission, *, trace_id: str) -> Mission:
+async def run(
+    graph: TaskGraph, mission: Mission, *, trace_id: str, write_terminal_state: bool = True
+) -> Mission:
     """Ejecuta el grafo hasta que no quedan nodos ejecutables, un gate lo pausa,
     o el usuario lo cancela. Reentrante: al reanudar (gate resuelto / reinicio)
     se vuelve a llamar con el grafo recargado y continúa donde estaba.
@@ -54,6 +56,14 @@ async def run(graph: TaskGraph, mission: Mission, *, trace_id: str) -> Mission:
       running→waiting (pausado en un gate; el grafo espera en disco)
       running→failed  (nada útil se pudo entregar)
       running→cancelled (kill-switch)
+
+    `write_terminal_state=False`: no escribas done/failed en la traza al
+    terminar — lo hará quien llame junto con el outcome sintetizado (el
+    responder tarda varios segundos; escribir el estado antes deja una
+    ventana donde `state=done` pero `outcome` aún es el mensaje pre-ejecución
+    del gate). Quien pase False es responsable de llamar a `tracer.record_end`
+    con el outcome real inmediatamente después. waiting/cancelled no se ven
+    afectados: se escriben en su propio punto de origen, no aquí.
     """
     while True:
         if mission.id in _CANCELLED:
@@ -83,7 +93,7 @@ async def run(graph: TaskGraph, mission: Mission, *, trace_id: str) -> Mission:
         if mission.id in _CANCELLED:
             continue  # el kill-switch llegó durante el nodo: la cabecera lo resuelve
 
-    return _finalize(graph, mission, trace_id)
+    return _finalize(graph, mission, trace_id, write_terminal_state=write_terminal_state)
 
 
 def cancel(mission_id: str) -> bool:
@@ -373,7 +383,9 @@ def _cancel_remaining(graph: TaskGraph) -> None:
             node.state = NodeState.CANCELLED
 
 
-def _finalize(graph: TaskGraph, mission: Mission, trace_id: str) -> Mission:
+def _finalize(
+    graph: TaskGraph, mission: Mission, trace_id: str, *, write_terminal_state: bool = True
+) -> Mission:
     """Cierra la misión cuando no quedan nodos ejecutables. `done` si algo útil
     se completó (aunque haya habido fallos — degradación graciosa); `failed` solo
     si NADA salió bien."""
@@ -392,7 +404,7 @@ def _finalize(graph: TaskGraph, mission: Mission, trace_id: str) -> Mission:
         graph.state = "failed"
 
     _checkpoint(trace_id, graph)
-    if not waiting:
+    if not waiting and write_terminal_state:
         tracer.set_state(trace_id, mission.state)
     return mission
 

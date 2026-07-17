@@ -195,8 +195,13 @@ async def _complex_path(
 
 async def _execute_and_respond(graph: TaskGraph, mission: Mission, trace_id: str) -> None:
     """Ejecuta el grafo y sintetiza la respuesta. Compartido por el camino normal
-    y por la reanudación tras aprobar el plan."""
-    await executor.run(graph, mission, trace_id=trace_id)
+    y por la reanudación tras aprobar el plan.
+
+    `write_terminal_state=False`: el responder (abajo) puede tardar varios
+    segundos; si el executor escribiera done/failed nada más terminar los
+    nodos, habría una ventana con `state=done` pero `outcome` aún en el texto
+    pre-ejecución del gate. Aquí `record_end` escribe state+outcome juntos."""
+    await executor.run(graph, mission, trace_id=trace_id, write_terminal_state=False)
 
     if mission.state == "waiting":
         # Un nodo abrió su propio gate (T3): la misión sigue viva en disco; el
