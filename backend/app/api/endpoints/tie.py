@@ -74,6 +74,21 @@ def get_mission(trace_id: str):
         db.close()
 
 
+@router.delete("/missions/{trace_id}")
+def delete_mission(trace_id: str):
+    """Borra una misión TERMINADA (botón "×" del usuario). 409 si sigue viva —
+    hay que cancelarla primero (kill-switch), nunca se borra por debajo de una
+    ejecución en curso."""
+    ok, reason = tracer.delete_trace(trace_id)
+    if ok:
+        return {"trace_id": trace_id, "deleted": True}
+    if reason == "not_found":
+        raise HTTPException(status_code=404, detail="Mission not found")
+    if reason == "live":
+        raise HTTPException(status_code=409, detail="La misión sigue en curso — cancélala antes de borrarla")
+    raise HTTPException(status_code=500, detail="No se pudo borrar la misión")
+
+
 @router.post("/missions/{trace_id}/cancel")
 def cancel_mission(trace_id: str):
     """Kill-switch (doc 14 §3.4.6): para la misión. El nodo en vuelo recibe

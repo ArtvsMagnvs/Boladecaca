@@ -42,6 +42,10 @@ class Settings:
     # ejecutar nada (transparencia estilo plan-mode). Con False, cada nodo sensible
     # pide su propio permiso durante la ejecución (el gate de nodo de T3 sigue ahí).
     TIE_PLAN_APPROVAL = os.getenv("TIE_PLAN_APPROVAL", "true").lower() == "true"
+    # [Fix bug real 2026-07-17] limpieza automática de misiones TERMINADAS
+    # (done/failed/cancelled) más viejas que esto — nunca toca una misión viva.
+    # 0 desactiva la limpieza automática (el botón "×" manual sigue funcionando).
+    TIE_MISSION_RETENTION_DAYS = int(os.getenv("TIE_MISSION_RETENTION_DAYS", "30"))
     # V1.0 (TIE v1, T2): Model Router mínimo. Hints de modelo barato/potente. Si
     # vacíos, el router cae al modelo del proveedor activo del AIManager. Cuando
     # exista el MEL (E1, plan aparte), estos settings los gestionan sus políticas

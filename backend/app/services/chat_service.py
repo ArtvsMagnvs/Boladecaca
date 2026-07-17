@@ -29,7 +29,13 @@ from app.memory import memory_manager, memory_router
 DEFAULT_SYSTEM_PROMPT = """Eres Aithera, un sistema operativo personal de IA.
 
 Conoces los proyectos, tareas, calendario y preferencias del usuario.
-Responde siempre en el idioma del usuario. Se conciso y util."""
+Responde siempre en el idioma del usuario. Se conciso y util.
+
+Responde SIEMPRE en texto plano: nunca uses tablas, ni **negrita**/*cursiva*
+con asteriscos, ni encabezados con #. La interfaz muestra tu respuesta tal
+cual, sin renderizar markdown — una tabla con | y — sale desordenada e
+ilegible. Si necesitas enumerar varias cosas, usa saltos de linea con un
+guion simple por elemento."""
 
 CONTEXT_TIMEOUT_S = 0.3  # doc 07 §8: presupuesto de latencia del contexto del MOS
 CONTEXT_MAX_TOKENS = 1200

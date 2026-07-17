@@ -5,6 +5,7 @@ import { useAppStore } from "@/store/useAppStore";
 import { useChatStore } from "@/store/useChatStore";
 import MicButton from "@/components/voice/MicButton";
 import { attachVoiceAudio } from "@/avcs";
+import { MiniMarkdown } from "@/lib/miniMarkdown";
 
 export default function Chat() {
   // [Fix bug real 2026-07-17] La conversación vive en useChatStore (singleton
@@ -13,10 +14,23 @@ export default function Chat() {
   // respuesta que sigue en camino cuando el usuario navega fuera ya NO se
   // pierde (antes, su setMessages apuntaba al componente desmontado y React
   // descartaba la actualización en silencio).
-  const messages = useChatStore((s) => s.messages);
-  const streamingText = useChatStore((s) => s.streamingText);
-  const tieStatus = useChatStore((s) => s.tieStatus);
-  const sending = useChatStore((s) => s.sending);
+  //
+  // [Feature 2026-07-17] Ahora son SESIONES en pestañas: cada una con su
+  // propia conversación, envío en curso y misión asociada. `activeSession` es
+  // solo para LEER/pintar; `sendMessage` captura el id de sesión al empezar y
+  // lo usa durante toda la petición (si el usuario cambia de pestaña a mitad
+  // de una respuesta, esa respuesta sigue escribiendo en SU sesión original,
+  // nunca en la que esté activa en pantalla en ese momento).
+  const sessions = useChatStore((s) => s.sessions);
+  const activeSessionId = useChatStore((s) => s.activeSessionId);
+  const newSession = useChatStore((s) => s.newSession);
+  const closeSession = useChatStore((s) => s.closeSession);
+  const switchSession = useChatStore((s) => s.switchSession);
+  const activeSession = sessions.find((s) => s.id === activeSessionId) ?? sessions[0];
+  const messages = activeSession.messages;
+  const streamingText = activeSession.streamingText;
+  const tieStatus = activeSession.tieStatus;
+  const sending = activeSession.sending;
   const [input, setInput] = useState("");
   const messagesEndRef = useRef<HTMLDivElement>(null);
   // V0.8.1 (Paso 2): selector granular para no re-renderizar el componente
@@ -108,13 +122,14 @@ export default function Chat() {
 
   // V0.8.1 (Paso 2): cleanup defensivo del estado del nucleo al desmontar.
   // [Fix bug real 2026-07-17] Solo fuerza "idle" si de verdad no queda nada en
-  // vuelo (`chat.sending`). Antes navegar fuera con un envío en curso siempre
+  // vuelo en NINGUNA sesión. Antes navegar fuera con un envío en curso siempre
   // reseteaba el núcleo, aunque el envío ahora SÍ sigue vivo en el store y
   // termina de verdad — forzar "idle" aquí lo dejaría desincronizado hasta que
   // `sendMessage` corrigiera el estado igualmente al terminar.
   useEffect(() => {
     return () => {
-      if (useAppStore.getState().coreState === "thinking" && !useChatStore.getState().sending) {
+      const anySending = useChatStore.getState().sessions.some((s) => s.sending);
+      if (useAppStore.getState().coreState === "thinking" && !anySending) {
         setCoreState("idle");
       }
     };
@@ -130,57 +145,66 @@ export default function Chat() {
   // que el componente se desmonte a mitad de camino (navegar a "Misiones" y
   // volver): el guard de re-entrancia y las actualizaciones de estado viven
   // en el store singleton, no en refs/useState atados a ESTA instancia del
-  // componente. `getState().streamingText` al terminar el stream sustituye al
-  // viejo `accumulatedRef` (FIX V0.2): ya no puede quedar obsoleto porque no
-  // es un closure de render, es una lectura directa del store.
+  // componente. `getState()...streamingText` al terminar el stream sustituye
+  // al viejo `accumulatedRef` (FIX V0.2): ya no puede quedar obsoleto porque
+  // no es un closure de render, es una lectura directa del store.
+  //
+  // `sid` se resuelve UNA vez al principio y se usa en TODA la función: si el
+  // usuario cambia de pestaña mientras esto sigue en vuelo, la respuesta
+  // continúa escribiendo en la sesión donde se originó, nunca en la que esté
+  // activa en pantalla en ese momento.
   const sendMessage = useCallback(async (text: string): Promise<string | null> => {
     const chat = useChatStore.getState();
+    const sid = chat.activeSessionId;
+    const session = chat.sessions.find((s) => s.id === sid);
     const userMessage = text.trim();
-    if (!userMessage || chat.sending) return null;
+    if (!userMessage || !session || session.sending) return null;
     if (!backendConnected) {
-      chat.appendMessage({ role: "user", content: userMessage });
-      chat.appendMessage({ role: "assistant", content: "Error: No hay conexión con el backend." });
+      chat.appendMessage(sid, { role: "user", content: userMessage });
+      chat.appendMessage(sid, { role: "assistant", content: "Error: No hay conexión con el backend." });
       setInput("");
       pulseError();
       return null;
     }
 
-    chat.setSending(true);
+    chat.setSending(sid, true);
     setInput("");
-    chat.appendMessage({ role: "user", content: userMessage });
-    chat.setStreamingText("");
-    chat.setTieStatus("");
-    chat.setMissionId(null);
+    chat.appendMessage(sid, { role: "user", content: userMessage });
+    chat.setStreamingText(sid, "");
+    chat.setTieStatus(sid, "");
+    chat.setMissionId(sid, null);
     setCoreState("thinking");
 
     try {
       await api.streamChat(
         userMessage,
-        (chunk) => useChatStore.getState().appendStreamingText(chunk),
+        (chunk) => useChatStore.getState().appendStreamingText(sid, chunk),
         {
           // [V1.0 T4b] El TIE avisa de lo que está haciendo antes de tener
           // respuesta ("analizando" → "planificando"): feedback inmediato en vez
           // de un "Pensando..." mudo mientras clasifica y planifica.
-          onStatus: (s) => useChatStore.getState().setTieStatus(s),
-          onMission: (id) => useChatStore.getState().setMissionId(id),
+          onStatus: (s) => useChatStore.getState().setTieStatus(sid, s),
+          onMission: (id) => useChatStore.getState().setMissionId(sid, id),
         },
       );
-      const final = useChatStore.getState();
-      const reply = final.streamingText || "Sin respuesta";
-      final.appendMessage({ role: "assistant", content: reply, missionId: final.missionId ?? undefined });
-      final.setStreamingText("");
-      final.setTieStatus("");
+      const finalSession = useChatStore.getState().sessions.find((s) => s.id === sid);
+      const reply = finalSession?.streamingText || "Sin respuesta";
+      useChatStore.getState().appendMessage(sid, {
+        role: "assistant", content: reply, missionId: finalSession?.missionId ?? undefined,
+      });
+      useChatStore.getState().setStreamingText(sid, "");
+      useChatStore.getState().setTieStatus(sid, "");
       // V0.8.1 (Paso 2): thinking -> idle explicito antes del finally.
       setCoreState("idle");
       // El caller decide si habla la respuesta (voz / conversación).
       return reply;
     } catch (error) {
       console.error("Error en streamChat:", error);
-      useChatStore.getState().appendMessage({ role: "assistant", content: "Lo siento, hubo un error al procesar tu mensaje." });
+      useChatStore.getState().appendMessage(sid, { role: "assistant", content: "Lo siento, hubo un error al procesar tu mensaje." });
       pulseError();
       return null;
     } finally {
-      useChatStore.getState().setSending(false);
+      useChatStore.getState().setSending(sid, false);
     }
   }, [backendConnected, setCoreState, pulseError]);
 
@@ -333,6 +357,48 @@ export default function Chat() {
           />
         </div>
 
+        {/* [Feature 2026-07-17] Pestañas de sesión: varias conversaciones a la
+            vez, cada una con su propio historial y envío en curso. Franja
+            compacta con scroll horizontal — el panel solo tiene 380px. */}
+        <div className="shrink-0 flex items-center gap-1 px-2 py-1.5 border-b border-white/5 overflow-x-auto">
+          {sessions.map((s) => (
+            <div
+              key={s.id}
+              role="button"
+              tabIndex={0}
+              onClick={() => switchSession(s.id)}
+              onKeyDown={(e) => e.key === "Enter" && switchSession(s.id)}
+              title={s.title}
+              className={`shrink-0 flex items-center gap-1 pl-2.5 pr-1 py-1 rounded-md text-[11px] cursor-pointer max-w-[110px] ${
+                s.id === activeSessionId
+                  ? "bg-accent/20 text-ink border border-accent/30"
+                  : "bg-base-800/60 text-ink-faint border border-transparent hover:text-ink-dim"
+              }`}
+            >
+              {s.sending && <span className="w-1.5 h-1.5 rounded-full bg-accent animate-pulse shrink-0" />}
+              <span className="truncate">{s.title}</span>
+              {sessions.length > 1 && (
+                <button
+                  onClick={(e) => { e.stopPropagation(); closeSession(s.id); }}
+                  title="Cerrar pestaña"
+                  aria-label="Cerrar pestaña"
+                  className="shrink-0 w-3.5 h-3.5 flex items-center justify-center rounded hover:bg-white/10 hover:text-signal-error"
+                >
+                  ×
+                </button>
+              )}
+            </div>
+          ))}
+          <button
+            onClick={() => newSession()}
+            title="Nueva conversación"
+            aria-label="Nueva conversación"
+            className="shrink-0 w-6 h-6 flex items-center justify-center rounded-md text-ink-faint hover:text-ink hover:bg-base-800/60"
+          >
+            +
+          </button>
+        </div>
+
         {/* Historial compacto */}
         <div className="flex-1 min-h-0 overflow-y-auto px-3 py-3 flex flex-col gap-2">
           {messages.map((msg, i) => (
@@ -342,7 +408,7 @@ export default function Chat() {
                   ? "bg-accent/20 text-ink border border-accent/30"
                   : "bg-base-700/50 text-ink"
               }`}>
-                {msg.content}
+                {msg.role === "assistant" ? <MiniMarkdown text={msg.content} /> : msg.content}
                 {/* [V1.0 T4b] La respuesta vino de una misión de varios pasos:
                     enlace para ver el plan, su estado, o aprobarlo. */}
                 {msg.missionId && (
@@ -361,7 +427,7 @@ export default function Chat() {
               <div className="bg-base-700/50 px-3 py-2 rounded-xl text-xs text-ink-dim max-w-[85%]">
                 {/* Mientras el TIE entiende/planifica aún no hay texto: se
                     muestra QUÉ está haciendo en vez de un "Pensando..." mudo. */}
-                {streamingText || (tieStatus ? `${tieStatus}…` : "Pensando...")}
+                {streamingText ? <MiniMarkdown text={streamingText} /> : (tieStatus ? `${tieStatus}…` : "Pensando...")}
                 <span className="animate-pulse">|</span>
               </div>
             </div>

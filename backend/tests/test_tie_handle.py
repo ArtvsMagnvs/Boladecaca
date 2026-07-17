@@ -353,6 +353,96 @@ def test_endpoint_approve_plan_sin_plan_pendiente_404(client):
 
 
 # ---------------------------------------------------------------------------
+# Borrado + limpieza automática de misiones (fix real, 2026-07-17)
+# ---------------------------------------------------------------------------
+def test_endpoint_delete_mission_terminada(client):
+    from app.tie import new_mission
+
+    m = new_mission("terminada", source="user", channel="hub")
+    trace_id = tracer.record_start(m, channel="hub")
+    tracer.record_end(trace_id, outcome="listo", state="done")
+
+    r = client.delete(f"/api/tie/missions/{trace_id}")
+    assert r.status_code == 200 and r.json()["deleted"] is True
+    assert client.get(f"/api/tie/missions/{trace_id}").status_code == 404
+
+
+def test_endpoint_delete_mission_viva_409():
+    from app.tie import new_mission
+
+    m = new_mission("en curso", source="user", channel="hub")
+    trace_id = tracer.record_start(m, channel="hub")  # nace en state="running"
+
+    ok, reason = tracer.delete_trace(trace_id)
+    assert ok is False and reason == "live"
+    # sigue existiendo tras el intento fallido
+    assert tracer.get_meta(trace_id) is not None
+
+
+def test_endpoint_delete_mission_inexistente_404(client):
+    r = client.delete("/api/tie/missions/no-existe")
+    assert r.status_code == 404
+
+
+def test_endpoint_delete_mission_viva_devuelve_409(client):
+    from app.tie import new_mission
+
+    m = new_mission("en curso via http", source="user", channel="hub")
+    trace_id = tracer.record_start(m, channel="hub")
+    r = client.delete(f"/api/tie/missions/{trace_id}")
+    assert r.status_code == 409
+
+
+def test_purge_old_borra_solo_terminadas_y_viejas():
+    from datetime import datetime, timedelta
+
+    from app.db.database import OrchestratorTrace, SessionLocal
+    from app.tie import new_mission
+
+    # terminada y vieja -> debe borrarse
+    m_old = new_mission("vieja terminada", source="user", channel="hub")
+    old_id = tracer.record_start(m_old, channel="hub")
+    tracer.record_end(old_id, outcome="x", state="done")
+
+    # terminada pero reciente -> NO debe borrarse
+    m_recent = new_mission("reciente terminada", source="user", channel="hub")
+    recent_id = tracer.record_start(m_recent, channel="hub")
+    tracer.record_end(recent_id, outcome="x", state="done")
+
+    # viva y vieja -> NUNCA se borra, por vieja que sea
+    m_live = new_mission("vieja pero viva", source="user", channel="hub")
+    live_id = tracer.record_start(m_live, channel="hub")
+
+    # retrasamos artificialmente `updated_at` de la vieja y de la viva
+    s = SessionLocal()
+    try:
+        old_ts = datetime.utcnow() - timedelta(days=60)
+        s.query(OrchestratorTrace).filter(OrchestratorTrace.id == old_id).update({"updated_at": old_ts})
+        s.query(OrchestratorTrace).filter(OrchestratorTrace.id == live_id).update({"updated_at": old_ts})
+        s.commit()
+    finally:
+        s.close()
+
+    n = tracer.purge_old(retention_days=30)
+
+    assert n == 1
+    assert tracer.get_meta(old_id) is None       # borrada
+    assert tracer.get_meta(recent_id) is not None  # conservada (reciente)
+    assert tracer.get_meta(live_id) is not None    # conservada (viva, aunque vieja)
+
+
+def test_purge_old_desactivado_con_cero():
+    from app.tie import new_mission
+
+    m = new_mission("terminada", source="user", channel="hub")
+    trace_id = tracer.record_start(m, channel="hub")
+    tracer.record_end(trace_id, outcome="x", state="done")
+
+    assert tracer.purge_old(retention_days=0) == 0
+    assert tracer.get_meta(trace_id) is not None
+
+
+# ---------------------------------------------------------------------------
 # Streaming (T4b) — lo que ve el chat de Electron
 # ---------------------------------------------------------------------------
 @pytest.mark.anyio

@@ -11,7 +11,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Optional
 
 from app.core.logging_config import get_system_logger
@@ -151,6 +151,64 @@ def pending_trace_ids() -> list[str]:
     except Exception as e:
         logger.error(f"[tracer] pending_trace_ids falló: {type(e).__name__}: {e}")
         return []
+    finally:
+        db.close()
+
+
+# Estados terminales — una misión aquí ya no cambia. Solo estos se pueden
+# borrar (a mano o por la limpieza automática): una misión running/waiting
+# NUNCA se borra por debajo de su ejecución, sin importar antigüedad.
+_TERMINAL_STATES = ("done", "failed", "cancelled")
+
+
+def delete_trace(trace_id: str) -> tuple[bool, str]:
+    """Borra una misión terminada (botón "×" del usuario, doc: `DELETE
+    /api/tie/missions/{id}`). `(ok, motivo)`: motivo ∈ "ok"|"not_found"|"live"
+    |"error" — el endpoint traduce "live" a 409 (pide cancelar primero)."""
+    db = SessionLocal()
+    try:
+        row = db.get(OrchestratorTrace, trace_id)
+        if row is None:
+            return False, "not_found"
+        if row.state not in _TERMINAL_STATES:
+            return False, "live"
+        db.delete(row)
+        db.commit()
+        return True, "ok"
+    except Exception as e:
+        logger.error(f"[tracer] delete_trace({trace_id}) falló: {type(e).__name__}: {e}")
+        db.rollback()
+        return False, "error"
+    finally:
+        db.close()
+
+
+def purge_old(retention_days: int) -> int:
+    """Limpieza automática (job nocturno, mismo espíritu que `lifecycle.py`
+    del MOS — RFC-007 — pero para el estado operativo del TIE, no la memoria):
+    borra misiones TERMINADAS cuya última actualización es más vieja que
+    `retention_days`. Una misión `running`/`waiting` NUNCA se toca, por vieja
+    que sea — solo lo que ya terminó y perdió valor operativo. Devuelve
+    cuántas se borraron. Best-effort: un fallo aquí no debe tumbar el job."""
+    if retention_days <= 0:
+        return 0
+    cutoff = datetime.utcnow() - timedelta(days=retention_days)
+    db = SessionLocal()
+    try:
+        n = (
+            db.query(OrchestratorTrace)
+            .filter(OrchestratorTrace.state.in_(_TERMINAL_STATES))
+            .filter(OrchestratorTrace.updated_at < cutoff)
+            .delete(synchronize_session=False)
+        )
+        db.commit()
+        if n:
+            logger.info(f"[tracer] purge_old: {n} misión(es) terminada(s) de más de {retention_days}d borradas")
+        return n
+    except Exception as e:
+        logger.error(f"[tracer] purge_old falló (no crítico): {type(e).__name__}: {e}")
+        db.rollback()
+        return 0
     finally:
         db.close()
 

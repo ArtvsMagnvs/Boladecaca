@@ -12,6 +12,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { api, type Mission, type MissionDetail, type NodeState, type TaskNode } from "@/lib/api";
+import { MiniMarkdown } from "@/lib/miniMarkdown";
 
 const STATE_LABEL: Record<string, string> = {
   running: "En curso",
@@ -64,6 +65,10 @@ export default function Missions() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(true);
+  // [Fix bug real 2026-07-17] El resultado de un paso se recortaba con
+  // line-clamp-3 sin ninguna forma de ver el resto. Un Set con los ids de los
+  // pasos expandidos — se resetea solo al cambiar de misión (abajo).
+  const [expandedNodes, setExpandedNodes] = useState<Set<string>>(new Set());
   const selectedRef = useRef<string | null>(null);
   selectedRef.current = selected;
 
@@ -99,8 +104,18 @@ export default function Missions() {
 
   useEffect(() => {
     if (!selected) return;
+    setExpandedNodes(new Set());
     api.getMission(selected).then(setDetail).catch(() => undefined);
   }, [selected]);
+
+  const toggleExpanded = (nodeId: string) => {
+    setExpandedNodes((prev) => {
+      const next = new Set(prev);
+      if (next.has(nodeId)) next.delete(nodeId);
+      else next.add(nodeId);
+      return next;
+    });
+  };
 
   const act = async (fn: () => Promise<unknown>) => {
     setBusy(true);
@@ -156,14 +171,37 @@ export default function Missions() {
             </div>
           ) : (
             missions.map((m) => (
-              <button
+              // [Feature 2026-07-17] Antes era un <button> — no puede llevar
+              // dentro el botón "×" de borrar (HTML no admite <button> anidado).
+              // Div con el mismo comportamiento de clic + teclado.
+              <div
                 key={m.trace_id}
+                role="button"
+                tabIndex={0}
                 onClick={() => setSelected(m.trace_id)}
-                className={`text-left glass-surface rounded-xl p-3 border transition-colors ${
+                onKeyDown={(e) => e.key === "Enter" && setSelected(m.trace_id)}
+                className={`relative text-left glass-surface rounded-xl p-3 border transition-colors cursor-pointer ${
                   selected === m.trace_id ? "border-accent/50" : "border-transparent hover:border-base-600"
                 }`}
               >
-                <div className="flex items-center justify-between gap-2 mb-1">
+                {!isLive(m.state) && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (!confirm("¿Borrar esta misión? No se puede deshacer.")) return;
+                      act(async () => {
+                        await api.deleteMission(m.trace_id);
+                        if (selected === m.trace_id) setSelected(null);
+                      });
+                    }}
+                    title="Borrar misión"
+                    aria-label="Borrar misión"
+                    className="absolute top-2 right-2 w-5 h-5 flex items-center justify-center rounded text-ink-faint hover:text-signal-error hover:bg-signal-error/10"
+                  >
+                    ×
+                  </button>
+                )}
+                <div className="flex items-center justify-between gap-2 mb-1 pr-5">
                   <span className={`text-[10px] px-2 py-0.5 rounded border ${STATE_STYLE[m.state] ?? ""}`}>
                     {STATE_LABEL[m.state] ?? m.state}
                   </span>
@@ -176,7 +214,7 @@ export default function Missions() {
                   {m.created_at ? new Date(m.created_at).toLocaleString() : ""}
                   {m.channel ? ` · ${m.channel}` : ""}
                 </p>
-              </button>
+              </div>
             ))
           )}
         </div>
@@ -212,7 +250,9 @@ export default function Missions() {
                 </div>
 
                 {detail.outcome && (
-                  <p className="text-sm text-ink-dim mt-3 whitespace-pre-wrap">{detail.outcome}</p>
+                  <p className="text-sm text-ink-dim mt-3">
+                    <MiniMarkdown text={detail.outcome} />
+                  </p>
                 )}
               </div>
 
@@ -294,11 +334,30 @@ export default function Missions() {
                             {n.duration_ms != null && ` · ${n.duration_ms} ms`}
                           </p>
                           {n.error && <p className="text-[11px] text-signal-error mt-1">{n.error}</p>}
-                          {n.result?.output != null && n.state === "done" && (
-                            <p className="text-[11px] text-ink-dim mt-1 line-clamp-3">
-                              {String(n.result.output)}
-                            </p>
-                          )}
+                          {n.result?.output != null && n.state === "done" && (() => {
+                            const output = String(n.result.output);
+                            // [Fix bug real 2026-07-17] Antes se recortaba con
+                            // line-clamp-3 sin ninguna forma de ver el resto.
+                            // Solo vale la pena el botón si de verdad hay algo
+                            // que ocultar (texto largo o varias líneas).
+                            const isLong = output.length > 220 || output.split("\n").length > 3;
+                            const expanded = expandedNodes.has(n.id);
+                            return (
+                              <div className="mt-1">
+                                <p className={`text-[11px] text-ink-dim ${!expanded && isLong ? "line-clamp-3" : ""}`}>
+                                  <MiniMarkdown text={output} />
+                                </p>
+                                {isLong && (
+                                  <button
+                                    onClick={() => toggleExpanded(n.id)}
+                                    className="text-[10px] text-accent hover:underline mt-0.5"
+                                  >
+                                    {expanded ? "ver menos" : "ver más"}
+                                  </button>
+                                )}
+                              </div>
+                            );
+                          })()}
                         </div>
                       </div>
                     ))}

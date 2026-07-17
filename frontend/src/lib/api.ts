@@ -1256,6 +1256,8 @@ export const api = {
       `/tie/missions/${traceId}/approve-plan`,
       { method: "POST", body: JSON.stringify({ approved, note }) },
     ),
+  deleteMission: (traceId: string) =>
+    request<{ trace_id: string; deleted: boolean }>(`/tie/missions/${traceId}`, { method: "DELETE" }),
 };
 
 export interface VoiceInfo {

@@ -1109,6 +1109,69 @@ la fase en `1.0.0`. Durante T1-T4 la versión se mantiene en `0.9.0`.
   (`test_import_app_main_no_bloquea_en_memoria`) parpadeó por carga del
   sistema (backend+frontend del usuario corriendo en paralelo) — no
   relacionado con este fix.
+- ✅ **Fixes/features post-T4b, tanda 2 (2026-07-17, reportados por el
+  usuario)**: cuatro peticiones sobre la vista de Misiones y el Chat.
+  **(1) Markdown roto** (causa RAÍZ, no solo síntoma): `DEFAULT_SYSTEM_PROMPT`
+  (`chat_service.py` — lo usan el chat Y cada nodo del TIE vía `NullRuntime`)
+  no decía nada sobre formato, así que el modelo generaba libremente
+  `**negrita**`, tablas `| — |` y encabezados `#` que la UI (texto plano)
+  mostraba rotos. Añadida instrucción explícita "texto plano, sin markdown,
+  sin tablas" (mismo criterio que `responder._SYSTEM_PROMPT`, que ya lo
+  pedía). **Verificado con una llamada REAL al modelo** (pregunta
+  tabla-trampa "compárame Git vs SVN"): antes habría salido tabla/negrita,
+  ahora salió en lista de guiones limpia — `**` y `|` ausentes de la
+  respuesta. **Defensa en profundidad** (un LLM no seguirá la instrucción al
+  100%): `lib/miniMarkdown.tsx` (NEW, sin dependencia nueva) — negrita,
+  código, listas y tablas GFM reales (`<table>` con `overflow-x-auto`) en vez
+  de pipes/guiones sueltos; usado en `Chat.tsx` y `Missions.tsx`. **Verificado
+  en vivo contra una misión REAL y antigua del usuario** (de antes del fix,
+  con encabezados/tabla/arte ASCII generados por el modelo): la tabla real
+  (`| Aspecto | Características |`) renderiza como **30 `<table>` reales**
+  con `<th>`/`<strong>` correctos (confirmado inspeccionando el DOM), no como
+  texto roto. **(2) Texto de cada paso truncado sin poder expandir**:
+  `line-clamp-3` sin ninguna forma de ver el resto. Añadido `expandedNodes`
+  (Set por misión, se resetea al cambiar de misión) + botón "ver más"/"ver
+  menos" por nodo — solo aparece si el texto es largo de verdad (>220 chars o
+  >3 líneas). Verificado en vivo: el toggle cambia de "ver más" a "ver menos"
+  y los demás nodos de la misma misión quedan intactos (independientes).
+  **(3) Borrar misiones + limpieza automática**: `tracer.delete_trace`
+  (solo misiones TERMINADAS — `done`/`failed`/`cancelled`; 409 si sigue viva,
+  hay que cancelarla primero) + `tracer.purge_old(retention_days)` (mismo
+  espíritu que `lifecycle.py` del MOS pero para el TIE — nunca toca una
+  misión viva, sin importar antigüedad). `DELETE /api/tie/missions/{id}` +
+  job APScheduler diario 04:30 local (`TIE_MISSION_RETENTION_DAYS`, default
+  30; `0` lo desactiva). Botón "×" por misión en la lista (con `confirm()` —
+  mismo patrón que `handleDeleteContext` en Settings.tsx), oculto en misiones
+  vivas. Tests: 6 nuevos (terminada borra, viva rechaza con 409, inexistente
+  404, `purge_old` borra solo terminadas+viejas y NUNCA una viva aunque sea
+  vieja). **Verificado con script contra el Postgres real** (proceso aparte,
+  sin tocar el backend del usuario): los 3 casos confirmados letra por letra.
+  **(4) Pestañas de sesión en el Chat**: `useChatStore.ts` rediseñado a
+  `sessions[]` + `activeSessionId` — cada sesión con su propio
+  `messages`/`sending`/`streamingText`/`tieStatus`/`missionId` (dos pestañas
+  pueden tener un envío en curso A LA VEZ, cada una independiente).
+  Persistidas en `localStorage` (primera vez que el proyecto usa el
+  middleware `persist` de zustand; clave `aithera.chat.sessions`, mismo
+  formato dotted que `aithera.workspace.cardLayouts`) — sobreviven a cerrar y
+  reabrir la app, no solo a navegar. Lo transitorio (`sending`,
+  `streamingText`) se excluye del `partialize` a propósito: si la app se
+  cierra a media respuesta, no debe quedar una pestaña fantasma "enviando"
+  para siempre. Título de cada pestaña autogenerado del primer mensaje del
+  usuario (trunca a 32 caracteres), fijo desde entonces. `sendMessage` captura
+  el `sessionId` UNA vez al principio y lo usa en toda la función — si el
+  usuario cambia de pestaña a mitad de una respuesta, esa respuesta sigue
+  escribiendo en su sesión de origen, nunca en la que esté activa en pantalla
+  (mismo principio que ya protegía las misiones de T4b, aplicado ahora
+  también entre pestañas). **Verificado en vivo con dos pestañas reales**:
+  mensaje en pestaña 1 → abrir pestaña 2 → mensaje distinto en pestaña 2 →
+  volver a pestaña 1 confirma su conversación intacta y ajena a la 2 (y
+  viceversa) → recarga completa de página (`F5`) confirma que AMBAS pestañas
+  con sus DOS conversaciones sobreviven mediante `localStorage`. Suite
+  backend: **429 passed** (sin el flake del turno anterior — confirma que
+  era carga puntual del sistema, no una regresión). `tsc`/`vite build`
+  limpios. Verificación 100% sin tocar el backend/frontend que el usuario
+  tenía corriendo (scripts aparte para lo de Postgres; Vite HMR aplicó los
+  cambios de frontend solo).
 - **V1.0 pendiente**: T5 (tests de contrato + perf + verificación e2e + cierre
   del bloque TIE a `0.9.2`). Luego MEL (E1-E2), integración Orchestrator,
   MVP-beta (→ `1.0.0`).

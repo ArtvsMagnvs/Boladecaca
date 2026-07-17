@@ -184,10 +184,24 @@ async def lifespan(app: FastAPI):
         scheduler_service.add_cron_job(
             lifecycle_manager.run, hour=settings.MEMORY_LIFECYCLE_HOUR, minute=0, id="mos_lifecycle"
         )
+        # [Fix bug real 2026-07-17] Limpieza de misiones del TIE (estado operativo
+        # en orchestrator_traces, no memoria — mismo espiritu que mos_lifecycle
+        # pero para el TIE): 04:30 local, despues del lifecycle del MOS. Solo
+        # borra misiones TERMINADAS mas viejas que TIE_MISSION_RETENTION_DAYS;
+        # 0 desactiva el job (el boton "x" manual sigue funcionando igual).
+        if settings.TIE_MISSION_RETENTION_DAYS > 0:
+            import app.tie as _tie
+
+            def _purge_old_missions() -> None:
+                _tie.tracer.purge_old(settings.TIE_MISSION_RETENTION_DAYS)
+
+            scheduler_service.add_cron_job(
+                _purge_old_missions, hour=4, minute=30, id="tie_mission_cleanup"
+            )
         log_info(
             "startup",
             "APScheduler iniciado — ingesta (email/cal), resumen nocturno 03:30, lifecycle "
-            f"{settings.MEMORY_LIFECYCLE_HOUR:02d}:00 (local)",
+            f"{settings.MEMORY_LIFECYCLE_HOUR:02d}:00, limpieza de misiones 04:30 (local)",
         )
     except Exception as e:
         log_error("startup", e, "No se pudo iniciar el planificador (el backend sigue; los jobs del MOS quedan sin programar)")
