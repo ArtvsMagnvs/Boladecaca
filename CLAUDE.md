@@ -12,6 +12,27 @@ Auto-update por commit (instalar una vez): `graphify hook install` en terminal d
 
 ---
 
+## 0. Lectura obligatoria antes de cualquier tarea
+
+**Antes de planificar o desarrollar CUALQUIER COSA en Aithera, lee primero
+[`PRINCIPIOS_KARPATHY.md`](PRINCIPIOS_KARPATHY.md).** Son principios base de
+comportamiento (pensar antes de programar, simplicidad primero, cambios
+quirúrgicos, ejecución orientada a objetivos) — una capa distinta y anterior
+a los principios de arquitectura/producto de este mismo archivo (§18) y de
+`PLAN_MAESTRO_2026/16_...md` §1: esos dicen QUÉ construye Aithera,
+`PRINCIPIOS_KARPATHY.md` dice CÓMO debe comportarse Claude al construirlo, en
+cualquier fase, en cualquier tarea. Se aplican con criterio (tareas triviales
+no necesitan el rigor completo — ver la propia nota de trade-off del
+documento), pero se leen siempre primero.
+
+Cuando una tarea encaje claramente en un dominio especializado (frontend,
+backend, base de datos, seguridad, IA/TIE, testing...), consulta
+[`AGENTES_ESPECIALIZADOS.md`](AGENTES_ESPECIALIZADOS.md) y delega en el
+subagente curado correspondiente en vez de resolverlo todo de forma
+genérica.
+
+---
+
 ## 1. Estado actual del proyecto
 
 **Versión real**: `0.9.2` (consistente en `backend/app/main.py`,
@@ -1920,6 +1941,13 @@ npm run electron:build  # genera release/*.exe con electron-builder
 ---
 
 ## 18. Decisiones de diseño que guían el proyecto
+
+> Estas son decisiones de **arquitectura/producto** (QUÉ construye Aithera).
+> Para principios de **comportamiento** (CÓMO debe trabajar Claude en
+> cualquier tarea — pensar antes de programar, simplicidad, cambios
+> quirúrgicos, objetivos verificables), ver
+> [`PRINCIPIOS_KARPATHY.md`](PRINCIPIOS_KARPATHY.md) (§0, lectura obligatoria
+> antes de empezar cualquier tarea).
 
 Estas decisiones son **inviolables** salvo acuerdo explícito del usuario:
 
