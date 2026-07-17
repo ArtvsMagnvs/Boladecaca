@@ -355,7 +355,7 @@ el chat pasa a depender del TIE; el camino corto debe quedar idéntico).
 
 ---
 
-### T5 — Tests de contrato + perf + verificación en vivo + cierre del bloque TIE
+### ✅ T5 — Tests de contrato + perf + verificación en vivo + cierre del bloque TIE (CERRADO, 2026-07-17, tag `v0.9.2`)
 
 **Objetivo**: blindar, medir, verificar de punta a punta contra el sistema real, y
 cerrar el bloque TIE (SIN bump a 1.0.0 — eso es el cierre de V1.0 completo, tras

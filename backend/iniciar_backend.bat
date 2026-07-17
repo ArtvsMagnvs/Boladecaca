@@ -19,7 +19,7 @@ cd /d "%~dp0"
 echo.
 echo ============================================================
 echo              A I T H E R A   B A C K E N D
-echo                       Version 0.9.0
+echo                       Version 0.9.2
 echo ------------------------------------------------------------
 echo   Chat IA multi-proveedor  .  Email + Calendar
 echo   Agentes + Herramientas  .  Memoria semantica (ChromaDB)

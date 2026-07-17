@@ -14,8 +14,12 @@ Auto-update por commit (instalar una vez): `graphify hook install` en terminal d
 
 ## 1. Estado actual del proyecto
 
-**Versión real**: `0.9.0` (consistente en `backend/app/main.py`,
-`backend/app/core/config.py` y `frontend/package.json`; tag de git `v0.9.0`).
+**Versión real**: `0.9.2` (consistente en `backend/app/main.py`,
+`backend/app/core/config.py` y `frontend/package.json`; tag de git `v0.9.2`).
+Bump 0.9.0 → 0.9.2 (2026-07-17) al **cerrar el bloque TIE v1 completo (V1.0
+T1-T5)** — decisión de versión del usuario (2026-07-16): V1.0 se desarrolla por
+bloques, el TIE cierra en `0.9.2`; MEL → integración Orchestrator → MVP-beta
+vendrán después y cerrarán la fase completa en `1.0.0` — ver más abajo.
 Bump 0.8.7 → 0.9.0 (2026-07-16) al **cerrar V0.9 completa (Automation Engine +
 ApprovalGate, sprints A1 → A2a → A2b → A3 → A3b → A4)** — ver más abajo.
 Bump 0.7.3 → 0.8.0 (2026-07-09) al cerrar el grueso de V0.8: Gateway +
@@ -24,7 +28,7 @@ EdgeTTS/ElevenLabs/Kokoro/eSpeak, conversación continua) + Hub responsivo.
 Bump 0.8.0 → 0.8.5 (2026-07-13) al **cerrar V0.85 completa (MOS Skeleton,
 sprints M1-M5)**. Bump 0.8.5 → 0.8.7 (2026-07-15) al **cerrar V0.87 completa
 (WPMS Workspace & Project Management, sprints W1 → W2a-W2e → W3b → W4)** —
-ver más abajo. Banners de los `.bat` de arranque actualizados a 0.8.7
+ver más abajo. Banners de los `.bat` de arranque actualizados a 0.9.2
 (`iniciar_backend.bat`, `iniciar_todo.bat`, `iniciar_frontend_react.bat`;
 `backend/iniciar_app.bat` sigue con un banner `0.3.0` heredado y
 desactualizado — deuda menor, no tocado).
@@ -1172,9 +1176,81 @@ la fase en `1.0.0`. Durante T1-T4 la versión se mantiene en `0.9.0`.
   limpios. Verificación 100% sin tocar el backend/frontend que el usuario
   tenía corriendo (scripts aparte para lo de Postgres; Vite HMR aplicó los
   cambios de frontend solo).
-- **V1.0 pendiente**: T5 (tests de contrato + perf + verificación e2e + cierre
-  del bloque TIE a `0.9.2`). Luego MEL (E1-E2), integración Orchestrator,
-  MVP-beta (→ `1.0.0`).
+- ✅ **T5 — Tests de contrato + perf + verificación en vivo + cierre del bloque
+  TIE (doc 21 §3·T5)**: blindaje final antes de cerrar. **`test_tie_perf.py`**
+  (NEW, 6 tests) mide los 5 presupuestos de latencia del diseño (doc 14 §6) con
+  runtimes fake deterministas (sin red, para CI): `graph.validate()` < 10 ms,
+  checkpoint por transición < 20 ms, overhead del executor por nodo < 50 ms
+  (runtime instantáneo — todo el tiempo medido es del engine, no de un LLM),
+  `resume_pending()` con 5 misiones a medias < 500 ms, kill-switch < 2 s con un
+  nodo de 5 s en vuelo, y que el camino corto JAMÁS invoca al planner (ni en
+  llamadas ni en tiempo — < 100 ms). **`test_tie_e2e.py`** (NEW, 3 tests): a
+  diferencia de T1-T4 (que mockean intents/planner/responder directamente para
+  aislar cada pieza), aquí se ejercita la CADENA REAL completa —
+  `intents.classify` real (JSON→Intent), `planner.plan` real (JSON→TaskGraph
+  validado por `graph.py` de verdad, con su reintento real ante JSON basura),
+  `executor.run` real (estado+checkpoint+gate), `responder.build` real— con
+  UN SOLO punto fake: la frontera del LLM (`ai_manager.chat` para
+  intents/planner/responder + `chat_service.answer` para la ejecución de nodo
+  vía `NullRuntime`), determinista y sin red. Casos: misión compleja que
+  planifica con un paso sensible → pide permiso → aprueba → ejecuta → responde
+  (con el gate del plan pre-autorizando el nodo sensible, sin segundo gate);
+  el planner reintenta una vez ante JSON basura y, si vuelve a fallar,
+  degrada al camino corto (nada mockeado salvo el LLM); un plan sin pasos
+  sensibles ejecuta directo sin gate. **`test_module_boundaries.py`** ganó
+  `test_tie_handle_respeta_la_firma_de_messagehandler` (inspecciona la firma
+  de `tie.handle` — coroutine de 1 argumento — y la instala de verdad en un
+  `Gateway()` nuevo para confirmar que queda como el handler activo; blindaje
+  estático+dinámico de Δ3 del doc 21) + el conjunto esperado del barrel
+  ampliado con `handle_stream`/`resolve_plan` (T4b, antes solo cubiertos por
+  `issubset`, ahora exigidos explícitamente). Suite completa: **439 passed**
+  (429 previos + 10 de T5), sin regresión — el único fallo visto durante la
+  sesión (`test_import_app_main_no_bloquea_en_memoria`, presupuesto de 2 s en
+  el import de `app.main`) es un flake de entorno **ajeno al TIE** (perfilado
+  con `-X importtime`: el peso es fastapi/sqlalchemy/elevenlabs/ai_manager —
+  nada de `app.tie` aparece en el top de costes — y reproduce igual sin
+  ninguno de los cambios de T5), documentado como deuda de arranque ya
+  conocida, no una regresión de este cierre. **Verificación EN VIVO contra el
+  Postgres + backend reales** (script aparte, nunca el proceso del usuario,
+  limpieza posterior confirmada — 0 filas residuales, y las 10 trazas
+  preexistentes de sesiones anteriores del usuario quedaron intactas): (a)
+  camino corto — con MiniMax caído en este entorno (`getaddrinfo failed`, sin
+  salida a internet), el `AIManager` hizo fallback automático a Ollama y el
+  camino corto respondió igual de bien — la degradación graciosa del proveedor
+  activo, verificada de carambola; (b) misión compleja real — un goal real
+  ("redacta un email de agradecimiento y envíalo") produjo un plan REAL de 2
+  nodos con el paso de envío marcado sensible, pidió permiso sin ejecutar
+  nada, y al aprobar ejecutó ambos pasos y el responder sintetizó la
+  respuesta final; (c) kill-switch — `cancel()` marca y limpia sin errores
+  contra datos reales (el mecanismo de cancelación cooperativa en pleno vuelo
+  ya está probado en detalle por `test_tie_executor.py`/`test_tie_perf.py` con
+  un runtime fake lento — no es reproducible de forma determinista contra un
+  LLM real); (d) reanudación tras reinicio simulado — un nodo pausado en gate
+  se aprobó con el handler del evento desuscrito a propósito (backend
+  "caído"), quedó esperando, y `resume_pending()` lo recuperó leyendo el
+  veredicto en disco y completó la misión, exactamente como diseñado en T3.
+  **Hallazgo real de la verificación en vivo** (no un bug de datos ni de
+  seguridad, documentado con transparencia): hay una ventana de varios
+  segundos donde `orchestrator_traces.state` ya vale `done` (lo escribe
+  `executor._finalize()` en cuanto el grafo termina) pero `outcome` todavía
+  tiene el texto del gate del plan (lo escribe `pipeline._execute_and_respond()`
+  DESPUÉS, cuando `responder.build()` termina su propia llamada al LLM) —
+  confirmado con un script dedicado: `state=done` a los 10.5 s, `outcome` real
+  no llegó hasta los 15 s. Los estados por nodo (lo que pinta `Missions.tsx`
+  para los checks verdes) son correctos todo el tiempo; solo el texto-resumen
+  superior puede quedarse momentáneamente desfasado. No bloquea el cierre de
+  T5 (autocorrige solo en segundos, nada se ejecuta de más ni se pierde) — se
+  dejó anotado como tarea de fondo aparte para una futura sesión de pulido.
+  **Cierre de versión**: bump `0.9.0` → `0.9.2` (decisión de versión del
+  usuario, 2026-07-16) en las 3 ubicaciones sincronizadas
+  (`backend/app/core/config.py`, `backend/app/main.py` ×2 —
+  `FastAPI(version=...)` y `GET /`—, `frontend/package.json`) + los 3 `.bat`
+  (`iniciar_backend.bat`, `iniciar_todo.bat`, `iniciar_frontend_react.bat`;
+  `backend/iniciar_app.bat` sigue con su banner `0.3.0` heredado, deuda menor
+  ya documentada desde V0.8.7). **V1.0 — bloque TIE v1 (T1-T5) CERRADO. Tag
+  `v0.9.2`.** El siguiente plan (aparte) es el MEL (doc 19, E1-E2) o el cierre
+  MVP-beta (doc 03 §5 O5) — a decisión del usuario; el cierre de V1.0 COMPLETO
+  (MEL + integración Orchestrator + MVP-beta) es el que sube a `1.0.0`.
 - **V1.1** — Hermes (Nous Research) como sistema de agentes bajo el TIE + Learner
 
 **Estado del git**: branch `master` con historia activa. V0.7.1 commiteado
@@ -1444,17 +1520,32 @@ plan de sesiones detallado `PLAN_MAESTRO_2026/20_V09_PLAN_SESIONES.md`.
   & Autonomía + rastro en MOS/Decision API + `AutomationLearner` stub; ver §1
   para el detalle completo por sprint). Suite completa: 351 passed.
 
-### ⏳ V1.0 — TIE v1 (Orchestrator) + MVP BETA
+### ✅ V1.0 T1-T5 — TIE v1 (bloque CERRADO, tag `v0.9.2`) — MEL/Orchestrator/MVP-beta pendientes
 Docs: `PLAN_MAESTRO_2026/14` (TIE/Cognitive Runtime) + `11` parte B (perfil v1) +
-`10` (AgentRuntime). Sustituyen a `Fase_8_Orchestrator_V10.md`.
+`10` (AgentRuntime) + `21` (plan de sesiones T1-T5). Sustituyen a
+`Fase_8_Orchestrator_V10.md`. **Decisión de versión (usuario, 2026-07-16)**:
+V1.0 se desarrolla por bloques — el TIE cierra en `0.9.2`; MEL (doc 19, E1-E2),
+integración Orchestrator y MVP-beta (doc 03 §5 O5) son planes aparte y cierran
+la fase COMPLETA en `1.0.0`.
 - Módulo `app/tie/`: Intent → Context Enricher → Planner → **TaskGraph**
   (plan-como-grafo serializable) → Graph Execution Engine (lineal en V1.0, con
   checkpoints, gates y kill-switch) → Response Builder → Tracer.
 - Camino corto conversational (sin planner) para ~80% de queries. LLL básico
-  (detección de tareas repetidas → skills DRAFT con cuarentena, docs 09/15).
+  (detección de tareas repetidas → skills DRAFT con cuarentena, docs 09/15) —
+  diferido a V1.1, no en el alcance de T1-T5.
 - Enganche clave: `gateway.set_handler(tie.handle)` — un solo punto, sin tocar
   adapters. UI de aprobación de planes. Cierre: MVP beta distribuible.
-- **Estado**: solo documentado, sin implementar.
+- **Estado**: **T1-T5 HECHOS, bloque CERRADO** (esqueleto+contratos congelados+
+  intent+camino corto, enricher+planner+graph DAG, executor con
+  checkpoint/gates/kill-switch/recovery/reanudación, responder+el SWITCH+
+  streaming+frontend de Misiones, tests de perf+e2e+cierre de versión; ver §1
+  para el detalle completo por sprint, incluidos los 4 fixes/features post-T4b
+  pedidos por el usuario). Suite backend: **439 passed**. Pendiente como planes
+  APARTE (no son parte de este bloque): **MEL** (doc 19, qué modelo pedir por
+  capacidad — hoy `router.py` es un shim de ~30 líneas listo para que E1 lo
+  convierta con un cambio de una línea), **integración Orchestrator** (el AE
+  migrando `AgentTaskAction` a `tie.submit_mission`, anotado en doc 21 §5 para
+  no perderlo), y **MVP-beta** (instalador, auto-start, onboarding).
 
 ### ⏳ V1.1 — Hermes Runtime + Learning System
 Docs: `PLAN_MAESTRO_2026/10` (Hermes/AgentRuntime) + `15` (Learning System) + `09`.
@@ -1889,11 +1980,12 @@ Registro/arranque en el `lifespan` de `main.py` (`gateway.register(...)` +
 
 ---
 
-*Última actualización: 2026-07-16 — V0.9 (Automation Engine + ApprovalGate,
-sprints A1-A4: ApprovalGate + APScheduler/lifecycle + motor de reglas + acciones
-reales + Permisos & Autonomía + rastro en MOS/Decision API). Tag `v0.9.0`.
-Bloques cerrados hasta ahora: V0.2 → V0.7.3 → V0.8 → V0.85 (MOS) → V0.87 (WPMS)
-→ V0.9 (Automation Engine). Siguiente: V1.0 TIE (Orchestrator) + MVP BETA.*
+*Última actualización: 2026-07-17 — V1.0 T1-T5 (bloque TIE completo: esqueleto+
+contratos, planner+grafo DAG, executor+checkpoint+gates+kill-switch, el SWITCH+
+frontend de Misiones, tests de perf+e2e+verificación en vivo+cierre). Tag
+`v0.9.2`. Bloques cerrados hasta ahora: V0.2 → V0.7.3 → V0.8 → V0.85 (MOS) →
+V0.87 (WPMS) → V0.9 (Automation Engine) → V1.0 TIE v1 (T1-T5). Siguiente (planes
+aparte): MEL (doc 19) → integración Orchestrator → MVP-beta (→ cierre `1.0.0`).*
 *Construido desde el estado real del repositorio (código + Alembic + docs de fase).*
 *Sustituye a la versión V0.2 anterior, que declaraba un estado obsoleto.*
 

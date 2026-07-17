@@ -166,6 +166,12 @@ Arquitectura de 4 capas (Triggers/Conditions/Actions/Learner) con MVP funcional:
 
 ## 5. V1.0 — **TIE v1** (Orchestrator) + **MVP BETA distribuible** (docs 14 + 11-B)
 
+> ✅ **TIE v1 (T1-T5) CERRADO — 2026-07-17, tag `v0.9.2`** (plan de sesiones
+> detallado: doc 21). Lo que sigue en esta sección describe TODO V1.0
+> (incluido MEL + MVP-beta), que quedan como planes APARTE — decisión de
+> versión del usuario (2026-07-16): el TIE cierra un bloque en `0.9.2`; MEL +
+> integración Orchestrator + MVP-beta cierran V1.0 completo en `1.0.0`.
+
 El cerebro: los 6 componentes de 11-B (Intent Classifier barato-siempre → Context
 Enricher con pre-fetch/caché → Task Planner potente-solo-si-hace-falta → Executor
 con gates → Response Builder → Tracer con Decision API), ahora como módulo

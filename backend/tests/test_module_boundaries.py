@@ -140,14 +140,35 @@ def test_tie_public_api_completa():
         "NullRuntime", "register_runtime", "get_runtime", "list_runtimes",
         # intent + misiones + trazas + motor de ejecución + responder
         "classify", "new_mission", "tracer", "executor", "responder",
-        # pipeline (interfaz de orquestacion)
-        "handle", "submit_mission", "register_handlers",
+        # pipeline (interfaz de orquestacion) — T4a/T4b completo
+        "handle", "handle_stream", "submit_mission", "resolve_plan", "register_handlers",
     }
     faltan = esperado - set(dir(tie))
     assert not faltan, f"app.tie no exporta: {sorted(faltan)}"
     assert esperado.issubset(set(tie.__all__)), (
         f"faltan en __all__: {sorted(esperado - set(tie.__all__))}"
     )
+
+
+def test_tie_handle_respeta_la_firma_de_messagehandler():
+    """`tie.handle` es EL handler que instala `gateway.set_handler()` desde T4a —
+    debe respetar exactamente `MessageHandler = Callable[[MessageEnvelope],
+    Awaitable[Union[str, OutboundMessage]]]` (doc 21 Δ3). Si algún día cambia de
+    firma sin querer, el switch del Gateway se rompe en silencio: este test lo
+    blinda estáticamente (inspecciona la firma) y dinámicamente (lo instala de
+    verdad en un Gateway y comprueba que queda como el handler activo)."""
+    import inspect
+
+    from app.gateway.gateway import Gateway
+    from app.tie import handle
+
+    assert inspect.iscoroutinefunction(handle)
+    params = list(inspect.signature(handle).parameters.values())
+    assert len(params) == 1, "MessageHandler recibe exactamente un envelope"
+
+    gw = Gateway()
+    gw.set_handler(handle)
+    assert gw._handler is handle
 
 
 def test_nadie_de_fuera_importa_internos_de_un_modulo():

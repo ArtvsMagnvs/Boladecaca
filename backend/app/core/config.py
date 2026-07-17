@@ -8,9 +8,10 @@ load_dotenv()
 class Settings:
     # App settings
     APP_NAME = "Aithera"
-    # V0.9 (Automation Engine + ApprovalGate, cierre de bloque A1-A4) - bump
-    # sincronizado con main.py y frontend/package.json. Tag v0.9.0.
-    VERSION = "0.9.0"
+    # V1.0 T5 (cierre del bloque TIE, doc 21) - bump sincronizado con main.py y
+    # frontend/package.json. Tag v0.9.2 (por decision del usuario 2026-07-16, el
+    # cierre de V1.0 COMPLETO -tras MEL + MVP-beta- sera v1.0.0).
+    VERSION = "0.9.2"
     DEBUG = os.getenv("DEBUG", "false").lower() == "true"
 
     # API settings
