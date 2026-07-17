@@ -48,6 +48,15 @@ def _chain_for(req: ExecutionRequest, available: list[ModelRef]) -> list[ModelRe
     return policy_store.active_chain(req.capability, available)
 
 
+def _apply_exclude(available: list[ModelRef], exclude: tuple[str, ...]) -> list[ModelRef]:
+    """Quita de `available` los model_keys en `req.exclude` (doc 19 §5.4.2 — p.ej.
+    research.py evita que un modelo se autoevalúe). Vacío si no hay exclusiones."""
+    if not exclude:
+        return available
+    skip = set(exclude)
+    return [r for r in available if r.key not in skip]
+
+
 def _resolve_forced(req: ExecutionRequest, available: list[ModelRef]) -> tuple[Optional[ModelRef], bool]:
     """Si el usuario pidió un modelo explícito (`model_override`, doc 19 §7b),
     lo resuelve contra los disponibles. Devuelve (ref|None, requested): `requested`
@@ -67,7 +76,7 @@ async def complete(req: ExecutionRequest) -> ExecutionResult:
     se convierte en `ExecutionResult(ok=False)` con el detalle (el caller decide su
     degradación — p.ej. el summarizer cae a plantilla)."""
     t0 = time.monotonic()
-    available = registry.list_available()
+    available = _apply_exclude(registry.list_available(), req.exclude)
     if not available:
         return ExecutionResult(text="", ok=False, error="no hay proveedores IA configurados")
 
@@ -161,7 +170,7 @@ async def stream(req: ExecutionRequest) -> AsyncIterator[str]:
     (si el primer candidato falla antes de emitir, se rinde con un chunk de
     error — el caller conserva su degradación). Los saltos de cadena en streaming
     son V1.2."""
-    available = registry.list_available()
+    available = _apply_exclude(registry.list_available(), req.exclude)
     if not available:
         yield "[MEL: no hay proveedores IA configurados]"
         return

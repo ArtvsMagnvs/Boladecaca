@@ -60,6 +60,10 @@ class Settings:
     # (secuencial); el semáforo entra en V1.2 con las olas paralelas.
     TIE_MAX_PARALLEL = int(os.getenv("TIE_MAX_PARALLEL", "3"))
 
+    # V1.0 (MEL E1b, doc 19 §5.4/doc 22 §3·E1b): cada cuántos días se re-investigan
+    # las capacidades de los modelos configurados (el número que pidió el usuario).
+    MEL_RESEARCH_REFRESH_DAYS = int(os.getenv("MEL_RESEARCH_REFRESH_DAYS", "14"))
+
     # V0.8 (hardening): CORS restringido. Además de localhost (cubierto por
     # regex) y file:// de Electron (origen 'null'), se pueden declarar orígenes
     # extra por env como CSV — p.ej. la IP de la red local al exponer la web:

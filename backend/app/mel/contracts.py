@@ -94,6 +94,11 @@ class ExecutionRequest:
     policy_override: Optional[str] = None   # "offline" p.ej. para jobs nocturnos; raro
     model_override: Optional[str] = None    # [E2b, §7b] id EXACTO ya resuelto por el
                                             # usuario — por encima de política y catálogo
+    exclude: tuple[str, ...] = ()           # [E1b, §5.4.2] model_keys a EXCLUIR de la
+                                            # selección — lo usa research.py para no
+                                            # dejar que un modelo se autoevalúe cuando
+                                            # hay alternativa (extensión append-only,
+                                            # nunca cambia una firma existente)
 
 
 @dataclass(frozen=True)

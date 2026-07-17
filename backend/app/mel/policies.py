@@ -15,7 +15,11 @@ from typing import Optional
 
 from app.core.logging_config import get_system_logger
 from app.mel.capabilities import is_smart
-from app.mel.catalog import cost_of, score_of
+from app.mel.catalog import cost_of
+# [E1b, doc 19 §5.4.3] el compilador usa el score EFECTIVO (catálogo curado
+# desplazado por el auto-catálogo investigado), no el catálogo puro — research.py
+# hace de wrapper de catalog.score_of() y no importa policies.py (sin ciclo).
+from app.mel.research import effective_score as score_of
 from app.mel.contracts import Capability, ModelRef, PolicyName
 
 logger = get_system_logger("mel.policies")

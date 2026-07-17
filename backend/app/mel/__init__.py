@@ -10,6 +10,7 @@
 # V1.0 E1: contratos congelados + registry (envuelve ai_manager) + Rule Engine +
 # fallback/breakers + compilador de políticas. El resto del sistema NO llama
 # todavía al MEL (el switch de `tie/router.py` y los ~9 call-sites es E2).
+# V1.0 E1b: capacidad RESEARCH activada — Catálogo Auto-Investigado (doc 19 §5.4).
 from __future__ import annotations
 
 from typing import Optional
@@ -31,6 +32,7 @@ from app.mel.contracts import (
 from app.mel import executor as _executor
 from app.mel import decision as _decision
 from app.mel import registry as _registry
+from app.mel import research as _research
 from app.mel.policies import policy_store as _policy_store
 
 
@@ -80,6 +82,26 @@ def ensure_ready() -> None:
     _policy_store.ensure_compiled(_registry.list_available())
 
 
+def register_handlers() -> None:
+    """[E1b] Cablea el MEL con el bus de eventos: suscribe la investigación
+    automática a `provider.model_configured` (doc 19 §5.4.1). Idempotente. Lo
+    llama el lifespan, mismo patrón que `tie.register_handlers()`."""
+    _research.register()
+
+
+def capability_report() -> list[dict]:
+    """El informe auto-investigado por modelo conectado (doc 19 §5.4.3) — el
+    "documento interno" consultable. `GET /api/mel/capability-report` lo expone."""
+    return _research.report_summary()
+
+
+async def refresh_capability_reports() -> int:
+    """[E1b] Re-investiga TODOS los modelos configurados actualmente (job
+    periódico cada `MEL_RESEARCH_REFRESH_DAYS`, doc 19 §5.4.4). Lo programa el
+    lifespan vía `scheduler_service.add_interval_job`."""
+    return await _research.refresh_all()
+
+
 __all__ = [
     # contratos
     "Capability", "PolicyName", "ModelRef", "Constraints",
@@ -87,4 +109,5 @@ __all__ = [
     # API pública
     "complete", "stream", "decision_trace", "recent_decisions",
     "policies", "set_active_policy", "resolve_model_name", "ensure_ready",
+    "register_handlers", "capability_report", "refresh_capability_reports",
 ]

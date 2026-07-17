@@ -22,6 +22,10 @@ from app.api.endpoints import automation
 from app.api.endpoints import tie as tie_endpoints
 # V0.8 (Fase 5 Clientes): router de configuracion del canal Telegram.
 from app.api.endpoints import telegram as telegram_endpoints
+# V1.0 (MEL v1, E1b): router del Model Execution Layer (informe de capacidades
+# auto-investigado). El import registra ademas los modelos de app.mel
+# (mel_executions/mel_policies/mel_capability_reports) antes del create_all.
+from app.api.endpoints import mel as mel_endpoints
 # V0.7.2 (Sprint 2, PLAN_MAESTRO_2026 B4): god-endpoint de email dividido en
 # 7 routers de dominio + app/services/email_service.py. Todos comparten
 # prefix='/email'; la superficie publica /api/email es identica (contratos).
@@ -206,6 +210,29 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         log_error("startup", e, "No se pudo iniciar el planificador (el backend sigue; los jobs del MOS quedan sin programar)")
 
+    # V1.0 (MEL v1, E1b, doc 19 §5.4): suscribe la investigación automática de
+    # capacidades a `provider.model_configured` + programa el refresco periódico
+    # (cada MEL_RESEARCH_REFRESH_DAYS días — reusa el scheduler ya arrancado
+    # arriba). Best-effort: si falla, el resto del MEL sigue funcionando (E1 no
+    # depende de esto — el auto-catálogo solo ENRIQUECE el catálogo curado).
+    try:
+        import app.mel as mel
+
+        mel.register_handlers()
+        from app.automation import scheduler_service
+
+        scheduler_service.add_interval_job(
+            mel.refresh_capability_reports,
+            minutes=settings.MEL_RESEARCH_REFRESH_DAYS * 24 * 60,
+            id="mel_research_refresh", first_run_delay_s=90,
+        )
+        log_info(
+            "startup",
+            f"MEL: catálogo auto-investigado activo (refresco cada {settings.MEL_RESEARCH_REFRESH_DAYS}d)",
+        )
+    except Exception as e:
+        log_error("startup", e, "No se pudo activar el catálogo auto-investigado del MEL (no crítico)")
+
     # V0.9 (Automation A3): siembra las 5 reglas predefinidas (idempotente, sin
     # duplicar en arranques posteriores) y registra el catalogo de acciones
     # reales ANTES de armar nada — arm_rule() de una regla event/schedule no
@@ -361,6 +388,8 @@ app.include_router(telegram_endpoints.router, prefix="/api")
 app.include_router(automation.router, prefix="/api")
 # V1.0 (TIE v1, T4): misiones, grafo, kill-switch y aprobacion de planes.
 app.include_router(tie_endpoints.router, prefix="/api")
+# V1.0 (MEL v1, E1b): informe de capacidades auto-investigado.
+app.include_router(mel_endpoints.router, prefix="/api")
 
 
 @app.get("/")

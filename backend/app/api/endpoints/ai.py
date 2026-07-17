@@ -60,16 +60,37 @@ def get_configured_providers():
     return ai_manager.list_configured()
 
 
+def _model_of(provider_name: str) -> Optional[str]:
+    entry = next((c for c in ai_manager.list_configured() if c["provider"] == provider_name), None)
+    return entry.get("model") if entry and entry.get("is_configured") else None
+
+
+def _emit_if_model_changed(provider_name: str, before: Optional[str]) -> None:
+    """[E1b, doc 19 §5.4.1] Emite `provider.model_configured` SOLO si el
+    (provider, model) resultante es nuevo o distinto — nunca en un toggle de
+    activar/desactivar. Dispara el Catálogo Auto-Investigado (research.py)."""
+    after = _model_of(provider_name)
+    if after and after != before:
+        from app.core.events import emit
+        emit("provider.model_configured", source="ai", payload={"provider": provider_name, "model": after})
+
+
 @router.post("/configured", response_model=AIProviderConfigResponse, status_code=201)
-def add_provider(config: AIProviderConfigCreate):
+async def add_provider(config: AIProviderConfigCreate):
     """
     Anadir (o actualizar) un proveedor. La API key se guarda localmente en la
     base de datos del usuario y nunca se incrusta en el codigo ni se envia a
     terceros distintos del propio proveedor de IA.
+
+    [E1b] `async def` a propósito: `events.emit()` necesita un event loop
+    corriendo en el hilo — como endpoint sync, FastAPI lo ejecuta en un
+    threadpool sin loop propio y el evento se descartaría en silencio (mismo
+    escollo real que ya documentó doc 18 W4 con `workspace.py`).
     """
     if config.provider not in PROVIDER_CATALOG:
         raise HTTPException(status_code=400, detail=f"Proveedor desconocido: {config.provider}")
 
+    before = _model_of(config.provider)
     ok = ai_manager.add_or_update_provider(
         provider_name=config.provider,
         model=config.model,
@@ -78,16 +99,19 @@ def add_provider(config: AIProviderConfigCreate):
     )
     if not ok:
         raise HTTPException(status_code=400, detail="No se pudo guardar el proveedor")
+    _emit_if_model_changed(config.provider, before)
 
     return next(c for c in ai_manager.list_configured() if c["provider"] == config.provider)
 
 
 @router.put("/configured/{provider_name}", response_model=AIProviderConfigResponse)
-def update_provider(provider_name: str, update: AIProviderConfigUpdate):
-    """Actualizar el modelo, la API key o el base_url de un proveedor ya configurado."""
+async def update_provider(provider_name: str, update: AIProviderConfigUpdate):
+    """Actualizar el modelo, la API key o el base_url de un proveedor ya
+    configurado. `async def`: mismo motivo que `add_provider` (E1b)."""
     if provider_name not in PROVIDER_CATALOG:
         raise HTTPException(status_code=400, detail=f"Proveedor desconocido: {provider_name}")
 
+    before = _model_of(provider_name)
     ok = ai_manager.add_or_update_provider(
         provider_name=provider_name,
         model=update.model,
@@ -96,6 +120,7 @@ def update_provider(provider_name: str, update: AIProviderConfigUpdate):
     )
     if not ok:
         raise HTTPException(status_code=400, detail="No se pudo actualizar el proveedor")
+    _emit_if_model_changed(provider_name, before)
 
     return next(c for c in ai_manager.list_configured() if c["provider"] == provider_name)
 

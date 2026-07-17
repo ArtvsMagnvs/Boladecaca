@@ -64,6 +64,7 @@ FORBIDDEN_MODULES = (
     ("app.mel.catalog", APP_DIR / "mel"),
     ("app.mel.capabilities", APP_DIR / "mel"),
     ("app.mel.models", APP_DIR / "mel"),
+    ("app.mel.research", APP_DIR / "mel"),
 )
 
 
@@ -194,6 +195,7 @@ def test_mel_public_api_completa():
         # API publica
         "complete", "stream", "decision_trace", "recent_decisions",
         "policies", "set_active_policy", "resolve_model_name", "ensure_ready",
+        "register_handlers", "capability_report", "refresh_capability_reports",
     }
     faltan = esperado - set(dir(mel))
     assert not faltan, f"app.mel no exporta: {sorted(faltan)}"

@@ -47,6 +47,27 @@ class MelExecution(Base):
     created_at = Column(DateTime, default=datetime.utcnow, index=True)
 
 
+class MelCapabilityReport(Base):
+    """[E1b, doc 19 §5.4] Informe auto-investigado de un (provider, model) para
+    UNA capacidad. Lo genera `research.py` al conectar/cambiar un modelo, y se
+    re-genera cada `MEL_RESEARCH_REFRESH_DAYS`. `confidence` es la honestidad
+    del propio modelo investigador sobre lo bien que conoce a ese modelo
+    concreto — un informe "bajo" NO desplaza el catálogo curado (doc 19 §5.4.3).
+    Varias filas por (provider, model): una por capacidad investigada."""
+
+    __tablename__ = "mel_capability_reports"
+
+    id = Column(Integer, primary_key=True)
+    provider = Column(String(40), index=True)
+    model = Column(String(120), index=True)
+    capability = Column(String(20), index=True)
+    score = Column(Integer)                    # 0-100
+    rationale = Column(Text)                   # justificación de 1 línea
+    confidence = Column(String(10))            # "alto" | "medio" | "bajo"
+    researched_by_model = Column(String(160))  # provider:model que hizo la investigación
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+
+
 class MelPolicy(Base):
     """Una política compilada (doc 19 §5.2), como JSON versionado. `name` ∈
     economy|quality|offline|custom. `compiled` = {capability → [model_key...]}
