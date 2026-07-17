@@ -50,6 +50,7 @@ FORBIDDEN_MODULES = (
     ("app.tie.graph", TIE_DIR),
     ("app.tie.enricher", TIE_DIR),
     ("app.tie.planner", TIE_DIR),
+    ("app.tie.executor", TIE_DIR),
 )
 
 
@@ -136,8 +137,8 @@ def test_tie_public_api_completa():
         # runtime (doc 10)
         "AgentRuntime", "AgentTask", "AgentResult", "AgentChunk", "RuntimeHealth",
         "NullRuntime", "register_runtime", "get_runtime", "list_runtimes",
-        # intent + misiones + trazas
-        "classify", "new_mission", "tracer",
+        # intent + misiones + trazas + motor de ejecución
+        "classify", "new_mission", "tracer", "executor",
         # pipeline (interfaz de orquestacion)
         "handle", "submit_mission",
     }

@@ -917,9 +917,65 @@ la fase en `1.0.0`. Durante T1-T4 la versión se mantiene en `0.9.0`.
   respuesta no era JSON válido) y el plan quedó persistido con `decision_id`
   enlazado; limpieza sin ensuciar la BD. Nada se ejecuta todavía (el executor es
   T3).
-- **V1.0 pendiente**: T3 (executor + checkpoint + gates + kill-switch), T4
-  (responder + el switch + frontend), T5 (tests/perf + cierre a `0.9.2`). Luego
-  MEL, integración Orchestrator, MVP-beta (→ `1.0.0`).
+- ✅ **T3 — Graph Execution Engine: executor + checkpoint + gates + recovery +
+  kill-switch** (doc 21 §3·T3): el corazón. `app/tie/executor.py` ejecuta un
+  TaskGraph ya validado (T2) con las 6 garantías del doc 14 §3.4. **Loop de
+  olas**: `run(graph, mission, trace_id)` consume `graph.ready_set()` y ejecuta
+  UNO por iteración (V1.0 ola=1, orden determinista prioridad desc/id asc);
+  estructurado para que V1.2 lance toda la ola con `asyncio.gather`+semáforo sin
+  cambiar el algoritmo. **Ejecución de nodo**: `get_runtime(node.runtime)` →
+  `runtime.execute_task(AgentTask, memory=memory_router, tools=tool_manager,
+  approval_gate=approval_gate)` — memoria/tools/gate SIEMPRE por inyección (doc
+  10); contexto por nodo vía `enricher.enrich(node.context_query)` (presupuesto
+  duro de T2). **Checkpoint por transición**: `_transition()` persiste el grafo
+  entero en `orchestrator_traces.plan` en CADA cambio de estado — todo el estado
+  vive en disco, nada crítico en RAM. **Gates (HITL como estado de primera
+  clase)**: nodo `approval_required` → `WAITING_APPROVAL` + `approval_gate.
+  request_approval(kind="tie.node", action_type="tie_resume", action_payload=
+  {trace_id,node_id,mission_id})` y `run()` RETORNA (`state="waiting"`) — el nodo
+  puede esperar días. **Reanudación EVENT-DRIVEN** (decisión de diseño): el
+  veredicto se aplica desde el handler de `approval.resolved` (bus, doc 17) y NO
+  dentro del ejecutor registrado del gate — porque `resolve()` vive en el camino
+  de un request HTTP y el resto del grafo puede tardar minutos; `emit` despacha
+  con `create_task`, así que el POST responde al instante. El ejecutor
+  `tie_resume` se registra igualmente (devuelve un marcador) para honrar el
+  contrato del registro del gate: sin él, `resolve()` reportaría "sin ejecutor" y
+  ensuciaría la auditoría. Aprobado y rechazado van por el MISMO camino
+  (`_apply_gate_verdict`), idempotente. **Regalo de A3b heredado gratis**: si el
+  usuario pre-autorizó ese `kind`, el gate se auto-resuelve al instante (con
+  rastro) y el evento reanuda — el TIE no hace nada especial. **Recovery V1.0**
+  (degradar): nodo FAILED → dependientes **transitivos** SKIPPED + `mem_error`
+  (best-effort, no bloqueante) + el grafo sigue con lo que sí puede; misión
+  `done` si algo útil salió, `failed` solo si NADA salió bien. **Kill-switch**:
+  `cancel(mission_id)` marca la misión y **cancela cooperativamente la task del
+  nodo en vuelo** (`asyncio.Task.cancel()` → el runtime recibe `CancelledError`,
+  el nodo queda CANCELLED) — no se espera a que termine su LLM/tool (verificado:
+  <2s frente a un nodo de 30s). **Validación por nodo** (§3.4.7): determinista y
+  barata (¿éxito? ¿hay salida con forma?) → `node.validation`; un runtime que
+  dice `success=True` sin producir nada NO cuela (test dedicado) — jamás teatro.
+  **`resume_pending()`** (§3.4.3): recarga las trazas `running|waiting` al
+  arrancar y recomputa el ready-set; **caso feo cubierto**: si el usuario aprueba
+  mientras el backend está caído, el evento se pierde (el bus es in-process y sin
+  persistencia, doc 17) → se recupera consultando el veredicto en disco vía el
+  nuevo `TaskNode.gate_id` (extensión append-only del contrato congelado, campo
+  con default — permitido por la regla de evolución). `tracer` += `load_graph`/
+  `get_meta`/`set_state`/`pending_trace_ids`. Tests: `test_tie_executor.py` (16 —
+  orden lineal, ramas independientes por ready-set, checkpoint en disco,
+  validación (incl. el runtime que no produce nada), FAILED→SKIPPED transitivo,
+  misión sin nada útil=failed, gate pausa sin ejecutar, gate aprobado reanuda,
+  gate rechazado degrada, gates de OTROS módulos no se ven afectados,
+  kill-switch antes de empezar y **en vuelo**, `resume_pending` continúa/respeta
+  gate pendiente/aplica gate resuelto offline). Los tests usan un **runtime FAKE
+  registrado en el registro real** — de paso prueban que un runtime nuevo funciona
+  sin tocar el executor (el contrato que usará HermesRuntime en V1.1). Suite
+  completa: **407 passed** (391 previos + 16 de T3). **Verificado en vivo contra
+  el Postgres real**: grafo de 3 nodos → pausa en el gate (`waiting`, n2 sin
+  ejecutar, checkpoint `n1=done/n2=waiting_approval` confirmado en Postgres) →
+  aprobar → reanuda en background → `n2=done, n3=done`; kill-switch cancelando;
+  limpieza sin ensuciar la BD.
+- **V1.0 pendiente**: T4 (responder + el switch `gateway.set_handler(tie.handle)`
+  + streaming + frontend), T5 (tests/perf + cierre a `0.9.2`). Luego MEL,
+  integración Orchestrator, MVP-beta (→ `1.0.0`).
 - **V1.1** — Hermes (Nous Research) como sistema de agentes bajo el TIE + Learner
 
 **Estado del git**: branch `master` con historia activa. V0.7.1 commiteado

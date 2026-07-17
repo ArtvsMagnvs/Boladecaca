@@ -68,6 +68,60 @@ def record_end(trace_id: str, *, outcome: str, state: str = "done",
     _update(trace_id, outcome=outcome, result=result, state=state)
 
 
+def set_state(trace_id: str, state: str) -> None:
+    """Cambia el estado de la traza (running|waiting|done|failed|cancelled). Lo
+    usa el executor al pausar en un gate (waiting) o al cancelar."""
+    _update(trace_id, state=state)
+
+
+def load_graph(trace_id: str) -> Optional[TaskGraph]:
+    """Recupera el TaskGraph persistido de una traza (T3: reanudación tras gate
+    o tras reinicio). None si no hay traza o aún no tiene plan."""
+    db = SessionLocal()
+    try:
+        row = db.get(OrchestratorTrace, trace_id)
+        if row is None or not row.plan:
+            return None
+        return TaskGraph.from_dict(row.plan)
+    except Exception as e:
+        logger.error(f"[tracer] load_graph({trace_id}) falló: {type(e).__name__}: {e}")
+        return None
+    finally:
+        db.close()
+
+
+def get_meta(trace_id: str) -> Optional[dict]:
+    """Metadatos de la traza (mission_id, channel, state) — el executor los
+    necesita al reanudar (la Mission de V1.0 es implícita: vive aquí)."""
+    db = SessionLocal()
+    try:
+        row = db.get(OrchestratorTrace, trace_id)
+        if row is None:
+            return None
+        return {"id": row.id, "mission_id": row.mission_id, "channel": row.channel,
+                "state": row.state}
+    finally:
+        db.close()
+
+
+def pending_trace_ids() -> list[str]:
+    """Trazas sin terminar (running|waiting) — las que `resume_pending()` del
+    executor recarga al arrancar el backend (doc 14 §3.4.3)."""
+    db = SessionLocal()
+    try:
+        rows = (
+            db.query(OrchestratorTrace)
+            .filter(OrchestratorTrace.state.in_(["running", "waiting"]))
+            .all()
+        )
+        return [r.id for r in rows]
+    except Exception as e:
+        logger.error(f"[tracer] pending_trace_ids falló: {type(e).__name__}: {e}")
+        return []
+    finally:
+        db.close()
+
+
 def _update(trace_id: str, **fields) -> None:
     db = SessionLocal()
     try:

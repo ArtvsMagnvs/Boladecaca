@@ -39,6 +39,7 @@ from app.tie.runtime import (
 # --- Clasificación de intención + misiones ---
 from app.tie import intents
 from app.tie import tracer
+from app.tie import executor
 from app.tie.missions import new_mission
 
 # --- Pipeline (la interfaz de orquestación) ---
@@ -71,6 +72,8 @@ __all__ = [
     "classify",
     "new_mission",
     "tracer",
+    # motor de ejecución del grafo (T3): run/cancel/resume_pending/register_gate_handlers
+    "executor",
     # pipeline (interfaz de orquestación)
     "handle",
     "submit_mission",

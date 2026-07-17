@@ -157,6 +157,9 @@ class TaskNode:
     max_retries: int = 0                             # política real en V1.2
     # — estado y resultado (los escribe SOLO el executor, T3) —
     state: NodeState = NodeState.PENDING
+    gate_id: Optional[str] = None                    # [T3] id del ApprovalGate si el nodo pidió permiso;
+                                                     # persistido para que resume_pending() pueda consultar
+                                                     # el veredicto tras un reinicio (extensión append-only)
     confidence: Optional[float] = None               # confianza del planner en el nodo
     result: Optional[dict] = None                    # salida estructurada del runtime
     validation: Optional[dict] = None                # {"ok":bool,"method":"schema|llm|user","notes":str}
