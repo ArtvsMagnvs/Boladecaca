@@ -1272,6 +1272,76 @@ la fase en `1.0.0`. Durante T1-T4 la versión se mantiene en `0.9.0`.
   `v0.9.2`.** El siguiente plan (aparte) es el MEL (doc 19, E1-E2) o el cierre
   MVP-beta (doc 03 §5 O5) — a decisión del usuario; el cierre de V1.0 COMPLETO
   (MEL + integración Orchestrator + MVP-beta) es el que sube a `1.0.0`.
+
+**V1.0 — MEL v1 (Model Execution Layer, bloque CERRADO sobre `master`; plan de
+sesiones `PLAN_MAESTRO_2026/22_MEL_PLAN_SESIONES.md`, sprints E1·E1b·E2·E2b;
+diseño maestro doc 19).** La capa universal de ejecución de modelos: el resto del
+sistema pide CAPACIDADES (chat/classify/reason/…), el MEL decide QUÉ MODELO. Sin
+bump de versión (sigue `0.9.2`): MEL v1 es un bloque de la senda a `1.0.0`, que
+cierra con integración Orchestrator + MVP-beta.
+- ✅ **E1 — Núcleo** (`app/mel/`, módulo nuevo): contratos CONGELADOS
+  (`contracts.py`: `Capability` [8 activas + research/vision/agentic reservadas,
+  append-only], `ExecutionRequest`/`ExecutionResult`, `ModelRef`, `PolicyName`,
+  `DecisionTrace`). `registry.py` (ENVUELVE `ai_manager` — **único módulo del MEL
+  que lo importa**, frontera dura doc 16; `resolve_model_name` fuzzy). `catalog.py`
+  (scores curados por (proveedor,modelo)×capacidad — dato, no benchmark).
+  `policies.py` (compilador Economy/Quality/Offline + `PolicyStore`). `decision.py`
+  (Rule Engine determinista <1ms, ring buffer de 500 trazas, precedencia
+  override>pin>política escrita e inactiva hasta E2b). `fallback.py` (clasificación
+  de fallos + circuit breakers). `executor.py` (`complete`/`stream` + fallback
+  multi-salto + registro async `mel_executions` + `strip_reasoning` B21 aplicado
+  aquí para TODOS los callers). Migración 20.ª (`mel_executions`+`mel_policies`).
+- ✅ **E1b — Catálogo Auto-Investigado** (`research.py`): al conectar/cambiar un
+  modelo (evento nuevo `provider.model_configured`, emitido por `ai.py`), otro
+  modelo lo investiga (capacidad RESEARCH activada) y puntúa sus 8 capacidades con
+  su propio nivel de **confianza** (informe "bajo" NUNCA mueve el catálogo curado
+  — honestidad, doc 19 §5.4.3); persiste `mel_capability_reports` (migración 21.ª).
+  `effective_score` = catálogo 50/50 con el informe reciente (salvo confianza
+  baja); las políticas compilan con el score EFECTIVO. Refresco cada
+  `MEL_RESEARCH_REFRESH_DAYS` (14) por APScheduler. `GET /api/mel/capability-report`.
+- ✅ **E2 — Migración de call-sites + EL SWITCH + pantalla Inteligencia**: TODO el
+  sistema deja de llamar a `ai_manager` directo y pide CAPACIDADES al MEL
+  (grep-cero de `ai_manager.chat(` fuera de `registry.py`, blindado por test).
+  ~15 call-sites migrados: `tie/router.py` (el shim que el TIE anunciaba desde T2),
+  `chat_service.answer` (CHAT), `NullRuntime.stream_task`+`chat.py` legacy
+  (`mel.stream`), email triaje (CLASSIFY)/ai_reply (DRAFT)/inbox summary+summarizer
+  (SUMMARIZE, `policy_override=economy` en el job nocturno), las 6 de `email_tool`,
+  architect (REASON/CODE). **Recalibración honesta del catálogo** (`catalog.py`
+  "ollama"): local bueno-suficiente en tareas estructuradas (classify/summarize/
+  extract ≥ umbral Economy → local gratis) pero más flojo en generación abierta
+  (chat/draft/reason/code/analyze < umbral → cloud bajo Economy) — sin degradar el
+  chat del usuario. Frontend: Ajustes → **Inteligencia** (3 tarjetas + selector de
+  política activa 1-clic + cadena capacidad→modelos). Endpoints `/api/mel/policies`
+  (+`/active`).
+- ✅ **E2b — Personalización de políticas + override explícito** (petición directa
+  del usuario intercalada + doc 19 §7b): **(A, petición del usuario)** política
+  "Personalizado" (4ª política, lienzo editable = Calidad de partida) + editar el
+  modelo PRIMARIO por capacidad en Economía/Calidad/Personalizado (los respaldos se
+  conservan solos) + botón **Restaurar** por política (`set_primary`/`restore` en
+  `PolicyStore`; endpoints `/mel/models`, PATCH `/mel/policies/{name}/primary`, POST
+  `/restore`; UI en Inteligencia). **(B, override explícito, doc 19 §7b)**
+  `overrides.py` + `mel_overrides` (migración 22.ª): pin PERSISTENTE de modelo por
+  proyecto. Precedencia real en el executor: override de TAREA (`model_override`,
+  inmediato, fallo duro si no está) > pin de PROYECTO (persistente, degradación
+  suave si su modelo ya no está) > política. `Intent.explicit_model {name,scope}`
+  (append-only) + el clasificador lo detecta; pipeline: scope=task → llega a
+  `ExecutionRequest.model_override` por camino corto Y complejo; unspecified →
+  pregunta el alcance sin ejecutar; project → `set_project_override` + rastro en
+  Decision API; nombre no resuelto → responde con las opciones reales, nunca
+  inventa. `project_id` fluye misión→`AgentTask`→`answer`→`context_tags` para que
+  el pin de proyecto se lea en ejecución. UI: lista de pines borrables en
+  Inteligencia. **Bug encontrado en la verificación en vivo del reparto por tipo y
+  arreglado**: `policy_override` recompilaba la política en vez de leer las
+  ediciones persistidas del usuario (`chain_for_named`, test de regresión). Suite:
+  **508 passed**. Verificado en vivo contra Postgres + proveedores reales: TIE→MEL
+  respondiendo, reparto por tipo (chat→minimax, code→ollama con Personalizado),
+  override de tarea, pin de proyecto leído por el executor. **Nota de diseño
+  observada** (no bug): con los 2 modelos actuales el auto-catálogo (E1b) puntúa el
+  llama3 real como capaz (confianza "media"), así que Economy→todo local y
+  Quality→todo cloud (uniforme); el reparto por tipo DENTRO de una política aparece
+  con modelos de fuerzas distintas por capacidad (p.ej. Ornith code-especialista) o
+  a mano con Personalizado. **Pendiente como planes APARTE** (no MEL v1): integración
+  Orchestrator (AE `AgentTaskAction`→`tie.submit_mission`) y MVP-beta.
 - **V1.1** — Hermes (Nous Research) como sistema de agentes bajo el TIE + Learner
 
 **Estado del git**: branch `master` con historia activa. V0.7.1 commiteado
@@ -1568,6 +1638,35 @@ la fase COMPLETA en `1.0.0`.
   migrando `AgentTaskAction` a `tie.submit_mission`, anotado en doc 21 §5 para
   no perderlo), y **MVP-beta** (instalador, auto-start, onboarding).
 
+### ✅ V1.0 — MEL v1 (Model Execution Layer, bloque CERRADO) — Orchestrator/MVP-beta pendientes
+Docs: `PLAN_MAESTRO_2026/19` (diseño maestro) + `22` (plan de sesiones E1-E2b).
+La capa universal de ejecución de modelos: el resto pide CAPACIDADES, el MEL
+decide QUÉ MODELO. Sin bump (sigue `0.9.2`) — MEL v1 es un bloque de la senda a
+`1.0.0`.
+- Módulo `app/mel/`: contratos congelados + `registry` (envuelve `ai_manager`,
+  frontera dura) + `catalog` (scores curados) + `policies` (Economy/Quality/
+  Offline/**Custom**) + `decision` (Rule Engine determinista) + `fallback`
+  (breakers) + `executor` (complete/stream + registro) + `research` (auto-catálogo
+  E1b) + `overrides` (pin por proyecto E2b).
+- **EL SWITCH**: todo el sistema pide capacidades al MEL (grep-cero de
+  `ai_manager.chat(` fuera de `registry.py`). El TIE, el chat, el email, el
+  summarizer, architect — todos por `mel.complete`/`mel.stream`.
+- **Control del usuario** (Ajustes → Inteligencia): política activa 1-clic +
+  personalizar el modelo por capacidad en Economía/Calidad/Personalizado +
+  Restaurar + override explícito ("usa DeepSeek para esto" / "todo el proyecto con
+  Claude") + pines de proyecto borrables.
+- **Estado**: **E1-E2b HECHOS, bloque CERRADO** (núcleo + auto-catálogo + migración
+  de call-sites + pantalla Inteligencia + personalización + override explícito;
+  ver §1 para el detalle por sprint). 3 migraciones (20-22) aplicadas al Postgres
+  real. Suite backend: **508 passed**. Verificado en vivo (TIE→MEL, reparto por
+  tipo, override de tarea, pin de proyecto). **Pendiente como planes APARTE**:
+  integración Orchestrator (AE→`tie.submit_mission`) + MVP-beta → cierran V1.0 en
+  `1.0.0`. **Deuda menor anotada**: el `lifespan` no llama `ensure_ready()` (las
+  políticas compilan en el primer uso, default Economy — funciona, pero no hay
+  políticas hasta la primera petición); el auto-catálogo puede puntuar generoso un
+  local capaz (confianza "media" mueve el catálogo) — revisable si se quiere
+  Economy más agresiva hacia cloud en generación abierta.
+
 ### ⏳ V1.1 — Hermes Runtime + Learning System
 Docs: `PLAN_MAESTRO_2026/10` (Hermes/AgentRuntime) + `15` (Learning System) + `09`.
 - Hermes como `AgentRuntime` intercambiable POR DEBAJO del TIE (sprint H0 de
@@ -1611,6 +1710,8 @@ Docs: `PLAN_MAESTRO_2026/10` (Hermes/AgentRuntime) + `15` (Learning System) + `0
 | `/api/tools` | `tools.py` | 2.3KB | Catálogo de herramientas + ejecución |
 | `/api/memory` | `memory.py` | 5.6KB | Búsqueda y stats de memoria semántica + V0.85 M2: `ingest/status`, `ingest/run` + M3: `briefing`, `stats` extendido |
 | `/api/telegram` | `telegram.py` | ~110 líneas | V0.8: status + configure (token cifrado DPAPI) del canal Telegram |
+| `/api/tie` | `tie.py` | — | V1.0 TIE: misiones (list/get/cancel/approve-plan/delete) |
+| `/api/mel` | `mel.py` | — | V1.0 MEL: capability-report (E1b) + policies/active + models/primary/restore + overrides (E2/E2b) |
 
 Health checks: `GET /` (versión), `GET /health` (status simple).
 Exception handler global en `main.py:113` que captura y loguea todo.
@@ -2008,12 +2109,14 @@ Registro/arranque en el `lifespan` de `main.py` (`gateway.register(...)` +
 
 ---
 
-*Última actualización: 2026-07-17 — V1.0 T1-T5 (bloque TIE completo: esqueleto+
-contratos, planner+grafo DAG, executor+checkpoint+gates+kill-switch, el SWITCH+
-frontend de Misiones, tests de perf+e2e+verificación en vivo+cierre). Tag
-`v0.9.2`. Bloques cerrados hasta ahora: V0.2 → V0.7.3 → V0.8 → V0.85 (MOS) →
-V0.87 (WPMS) → V0.9 (Automation Engine) → V1.0 TIE v1 (T1-T5). Siguiente (planes
-aparte): MEL (doc 19) → integración Orchestrator → MVP-beta (→ cierre `1.0.0`).*
+*Última actualización: 2026-07-18 — V1.0 MEL v1 (bloque completo E1-E2b: núcleo
+del Model Execution Layer + Catálogo Auto-Investigado + el SWITCH de call-sites +
+pantalla Inteligencia + personalización de políticas + override explícito del
+usuario/pin de proyecto). Sin bump (sigue `0.9.2`). Suite backend: 508 passed.
+Bloques cerrados hasta ahora: V0.2 → V0.7.3 → V0.8 → V0.85 (MOS) → V0.87 (WPMS) →
+V0.9 (Automation Engine) → V1.0 TIE v1 (T1-T5) → V1.0 MEL v1 (E1-E2b). Siguiente
+(planes aparte): integración Orchestrator (AE→tie.submit_mission) → MVP-beta (→
+cierre `1.0.0`).*
 *Construido desde el estado real del repositorio (código + Alembic + docs de fase).*
 *Sustituye a la versión V0.2 anterior, que declaraba un estado obsoleto.*
 

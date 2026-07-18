@@ -1,5 +1,14 @@
 # 22 — Plan de sesiones detallado: MEL (Model Execution Layer) — V1.0
 
+> **✅ BLOQUE CERRADO (2026-07-18)**: E1 · E1b · E2 · E2b HECHOS. Módulo
+> `app/mel/` completo (contratos + registry + catálogo curado + auto-catálogo
+> investigado + políticas Economy/Quality/Offline/Custom + Rule Engine + fallback
+> + executor + overrides), el SWITCH de call-sites (grep-cero), pantalla
+> Inteligencia con personalización + override explícito del usuario/pin de
+> proyecto. 3 migraciones (20-22) aplicadas al Postgres real. Suite: 508 passed.
+> Verificado en vivo. Detalle por sprint en `CLAUDE.md` §1. Sin bump (sigue
+> `0.9.2`). Pendiente aparte: integración Orchestrator + MVP-beta → `1.0.0`.
+
 > **Estatus**: plan de trabajo ejecutable, sprint por sprint, del **MEL v1** y
 > SOLO del MEL. Deriva de doc 19 (diseño maestro del MEL, con los deltas de
 > 2026-07-18 ya incorporados: auto-investigación de catálogo §5.4 y override
