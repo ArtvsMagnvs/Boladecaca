@@ -66,6 +66,11 @@ class Settings:
     # Timeout por llamada a herramienta dentro del bucle (segundos). El
     # ToolManager lo acota además a su propio máximo duro.
     TIE_TOOL_TIMEOUT_S = int(os.getenv("TIE_TOOL_TIMEOUT_S", "60"))
+    # Cuánto espera el bucle a que el usuario conteste una petición de permiso
+    # para una acción sensible. Si no contesta a tiempo, el paso sigue SIN esa
+    # acción y lo dice — la aprobación NO se cancela: queda pendiente en la UI.
+    # Con el permiso pre-autorizado (A3b) la espera es instantánea.
+    TIE_TOOL_APPROVAL_WAIT_S = int(os.getenv("TIE_TOOL_APPROVAL_WAIT_S", "120"))
 
     # V1.0 (MEL E1b, doc 19 §5.4/doc 22 §3·E1b): cada cuántos días se re-investigan
     # las capacidades de los modelos configurados (el número que pidió el usuario).

@@ -83,46 +83,114 @@ async def test_regresion_del_hallazgo_lista_archivos_reales(monkeypatch, tmp_pat
 # ---------------------------------------------------------------------------
 # Límite de seguridad
 # ---------------------------------------------------------------------------
-def test_catalogo_excluye_las_acciones_sensibles():
+def test_el_catalogo_incluye_las_sensibles_marcadas():
+    """Regla del usuario (2026-07-19): SIEMPRE preguntar, nunca denegar sin
+    preguntar. Por eso las sensibles SÍ están en el catálogo — marcadas, para que
+    el modelo pueda proponerlas y decida el usuario."""
     catalog = toolloop.build_catalog(["email"], tool_manager)
-    pares = {(e["tool_id"], e["action"]) for e in catalog}
-    assert ("email", "send_email") not in pares      # requiere confirmación
-    assert ("email", "list_inbox") in pares          # lectura, sí
+    by_action = {e["action"]: e for e in catalog}
+    assert by_action["send_email"]["needs_approval"] is True
+    assert by_action["list_inbox"]["needs_approval"] is False
 
 
-def test_catalogo_excluye_tools_enteras_que_piden_confirmacion():
+def test_tools_enteras_sensibles_tambien_estan_marcadas():
     catalog = toolloop.build_catalog(["shell", "filesystem"], tool_manager)
-    ids = {e["tool_id"] for e in catalog}
-    assert "shell" not in ids            # requires_confirmation=True a nivel de tool
-    assert "filesystem" in ids
+    shell = [e for e in catalog if e["tool_id"] == "shell"]
+    assert shell and all(e["needs_approval"] for e in shell)
+    fs = {e["action"]: e for e in catalog if e["tool_id"] == "filesystem"}
+    assert fs["list_dir"]["needs_approval"] is False   # lectura
+    assert fs["delete_file"]["needs_approval"] is True  # destructiva
+
+
+class _FakeGate:
+    """Gate de prueba: responde lo que se le diga sin tocar la BD."""
+    def __init__(self, verdict: str):
+        self.verdict = verdict            # "approved" | "rejected" | "pending"
+        self.asked: list[dict] = []
+
+    async def request_approval(self, **kwargs):
+        self.asked.append(kwargs)
+        return "gate-de-prueba"
+
+    def get(self, gate_id):
+        class _A:
+            status = self.verdict
+        return _A()
 
 
 @pytest.mark.anyio
-async def test_accion_sensible_se_rechaza_sin_ejecutarse(monkeypatch):
-    """Aunque el modelo la pida a pesar de no estar en el catálogo."""
-    seen = _fake_mel(monkeypatch, [
+async def test_accion_sensible_SE_PREGUNTA_al_usuario(monkeypatch):
+    """Lo importante: se ABRE una aprobación real, no se deniega en silencio."""
+    _fake_mel(monkeypatch, [
         json.dumps({"tool": {"tool_id": "email", "action": "send_email",
                              "params": {"to": "x@y.com", "subject": "s", "body": "b"}}}),
-        '{"answer": "No he podido enviarlo: necesita tu permiso."}',
+        '{"answer": "Enviado."}',
     ])
+    gate = _FakeGate("approved")
 
     ejecutadas = []
     original = tool_manager.execute
 
     async def _spy(**kwargs):
         ejecutadas.append(kwargs)
-        return await original(**kwargs)
+        return {"success": True, "result": {"message_id": "m1"}, "error": None}
 
     monkeypatch.setattr(tool_manager, "execute", _spy)
 
     res = await toolloop.run(
         instruction="envía un email", context="", allowed_tools=["email"],
-        tool_manager=tool_manager, max_iters=3,
+        tool_manager=tool_manager, max_iters=3, approval_gate=gate, approval_wait_s=5,
     )
 
-    assert ejecutadas == []                                   # NO se ejecutó nada
-    assert any(c.get("denied") for c in res.tool_calls)       # queda el rastro
-    assert "permiso" in seen[-1] or "aprobación" in seen[-1]  # el motivo volvió al modelo
+    assert len(gate.asked) == 1                                  # SE PREGUNTÓ
+    assert gate.asked[0]["kind"] == "tool.email.send_email"
+    assert ejecutadas                                            # y al aprobar, se ejecutó
+    assert res.ok
+    assert any(c.get("granted") for c in res.tool_calls)
+
+
+@pytest.mark.anyio
+async def test_si_el_usuario_rechaza_no_se_ejecuta(monkeypatch):
+    seen = _fake_mel(monkeypatch, [
+        json.dumps({"tool": {"tool_id": "email", "action": "send_email",
+                             "params": {"to": "x@y.com", "subject": "s", "body": "b"}}}),
+        '{"answer": "No lo he enviado: no me diste permiso."}',
+    ])
+    gate = _FakeGate("rejected")
+
+    ejecutadas = []
+    monkeypatch.setattr(tool_manager, "execute",
+                        lambda **kw: ejecutadas.append(kw))
+
+    res = await toolloop.run(
+        instruction="envía un email", context="", allowed_tools=["email"],
+        tool_manager=tool_manager, max_iters=3, approval_gate=gate, approval_wait_s=5,
+    )
+
+    assert gate.asked                       # se preguntó
+    assert ejecutadas == []                 # y NO se ejecutó
+    assert "rechazado" in seen[-1]          # el modelo se entera y lo explica
+    assert res.ok
+
+
+@pytest.mark.anyio
+async def test_sin_respuesta_a_tiempo_sigue_sin_esa_accion(monkeypatch):
+    """La aprobación queda pendiente en la UI; el paso no se cuelga para siempre."""
+    seen = _fake_mel(monkeypatch, [
+        json.dumps({"tool": {"tool_id": "email", "action": "send_email",
+                             "params": {"to": "x@y.com", "subject": "s", "body": "b"}}}),
+        '{"answer": "Lo dejo pendiente de tu permiso."}',
+    ])
+    gate = _FakeGate("pending")
+
+    res = await toolloop.run(
+        instruction="envía un email", context="", allowed_tools=["email"],
+        tool_manager=tool_manager, max_iters=3, approval_gate=gate, approval_wait_s=2,
+    )
+
+    assert gate.asked
+    assert "pendiente" in seen[-1]
+    assert res.ok
 
 
 @pytest.mark.anyio

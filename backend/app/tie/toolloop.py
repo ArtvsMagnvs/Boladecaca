@@ -27,6 +27,7 @@
 # se quiere.
 from __future__ import annotations
 
+import asyncio
 import json
 from dataclasses import dataclass, field
 from typing import Any, Optional
@@ -69,9 +70,11 @@ Reglas que no puedes saltarte:
 1. Usa SOLO las herramientas y acciones del catálogo de abajo. No inventes ninguna.
 2. NO inventes datos. Si necesitas un dato del sistema (archivos, emails, procesos,
    contenido web...), OBTENLO con una herramienta. Nunca supongas su valor.
-3. Si una herramienta falla o te la deniegan, léelo, y busca otra vía o explica el
+3. Las marcadas [PIDE PERMISO AL USUARIO] puedes pedirlas con normalidad: se le
+   preguntará a él y decidirá. Si no las concede, respétalo y busca otra vía.
+4. Si una herramienta falla o te la deniegan, léelo, y busca otra vía o explica el
    límite en tu respuesta final. No lo ocultes.
-4. Cuando ya tengas lo necesario, responde con {"answer": ...} basándote SOLO en lo
+5. Cuando ya tengas lo necesario, responde con {"answer": ...} basándote SOLO en lo
    que las herramientas te devolvieron de verdad."""
 
 
@@ -79,10 +82,11 @@ def build_catalog(allowed_tools: list[str], tool_manager) -> list[dict]:
     """El catálogo de acciones que el modelo puede pedir en ESTE nodo:
     intersección de la whitelist del nodo con lo que hay registrado de verdad.
 
-    Solo se exponen acciones NO sensibles: las que requieren confirmación se
-    filtran aquí (ver `_is_sensitive`), de modo que el modelo ni siquiera las ve
-    como opción. La segunda barrera está en `run()`, por si el modelo se
-    inventara una.
+    Incluye TODAS las acciones permitidas al nodo, también las sensibles, cada
+    una marcada con `needs_approval`. Ocultarlas sería denegar sin preguntar: el
+    modelo ni siquiera podría proponerlas y el usuario no se enteraría de que
+    hacían falta. Lo correcto es que el modelo pueda pedirlas y que la decisión
+    la tome el USUARIO en el ApprovalGate (regla del usuario, 2026-07-19).
 
     Una whitelist VACÍA significa "este nodo no tiene herramientas", nunca
     "todas": ante la duda, ninguna. (La convención opuesta de `ToolManager`
@@ -96,13 +100,12 @@ def build_catalog(allowed_tools: list[str], tool_manager) -> list[dict]:
         if tool["tool_id"] not in allowed_tools:
             continue
         for action in tool.get("actions", []):
-            if _is_sensitive(tool, action):
-                continue
             catalog.append({
                 "tool_id": tool["tool_id"],
                 "action": action.get("id"),
                 "description": action.get("description", ""),
                 "params": action.get("params", {}),
+                "needs_approval": _is_sensitive(tool, action),
             })
     return catalog
 
@@ -128,11 +131,60 @@ def _format_catalog(catalog: list[dict]) -> str:
     lines = []
     for entry in catalog:
         params = ", ".join(f"{k}: {v}" for k, v in (entry["params"] or {}).items())
+        mark = "  [PIDE PERMISO AL USUARIO]" if entry.get("needs_approval") else ""
         lines.append(
             f'- tool_id="{entry["tool_id"]}" action="{entry["action"]}" — '
-            f'{entry["description"]}' + (f" | params: {params}" if params else "")
+            f'{entry["description"]}' + (f" | params: {params}" if params else "") + mark
         )
     return "\n".join(lines)
+
+
+async def _ask_permission(entry: dict, params: dict, approval_gate, *,
+                          instruction: str, wait_s: int) -> tuple[bool, str]:
+    """Pide permiso al USUARIO para una acción sensible y espera su respuesta.
+
+    Por qué se pregunta en vez de denegar (regla del usuario, 2026-07-19): el
+    planner marca los pasos sensibles que ANTICIPA, pero a mitad de ejecución el
+    modelo puede descubrir que necesita uno que no estaba previsto. Denegarlo en
+    silencio dejaría al usuario sin enterarse de que hacía falta. Así que se abre
+    un ApprovalGate real: queda persistido, notificado y auditado.
+
+    Si el usuario tiene ese permiso PRE-AUTORIZADO (A3b), el gate se auto-resuelve
+    al instante y esto no añade fricción — es el caso común.
+
+    Devuelve (concedido, motivo). La espera está acotada: si no contesta a
+    tiempo, se sigue sin esa acción y la respuesta final lo dirá — la aprobación
+    NO se cancela, sigue pendiente en la UI por si la quiere resolver luego."""
+    if approval_gate is None:
+        return False, "no hay canal de aprobación disponible en este contexto"
+
+    gate_id = await approval_gate.request_approval(
+        kind=f"tool.{entry['tool_id']}.{entry['action']}",
+        title=f"Permiso para {entry['tool_id']}.{entry['action']}",
+        summary=(f"Un paso de la misión necesita ejecutar "
+                 f"{entry['tool_id']}.{entry['action']} con: "
+                 f"{json.dumps(params, ensure_ascii=False)[:300]}\n\nPaso: {instruction[:200]}"),
+        # El gate ejecuta la acción solo si hay un ejecutor registrado para este
+        # action_type; aquí NO lo hay a propósito: quien ejecuta es el bucle, con
+        # el ToolManager y su whitelist. El gate solo aporta el SÍ/NO del usuario.
+        action_type="tie_tool_permission",
+        action_payload={"tool_id": entry["tool_id"], "action": entry["action"], "params": params},
+    )
+
+    deadline = asyncio.get_running_loop().time() + wait_s
+    while asyncio.get_running_loop().time() < deadline:
+        appr = approval_gate.get(gate_id)
+        status = getattr(appr, "status", None)
+        if status == "approved":
+            return True, "aprobado por el usuario"
+        if status == "rejected":
+            return False, "el usuario ha rechazado esta acción"
+        await asyncio.sleep(1.0)
+
+    return False, (
+        "he pedido permiso al usuario y sigue pendiente de respuesta; "
+        "la solicitud queda visible en Aithera para que la apruebe cuando quiera"
+    )
 
 
 def _truncate(text: str, limit: int = _MAX_OBSERVATION_CHARS) -> str:
@@ -148,6 +200,8 @@ async def run(
     allowed_tools: list[str],
     tool_manager,
     max_iters: int,
+    approval_gate=None,
+    approval_wait_s: int = 120,
     model_override: Optional[str] = None,
     project_id: Optional[int] = None,
     timeout_s: int = 60,
@@ -172,7 +226,7 @@ async def run(
     transcript.append(f"HERRAMIENTAS DISPONIBLES:\n{_format_catalog(catalog)}")
 
     tool_calls: list[dict] = []
-    allowed_pairs = {(e["tool_id"], e["action"]) for e in catalog}
+    by_pair = {(e["tool_id"], e["action"]): e for e in catalog}
 
     for iteration in range(1, max_iters + 1):
         res = await mel_complete(ExecutionRequest(
@@ -212,15 +266,29 @@ async def run(
         params = call.get("params") or {}
         transcript.append(f"HAS PEDIDO: {json.dumps(call, ensure_ascii=False)[:400]}")
 
-        # Segunda barrera del límite de seguridad: aunque el catálogo ya excluye
-        # las sensibles, el modelo podría inventarse una. Se rechaza con MOTIVO,
-        # y el motivo vuelve al modelo para que busque otra vía — no se corta el
-        # bucle en seco.
-        if (tool_id, action) not in allowed_pairs:
+        # ¿Está en el catálogo de este nodo? Si no, es una tool inventada o fuera
+        # de su whitelist: se rechaza con MOTIVO, y el motivo vuelve al modelo
+        # para que busque otra vía — no se corta el bucle en seco.
+        entry = by_pair.get((tool_id, action))
+        if entry is None:
             reason = _denial_reason(tool_id, action, allowed_tools, tool_manager)
             transcript.append(f"DENEGADO: {reason}")
             tool_calls.append({"tool_id": tool_id, "action": action, "denied": True, "reason": reason})
             continue
+
+        # Acción sensible → se PREGUNTA al usuario (nunca se deniega por
+        # nuestra cuenta). Con el permiso pre-autorizado (A3b) esto es instantáneo.
+        if entry.get("needs_approval"):
+            granted, reason = await _ask_permission(
+                entry, params, approval_gate,
+                instruction=instruction, wait_s=approval_wait_s,
+            )
+            tool_calls.append({"tool_id": tool_id, "action": action,
+                               "needed_approval": True, "granted": granted, "reason": reason})
+            if not granted:
+                transcript.append(f"SIN PERMISO para {tool_id}.{action}: {reason}")
+                continue
+            transcript.append(f"PERMISO CONCEDIDO para {tool_id}.{action}.")
 
         result = await tool_manager.execute(
             tool_id=tool_id,
@@ -256,10 +324,4 @@ def _denial_reason(tool_id, action, allowed_tools: list[str], tool_manager) -> s
         return f"la herramienta '{tool_id}' no existe. Usa solo las del catálogo."
     if allowed_tools and tool_id not in allowed_tools:
         return f"'{tool_id}' no está permitida en este paso. Permitidas: {', '.join(allowed_tools)}."
-    for a in tool.list_actions():
-        if a.get("id") == action:
-            return (
-                f"'{tool_id}.{action}' necesita la aprobación del usuario y no puedo "
-                f"ejecutarla por mi cuenta. Busca otra vía o indícalo en tu respuesta final."
-            )
     return f"'{tool_id}' no tiene la acción '{action}'. Usa solo las del catálogo."

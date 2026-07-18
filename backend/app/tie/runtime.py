@@ -167,6 +167,10 @@ class NullRuntime(AgentRuntime):
                 allowed_tools=list(task.tools),
                 tool_manager=tools,
                 max_iters=settings.TIE_TOOL_MAX_ITERS,
+                # El gate inyectado por el executor: una acción sensible que el
+                # planner no anticipó se le PREGUNTA al usuario, no se deniega.
+                approval_gate=approval_gate,
+                approval_wait_s=settings.TIE_TOOL_APPROVAL_WAIT_S,
                 model_override=_model_override_from_hint(task.model_hint),
                 project_id=task.project_id,
                 timeout_s=settings.TIE_TOOL_TIMEOUT_S,
