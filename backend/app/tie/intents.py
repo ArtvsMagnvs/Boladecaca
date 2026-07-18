@@ -50,10 +50,15 @@ Campos del JSON (todos obligatorios):
 - "memory_types": lista, subconjunto de ["mem_conversational","mem_personal","mem_project","mem_decision","mem_skill"].
 - "context_query": string con la consulta de memoria a lanzar, o null si no aplica.
 - "model_capability": qué tipo de modelo pedir, uno de ["chat","classify","extract","summarize","draft","reason","code","analyze"].
+- "explicit_model": si el usuario NOMBRA un modelo de IA concreto para usar (p.ej. "usa DeepSeek para esto", "responde con Claude", "a partir de ahora todo el proyecto con GPT"), un objeto {"name": <el nombre tal cual lo dijo>, "scope": <"task"|"project"|"unspecified">}; si NO nombra ningún modelo, null.
+    scope "task" = solo para ESTA petición o este mensaje.
+    scope "project" = de forma permanente para todo el proyecto ("a partir de ahora", "siempre", "para todo el proyecto").
+    scope "unspecified" = nombra un modelo pero no deja claro si es solo para esto o para siempre.
 
 Reglas: si dudas, usa type "conversational" y confidence baja. Para charla simple,
 requires_* en false, model_capability "chat". Para tareas complejas de varios pasos,
-requires_planning true y model_capability "reason". Devuelve SOLO el JSON."""
+requires_planning true y model_capability "reason". Si el usuario no menciona ningún
+modelo de IA por su nombre, "explicit_model" es null. Devuelve SOLO el JSON."""
 
 
 def _extract_json(text: str) -> Optional[dict]:
@@ -110,6 +115,15 @@ def _coerce_intent(data: dict, goal_fallback: str) -> Intent:
     ctx_q = data.get("context_query")
     ctx_q = str(ctx_q).strip() if ctx_q else None
 
+    # explicit_model (E2b): {name, scope} si el usuario nombró un modelo, o None.
+    explicit_model = None
+    em = data.get("explicit_model")
+    if isinstance(em, dict) and str(em.get("name") or "").strip():
+        scope = str(em.get("scope", "unspecified")).strip().lower()
+        if scope not in ("task", "project", "unspecified"):
+            scope = "unspecified"
+        explicit_model = {"name": str(em["name"]).strip(), "scope": scope}
+
     return Intent(
         type=itype,
         goal=goal,
@@ -124,6 +138,7 @@ def _coerce_intent(data: dict, goal_fallback: str) -> Intent:
         memory_types=_slist(data.get("memory_types")),
         context_query=ctx_q,
         model_capability=cap,
+        explicit_model=explicit_model,
         raw=data if isinstance(data, dict) else {},
     )
 

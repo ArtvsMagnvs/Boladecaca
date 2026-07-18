@@ -31,6 +31,82 @@ PLAN_ACTION_TYPE = "tie_plan"
 
 
 # ---------------------------------------------------------------------------
+# Override explícito de modelo (E2b, doc 19 §7b / doc 14 §3.5)
+# ---------------------------------------------------------------------------
+async def _resolve_explicit_model(intent: Intent, *, project_id: Optional[int]) -> Optional[dict]:
+    """Interpreta `intent.explicit_model` (el usuario nombró un modelo). Devuelve:
+      - {"action": "reply", "text": …}  → responder ESO y NO ejecutar (nombre no
+        resuelto, alcance por aclarar, o pin de proyecto ya aplicado).
+      - {"action": "force", "model_key": …} → seguir el flujo normal forzando ese
+        modelo para esta tarea.
+      - None → el usuario no nombró ningún modelo; flujo normal.
+    Nunca lanza (cualquier fallo → None, flujo normal)."""
+    em = intent.explicit_model
+    if not em or not em.get("name"):
+        return None
+    try:
+        import app.mel as mel
+
+        ref = mel.resolve_model_name(em["name"])
+        if ref is None:
+            # Nombre no resuelto → NUNCA inventar; decir qué SÍ hay (doc 19 §7b.2).
+            disponibles = ", ".join(sorted({m["label"] for m in mel.list_models()})) or "ninguno configurado"
+            return {"action": "reply", "text": (
+                f"No tengo configurado ningún modelo que se llame «{em['name']}». "
+                f"Modelos disponibles ahora mismo: {disponibles}. "
+                f"Puedes conectar más en Ajustes → Proveedores de IA."
+            )}
+
+        scope = em.get("scope", "unspecified")
+
+        if scope == "project":
+            if project_id:
+                mel.set_project_override(project_id, ref.key)
+                await _record_override_decision(project_id, ref.key)
+                return {"action": "reply", "text": (
+                    f"Hecho. A partir de ahora usaré {ref.provider} ({ref.model}) para todo este "
+                    f"proyecto. Puedes quitarlo cuando quieras en Ajustes → Inteligencia."
+                )}
+            # Chat general sin proyecto asociado: no hay a qué fijarlo.
+            return {"action": "reply", "text": (
+                f"Puedo usar {ref.provider} para este mensaje, pero esta conversación no está "
+                f"ligada a ningún proyecto, así que no puedo fijarlo «para todo el proyecto» desde "
+                f"aquí. Si quieres fijarlo a un proyecto, dímelo desde ese proyecto o en Ajustes → "
+                f"Inteligencia. ¿Lo uso solo para este mensaje?"
+            )}
+
+        if scope == "unspecified":
+            # Nombró un modelo pero no dijo si es puntual o permanente → preguntar,
+            # sin ejecutar nada este turno (aclaración de camino corto, sin gate).
+            return {"action": "reply", "text": (
+                f"¿Quieres que use {ref.provider} ({ref.model}) solo para esta petición, o a partir "
+                f"de ahora para todo? Dímelo y sigo."
+            )}
+
+        # scope == "task": forzar ese modelo para esta tarea/turno.
+        return {"action": "force", "model_key": ref.key}
+    except Exception as e:
+        logger.error(f"[tie] _resolve_explicit_model falló (sigo sin override): {type(e).__name__}: {e}")
+        return None
+
+
+async def _record_override_decision(project_id: int, model_key: str) -> None:
+    """Deja rastro del pin de proyecto en la Decision API (mismo patrón que el
+    planner con sus planes) — best-effort, nunca rompe."""
+    try:
+        from app.services import decision_service
+
+        await decision_service.store_decision(
+            title=f"Pin de modelo del proyecto {project_id}",
+            body=f"Modelo fijado: {model_key} (override explícito del usuario)",
+            reason="El usuario pidió usar este modelo para todo el proyecto.",
+            project=str(project_id),
+        )
+    except Exception as e:
+        logger.info(f"[tie] no se pudo registrar la decisión del pin (no crítico): {e!r}")
+
+
+# ---------------------------------------------------------------------------
 # Entradas públicas
 # ---------------------------------------------------------------------------
 async def handle(envelope) -> str:
@@ -70,6 +146,13 @@ async def handle_stream(text: str, *, channel: str = "web"):
         logger.error(f"[tie] handle_stream: clasificación falló: {type(e).__name__}: {e}")
         intent, prefetched = Intent.conversational_fallback(text), ""
 
+    # [E2b] ¿El usuario nombró un modelo? Aclaración/pin/forzado antes de nada.
+    explicit = await _resolve_explicit_model(intent, project_id=None)
+    if explicit and explicit["action"] == "reply":
+        yield ("text", explicit["text"])   # sin ejecutar nada este turno
+        return
+    force_model = explicit["model_key"] if explicit else None
+
     mission = new_mission(goal=intent.goal or text, source="user", channel=channel)
     trace_id = tracer.record_start(mission, channel=channel)
     tracer.record_intent(trace_id, intent)
@@ -79,7 +162,7 @@ async def handle_stream(text: str, *, channel: str = "web"):
     if intent.is_short_path:
         acc = ""
         task = AgentTask(id=AgentTask.new_id(), instruction=text, channel=channel,
-                         tools=intent.requires_tools)
+                         tools=intent.requires_tools, model_hint=force_model)
         runtime = get_runtime("null")
         async for chunk in runtime.stream_task(
             task, memory=memory_router, tools=tool_manager, approval_gate=approval_gate
@@ -96,7 +179,7 @@ async def handle_stream(text: str, *, channel: str = "web"):
     yield ("mission", trace_id)
     context = prefetched if not intent.memory_types else await _context_for(intent, text)
     try:
-        await _complex_path(text, intent, mission, trace_id, context)
+        await _complex_path(text, intent, mission, trace_id, context, force_model=force_model)
     except Exception as e:
         logger.error(f"[tie] handle_stream: pipeline complejo falló: {type(e).__name__}: {e}")
         mission.outcome = "He tenido un problema procesando eso."
@@ -120,15 +203,23 @@ async def submit_mission(
     tracer.record_intent(trace_id, intent)
     tracer.emit_started(mission)
 
+    # [E2b] Override de tarea si el goal nombra un modelo (el pin de PROYECTO se
+    # lee solo, vía mission.project_id → context_tags). No hay turno interactivo
+    # aquí: una aclaración de alcance ("reply") se ignora y se sigue normal.
+    explicit = await _resolve_explicit_model(intent, project_id=project_id)
+    force_model = explicit["model_key"] if explicit and explicit.get("action") == "force" else None
+
     context = await _context_for(intent, goal)
-    await _complex_path(goal, intent, mission, trace_id, context)
+    await _complex_path(goal, intent, mission, trace_id, context, force_model=force_model)
     return mission
 
 
 # ---------------------------------------------------------------------------
 # El pipeline
 # ---------------------------------------------------------------------------
-async def _run_pipeline(text: str, *, source: str, channel: Optional[str]) -> str:
+async def _run_pipeline(
+    text: str, *, source: str, channel: Optional[str], project_id: Optional[int] = None
+) -> str:
     # [1+2] Clasificar y pre-fetch de contexto EN PARALELO (doc 11 B.2): el
     # enricher no sabe todavía qué tipos pedir, así que hace una consulta general;
     # si el intent pide tipos concretos, el planner/nodo la afinará. Coste: una
@@ -138,6 +229,12 @@ async def _run_pipeline(text: str, *, source: str, channel: Optional[str]) -> st
     intent = await intent_task
     prefetched = await ctx_task
 
+    # [E2b] ¿El usuario nombró un modelo? Aclarar/pinear/forzar antes de nada.
+    explicit = await _resolve_explicit_model(intent, project_id=project_id)
+    if explicit and explicit["action"] == "reply":
+        return explicit["text"]   # aclaración/confirmación: no se ejecuta nada este turno
+    force_model = explicit["model_key"] if explicit else None
+
     mission = new_mission(goal=intent.goal or text, source=source, channel=channel)
     trace_id = tracer.record_start(mission, channel=channel)
     tracer.record_intent(trace_id, intent)
@@ -145,21 +242,25 @@ async def _run_pipeline(text: str, *, source: str, channel: Optional[str]) -> st
 
     # [3] Camino corto: ~80% de las queries no pagan planner ni grafo (doc 14 §6).
     if intent.is_short_path:
-        out = await _short_path(text, intent, channel)
+        out = await _short_path(text, intent, channel, model_key=force_model)
         tracer.record_end(trace_id, outcome=out[:2000])
         tracer.emit_completed(mission, ok=True, nodes=0)
         return out
 
     # [4] Complejo: contexto afinado por el intent (si pidió tipos concretos) y a planificar.
     context = prefetched if not intent.memory_types else await _context_for(intent, text)
-    await _complex_path(text, intent, mission, trace_id, context)
+    await _complex_path(text, intent, mission, trace_id, context, force_model=force_model)
     return mission.outcome or "(sin respuesta)"
 
 
 async def _complex_path(
-    text: str, intent: Intent, mission: Mission, trace_id: str, context: str
+    text: str, intent: Intent, mission: Mission, trace_id: str, context: str,
+    *, force_model: Optional[str] = None,
 ) -> None:
-    """planner → (gate del plan) → executor → responder. Escribe `mission.outcome`."""
+    """planner → (gate del plan) → executor → responder. Escribe `mission.outcome`.
+    `force_model` (E2b): si el usuario nombró un modelo para esta tarea, TODOS los
+    nodos del plan lo usan (`node.model_hint` = id concreto, que el executor
+    reenvía → el MEL lo trata como override)."""
     graph = await planner.plan(
         intent.goal or text, intent, context=context, mission_id=mission.id, trace_id=trace_id
     )
@@ -167,12 +268,18 @@ async def _complex_path(
         # El planner no logró un grafo válido ni tras el reintento → degradar al
         # camino corto (regla 11-B: nunca romper; el usuario recibe algo).
         logger.info("[tie] sin plan válido — degradando a camino corto")
-        out = await _short_path(text, intent, mission.channel)
+        out = await _short_path(text, intent, mission.channel, model_key=force_model)
         mission.outcome = out[:2000]
         mission.state = "done"
         tracer.record_end(trace_id, outcome=mission.outcome)
         tracer.emit_completed(mission, ok=True, nodes=0)
         return
+
+    # [E2b] Override de tarea: forzar el modelo elegido en TODOS los nodos del
+    # plan (el executor reenvía `node.model_hint` → el MEL lo trata como override).
+    if force_model:
+        for n in graph.nodes.values():
+            n.model_hint = force_model
 
     mission.graph_ids = [graph.id]
 
@@ -219,10 +326,13 @@ async def _execute_and_respond(graph: TaskGraph, mission: Mission, trace_id: str
 # ---------------------------------------------------------------------------
 # Camino corto
 # ---------------------------------------------------------------------------
-async def _short_path(text: str, intent: Intent, channel: Optional[str]) -> str:
+async def _short_path(
+    text: str, intent: Intent, channel: Optional[str], *, model_key: Optional[str] = None
+) -> str:
     """NullRuntime → respuesta. Se pasa por la interfaz AgentRuntime (no por
     chat_service directo): el camino corto ya ejercita el MISMO contrato que
-    usará HermesRuntime en V1.1."""
+    usará HermesRuntime en V1.1. `model_key` (E2b): si el usuario nombró un
+    modelo para este turno, va como `model_hint` (id concreto) → override del MEL."""
     from app.automation import approval_gate
     from app.memory import memory_router
     from app.tools import tool_manager
@@ -230,6 +340,7 @@ async def _short_path(text: str, intent: Intent, channel: Optional[str]) -> str:
     runtime = get_runtime("null")  # V1.1: routing por capabilities
     task = AgentTask(
         id=AgentTask.new_id(), instruction=text, channel=channel, tools=intent.requires_tools,
+        model_hint=model_key,
     )
     result = await runtime.execute_task(
         task, memory=memory_router, tools=tool_manager, approval_gate=approval_gate,

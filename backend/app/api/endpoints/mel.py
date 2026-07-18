@@ -37,3 +37,56 @@ def set_active_policy(body: SetActivePolicyBody):
     if not mel.set_active_policy(body.name):
         raise HTTPException(status_code=404, detail=f"Política desconocida: {body.name}")
     return {"active": body.name}
+
+
+@router.get("/models")
+def get_models():
+    """[E2b] Los (proveedor, modelo) configurados — pueblan los selectores de la
+    personalización de políticas. `key` = `provider:model` de las cadenas."""
+    return mel.list_models()
+
+
+# Personalización manual de políticas (petición del usuario, 2026-07-18).
+# La política Offline no es editable (es "solo local" por definición).
+_EDITABLE = {"economy", "quality", "custom"}
+
+
+class SetPrimaryBody(BaseModel):
+    capability: str
+    model_key: str | None = None   # None = "Automático" para esa capacidad
+
+
+@router.patch("/policies/{name}/primary")
+def set_policy_primary(name: str, body: SetPrimaryBody):
+    """[E2b] Fija el modelo primario de UNA capacidad en una política editable."""
+    if name not in _EDITABLE:
+        raise HTTPException(status_code=400, detail=f"Política no editable: {name}")
+    if not mel.set_policy_primary(name, body.capability, body.model_key):
+        raise HTTPException(status_code=400,
+                            detail="No se pudo aplicar (política/capacidad/modelo desconocido).")
+    return {"ok": True}
+
+
+@router.post("/policies/{name}/restore")
+def restore_policy(name: str):
+    """[E2b] Devuelve una política a sus valores por defecto (botón Restaurar)."""
+    if name not in _EDITABLE:
+        raise HTTPException(status_code=400, detail=f"Política no editable: {name}")
+    if not mel.restore_policy(name):
+        raise HTTPException(status_code=404, detail=f"Política desconocida: {name}")
+    return {"ok": True}
+
+
+# Overrides de modelo por proyecto (pin persistente, doc 19 §7b).
+@router.get("/overrides")
+def get_overrides():
+    """[E2b] Todos los pines de modelo por proyecto activos (lista borrable)."""
+    return mel.list_overrides()
+
+
+@router.delete("/overrides/{override_id}")
+def delete_override(override_id: int):
+    """[E2b] Borra un pin de proyecto (botón borrar en Ajustes → Inteligencia)."""
+    if not mel.clear_override(override_id):
+        raise HTTPException(status_code=404, detail="Override no encontrado")
+    return {"ok": True}

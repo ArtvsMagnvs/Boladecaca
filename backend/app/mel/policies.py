@@ -90,6 +90,25 @@ def compile_all(available: list[ModelRef]) -> dict[str, dict[str, list[str]]]:
     }
 
 
+def _compile_custom(available: list[ModelRef]) -> dict[str, list[str]]:
+    """El punto de partida de la política Personalizada = las mejores elecciones
+    por capacidad (calidad). El usuario la edita desde ahí; "Restaurar" vuelve
+    aquí. No es una política automática (no la recompila el catálogo sola) — es
+    el lienzo editable del usuario (petición directa del usuario, 2026-07-18)."""
+    return _compile_policy(PolicyName.QUALITY, available)
+
+
+def _order_for(name: str, available: list[ModelRef], cap: Capability) -> list[ModelRef]:
+    """El orden de candidatos que usa una política concreta para una capacidad —
+    lo comparte la compilación automática y la edición manual (para que los
+    respaldos de un modelo elegido a mano sigan el mismo criterio de esa política)."""
+    if name == PolicyName.OFFLINE.value:
+        return _order_quality([r for r in available if r.is_local], cap)
+    if name == PolicyName.ECONOMY.value:
+        return _order_economy(available, cap)
+    return _order_quality(available, cap)   # quality, custom
+
+
 def default_active(available: list[ModelRef]) -> str:
     """Economy si hay ≥1 local sano, si no Quality (doc 19 §5.2)."""
     return PolicyName.ECONOMY.value if any(r.is_local for r in available) else PolicyName.QUALITY.value
@@ -113,18 +132,27 @@ class PolicyStore:
 
         db = SessionLocal()
         try:
-            if db.query(MelPolicy).count() > 0:
-                return
-            compiled = compile_all(available)
+            existing = {r.name for r in db.query(MelPolicy.name).all()}
             active = default_active(available)
             now = datetime.utcnow()
-            for name, chains in compiled.items():
+            # Las 3 automáticas + la Personalizada (lienzo del usuario, = quality
+            # de partida). Idempotente por nombre: si ya existe una, no la pisa
+            # (respeta ediciones del usuario). Añade solo las que falten — así un
+            # backend que arrancó antes de existir 'custom' la crea al reiniciar.
+            seed = dict(compile_all(available))
+            seed[PolicyName.CUSTOM.value] = _compile_custom(available)
+            added = []
+            for name, chains in seed.items():
+                if name in existing:
+                    continue
                 db.add(MelPolicy(
                     name=name, version=1, compiled=chains, pristine=True,
-                    is_active=(name == active), created_at=now, updated_at=now,
+                    is_active=(name == active and not existing), created_at=now, updated_at=now,
                 ))
-            db.commit()
-            logger.info(f"[policies] compiladas 3 políticas; activa por defecto: {active}")
+                added.append(name)
+            if added:
+                db.commit()
+                logger.info(f"[policies] sembradas {added}; activa por defecto: {active}")
         except Exception as e:
             logger.error(f"[policies] ensure_compiled falló (no crítico): {type(e).__name__}: {e}")
             db.rollback()
@@ -199,6 +227,91 @@ class PolicyStore:
                      "pristine": r.pristine, "is_active": r.is_active} for r in rows]
         except Exception:
             return []
+        finally:
+            db.close()
+
+    # -----------------------------------------------------------------------
+    # Edición manual del usuario (petición directa, 2026-07-18) — el usuario
+    # puede escoger el modelo PRIMARIO por capacidad en Economy/Quality/Custom, y
+    # "Restaurar" vuelve a los valores por defecto. Al editar, la política deja
+    # de ser `pristine` (marca de "tocada por el usuario"; el compilador ya no la
+    # actualizará sola — doc 19 §5.3).
+    # -----------------------------------------------------------------------
+    def set_primary(self, name: str, capability_value: str,
+                    model_key: Optional[str], available: list[ModelRef]) -> bool:
+        """Fija el modelo PRIMARIO de UNA capacidad en una política. `model_key`
+        None = "Automático" (recompila esa capacidad desde el catálogo). Con un
+        model_key concreto, la cadena queda [elegido, …respaldos] donde los
+        respaldos siguen el orden propio de esa política (nunca deja al usuario
+        sin red de seguridad ante un fallo transitorio). Devuelve False si la
+        política o el modelo no existen."""
+        from app.db.database import SessionLocal
+        from app.mel.models import MelPolicy
+
+        by_key = {r.key: r for r in available}
+        if model_key is not None and model_key not in by_key:
+            return False
+        try:
+            cap = Capability(capability_value)
+        except ValueError:
+            return False
+
+        db = SessionLocal()
+        try:
+            row = db.query(MelPolicy).filter(MelPolicy.name == name).first()
+            if row is None:
+                return False
+            compiled = dict(row.compiled or {})
+            if model_key is None:
+                # Automático: recompila SOLO esta capacidad desde el catálogo.
+                if name == PolicyName.CUSTOM.value:
+                    single = _compile_custom(available)
+                else:
+                    single = _compile_policy(PolicyName(name), available)
+                compiled[capability_value] = single.get(capability_value, [])
+            else:
+                fallbacks = [r for r in _order_for(name, available, cap) if r.key != model_key]
+                chain = [by_key[model_key]] + fallbacks
+                compiled[capability_value] = [r.key for r in chain[:_MAX_CHAIN]]
+            row.compiled = compiled          # dict nuevo → SQLAlchemy detecta el cambio
+            row.pristine = False
+            row.version = (row.version or 1) + 1
+            row.updated_at = datetime.utcnow()
+            db.commit()
+            return True
+        except Exception as e:
+            logger.error(f"[policies] set_primary falló: {type(e).__name__}: {e}")
+            db.rollback()
+            return False
+        finally:
+            db.close()
+
+    def restore(self, name: str, available: list[ModelRef]) -> bool:
+        """Devuelve una política a sus valores por defecto: recompila las
+        automáticas desde el catálogo; la Personalizada vuelve a su lienzo base
+        (= Quality). La marca `pristine` de nuevo. No cambia cuál está activa."""
+        from app.db.database import SessionLocal
+        from app.mel.models import MelPolicy
+
+        db = SessionLocal()
+        try:
+            row = db.query(MelPolicy).filter(MelPolicy.name == name).first()
+            if row is None:
+                return False
+            if name == PolicyName.CUSTOM.value:
+                chains = _compile_custom(available)
+            else:
+                chains = _compile_policy(PolicyName(name), available)
+            row.compiled = chains
+            row.pristine = True
+            row.version = (row.version or 1) + 1
+            row.updated_at = datetime.utcnow()
+            db.commit()
+            return True
+        except Exception as e:
+            logger.error(f"[policies] restore falló: {type(e).__name__}: {e}")
+            db.rollback()
+            return False
         finally:
             db.close()
 

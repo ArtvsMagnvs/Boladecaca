@@ -33,6 +33,7 @@ from app.mel import executor as _executor
 from app.mel import decision as _decision
 from app.mel import registry as _registry
 from app.mel import research as _research
+from app.mel import overrides as _overrides
 from app.mel.policies import policy_store as _policy_store
 
 
@@ -68,6 +69,52 @@ def policies() -> list[dict]:
 def set_active_policy(name: str) -> bool:
     """Cambia la política activa (Settings → Inteligencia). True si existía."""
     return _policy_store.set_active(name)
+
+
+def list_models() -> list[dict]:
+    """Los (proveedor, modelo) realmente configurados, para que la UI pueble los
+    selectores de la personalización. `key` es el `provider:model` que usan las
+    cadenas de política (petición del usuario, 2026-07-18)."""
+    from app.ai.catalog import get_provider_info
+    out = []
+    for ref in _registry.list_available():
+        label = get_provider_info(ref.provider).get("label", ref.provider)
+        out.append({"key": ref.key, "provider": ref.provider, "model": ref.model,
+                    "is_local": ref.is_local, "label": label})
+    return out
+
+
+def set_policy_primary(name: str, capability: str, model_key: Optional[str]) -> bool:
+    """Fija el modelo primario de una capacidad en una política (None = auto).
+    Marca la política como editada. La usa Settings → Inteligencia."""
+    return _policy_store.set_primary(name, capability, model_key, _registry.list_available())
+
+
+def restore_policy(name: str) -> bool:
+    """Devuelve una política a sus valores por defecto (botón Restaurar)."""
+    return _policy_store.restore(name, _registry.list_available())
+
+
+# --- Override explícito por proyecto (E2b, doc 19 §7b) ---
+def set_project_override(project_id: int, model_id: str, capability: Optional[str] = None) -> bool:
+    """Pina un modelo para TODO un proyecto ("a partir de ahora todo con Claude").
+    `capability=None` = todas. Lo llama el TIE al confirmar alcance "proyecto"."""
+    return _overrides.set_project_override(project_id, model_id, capability)
+
+
+def overrides_for(project_id: int) -> list[dict]:
+    """Los pines de modelo de un proyecto (para la UI / consulta)."""
+    return _overrides.overrides_for(project_id)
+
+
+def list_overrides() -> list[dict]:
+    """Todos los pines activos (panel global de Inteligencia, borrables)."""
+    return _overrides.list_all()
+
+
+def clear_override(override_id: int) -> bool:
+    """Borra un pin por id (botón borrar). True si existía."""
+    return _overrides.clear_override(override_id)
 
 
 def resolve_model_name(text: str) -> Optional[ModelRef]:
@@ -110,4 +157,6 @@ __all__ = [
     "complete", "stream", "decision_trace", "recent_decisions",
     "policies", "set_active_policy", "resolve_model_name", "ensure_ready",
     "register_handlers", "capability_report", "refresh_capability_reports",
+    "list_models", "set_policy_primary", "restore_policy",
+    "set_project_override", "overrides_for", "list_overrides", "clear_override",
 ]

@@ -93,6 +93,14 @@ class Intent:
     # — qué modelo pedir al MEL —
     model_capability: str = "chat"     # ∈ MEL_CAPABILITIES; el router/MEL lo resuelve a un modelo
 
+    # — override explícito del usuario (E2b, doc 14 §3.5 / doc 19 §7b) —
+    # Si el mensaje NOMBRA un modelo ("usa DeepSeek para esto", "todo el proyecto
+    # con Claude"), el clasificador lo detecta aquí. `scope` ∈ "task" (solo este
+    # turno) | "project" (pin persistente) | "unspecified" (hay que preguntar).
+    # None = el usuario no nombró ningún modelo (el caso normal). Campo
+    # append-only (default None) — la firma congelada de Intent no cambia.
+    explicit_model: Optional[dict] = None  # {"name": str, "scope": str} | None
+
     # — trazabilidad —
     raw: dict = field(default_factory=dict)  # respuesta cruda del clasificador (debug/trace)
 

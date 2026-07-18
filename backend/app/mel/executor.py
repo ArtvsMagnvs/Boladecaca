@@ -57,18 +57,40 @@ def _apply_exclude(available: list[ModelRef], exclude: tuple[str, ...]) -> list[
     return [r for r in available if r.key not in skip]
 
 
-def _resolve_forced(req: ExecutionRequest, available: list[ModelRef]) -> tuple[Optional[ModelRef], bool]:
-    """Si el usuario pidió un modelo explícito (`model_override`, doc 19 §7b),
-    lo resuelve contra los disponibles. Devuelve (ref|None, requested): `requested`
-    True si había un override (para distinguir "no pidió nada" de "pidió algo no
-    disponible" → ExplicitModelUnavailable)."""
-    if not req.model_override:
-        return None, False
+def _resolve_forced(
+    req: ExecutionRequest, available: list[ModelRef]
+) -> tuple[Optional[ModelRef], str, bool]:
+    """Precedencia del control explícito (doc 19 §7b): override de TAREA
+    (`model_override`, orden inmediato del usuario) > pin de PROYECTO
+    (`mel_overrides`, preferencia persistente) > política.
+
+    Devuelve (ref|None, origin, hard):
+      - `origin` ∈ "user_explicit" | "project_pin" | "policy" (para la traza).
+      - `hard` True SOLO para el override de tarea: si ese modelo no está
+        disponible NUNCA se sustituye en silencio → ExplicitModelUnavailable
+        (el usuario lo pidió AHORA, se le dice AHORA). El pin de proyecto es
+        una preferencia persistente: si su modelo ya no está, degrada a la
+        política (mejor que dejar TODO el proyecto sin IA hasta que lo note)."""
+    from app.mel import overrides
+
     by_key = {r.key: r for r in available}
-    if req.model_override in by_key:
-        return by_key[req.model_override], True
-    ref = registry.resolve_model_name(req.model_override)
-    return ref, True
+
+    # 1) override de tarea (efímero, inmediato) — fallo duro si no está
+    if req.model_override:
+        ref = by_key.get(req.model_override) or registry.resolve_model_name(req.model_override)
+        return ref, "user_explicit", True
+
+    # 2) pin de proyecto (persistente) — degradación suave si su modelo no está
+    project_id = (req.context_tags or {}).get("project_id")
+    pin = overrides.override_model_for(project_id, req.capability.value) if project_id else None
+    if pin:
+        ref = by_key.get(pin) or registry.resolve_model_name(pin)
+        if ref is not None:
+            return ref, "project_pin", False
+        logger.warning(f"[executor] pin de proyecto {project_id} → «{pin}» no disponible; "
+                       f"degrado a política para {req.capability.value}")
+
+    return None, "policy", False
 
 
 async def complete(req: ExecutionRequest) -> ExecutionResult:
@@ -82,8 +104,8 @@ async def complete(req: ExecutionRequest) -> ExecutionResult:
 
     policy_store.ensure_compiled(available)   # defensivo (idempotente)
 
-    forced, requested = _resolve_forced(req, available)
-    if requested and forced is None:
+    forced, origin, hard = _resolve_forced(req, available)
+    if hard and forced is None:
         # El usuario pidió un modelo que no tiene → NUNCA sustituir en silencio.
         opciones = ", ".join(sorted({r.provider for r in available}))
         return ExecutionResult(
@@ -92,8 +114,7 @@ async def complete(req: ExecutionRequest) -> ExecutionResult:
         )
 
     chain = [forced] if forced else _chain_for(req, available)
-    trace = decision.decide(req, chain, breakers.is_closed,
-                            forced=forced, forced_origin="user_explicit" if forced else "policy")
+    trace = decision.decide(req, chain, breakers.is_closed, forced=forced, forced_origin=origin)
 
     if not chain:
         _record_async(req, None, ok=False, latency_ms=int((time.monotonic() - t0) * 1000),
@@ -176,14 +197,13 @@ async def stream(req: ExecutionRequest) -> AsyncIterator[str]:
         return
     policy_store.ensure_compiled(available)
 
-    forced, requested = _resolve_forced(req, available)
-    if requested and forced is None:
+    forced, origin, hard = _resolve_forced(req, available)
+    if hard and forced is None:
         yield f"[MEL: «{req.model_override}» no está configurado]"
         return
 
     chain = [forced] if forced else _chain_for(req, available)
-    trace = decision.decide(req, chain, breakers.is_closed,
-                            forced=forced, forced_origin="user_explicit" if forced else "policy")
+    trace = decision.decide(req, chain, breakers.is_closed, forced=forced, forced_origin=origin)
     ref = decision.ref_from_key(trace.chosen, available) if trace.chosen else None
     if ref is None:
         yield f"[MEL: sin modelo viable para {req.capability.value}]"

@@ -104,7 +104,7 @@ class ChatAnswer:
 
 async def answer(
     message: str, *, channel: str = "web", persist_chat_message: bool = True,
-    model_override: Optional[str] = None,
+    model_override: Optional[str] = None, project_id: Optional[int] = None,
 ) -> ChatAnswer:
     """Pipeline UNICO de chat (no streaming): system prompt (con memoria y
     fuentes) + MEL + persistencia. Usado por POST /api/chat (chat.py) y por el
@@ -135,6 +135,9 @@ async def answer(
     res = await mel_complete(ExecutionRequest(
         capability=Capability.CHAT, prompt=message, system_prompt=system_prompt,
         model_override=model_override,
+        # [E2b] project_id en context_tags → el MEL consulta el pin de proyecto
+        # (mel_overrides) si lo hay. Sin project_id, tags vacío (chat general).
+        context_tags={"project_id": project_id} if project_id else {},
     ))
     text = res.text or ""   # el MEL ya aplicó strip_reasoning (B21)
     model = res.served_by.model if res.served_by else None

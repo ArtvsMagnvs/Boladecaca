@@ -66,7 +66,7 @@ def _fake_node_execution(monkeypatch):
             self.model = "fake-node"
             self.tokens = 2
 
-    async def _answer(message, *, channel="web", persist_chat_message=True):
+    async def _answer(message, *, channel="web", persist_chat_message=True, **kwargs):
         return _Ans(f"hecho: {message}")
     monkeypatch.setattr(chat_service, "answer", _answer)
 
@@ -180,7 +180,7 @@ async def test_e2e_planner_falla_dos_veces_degrada_a_camino_corto(monkeypatch):
     _no_context(monkeypatch)
     _fake_node_execution(monkeypatch)
 
-    async def _garbage_answer(message, *, channel="web", persist_chat_message=True):
+    async def _garbage_answer(message, *, channel="web", persist_chat_message=True, **kwargs):
         class _Ans:
             text = "no tengo un plan, pero te respondo igualmente"
             model = "fake"

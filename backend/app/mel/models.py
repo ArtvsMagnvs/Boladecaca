@@ -68,6 +68,24 @@ class MelCapabilityReport(Base):
     created_at = Column(DateTime, default=datetime.utcnow, index=True)
 
 
+class MelOverride(Base):
+    """[E2b, doc 19 §7b] Pin PERSISTENTE de modelo por proyecto: "todo este
+    proyecto con Claude". Manda sobre la política, por debajo del override de
+    tarea suelta (`ExecutionRequest.model_override`, efímero). `capability=None`
+    = todas las capacidades del proyecto. `project_id` como Integer plano SIN
+    ForeignKey (mismo patrón que Milestone/Agent, doc 18)."""
+
+    __tablename__ = "mel_overrides"
+
+    id = Column(Integer, primary_key=True)
+    scope = Column(String(20), default="project")    # V1.0 solo "project"
+    project_id = Column(Integer, index=True)
+    capability = Column(String(20))                  # None = todas
+    model_id = Column(String(160))                   # "provider:model" resuelto
+    source = Column(String(30), default="user_explicit")
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
 class MelPolicy(Base):
     """Una política compilada (doc 19 §5.2), como JSON versionado. `name` ∈
     economy|quality|offline|custom. `compiled` = {capability → [model_key...]}

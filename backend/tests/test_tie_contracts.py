@@ -210,7 +210,7 @@ async def test_nullruntime_ejecuta_chat(monkeypatch):
         text = "respuesta del chat"
         model = "fake"
         tokens = 7
-    async def _answer(message, *, channel="web", persist_chat_message=True):
+    async def _answer(message, *, channel="web", persist_chat_message=True, **kwargs):
         return _Ans()
     monkeypatch.setattr(chat_service, "answer", _answer)
 
@@ -238,7 +238,7 @@ async def test_handle_camino_corto_responde_y_deja_traza(monkeypatch):
         text = "hola, soy Aithera"
         model = "fake"
         tokens = 5
-    async def _answer(message, *, channel="web", persist_chat_message=True):
+    async def _answer(message, *, channel="web", persist_chat_message=True, **kwargs):
         return _Ans()
     monkeypatch.setattr(chat_service, "answer", _answer)
 
@@ -285,7 +285,7 @@ async def test_submit_mission_crea_la_mision_y_deja_traza(monkeypatch):
         text = "misión atendida"
         model = "fake"
         tokens = 5
-    async def _answer(message, *, channel="web", persist_chat_message=True):
+    async def _answer(message, *, channel="web", persist_chat_message=True, **kwargs):
         return _Ans()
     monkeypatch.setattr(chat_service, "answer", _answer)
 

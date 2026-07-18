@@ -36,6 +36,7 @@ class AgentTask:
     node_id: Optional[str] = None                    # id del TaskNode origen (None en camino corto)
     tools: list[str] = field(default_factory=list)   # whitelist de tools del nodo
     model_hint: Optional[str] = None                 # "fast"|"smart"|capacidad MEL|id
+    project_id: Optional[int] = None                 # [E2b] para que el MEL vea el pin de proyecto
     channel: Optional[str] = None
     constraints: dict = field(default_factory=dict)  # {timeout_s, max_tool_calls, …}
     metadata: dict = field(default_factory=dict)
@@ -117,6 +118,16 @@ class AgentRuntime(ABC):
 # ---------------------------------------------------------------------------
 # NullRuntime — el runtime que hace V1.0 completo SIN Hermes (doc 10 §1)
 # ---------------------------------------------------------------------------
+def _model_override_from_hint(model_hint: Optional[str]) -> Optional[str]:
+    """[E2b] Un `model_hint` que es un id CONCRETO (`provider:model`, con ":")
+    viene de un override explícito del usuario → se reenvía al MEL como
+    `model_override` (máxima prioridad). Los hints abstractos ("fast"/"smart"/
+    una capacidad) NO son overrides: los resuelve la política, no el usuario."""
+    if model_hint and ":" in model_hint:
+        return model_hint
+    return None
+
+
 class NullRuntime(AgentRuntime):
     """Capabilities `{"chat","tool_use_basic"}`. `execute_task` delega el chat en
     `chat_service.answer()` (el pipeline único, V0.85 M4 — reusa memoria del MOS
@@ -155,6 +166,8 @@ class NullRuntime(AgentRuntime):
         try:
             answer = await chat_service.answer(
                 task.instruction, channel=task.channel or "tie", persist_chat_message=False,
+                model_override=_model_override_from_hint(task.model_hint),  # [E2b] override explícito
+                project_id=task.project_id,                                 # [E2b] pin de proyecto
             )
             dur = int((time.monotonic() - t0) * 1000)
             return AgentResult(
@@ -188,6 +201,7 @@ class NullRuntime(AgentRuntime):
             system_prompt = await chat_service.build_system_prompt(task.instruction)
             req = ExecutionRequest(
                 capability=Capability.CHAT, prompt=task.instruction, system_prompt=system_prompt,
+                model_override=_model_override_from_hint(task.model_hint),  # [E2b] override explícito
             )
             async for chunk in mel_stream(req):
                 if chunk:

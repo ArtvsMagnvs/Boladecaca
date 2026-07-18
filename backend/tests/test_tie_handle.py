@@ -80,7 +80,7 @@ def _fake_short_chat(monkeypatch, text="respuesta corta"):
             self.text = text
             self.model = "fake"
             self.tokens = 3
-    async def _answer(message, *, channel="web", persist_chat_message=True):
+    async def _answer(message, *, channel="web", persist_chat_message=True, **kwargs):
         return _A()
     monkeypatch.setattr(chat_service, "answer", _answer)
 

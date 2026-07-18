@@ -150,6 +150,7 @@ async def _execute_node(node: TaskNode, graph: TaskGraph, mission: Mission, trac
         node_id=node.id,
         tools=node.tools,
         model_hint=node.model_hint,
+        project_id=mission.project_id,   # [E2b] el MEL ve el pin de proyecto de la misión
         channel=mission.channel,
     )
     runtime = get_runtime(node.runtime)

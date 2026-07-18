@@ -4,7 +4,7 @@
 // V0.6 (Fase 3 Memory System): nueva seccion "Memoria" con stats, gestion
 // de preferencias del usuario y borrado del historial de ChromaDB.
 import { useState, useEffect } from "react";
-import { api, type AIProviderEntry, type ContextItem, type MemoryStats, type TelegramStatus, type ElevenLabsCfgStatus, type PermissionCatalog, type MelPolicy } from "@/lib/api";
+import { api, type AIProviderEntry, type ContextItem, type MemoryStats, type TelegramStatus, type ElevenLabsCfgStatus, type PermissionCatalog, type MelPolicy, type MelModel, type MelOverride } from "@/lib/api";
 import { useAppStore } from "@/store/useAppStore";
 import type { QualityTier } from "@/avcs";
 import { Toggle } from "@/components/Toggle";
@@ -545,68 +545,103 @@ const AUTONOMY_PROFILES: Array<{ id: string; label: string; hint: string }> = [
 ];
 
 /**
- * V1.0 (MEL E2, doc 22 §3·E2): Inteligencia — qué modelo ejecuta cada tipo de
+ * V1.0 (MEL E2/E2b, doc 22 §3): Inteligencia — qué modelo ejecuta cada tipo de
  * tarea. El usuario elige una POLÍTICA (no un modelo); el MEL decide el resto.
- * Versión mínima de E2: 3 tarjetas + selector de activa + la cadena por
- * capacidad. El builder Custom y las pantallas Actividad/Recomendaciones son V1.2.
+ * E2b (petición del usuario, 2026-07-18): además puede PERSONALIZAR el modelo
+ * primario por capacidad en Economía/Calidad/Personalizado, con "Restaurar" a
+ * los valores por defecto. "Sin conexión" no es editable (es solo-local).
  */
 const MEL_POLICY_META: Record<string, { label: string; hint: string }> = {
   economy: { label: "Economía", hint: "Prioriza el coste: usa el modelo local para tareas simples y el mejor de pago solo cuando hace falta." },
   quality: { label: "Calidad", hint: "El mejor modelo para cada tarea, sin importar el coste." },
   offline: { label: "Sin conexión", hint: "Solo modelos locales (sin internet). Puede no cubrir todas las tareas." },
+  custom: { label: "Personalizado", hint: "Tú decides el modelo de cada tarea. Parte de Calidad; edita lo que quieras y restaura cuando quieras." },
 };
 const MEL_CAP_LABEL: Record<string, string> = {
   chat: "Chat", classify: "Clasificar", extract: "Extraer datos", summarize: "Resumir",
   draft: "Redactar", reason: "Razonar", code: "Programar", analyze: "Analizar",
 };
+// Orden y whitelist de capacidades activas (las reservadas research/vision/
+// agentic existen en el backend pero no se muestran — no aportan al usuario aún).
+const MEL_CAPS_ORDER = ["chat", "classify", "extract", "summarize", "draft", "reason", "code", "analyze"];
+const MEL_POLICY_ORDER = ["economy", "quality", "offline", "custom"];
+const MEL_EDITABLE = new Set(["economy", "quality", "custom"]);
 
 function IntelligenceSettings() {
   const [policies, setPolicies] = useState<MelPolicy[] | null>(null);
+  const [models, setModels] = useState<MelModel[]>([]);
+  const [overrides, setOverrides] = useState<MelOverride[]>([]);
   const [expanded, setExpanded] = useState<string | null>(null);
+  const [editing, setEditing] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const load = async () => {
     try {
-      setPolicies(await api.getMelPolicies());
+      const [pols, mods, ovs] = await Promise.all([
+        api.getMelPolicies(), api.getMelModels(), api.getMelOverrides(),
+      ]);
+      setPolicies(pols);
+      setModels(mods);
+      setOverrides(ovs);
     } catch (e) {
       setError(e instanceof Error ? e.message : "No se pudieron cargar las políticas.");
     }
   };
+
+  const deleteOverride = async (id: number) => {
+    setBusy(true); setError(null);
+    try { await api.deleteMelOverride(id); await load(); }
+    catch (e) { setError(e instanceof Error ? e.message : "No se pudo borrar el pin."); }
+    finally { setBusy(false); }
+  };
   useEffect(() => { load(); }, []);
 
   const activate = async (name: string) => {
-    setBusy(true);
-    setError(null);
-    try {
-      await api.setActiveMelPolicy(name);
-      await load();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "No se pudo cambiar la política.");
-    } finally {
-      setBusy(false);
-    }
+    setBusy(true); setError(null);
+    try { await api.setActiveMelPolicy(name); await load(); }
+    catch (e) { setError(e instanceof Error ? e.message : "No se pudo cambiar la política."); }
+    finally { setBusy(false); }
+  };
+
+  const setPrimary = async (name: string, cap: string, modelKey: string | null) => {
+    setBusy(true); setError(null);
+    try { await api.setMelPolicyPrimary(name, cap, modelKey); await load(); }
+    catch (e) { setError(e instanceof Error ? e.message : "No se pudo cambiar el modelo."); }
+    finally { setBusy(false); }
+  };
+
+  const restore = async (name: string) => {
+    setBusy(true); setError(null);
+    try { await api.restoreMelPolicy(name); await load(); }
+    catch (e) { setError(e instanceof Error ? e.message : "No se pudo restaurar."); }
+    finally { setBusy(false); }
   };
 
   if (!policies) return <p className="text-xs text-ink-faint">Cargando…</p>;
 
-  // Muestra un modelo de forma legible: "proveedor" (quita el id largo).
-  const modelName = (key: string) => key.split(":")[0];
+  // Etiqueta legible de un model_key: el label del proveedor si lo conocemos.
+  const modelLabel = (key: string) => models.find((m) => m.key === key)?.label ?? key.split(":")[0];
 
   return (
     <div className="space-y-3">
       <p className="text-xs text-ink-dim">
         Elige cómo Aithera reparte las tareas entre tus modelos. Tú eliges la estrategia;
-        Aithera decide qué modelo concreto usa para cada cosa.
+        Aithera decide qué modelo concreto usa para cada cosa — o personaliza el modelo de cada tarea.
       </p>
       {error && (
         <div className="text-xs text-signal-error bg-signal-error/10 border border-signal-error/30 rounded-lg px-3 py-2">
           {error}
         </div>
       )}
-      {policies.map((p) => {
+      {policies
+        .slice()
+        .sort((a, b) => MEL_POLICY_ORDER.indexOf(a.name) - MEL_POLICY_ORDER.indexOf(b.name))
+        .map((p) => {
         const meta = MEL_POLICY_META[p.name] ?? { label: p.name, hint: "" };
         const isOpen = expanded === p.name;
+        const isEditing = editing === p.name;
+        const canEdit = MEL_EDITABLE.has(p.name);
         return (
           <div
             key={p.name}
@@ -617,6 +652,7 @@ function IntelligenceSettings() {
                 <div className="flex items-center gap-2">
                   <span className="text-sm font-medium text-ink">{meta.label}</span>
                   {p.is_active && <span className="text-[10px] px-2 py-0.5 rounded bg-signal-ok/15 text-signal-ok">Activa</span>}
+                  {canEdit && !p.pristine && <span className="text-[10px] px-2 py-0.5 rounded bg-base-700 text-ink-dim">Editada</span>}
                 </div>
                 <p className="text-[11px] text-ink-faint mt-0.5">{meta.hint}</p>
               </div>
@@ -630,28 +666,103 @@ function IntelligenceSettings() {
                 </button>
               )}
             </div>
-            <button
-              onClick={() => setExpanded(isOpen ? null : p.name)}
-              className="text-[10px] text-accent hover:underline mt-2"
-            >
-              {isOpen ? "ocultar detalle" : "ver qué modelo hace cada tarea"}
-            </button>
+
+            <div className="flex items-center gap-3 mt-2">
+              <button
+                onClick={() => { setExpanded(isOpen ? null : p.name); setEditing(null); }}
+                className="text-[10px] text-accent hover:underline"
+              >
+                {isOpen ? "ocultar detalle" : "ver qué modelo hace cada tarea"}
+              </button>
+              {canEdit && (
+                <button
+                  onClick={() => { setEditing(isEditing ? null : p.name); setExpanded(p.name); }}
+                  className="text-[10px] text-accent hover:underline"
+                >
+                  {isEditing ? "terminar de editar" : "personalizar"}
+                </button>
+              )}
+              {canEdit && !p.pristine && (
+                <button
+                  onClick={() => restore(p.name)}
+                  disabled={busy}
+                  className="text-[10px] text-signal-warn hover:underline disabled:opacity-50"
+                >
+                  Restaurar
+                </button>
+              )}
+            </div>
+
             {isOpen && (
-              <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1">
-                {Object.entries(p.compiled).map(([cap, chain]) => (
-                  <div key={cap} className="flex items-center justify-between text-[11px] py-0.5 border-b border-base-700/40">
-                    <span className="text-ink-dim">{MEL_CAP_LABEL[cap] ?? cap}</span>
-                    <span className="text-ink-faint truncate ml-2">
-                      {chain.length ? modelName(chain[0]) : "— (sin modelo)"}
-                      {chain.length > 1 && <span className="opacity-50"> → {chain.slice(1).map(modelName).join(" → ")}</span>}
-                    </span>
-                  </div>
-                ))}
+              <div className="mt-2 space-y-1">
+                {MEL_CAPS_ORDER.filter((cap) => cap in p.compiled).map((cap) => {
+                  const chain = p.compiled[cap] || [];
+                  return (
+                    <div key={cap} className="flex items-center justify-between gap-2 text-[11px] py-1 border-b border-base-700/40">
+                      <span className="text-ink-dim shrink-0 w-24">{MEL_CAP_LABEL[cap] ?? cap}</span>
+                      {isEditing ? (
+                        <div className="flex items-center gap-2 flex-1 justify-end">
+                          <select
+                            value={chain[0] ?? ""}
+                            disabled={busy}
+                            onChange={(e) => setPrimary(p.name, cap, e.target.value || null)}
+                            className="bg-base-900 border border-base-600 rounded px-2 py-1 text-ink text-[11px] max-w-[60%]"
+                          >
+                            <option value="">Automático</option>
+                            {models.map((m) => (
+                              <option key={m.key} value={m.key}>{m.label} · {m.model}</option>
+                            ))}
+                          </select>
+                        </div>
+                      ) : (
+                        <span className="text-ink-faint truncate ml-2 text-right">
+                          {chain.length ? modelLabel(chain[0]) : "— (sin modelo)"}
+                          {chain.length > 1 && <span className="opacity-50"> → {chain.slice(1).map(modelLabel).join(" → ")}</span>}
+                        </span>
+                      )}
+                    </div>
+                  );
+                })}
+                {isEditing && (
+                  <p className="text-[10px] text-ink-faint pt-1">
+                    "Automático" deja que Aithera elija según el catálogo. Los respaldos (→) se
+                    añaden solos para que nunca te quedes sin respuesta si un modelo falla.
+                  </p>
+                )}
               </div>
             )}
           </div>
         );
       })}
+
+      {/* Pines de modelo por proyecto (override explícito, E2b) — borrables */}
+      {overrides.length > 0 && (
+        <div className="rounded-xl p-3 border border-base-700 bg-base-800/40">
+          <p className="text-xs font-medium text-ink mb-1">Modelo fijado por proyecto</p>
+          <p className="text-[11px] text-ink-faint mb-2">
+            Cuando le pides a Aithera "usa este modelo para todo el proyecto", queda fijado aquí.
+            Bórralo para volver a la política normal.
+          </p>
+          <div className="space-y-1">
+            {overrides.map((o) => (
+              <div key={o.id} className="flex items-center justify-between text-[11px] py-1 border-b border-base-700/40">
+                <span className="text-ink-dim">
+                  Proyecto #{o.project_id}
+                  {o.capability && <span className="text-ink-faint"> · {MEL_CAP_LABEL[o.capability] ?? o.capability}</span>}
+                  <span className="text-ink-faint"> → {o.model_id.split(":")[0]}</span>
+                </span>
+                <button
+                  onClick={() => deleteOverride(o.id)}
+                  disabled={busy}
+                  className="text-signal-warn hover:underline disabled:opacity-50"
+                >
+                  Borrar
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

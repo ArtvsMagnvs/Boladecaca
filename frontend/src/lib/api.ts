@@ -592,6 +592,25 @@ export interface MelPolicy {
   is_active: boolean;
 }
 
+// Un (proveedor, modelo) configurado — para los selectores de personalización.
+export interface MelModel {
+  key: string;        // "provider:model" — lo que va en las cadenas
+  provider: string;
+  model: string;
+  is_local: boolean;
+  label: string;      // "MiniMax", "Ollama (Local)", ...
+}
+
+// Un pin de modelo por proyecto (override explícito persistente, E2b).
+export interface MelOverride {
+  id: number;
+  project_id: number;
+  capability: string | null;   // null = todas las capacidades del proyecto
+  model_id: string;            // "provider:model"
+  scope: string;
+  source: string;
+}
+
 export const api = {
   // --- Salud del backend ---
   async health(): Promise<boolean> {
@@ -1266,13 +1285,24 @@ export const api = {
       body: JSON.stringify({ profile }),
     }),
 
-  // --- MEL: Inteligencia (V1.0 E2) ---
+  // --- MEL: Inteligencia (V1.0 E2 / E2b) ---
   getMelPolicies: () => request<MelPolicy[]>("/mel/policies"),
   setActiveMelPolicy: (name: string) =>
     request<{ active: string }>("/mel/policies/active", {
       method: "POST",
       body: JSON.stringify({ name }),
     }),
+  getMelModels: () => request<MelModel[]>("/mel/models"),
+  setMelPolicyPrimary: (name: string, capability: string, model_key: string | null) =>
+    request<{ ok: boolean }>(`/mel/policies/${name}/primary`, {
+      method: "PATCH",
+      body: JSON.stringify({ capability, model_key }),
+    }),
+  restoreMelPolicy: (name: string) =>
+    request<{ ok: boolean }>(`/mel/policies/${name}/restore`, { method: "POST" }),
+  getMelOverrides: () => request<MelOverride[]>("/mel/overrides"),
+  deleteMelOverride: (id: number) =>
+    request<{ ok: boolean }>(`/mel/overrides/${id}`, { method: "DELETE" }),
 
   // --- TIE: misiones (V1.0 T4b) ---
   getMissions: (state?: MissionState) =>

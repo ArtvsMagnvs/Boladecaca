@@ -206,7 +206,7 @@ async def test_camino_corto_no_invoca_el_planner(monkeypatch):
         model = "fake"
         tokens = 3
 
-    async def _answer(message, *, channel="web", persist_chat_message=True):
+    async def _answer(message, *, channel="web", persist_chat_message=True, **kwargs):
         return _A()
     monkeypatch.setattr(chat_service, "answer", _answer)
 
