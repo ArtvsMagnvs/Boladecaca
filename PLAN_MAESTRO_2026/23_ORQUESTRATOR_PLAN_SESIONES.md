@@ -1,399 +1,590 @@
 # 23 — Plan de sesiones: bloque ORQUESTRATOR (V1.0, cierre en `0.9.5`)
 
 > **Qué es este bloque**: el Orquestador es el vínculo directo Usuario → Aithera.
-> Recibe una orden y la convierte en trabajo real: planifica, crea lo que haga
-> falta dentro de Aithera (proyectos, tareas, agentes, automatizaciones, reglas),
-> ejecuta con herramientas de verdad, se para a preguntar cuando toca, y avisa
-> por el canal que el usuario prefiera. **No puede estar capado en nada que
-> Aithera sepa hacer**: si Aithera puede hacerlo, el Orquestador puede orquestarlo.
+> Recibe una orden —por compleja que sea—, la **descompone en objetivos**, lanza
+> **varias misiones del TIE en paralelo**, las supervisa, se para a preguntar
+> cuando toca, y **consolida** todo en una respuesta. **No puede estar capado en
+> nada que Aithera sepa hacer**: si Aithera puede hacerlo, el Orquestador puede
+> orquestarlo.
 >
-> **Consume**: doc 11-B (Orchestrator RFC), doc 14 (TIE/Cognitive Runtime, en
-> especial §3.4 y §4.3c), doc 10 (AgentRuntime), doc 18 (WPMS), doc 11-A
-> (Automation Engine), doc 19 (MEL), doc 17 (bus de eventos), doc 16 (disciplina
-> modular), doc 15 (Learner, solo puntos de enganche).
+> **Decisión de arquitectura (usuario, 2026-07-19)**: el Orquestador es una
+> **capa POR ENCIMA del TIE**, no un renombrado del TIE. Ver §0 — es lo que
+> cambia respecto a la versión anterior de este documento.
 >
-> **NO cubre** (planes aparte, por decisión explícita del usuario): el **MVP-beta**
-> (sprint O5 de doc 11: instalador NSIS, auto-start del backend, onboarding, tag
-> `1.0.0`) y el **escáner de hardware** del PC del usuario para recomendar modelos
-> locales. Ambos van después de este bloque.
+> **Consume**: doc 11-B (Orchestrator RFC), doc 14 (TIE, en especial §3.4, §3.6
+> y §4.3c), doc 10 (AgentRuntime), doc 18 (WPMS), doc 11-A (Automation Engine),
+> doc 19 (MEL), doc 17 (bus de eventos), doc 16 (disciplina modular), doc 15
+> (Learner, solo puntos de enganche).
 >
-> **Regla heredada (docs 11/14/16)**: el mejor diseño posible con la
-> implementación MÍNIMA funcional. Contratos completos hoy; código solo el
-> necesario. Sin sobreingeniería.
+> **NO cubre** (planes aparte, decisión explícita del usuario): el **MVP-beta**
+> (instalador NSIS, auto-start del backend, onboarding, tag `1.0.0`) y el
+> **escáner de hardware** para recomendar modelos locales.
+>
+> **Regla heredada (docs 11/14/16 + PRINCIPIOS_KARPATHY §2)**: el mejor diseño
+> posible con la implementación MÍNIMA funcional. Contratos completos hoy;
+> código solo el necesario. Sin sobreingeniería, sin abstracciones de un solo
+> uso, sin "flexibilidad" no pedida.
 
 ---
 
-## 1. Auditoría del código real (2026-07-18) — deltas frente a los docs
+## 0. El cambio de arquitectura: por qué el TIE no basta
 
-Antes de planificar se auditó el repo real (v0.9.2 + tools + modelos locales).
-Esta sección es la más importante del documento: **corrige supuestos de los docs
-que, de darse por buenos, harían fracasar el bloque entero.**
+**El problema, con un caso real del usuario.** Un solo mensaje puede contener:
+investigar avances en IA · arrancar el proyecto X · crear 15 canales de YouTube
+(con investigación de nicho, animación, estrategia y monetización) · responder
+un email concreto · avisar a un amigo por WhatsApp cuando todo termine · y poner
+al día del estado del proyecto Open Tibia SaaS.
 
-| # | Supuesto de los docs | Realidad en el código | Consecuencia para el plan |
+**Qué pasa hoy** (verificado en el código, no supuesto):
+
+| Límite actual | Dónde está | Consecuencia con ese mensaje |
+|---|---|---|
+| 1 mensaje = 1 misión = 1 grafo | `pipeline._run_pipeline` crea UNA `Mission` | El planner colapsa 6 objetivos heterogéneos en 2-3 nodos vagos y pierde la mayoría |
+| Ejecución secuencial | `executor.run` consume `ready_set()` y ejecuta **un nodo por iteración** (ola=1, por diseño de V1.0) | El email esperaría a que terminen los 15 canales |
+| Un gate bloquea la misión entera | `executor.run` retorna con `state="waiting"` | Aprobar el email bloquearía el estado de Open Tibia |
+| Sin anidamiento | Un nodo no puede abrir su propia misión | "15 canales" necesita planificar dentro de planificar |
+
+**Por qué el TIE se diseñó así — y por qué no fue un error.** Doc 14 §3.6 lo
+dice literal: *"en V1.0 la misión es IMPLÍCITA: 1 query compleja = 1 misión = 1
+grafo = 1 fila"*. El TIE v1 es el **motor de UNA misión**, y se construyó con
+los ganchos puestos para lo que viene: `Mission` es entidad de primera clase con
+`id`/`state`/`source`, `submit_mission()` es entrada programática pública,
+`_NODE_TASKS` ya indexa por `mission.id` (soporta varias en vuelo), y el
+executor está estructurado para `asyncio.gather` + semáforo *"sin cambiar el
+algoritmo"* (doc 14, V1.2). **Lo que falta no es el motor: es quien decide que
+ahí hay 6 misiones y no 1.** Eso es este bloque.
+
+**La arquitectura acordada:**
+
+```
+Usuario ──► ORQUESTRATOR   (descompone · prioriza · respeta dependencias · consolida)
+                 ├── TIE #1  investigar avances IA          ┐
+                 ├── TIE #2  responder email                │ concurrentes
+                 ├── TIE #3  estado Open Tibia SaaS         ┘
+                 ├── TIE #4  desarrollo Proyecto X          (largo)
+                 └── TIE #5  serie de 15 canales YouTube    (largo)
+                              └── sub-misiones anidadas por canal/estrategia
+                 ▼
+             consolidación ──► respuesta única al usuario
+```
+
+**Las tres decisiones, en tres capas** (esto zanja la duda del usuario sobre
+quién elige qué):
+
+| Capa | Decide | Dónde |
+|---|---|---|
+| **Orquestador** | **qué misiones** hay y en qué orden/paralelo | `app/orchestrator/` (R2) |
+| **TIE** | **qué pasos y qué herramientas** dentro de una misión | `app/tie/` (R1 cierra el hueco de tools) |
+| **MEL** | **qué modelo** ejecuta cada llamada | `app/mel/` (ya cerrado) |
+
+**Regla de no-regresión (crítica)**: el ~80% de los mensajes son de un solo
+objetivo. Para ellos el Orquestador **delega en `tie.handle` sin añadir NI UNA
+llamada al LLM ni un milisegundo de latencia** — mismo camino corto, mismo
+streaming de hoy. La capa nueva solo se activa cuando de verdad hay varios
+objetivos (§R2, detección sin coste).
+
+---
+
+## 1. Auditoría del código real (2026-07-19) — deltas frente a los docs
+
+Antes de planificar se auditó el repo real (`0.9.2` + tools + modelos locales +
+multi-proveedor). Esta sección es la más importante del documento: **corrige
+supuestos que, de darse por buenos, harían fracasar el bloque entero.**
+
+| # | Supuesto de los docs | Realidad en el código | Consecuencia |
 |---|---|---|---|
-| **Δ1** | doc 11-B planifica un módulo `app/orchestrator/` con 6 componentes (intents, enricher, planner, executor, responder, tracer, runtime) y sprints O1-O5 | **YA EXISTE, con otro nombre**: es `app/tie/`, construido en T1-T5 y cerrado en `0.9.2`. Los 6 componentes están, uno a uno. Doc 21 lo dice literal: "(Orchestrator = TIE v1, sprints O1-O4)" | **NO se crea ningún módulo nuevo `orchestrator/`**. Los sprints O1-O4 están HECHOS. Este plan numera **R1-R7** para no chocar con esa numeración muerta. O5 (MVP-beta) queda fuera |
-| **Δ2** | doc 11-B §B.2 paso [4]: "executor: por step → runtime.execute_task(step, memory, tools, gate)" — se da por hecho que el runtime USA las tools | **EL TIE NUNCA HA EJECUTADO UNA SOLA TOOL.** `NullRuntime.execute_task` solo llama al ToolManager si el nodo trae `metadata.tool_call` con `tool_id`/`action`/`params`, y **NADIE escribe nunca ese campo**: el planner solo emite `tools: [nombres]` (una whitelist). Grep en todo `app/`: la única aparición es la LECTURA en `runtime.py:150`. **Verificado en vivo**: la misión "lista los archivos de mi carpeta y dime cuántos hay" terminó `done`, con 0 tools ejecutadas y **5 archivos inventados** | **R1 es el sprint más crítico del bloque.** Sin él, las 14 tools son inalcanzables y Aithera alucina con seguridad en toda tarea que requiera una herramienta. Es un fallo de honestidad, no solo de funcionalidad |
-| **Δ3** | doc 11-B §B.4: "`AgentTaskAction` del AE delega en el Orchestrator" | `AgentTaskAction` sigue llamando a `agent_manager.create_execution()` (V0.9 A3). La deuda está anotada en doc 21 §5, sin hacer | **R3** hace el cambio (es de una línea, pero exige que R1 exista antes: delegar a un cerebro que no sabe usar tools no aporta nada) |
-| **Δ4** | doc 11-B da por hecho que un agente "ejecuta" tareas | `agent_manager._run_execution()` es el **placeholder de V0.5**: ignora la tarea del usuario y ejecuta acciones fijas de demo (`list_dir`, `list_scripts`, `git status`) según qué tools tenga asignadas. Comentario en el propio código: "En V0.6 esto vendrá del LLM" | **R3** lo sustituye por delegación real al TIE. Los agentes heredan así las 14 tools y el MEL sin lógica nueva |
-| **Δ5** | doc 14 §4.3c diseña el orquestador POR PROYECTO con su frontera de autoridad | Solo existe la **columna** `Agent.role` (V0.87 W2e, nullable). Cero lógica de delegación, cero enforcement, cero creación guiada — el propio doc lo admite | **R4** lo implementa de verdad (delegación + autoridad acotada + creación guiada) |
-| **Δ6** | El usuario pide que Aithera cree proyectos/tareas/agentes/automatizaciones/reglas **desde el chat** | **No está diseñado en ningún doc.** Es alcance nuevo. Lo que SÍ existe y hay que reusar: `workspace_service` (proyectos/tareas/milestones), `agent_manager` (CRUD agentes), `automation_engine` + `seed_builtin_rules` (reglas), `EmailTool.add_auto_reply_rule`, `scheduler_service` (cron) | **R2** crea las tools de autogestión. Regla dura: **son ADAPTADORES**, nunca reimplementan lógica de negocio (mismo criterio que `WorkspaceAction` del AE, doc 18 §7) |
-| **Δ7** | El usuario pide pausas en hitos "testeables por el usuario" + aviso por Telegram | Existen las piezas: `ApprovalGate` (A1) reanudable, `gateway.notify()` (A1) para push sin envelope entrante, `NodeState.WAITING_APPROVAL` (T3), permisos pre-autorizados (A3b). **No existe** el concepto de "hito verificable" ni la preferencia de canal de notificación | **R5** los añade sobre lo que ya hay — sin inventar un mecanismo de pausa nuevo |
-| **Δ8** | El usuario pide que el chat sepa todo lo que Aithera puede hacer, sin revelar su código | `chat_service.build_system_prompt()` inyecta memoria del MOS y preferencias, pero **nada sobre las capacidades del propio sistema**. El catálogo de tools ya es introspectable (`tool_manager.list_tools()` → 14 tools/91 acciones) | **R6** genera el "mapa de capacidades" DESDE el código (no una lista escrita a mano que se quede obsoleta) y lo inyecta acotado |
-| **Δ9** | El usuario pide navegación fluida (buscar, abrir páginas, poner vídeo/música) | `browser` (Playwright real) y `search` (Brave/SerpAPI) existen y están verificados. **Limitación real ya medida**: `browser.google_search` funciona en código pero Google bloquea el tráfico headless → buscar se hace con `search`, no con el navegador | **R6** cablea el flujo correcto (search → abrir URL con browser), documentando el límite en vez de fingir que Google funciona |
-| **Δ10** | ¿Quién elige la herramienta, el MEL o el TIE? | **El MEL elige MODELOS, no tools** (doc 19 §1: "el resto del sistema pide CAPACIDADES, el MEL decide QUÉ MODELO"). No tiene ni catálogo de tools ni forma de verlas | **Decidido: la elección de tool es del TIE.** Concretamente del **runtime** en tiempo de ejecución (R1), no del planner: los parámetros de una tool dependen del resultado del paso anterior, y planificarlos por adelantado es frágil. El planner sigue acotando QUÉ tools puede tocar cada nodo (`node.tools`), que es la frontera de seguridad |
+| **Δ1** | doc 11-B planifica `app/orchestrator/` con 6 componentes (intents, enricher, planner, executor, responder, tracer) y sprints O1-O5 | Esos 6 componentes **YA EXISTEN con otro nombre**: son `app/tie/`, cerrados en `0.9.2`. Doc 21 lo dice literal: *"(Orchestrator = TIE v1, sprints O1-O4)"* | Los O1-O4 de doc 11-B están HECHOS. **`app/orchestrator/` SÍ se crea, pero con otro contenido**: la capa de misiones múltiples (§0), que doc 11-B no contempla. Numeración R1-R7 para no chocar con la muerta |
+| **Δ2** | doc 11-B §B.2 paso [4] da por hecho que el runtime USA las tools | **EL TIE NUNCA HA EJECUTADO UNA SOLA TOOL.** `NullRuntime.execute_task` solo llama al ToolManager si el nodo trae `metadata.tool_call`, y **NADIE escribe jamás ese campo** (el planner solo emite `tools: [nombres]`, una whitelist). Grep en todo `app/`: la única aparición es la LECTURA en `runtime.py:150`. **Verificado en vivo**: la misión *"lista los archivos de mi carpeta y dime cuántos hay"* terminó `done`, con **0 tools ejecutadas y 5 archivos inventados** | **R1 es bloqueante.** Sin él las 14 tools son inalcanzables y Aithera alucina con seguridad en toda tarea que requiera una herramienta. Es un fallo de **honestidad**, no solo de funcionalidad |
+| **Δ3** | 1 mensaje = 1 misión (doc 14 §3.6) | Correcto hoy, pero **insuficiente** para el uso real (§0) | **R2** crea la capa de descomposición + concurrencia + anidamiento |
+| **Δ4** | doc 11-B §B.4: "`AgentTaskAction` del AE delega en el Orchestrator" | Sigue llamando a `agent_manager.create_execution()` (V0.9 A3). Deuda anotada en doc 21 §5, sin hacer | **R4** (cambio de una línea, pero exige R1: delegar a un cerebro que no sabe usar tools no aporta nada) |
+| **Δ5** | doc 11-B da por hecho que un agente "ejecuta" tareas | `agent_manager._run_execution()` es el **placeholder de V0.5**: ignora la tarea y ejecuta acciones fijas de demo (`list_dir`, `list_scripts`, `git status`) según las tools asignadas. El propio código dice *"En V0.6 esto vendrá del LLM"* | **R4** lo sustituye por delegación real al TIE. Los agentes heredan las 14 tools y el MEL sin lógica nueva |
+| **Δ6** | doc 14 §4.3c diseña el orquestador POR PROYECTO con frontera de autoridad | Solo existe la **columna** `Agent.role` (V0.87 W2e, nullable). Cero lógica, cero enforcement | **R4** lo implementa (delegación + autoridad acotada) |
+| **Δ7** | El usuario pide que Aithera cree proyectos/tareas/agentes/automatizaciones/reglas **desde el chat** | **No está diseñado en ningún doc.** Alcance nuevo. Lo que SÍ existe y hay que reusar: `workspace_service`, `agent_manager`, `automation_engine` + `seed_builtin_rules`, `EmailTool.add_auto_reply_rule`, `scheduler_service` | **R3** crea las tools de autogestión. Regla dura: **son ADAPTADORES**, nunca reimplementan lógica de negocio (mismo criterio que `WorkspaceAction`, doc 18 §7) |
+| **Δ8** | El usuario pide pausas en hitos "testeables por él" + aviso por Telegram | Existen las piezas: `ApprovalGate` (A1) reanudable, `gateway.notify()` (A1), `NodeState.WAITING_APPROVAL` (T3), permisos pre-autorizados (A3b). **No existe** el concepto de "hito verificable" ni preferencia de canal | **R5** los añade sobre lo que ya hay — sin inventar un mecanismo de pausa nuevo |
+| **Δ9** | El usuario pide que el chat sepa todo lo que Aithera puede hacer, sin revelar su código | `chat_service.build_system_prompt()` inyecta memoria y preferencias, pero **nada sobre las capacidades del sistema**. El catálogo de tools ya es introspectable (`tool_manager.list_tools()` → 14 tools/91 acciones) | **R6** genera el mapa de capacidades **DESDE el código** (no una lista a mano que se quede obsoleta) |
+| **Δ10** | El usuario pide navegación fluida (buscar, abrir páginas, poner vídeo/música) | `browser` (Playwright real) y `search` (Brave/SerpAPI) existen y están verificados. **Límite real ya medido**: `browser.google_search` funciona en código pero Google bloquea el tráfico headless → buscar se hace con `search`, no con el navegador | **R6** cablea el flujo correcto (search → abrir URL con browser), documentando el límite en vez de fingir |
+| **Δ11** | ¿Quién elige la herramienta, el MEL o el TIE? | **El MEL elige MODELOS, no tools** (doc 19 §1). No tiene catálogo de tools ni forma de verlas | **Decidido: la elige el TIE**, y concretamente el **runtime en tiempo de ejecución** (R1), no el planner: los parámetros de una tool dependen del resultado del paso anterior, y fijarlos por adelantado es frágil. El planner sigue acotando QUÉ tools puede tocar cada nodo (`node.tools`) — esa es la frontera de seguridad |
 
 **Lo que YA está listo y este bloque reusa tal cual** (cero trabajo nuevo):
-`ToolManager` con 14 tools/91 acciones + whitelist por agente + timeout duro +
-log de auditoría; `ApprovalGate` reanudable + permisos A3b; `gateway.notify`;
+`ToolManager` (14 tools/91 acciones + whitelist por agente + timeout duro + log
+de auditoría); `ApprovalGate` reanudable + permisos A3b; `gateway.notify`;
 `events.py`; `scheduler_service` (APScheduler); `workspace_service` con sus side
 effects y eventos; el MEL completo (política activa, override de tarea, pin de
-proyecto, modelos locales especializados); el TIE entero (planner→grafo→executor
-con checkpoint/gates/kill-switch→responder→tracer) y su UI de Misiones.
+proyecto, multi-proveedor y modelos locales especializados); el TIE entero
+(planner → grafo → executor con checkpoint/gates/kill-switch → responder →
+tracer) y su UI de Misiones.
 
 ---
 
 ## 2. Estructura de código objetivo
 
 ```
+backend/app/orchestrator/          ← MÓDULO NUEVO (R2): la capa de misiones
+├── __init__.py        # API pública: handle(envelope), handle_stream(...), run_status(id)
+├── contracts.py       # Objective, OrchestrationRun — CONGELADOS (R2)
+├── decomposer.py      # 1 mensaje → N Objectives + dependencias (R2)
+├── conductor.py       # lanza/supervisa misiones concurrentes + anidamiento (R2)
+├── consolidator.py    # junta resultados → respuesta única (R2)
+└── models.py          # tabla orchestration_runs (R2)
+
 backend/app/tie/
-├── runtime.py         # MOD (R1): NullRuntime gana el BUCLE DE TOOL-USE real
-├── toolloop.py        # NEW (R1): el bucle aislado y testeable (elegir→ejecutar→observar)
-├── capabilities.py    # NEW (R6): mapa de capacidades generado DESDE el código
-├── planner.py         # MOD (R1/R4): prompt consciente de tools reales y del orquestador
-├── pipeline.py        # MOD (R4/R5): delegación al orquestador de proyecto + checkpoints
-└── (resto sin cambios)
+├── toolloop.py        # NEW (R1): el bucle elegir→ejecutar→observar, aislado y testeable
+├── runtime.py         # MOD (R1): NullRuntime usa el bucle
+├── planner.py         # MOD (R1): prompt consciente de las tools reales
+├── pipeline.py        # MOD (R2/R5): submit_mission acepta parent/run + checkpoints
+├── contracts.py       # MOD (R2): Mission.parent_id + Intent.objectives (append-only)
+└── capabilities_map.py # NEW (R6): mapa de capacidades generado DESDE el código
 
 backend/app/tools/
-└── aithera_tool.py    # NEW (R2): autogestión — Aithera opera sobre sí misma
+└── aithera_tool.py    # NEW (R3): autogestión — Aithera se opera a sí misma
 
 backend/app/agents/
-└── agent_manager.py   # MOD (R3): _run_execution deja de ser el placeholder de V0.5
+└── agent_manager.py   # MOD (R4): _run_execution deja de ser el placeholder de V0.5
 
 backend/app/automation/
-└── actions.py         # MOD (R3): AgentTaskAction → tie.submit_mission
+└── actions.py         # MOD (R4): AgentTaskAction → tie.submit_mission
 ```
 
-Disciplina modular (doc 16): `aithera_tool.py` NO importa modelos SQL sueltos —
-habla con `workspace_service`, `agent_manager`, `automation_engine` y las APIs
-públicas de cada módulo. `toolloop.py` es interno de `app.tie`.
+**Disciplina modular (doc 16), no negociable:**
+- `app/orchestrator/` importa **solo** la API pública del TIE (`app.tie`), el bus
+  (`app.core.events`) y config. **NUNCA** `app.tie.pipeline`/`executor`/internos.
+- `app/tie/` **NO** importa `app.orchestrator` (la dependencia es en un solo
+  sentido: orquestador → TIE). Un ciclo aquí rompería el arranque.
+- `aithera_tool.py` **NO** importa modelos SQL sueltos: habla con
+  `workspace_service`, `agent_manager`, `automation_engine` y APIs públicas.
+- `toolloop.py` es interno de `app.tie`.
+- Todo esto lo vigila `tests/test_module_boundaries.py`, **extendido en cada
+  sprint que añada módulo**.
 
 ---
 
 ## 3. Sprints R1 → R7
 
-### R1 — El bucle de tool-use (cierra Δ2, el hueco crítico)
+### R1 — El bucle de tool-use (cierra Δ2 · **BLOQUEANTE**)
 
 **Objetivo**: que un nodo con herramientas disponibles las USE de verdad, con
 datos reales, y que **cuando no pueda, lo diga en vez de inventar**.
 
+**Por qué va primero**: hasta que esto exista, todo lo demás es decorado. Un
+Orquestador que reparte misiones a un TIE que alucina multiplica el problema por
+N en vez de resolverlo.
+
 **Archivos**: `app/tie/toolloop.py` (NEW), `app/tie/runtime.py` (MOD),
-`app/tie/planner.py` (MOD, prompt), `tests/test_tie_toolloop.py` (NEW).
+`app/tie/planner.py` (MOD: prompt), `app/core/config.py` (MOD: 2 settings),
+`tests/test_tie_toolloop.py` (NEW), `tests/test_module_boundaries.py` (MOD).
 
 **Tareas**:
-- **`toolloop.py`**: `run(task, tools, max_iters)` — construye el catálogo de
-  acciones REALMENTE disponibles para ese nodo (intersección de `node.tools` con
-  `tool_manager.list_tools()`, con sus params), se lo pasa al modelo vía
-  `mel.complete(capability=AGENTIC)`, parsea `{"tool": {...}}` o `{"answer": "..."}`,
-  ejecuta por el ToolManager (whitelist + timeout + auditoría intactos), inyecta
-  la observación y repite. Máx 5 iteraciones (`TIE_TOOL_MAX_ITERS`).
-- **Límite de seguridad acordado con el usuario (2026-07-18)**: el bucle ejecuta
+- **`toolloop.py` — `async def run(task, tools, *, max_iters) -> ToolLoopResult`**:
+  1. **Catálogo acotado**: intersección de `task.tools` (whitelist del nodo, la
+     pone el planner) con `tool_manager.list_tools()`. Se le pasa al modelo el
+     `tool_id`, `action`, `description` y `params` de cada acción **permitida**.
+     Si la intersección es vacía → no hay bucle, camino de chat de siempre.
+  2. **Elección**: `mel.complete(capability=AGENTIC)` con un prompt que exige
+     responder **solo JSON**: `{"tool": {"tool_id", "action", "params"}}` o
+     `{"answer": "..."}`. Parseo tolerante (bloques markdown) — **reusar el
+     extractor de `planner.py`**, no escribir otro.
+  3. **Ejecución**: `tool_manager.execute(..., allowed_tools=task.tools, timeout=...)`.
+     La whitelist, el timeout duro, la validación de params y el log de auditoría
+     **siguen siendo del ToolManager** — el bucle no los reimplementa.
+  4. **Observación**: el resultado (truncado a un tamaño razonable) se inyecta
+     como turno siguiente y se repite. Máx `TIE_TOOL_MAX_ITERS` (default **5**).
+- **Límite de seguridad (acordado con el usuario, 2026-07-18)**: el bucle ejecuta
   SOLO acciones con `requires_confirmation=False` (leer, listar, buscar,
   screenshot, procesos…). Si el modelo pide una sensible (enviar email, shell,
-  PowerShell, clics de escritorio, borrar), **se rechaza con motivo** y el bucle
-  se lo dice al modelo para que busque otra vía; el resultado final explica
-  honestamente qué no se pudo hacer sin permiso. Las sensibles siguen pasando por
-  el gate del plan (T4a) o del nodo (T3).
+  PowerShell, clics de escritorio, borrar), **se rechaza con motivo** y se le
+  dice al modelo para que busque otra vía; la respuesta final explica
+  honestamente qué no pudo hacerse sin permiso. Las sensibles siguen pasando por
+  el gate del plan (T4a) o de nodo (T3).
 - **Honestidad estructural**: si tras `max_iters` no hay respuesta fundamentada,
   el nodo devuelve `success=False` con el detalle — **nunca** una respuesta
   inventada. La validación por nodo de T3 ya rechaza "éxito sin salida".
-- **Presupuesto**: cada iteración cuenta contra `node.budget_ms`; el kill-switch
-  de T3 sigue cancelando en vuelo.
+- **Presupuesto y cancelación**: cada iteración cuenta contra `node.budget_ms`;
+  el kill-switch de T3 sigue cancelando en vuelo (el bucle debe ser
+  `await`-able y propagar `CancelledError` sin tragárselo).
+- **`planner.py`**: el prompt pasa a decir que las tools de un nodo **se van a
+  usar de verdad**, para que asigne `node.tools` con criterio en vez de
+  decorativamente.
 
-**Tests**: el **test de regresión del hallazgo** (una tarea "lista los archivos
-de X" DEBE ejecutar `filesystem.list_dir` y sus datos deben salir en la
-respuesta — con un ToolManager real sobre una carpeta de prueba); acción
-sensible rechazada sin ejecutarse; catálogo acotado a `node.tools`; sin tools
-disponibles → camino de chat de siempre; el bucle nunca supera `max_iters`.
+**Criterio de éxito verificable (PRINCIPIOS §4)**:
+1. Test de regresión del hallazgo → verificar: una tarea *"lista los archivos de
+   `<carpeta de prueba>`"* ejecuta `filesystem.list_dir` de verdad (ToolManager
+   real) y **los nombres reales aparecen** en la salida.
+2. Acción sensible → verificar: `email.send_email` es **rechazada sin ejecutarse**
+   y el motivo llega al modelo.
+3. Catálogo → verificar: una tool fuera de `node.tools` **no aparece** en el
+   prompt ni puede ejecutarse.
+4. Sin tools → verificar: camino de chat idéntico al actual (cero regresión).
+5. `max_iters` → verificar: el bucle nunca hace más llamadas de las permitidas.
 
 **Done**: la misión que hoy inventa 5 archivos, lista los reales.
-**Modelo**: **Opus · Alto** (toca el runtime que ejecuta TODO y define el límite
-de seguridad; un fallo aquí es ejecución no autorizada).
+**Modelo**: **Opus · Alto** — toca el runtime que ejecuta TODO y define el límite
+de seguridad; un fallo aquí es ejecución no autorizada.
 
 ---
 
-### R2 — Aithera se opera a sí misma (cierra Δ6)
+### R2 — La capa Orquestador: descomposición, concurrencia y anidamiento (cierra Δ3)
 
-**Objetivo**: todo lo que el usuario puede hacer en la UI, puede pedirlo por chat
-(o voz): "créame un proyecto para X con estas tareas", "hazme un agente que
-revise el email cada mañana", "avísame cada lunes a las 9".
+**Objetivo**: que un mensaje con varios objetivos se convierta en **varias
+misiones del TIE ejecutándose a la vez**, con sus dependencias respetadas, sus
+sub-misiones cuando hace falta, y **una sola respuesta** al final.
+
+**Archivos**: `app/orchestrator/` completo (NEW: `__init__.py`, `contracts.py`,
+`decomposer.py`, `conductor.py`, `consolidator.py`, `models.py`),
+`alembic/versions/*_v10_orchestration_runs.py` (NEW, migración **24.ª**),
+`app/tie/contracts.py` (MOD: `Mission.parent_id`, `Intent.objectives`),
+`app/tie/pipeline.py` (MOD: `submit_mission` acepta `parent_id`/`run_id`),
+`app/main.py` (MOD: EL SWITCH), `app/api/endpoints/orchestrator.py` (NEW),
+`tests/test_orchestrator.py` (NEW), `tests/test_module_boundaries.py` (MOD).
+
+**Tareas**:
+- **Detección SIN COSTE (clave para no regresionar el 80%)**: `Intent` gana
+  `objectives: list[str] = []` (**append-only**, permitido por la regla de
+  evolución de contratos). Lo rellena **el clasificador que YA se llama** — cero
+  llamadas extra al LLM. `len(objectives) <= 1` → el Orquestador delega en
+  `tie.handle` tal cual (mismo camino corto, mismo streaming). `>= 2` → capa
+  nueva.
+- **`contracts.py` CONGELADO**: `Objective` (id, goal, depends_on,
+  needs_decomposition, priority, state, mission_id, outcome) y
+  `OrchestrationRun` (id, user_message, objectives, state, outcome, channel).
+- **`decomposer.py`**: para el caso multi (y **solo** ese), una llamada
+  `mel.complete(capability=REASON)` que devuelve los objetivos con sus
+  `depends_on` (ej.: *"avisar a Héctor cuando termine todo"* depende de los
+  demás) y marca `needs_decomposition` en los que siguen siendo demasiado
+  amplios (ej.: "15 canales de YouTube"). Salida validada; ante fallo o JSON
+  inválido → **degrada a una sola misión** (nunca romper).
+- **`conductor.py`** — el corazón:
+  - **Ready-set por dependencias**: lanza los objetivos cuyas `depends_on` están
+    `done`. Mismo patrón conceptual que `graph.ready_set()` pero sobre objetivos;
+    implementación propia y pequeña (no se fuerza `graph.py`, que opera sobre
+    `TaskNode`).
+  - **Concurrencia real**: `asyncio.gather` con **semáforo** `ORCH_MAX_CONCURRENT`
+    (default **3**) — protege al MEL y a los modelos locales de saturarse.
+  - **Aislamiento**: una misión que falla o queda `waiting` en un gate **NO
+    bloquea a las demás** (`return_exceptions=True` + estado por objetivo). Esto
+    es lo que hoy no se puede hacer y es media razón de ser del bloque.
+  - **Anidamiento**: si un objetivo trae `needs_decomposition`, el conductor
+    vuelve a llamar al decomposer sobre él y lanza sub-misiones con `parent_id`.
+    Profundidad máxima `ORCH_MAX_DEPTH` (default **2**) — límite duro contra
+    recursión descontrolada. **El anidamiento lo decide el orquestador, NUNCA un
+    nodo**: así la recursión queda acotada en un solo sitio.
+  - **Checkpoint**: el estado del run se persiste en `orchestration_runs` en cada
+    transición (mismo criterio que el checkpoint por transición de T3) — un
+    reinicio no pierde el run.
+- **`consolidator.py`**: junta los `outcome` de todas las misiones y redacta UNA
+  respuesta con `mel.complete(capability=SUMMARIZE)`, indicando qué quedó
+  pendiente de aprobación y qué falló. **Plantilla determinista si el LLM falla**
+  (mismo patrón que el responder de T4a y el summarizer de M3: nunca dejar al
+  usuario sin respuesta).
+- **Migración 24.ª**: `orchestration_runs` + `orchestrator_traces.parent_trace_id`
+  y `.run_id` (aditiva, idempotente). **Aplicada al Postgres real en el mismo
+  paso y verificada** — la lección dura del proyecto (3 incidentes previos).
+- **EL SWITCH** (`main.py`): `gateway.set_handler(orchestrator.handle)`. Con
+  `ORCH_ENABLED=false` (kill-switch) queda `tie.handle` exactamente como hoy.
+- **Endpoints** `/api/orchestrator`: `GET /runs`, `GET /runs/{id}` (con sus
+  misiones y estados), `POST /runs/{id}/cancel`.
+- **Eventos** (doc 17): `orchestration.started` / `.objective_completed` /
+  `.completed` — metadatos, nunca contenido.
+
+**Criterio de éxito verificable**:
+1. Mensaje de 1 objetivo → verificar: **cero** llamadas extra al LLM y misma
+   respuesta que hoy (test que cuenta las llamadas).
+2. Mensaje de 3 objetivos independientes → verificar: 3 misiones, y el tiempo
+   total < suma de los individuales (concurrencia real, con runtimes fake).
+3. Objetivo con `depends_on` → verificar: no arranca hasta que su dependencia
+   está `done`.
+4. Una misión falla → verificar: las otras terminan igual y la consolidación lo
+   dice honestamente.
+5. Una misión queda en gate → verificar: las demás **no** se bloquean.
+6. `needs_decomposition` → verificar: se crean sub-misiones con `parent_id`, y
+   `ORCH_MAX_DEPTH` corta la recursión.
+7. Fronteras: `app.tie` **no** importa `app.orchestrator` (test).
+
+**Done**: el mensaje-ejemplo del usuario (§0) produce misiones separadas y
+concurrentes, con el aviso final dependiendo del resto.
+**Modelo**: **Opus · Máximo** — es la arquitectura nueva del bloque, toca dos
+contratos congelados (`Mission`, `Intent`), introduce concurrencia real y un
+switch en el arranque. Es la sesión con más superficie de fallo del plan.
+
+---
+
+### R3 — Aithera se opera a sí misma (cierra Δ7)
+
+**Objetivo**: que Aithera cree proyectos, tareas, milestones, agentes,
+automatizaciones, cron jobs y reglas de email **cuando el usuario se lo pide por
+chat o voz**, y que **pregunte si le falta un dato** en vez de inventarlo.
 
 **Archivos**: `app/tools/aithera_tool.py` (NEW), `app/tools/tool_manager.py`
 (MOD: registro), `tests/test_aithera_tool.py` (NEW).
 
-**Acciones** (todas ADAPTADORES sobre servicios existentes — cero lógica nueva):
-| Acción | Delega en | Permiso (A3b) |
-|---|---|---|
-| `create_project` / `update_project` / `archive_project` | `workspace_service` | `workspace.write` |
-| `create_milestone` / `complete_milestone` | `workspace_service` | `workspace.write` |
-| `create_task` / `update_task` / `close_task` | `workspace_service` (con sus side effects y eventos) | `workspace.write` |
-| `create_agent` / `update_agent` / `assign_tools` / `assign_skills` | `agent_manager` | `agent.execute` |
-| `create_automation_rule` / `toggle_rule` | `automation_engine` + modelos del AE | `automation.rules` |
-| `create_email_rule` | `EmailTool.add_auto_reply_rule` | `email.send` |
-| `schedule_job` (cron: cada X min/h, diario a las HH:MM) | `scheduler_service` + `ScheduleTrigger` | `automation.rules` |
-| `list_capabilities` | `capabilities.py` (R6) | — (lectura) |
+**Tareas**:
+- **`aithera_tool.py` — tool `aithera`**, con acciones agrupadas:
+  - *Workspace*: `create_project`, `create_milestone`, `create_task`,
+    `update_task`, `list_projects`, `project_status`.
+  - *Agentes*: `create_agent`, `assign_tools`, `list_agents`, `run_agent_task`.
+  - *Automatización*: `create_rule` (AE), `create_cron_job` (`scheduler_service`),
+    `list_rules`, `toggle_rule`.
+  - *Email*: `create_auto_reply_rule` (delega en `EmailTool`).
+- **Regla dura — son ADAPTADORES**: cada acción llama al servicio que ya existe
+  (`workspace_service.create_task`, `agent_manager.create_agent`,
+  `automation_engine`, `scheduler_service`, `EmailTool`). **Cero** lógica de
+  negocio nueva, **cero** SQL directo, **cero** recálculo de progreso a mano
+  (mismo criterio que `WorkspaceAction` del AE, doc 18 §7). Si una acción
+  necesita 30 líneas propias, es señal de que está reimplementando algo: parar y
+  reusar.
+- **Datos que faltan → preguntar**: cada acción declara sus campos obligatorios;
+  si falta uno, devuelve `success=False` con `missing: [...]` y un mensaje claro.
+  El bucle de R1 lo lee y el TIE lo convierte en pregunta al usuario. **Nunca
+  rellenar con valores inventados.**
+- **Seguridad**: `create_*`/`toggle_*` son acciones de escritura →
+  `requires_confirmation=True`, salvo que el permiso correspondiente esté
+  pre-autorizado (A3b lo resuelve solo). Las de lectura (`list_*`, `*_status`)
+  no piden confirmación.
 
-- **Todas son `requires_confirmation=True`** salvo las de lectura: crear cosas en
-  el sistema del usuario es un cambio de estado real. Con el permiso
-  pre-autorizado (A3b) el gate se auto-resuelve dejando rastro — el mecanismo ya
-  existe, aquí solo se usa.
-- **Preguntar ante la duda** (petición del usuario): si faltan datos esenciales
-  (p.ej. crear una tarea sin saber a qué proyecto), la acción devuelve un
-  `needs_input` con la pregunta concreta en vez de inventar valores; el pipeline
-  lo convierte en una pregunta por el camino corto (mismo patrón que la
-  aclaración de alcance del override, E2b).
+**Criterio de éxito verificable**:
+1. *"créame un proyecto X con 3 tareas"* → verificar: proyecto y tareas **reales
+   en la BD**, con el progreso recalculado por `workspace_service` (no a mano).
+2. Falta un dato obligatorio → verificar: `missing` poblado y **nada creado**.
+3. Fronteras → verificar: `aithera_tool.py` no importa modelos SQL sueltos (test).
+4. Cada acción de escritura pide confirmación salvo permiso pre-autorizado.
 
-**Tests**: cada acción crea la entidad REAL y dispara los mismos eventos que la
-UI; `needs_input` cuando falta lo esencial; permiso denegado → no se crea nada.
-
-**Done**: "créame un proyecto 'Web nueva' con 3 tareas y un agente que las
-revise" produce el proyecto, las tareas y el agente reales.
-**Modelo**: **Sonnet · Alto** (muchas acciones, pero todas son adaptadores de
-APIs ya probadas; el riesgo es de amplitud, no de profundidad).
+**Done**: pedir por chat un proyecto con tareas y agentes lo crea de verdad.
+**Modelo**: **Sonnet · Alto** — es trabajo de adaptador, repetitivo y bien
+acotado: el diseño está cerrado y los servicios destino ya existen. No hay
+decisiones de arquitectura abiertas.
 
 ---
 
-### R3 — Agentes reales: `agent_manager` → TIE, y el AE → `submit_mission` (cierra Δ3, Δ4)
+### R4 — Agentes reales + el AE delega (cierra Δ4, Δ5, Δ6)
 
-**Objetivo**: matar el placeholder de V0.5. Un agente con una tarea ejecuta una
-misión real del TIE, con sus tools, su modelo y su frontera.
+**Objetivo**: que un agente **haga la tarea que le pides** (hoy ignora el texto y
+corre una demo de V0.5), que el Automation Engine delegue en el TIE, y que exista
+el orquestador **por proyecto** con su frontera de autoridad.
 
 **Archivos**: `app/agents/agent_manager.py` (MOD), `app/automation/actions.py`
-(MOD), `tests/test_agent_execution.py` (NEW).
+(MOD), `app/tie/pipeline.py` (MOD: autoridad por proyecto),
+`tests/test_agent_execution.py` (NEW), `tests/test_automation_actions.py` (MOD).
 
 **Tareas**:
-- `_run_execution()` pasa a: construir el goal desde la tarea del usuario →
-  `tie.submit_mission(goal, source="agent", project_id=agent.project_id)` →
-  persistir el outcome y los `tool_calls` reales en `AgentExecution`. Se
-  conservan `status`/`started_at`/`completed_at` y la cancelación (el
-  kill-switch del TIE ya existe).
-- **El agente aporta su contexto**: `allowed_tools` acota el catálogo del bucle
-  (R1), `system_prompt` va al nodo, el modelo del agente se traduce a
-  `model_hint` (el MEL ya sabe resolverlo, E2b).
-- `AgentTaskAction` → `tie.submit_mission(..., source="automation")`. **Decisión
-  de diseño**: se lanza en segundo plano y la acción devuelve el `mission_id` —
-  una misión puede tardar minutos y el AE no puede bloquear su regla; el TIE ya
-  tiene su propio rastro (`orchestrator_traces` + eventos `mission.*`), así que
-  el outcome es auditable sin que el AE espere.
+- **`agent_manager._run_execution` → delegación real**: sustituir el placeholder
+  por `tie.submit_mission(goal=task, source="agent", project_id=agent.project_id)`.
+  El resultado de la misión se guarda en `AgentExecution.result`/`tool_calls`.
+  **Borrar** el bloque de demo (`list_dir`/`list_scripts`/`git status`) — es
+  código muerto que TU cambio deja huérfano (PRINCIPIOS §3).
+- **Whitelist del agente = frontera del nodo**: `agent.allowed_tools` debe llegar
+  a los nodos de la misión, para que el bucle de R1 no pueda usar una tool que el
+  agente no tiene. Sin esto, delegar **amplía** permisos en silencio.
+- **`AgentTaskAction`** (AE): `agent_manager.create_execution` →
+  `tie.submit_mission(source="automation")`. Fire-and-forget con el `trace_id` en
+  el `ActionResult` (una misión puede durar minutos; el AE no puede bloquearse).
+  La auditoría del resultado ya la lleva el TIE (`orchestrator_traces` + eventos).
+- **Orquestador de proyecto** (doc 14 §4.3c): si un proyecto tiene un agente con
+  `role="orchestrator"`, las misiones de ese proyecto se le enrutan, y su
+  **autoridad queda acotada** a los agentes de su mismo `project_id` y a las
+  carpetas de ese proyecto (`Project.repo_path`). El enforcement es explícito y
+  testeado — una autoridad que no se comprueba no existe.
 
-**Tests**: un agente con `filesystem` ejecuta una tarea real y sus `tool_calls`
-quedan registrados; el placeholder ya no existe (test que falla si vuelve);
-`AgentTaskAction` crea misión y no bloquea.
+**Criterio de éxito verificable**:
+1. Lanzar un agente con la tarea *"cuenta los archivos de `<carpeta>`"* →
+   verificar: ejecuta `filesystem.list_dir` real y responde con el número real
+   (hoy responde la demo fija).
+2. Agente sin `filesystem` en `allowed_tools` → verificar: **no puede** usarla.
+3. Una regla del AE con `AgentTaskAction` → verificar: crea una misión real y no
+   bloquea al motor.
+4. Orquestador de proyecto → verificar: no puede tocar agentes de otro proyecto.
 
-**Done**: la pantalla de agente (W2d/W2e) muestra pasos y resultados REALES.
-**Modelo**: **Opus · Medio** (sustituye un motor de ejecución vivo; poco código,
-alto impacto).
+**Done**: un agente hace la tarea real que se le pide, con sus tools y sus
+límites.
+**Modelo**: **Opus · Alto** — toca permisos y fronteras de autoridad; un fallo
+aquí es ampliación silenciosa de privilegios.
 
 ---
 
-### R4 — Orquestador de proyecto (cierra Δ5, doc 14 §4.3c al pie de la letra)
+### R5 — Flujo de trabajo: checkpoints verificables, avisos y cron (cierra Δ8)
 
-**Objetivo**: cada proyecto puede tener su director de orquesta, con autoridad
-acotada.
+**Objetivo**: el flujo que pidió el usuario — el Orquestador planifica, ejecuta,
+y **cada vez que completa algo que el usuario puede comprobar, para y avisa** por
+el canal que el usuario prefiera.
 
-**Archivos**: `app/tie/pipeline.py` (MOD), `app/tie/planner.py` (MOD),
-`app/tools/aithera_tool.py` (MOD: `create_orchestrator`),
-`frontend/.../ProjectPopup.tsx` (MOD: ofrecer crearlo),
-`tests/test_project_orchestrator.py` (NEW).
+**Archivos**: `app/tie/contracts.py` (MOD: `TaskNode.checkpoint`),
+`app/tie/executor.py` (MOD: pausa en checkpoint), `app/tie/planner.py` (MOD:
+marcar checkpoints), `app/orchestrator/conductor.py` (MOD: avisos por run),
+`app/core/config.py` (MOD), `frontend/src/pages/Settings.tsx` (MOD: preferencia
+de canal), `tests/test_checkpoints.py` (NEW).
 
 **Tareas**:
-- **Delegación**: misión con `project_id` → si existe un `Agent` con
-  `role="orchestrator"` y ese `project_id`, el pipeline delega en él antes de
-  crear nada suelto (doc 14 §4.3c).
-- **Frontera de autoridad (enforcement REAL, no comentario)**: el orquestador
-  solo puede operar sobre agentes con su mismo `project_id` (nunca de otro
-  proyecto ni `NULL`), y sus tools de filesystem/git quedan acotadas a
-  `Project.repo_path` y carpetas añadidas. Se implementa como validación en el
-  punto de ejecución, con test que intenta cruzar la frontera y falla.
-- **Creación guiada**: al crear un proyecto, ofrecer crear su orquestador (mismo
-  formulario de agente + flag). Nunca automático sin preguntar.
-- **Equipos de agentes** (petición del usuario): el orquestador puede PROPONER
-  un equipo para el proyecto (roles sugeridos según el objetivo) y, si el usuario
-  acepta, crearlos con sus skills vía R2. La propuesta pasa por gate.
+- **`TaskNode.checkpoint: bool`** (append-only): el planner lo marca en los nodos
+  cuyo resultado el usuario **puede verificar** (un entregable, no un paso
+  intermedio). El prompt debe explicar esa diferencia con ejemplos.
+- **Pausa reusando lo que hay**: un checkpoint alcanzado abre un `ApprovalGate`
+  con `kind="tie.checkpoint"`. **No se inventa un mecanismo de pausa nuevo**: el
+  gate ya es persistente, reanudable y con auto-resolución por permisos (A3b).
+- **Aviso por el canal preferido**: `gateway.notify()` al canal configurado
+  (Telegram si el usuario lo eligió, si no la UI). Preferencia en `Config`
+  (`notify_channel`), patrón de A3b — sin migración. Fail-soft: si el canal falla,
+  la misión sigue y el aviso queda en la UI.
+- **Cron desde el chat**: `aithera_tool.create_cron_job` (R3) conectado a
+  `scheduler_service.add_cron_job`, con la regla persistida para que sobreviva a
+  un reinicio.
 
-**Tests**: delegación cuando existe orquestador; frontera de autoridad
-(intentar tocar un agente de otro proyecto → rechazado); propuesta de equipo no
-crea nada sin aprobación.
+**Criterio de éxito verificable**:
+1. Plan con un checkpoint → verificar: la misión **pausa ahí** y notifica.
+2. Aprobar → verificar: continúa desde donde estaba (reanudación de T3).
+3. Canal Telegram configurado → verificar: llega el mensaje (o degrada sin romper
+   si falla).
+4. Cron creado por chat → verificar: existe en APScheduler y sobrevive a un
+   reinicio.
 
-**Done**: un proyecto con orquestador recibe la misión y reparte entre SUS
-agentes, sin tocar nada de otro proyecto.
-**Modelo**: **Opus · Alto** (frontera de seguridad + delegación; el enforcement
-mal hecho es una fuga de autoridad entre proyectos).
+**Done**: una misión larga se detiene en cada entregable, avisa, y espera.
+**Modelo**: **Opus · Alto** — coordina gates, notificaciones y scheduler; los
+fallos aquí son "se quedó parado para siempre" o "no avisó", difíciles de
+detectar en tests.
 
 ---
 
-### R5 — Flujo de trabajo: checkpoints verificables y avisos (cierra Δ7)
+### R6 — Aithera se conoce + navegación fluida (cierra Δ9, Δ10)
 
-**Objetivo**: el flujo completo que pidió el usuario — orden → planificación con
-milestones/tareas/agentes → ejecución → **parada en cada hito que el usuario
-puede comprobar** → aviso por el canal elegido.
+**Objetivo**: que el chat sepa **todo lo que Aithera puede hacer** (sin revelar
+su código) y que buscar/abrir/reproducir en la web sea fluido.
 
-**Archivos**: `app/tie/contracts.py` (MOD: campo append-only), `app/tie/executor.py`
-(MOD), `app/tie/pipeline.py` (MOD), `app/api/endpoints/tie.py` (MOD),
-`frontend/.../Missions.tsx` (MOD), `tests/test_tie_checkpoints.py` (NEW).
+**Archivos**: `app/tie/capabilities_map.py` (NEW), `app/services/chat_service.py`
+(MOD: system prompt), `tests/test_capabilities_map.py` (NEW).
 
 **Tareas**:
-- **`TaskNode.checkpoint: bool`** (extensión append-only del contrato congelado,
-  con default `False` — permitido por la regla de evolución). El planner lo marca
-  en los nodos cuyo resultado el usuario puede verificar (un entregable, no un
-  paso interno). Al completarse un nodo `checkpoint`, la misión **pausa** y pide
-  confirmación para seguir, mostrando lo hecho.
-- **Reutiliza el mecanismo existente**: la pausa es el mismo `WAITING_APPROVAL`
-  + `ApprovalGate` de T3 (kind `tie.checkpoint`), con su reanudación por evento y
-  su recuperación tras reinicio. **Cero mecanismos nuevos de pausa.**
-- **Notificaciones**: al abrir un gate/checkpoint, avisar por el canal preferido
-  del usuario vía `gateway.notify()` (A1). Preferencia nueva en Ajustes: qué
-  avisar (todo / solo lo que requiere decisión / nada) y por dónde (Telegram /
-  solo en la app). El usuario puede responder desde Telegram para aprobar.
-- **Cron desde el chat**: `schedule_job` (R2) permite "cada lunes a las 9
-  revísame el email" — el AE + APScheduler ya lo soportan.
+- **Mapa generado DESDE el código**, nunca escrito a mano: recorre
+  `tool_manager.list_tools()` (14/91), las políticas del MEL, las acciones del AE
+  y los servicios del WPMS, y produce un resumen **corto** en lenguaje natural.
+  Una lista a mano se queda obsoleta en la siguiente sesión; ésta no.
+- **Frontera de confidencialidad**: el mapa describe **capacidades**, nunca rutas
+  de archivo, nombres de módulo, esquema de BD ni prompts internos. Test explícito
+  que falla si aparece `app/`, `.py` o un nombre de tabla.
+- **Presupuesto de tokens**: el mapa se inyecta **resumido** (tope duro de
+  caracteres) y **cacheado** — no puede comerse el contexto del chat en cada
+  mensaje.
+- **Navegación fluida**: documentar y cablear el flujo correcto —
+  `search.search_web` para buscar (Brave/SerpAPI) → `browser.open_url` para abrir
+  el resultado. **No** usar `browser.google_search` (Google bloquea headless,
+  medido en la auditoría de tools). Para vídeo/música: buscar → abrir la URL.
 
-**Tests**: nodo checkpoint pausa y notifica; aprobar continúa desde donde estaba;
-rechazar deja la misión parada con lo conseguido; preferencia "nada" no notifica.
+**Criterio de éxito verificable**:
+1. *"¿qué sabes hacer?"* → verificar: enumera capacidades reales (email,
+   calendario, navegador, escritorio, agentes, automatizaciones…).
+2. *"¿cómo estás hecha por dentro?"* → verificar: **no** revela módulos, rutas ni
+   esquema.
+3. Añadir una tool nueva → verificar: aparece en el mapa **sin tocar el mapa**.
+4. *"busca X y ábremelo"* → verificar: usa `search` y luego `browser`.
 
-**Done**: una misión larga se detiene en cada entregable, avisa por Telegram y
-continúa al aprobar — sobreviviendo a un reinicio del backend.
-**Modelo**: **Opus · Alto** (toca el executor y el contrato congelado).
+**Done**: Aithera explica lo que puede hacer, y el mapa se actualiza solo.
+**Modelo**: **Sonnet · Alto** — introspección + prompt, bien acotado y sin
+decisiones de arquitectura abiertas.
 
 ---
 
-### R6 — Aithera se conoce + navegación fluida (cierra Δ8, Δ9)
+### R7 — Cierre: contratos, rendimiento, verificación en vivo y bump `0.9.5`
 
-**Objetivo**: el chat sabe qué puede hacer y qué no, sin destapar su código; y
-buscar/abrir/reproducir en la web es fluido.
+**Objetivo**: blindar el bloque y cerrarlo con honestidad.
 
-**Archivos**: `app/tie/capabilities.py` (NEW), `app/services/chat_service.py`
-(MOD), `app/tools/browser_tool.py` (MOD menor), `tests/test_capabilities.py` (NEW).
+**Archivos**: `tests/test_orchestrator_e2e.py` (NEW),
+`tests/test_orchestrator_perf.py` (NEW), `tests/test_module_boundaries.py` (MOD),
+`CLAUDE.md`, `PLAN_MAESTRO_2026/03_ROADMAP_ACTUALIZADO.md`, los 3 sitios de
+versión + los `.bat`.
 
 **Tareas**:
-- **`capabilities.py`**: genera el mapa DESDE el código en vivo —
-  `tool_manager.list_tools()` (14 tools/91 acciones), las páginas/funciones de la
-  app, el estado de las integraciones (Google/Telegram/búsqueda conectados o no)
-  y los permisos activos. **Generado, no escrito a mano**: una tool nueva aparece
-  sola, sin que el prompt se quede obsoleto.
-- **Frontera de confidencialidad (explícita del usuario)**: el mapa describe
-  CAPACIDADES en lenguaje de usuario ("puedo leer y enviar emails", "puedo abrir
-  páginas web"), nunca rutas de archivos, nombres de módulos, esquema de BD ni
-  fragmentos de código. Regla en el system prompt + test que verifica que el
-  bloque inyectado no contiene rutas ni nombres de clase.
-- **Presupuesto**: el mapa se inyecta RESUMIDO (agrupado por área) para no comerse
-  la ventana de contexto; el detalle de una tool concreta se consulta bajo demanda.
-- **Navegación fluida**: flujo `search` (Brave/SerpAPI) → `browser.open_url` para
-  abrir el resultado; reproducir vídeo/música = abrir la URL del servicio y usar
-  los controles de la página. **Se documenta el límite real ya medido**:
-  `browser.google_search` está bloqueado por Google en headless — el buscador es
-  `search`, no el navegador.
+- **E2E con la cadena REAL** (mismo criterio que `test_tie_e2e` de T5): un solo
+  punto fake, la frontera del LLM; todo lo demás real (decomposer → conductor →
+  TIE → toolloop → ToolManager → consolidator).
+- **Perf**: overhead del orquestador sobre el camino de 1 objetivo **< 50 ms**
+  (la regla de no-regresión de §0, medida); concurrencia real demostrada con
+  runtimes fake; `ORCH_MAX_CONCURRENT` respetado.
+- **Auditoría de cierre** (feedback permanente del usuario): TODOs/stubs, imports
+  muertos, fronteras modulares, cadena de migraciones, superficie pública vs.
+  docs. Informe completo con lo que quedó **diferido a propósito**.
+- **Cierre**: bump `0.9.2` → **`0.9.5`** en las 3 ubicaciones sincronizadas
+  (`backend/app/core/config.py`, `backend/app/main.py` ×2,
+  `frontend/package.json`) + los 3 `.bat`. CLAUDE.md y roadmap al día. Tag
+  `v0.9.5`.
 
-**Tests**: el mapa incluye las 14 tools; una tool nueva aparece sin tocar el
-prompt; el bloque inyectado no filtra rutas/módulos; flujo search→abrir.
-
-**Done**: "¿qué sabes hacer?" responde con capacidades reales y actuales;
-"búscame X y ábrelo" funciona de una tirada.
-**Modelo**: **Sonnet · Alto** (mucha superficie, poca profundidad algorítmica;
-la parte delicada —la frontera de confidencialidad— se blinda con un test).
+**Criterio de éxito verificable**: suite completa verde; overhead medido;
+verificación en vivo contra el Postgres real **con limpieza confirmada**; informe
+entregado.
+**Modelo**: **Opus · Alto** — la auditoría de cierre exige criterio para
+distinguir deuda real de alcance diferido.
 
 ---
 
-### R7 — Cierre: tests de contrato, perf, verificación en vivo y bump `0.9.5`
+## 4. Modelo y esfuerzo por sesión
 
-**Archivos**: `tests/test_orquestrator_e2e.py` (NEW), `tests/test_tie_perf.py`
-(MOD), docs (CLAUDE.md, doc 03, doc 11, doc 14), versión en las 3 ubicaciones
-sincronizadas + los 3 `.bat`.
+| Sprint | Contenido | Modelo | Esfuerzo | Por qué |
+|---|---|---|---|---|
+| **R1** | Bucle de tool-use + límite de seguridad | **Opus** | **Alto** | Runtime que ejecuta todo; un fallo = ejecución no autorizada |
+| **R2** | Capa Orquestador: descomposición, concurrencia, anidamiento | **Opus** | **Máximo** | Arquitectura nueva, 2 contratos congelados, concurrencia real, switch de arranque |
+| **R3** | Tools de autogestión de Aithera | **Sonnet** | **Alto** | Adaptadores sobre servicios ya existentes; diseño cerrado |
+| **R4** | Agentes reales + AE delega + autoridad por proyecto | **Opus** | **Alto** | Permisos y fronteras; fallo = ampliación silenciosa de privilegios |
+| **R5** | Checkpoints verificables + avisos + cron | **Opus** | **Alto** | Gates + notificaciones + scheduler; fallos difíciles de ver en tests |
+| **R6** | Autoconocimiento + navegación fluida | **Sonnet** | **Alto** | Introspección + prompt, bien acotado |
+| **R7** | E2E + perf + auditoría + cierre `0.9.5` | **Opus** | **Alto** | Criterio para separar deuda real de alcance diferido |
 
-**Tareas**:
-- **E2E con la cadena real** (mismo criterio que T5): un solo punto fake (la
-  frontera del LLM), todo lo demás real — orden del usuario → plan → creación de
-  proyecto/tareas/agente → ejecución con tools reales → checkpoint → aprobación →
-  respuesta final.
-- **Perf**: el bucle de tool-use no puede degradar el camino corto (~80% de las
-  queries no lo tocan); presupuesto por iteración medido.
-- **Auditoría de cabos sueltos** (obligatoria al cerrar bloque): docs 11/14/18
-  actualizados contra el código real; anotar lo que quede diferido.
-- **Verificación EN VIVO** contra el Postgres y los proveedores reales, con
-  limpieza posterior confirmada.
-- **Bump `0.9.2` → `0.9.5`** (decisión del usuario) + tag.
-
-**Modelo**: **Opus · Alto** (cierre de bloque: es donde se cazan las
-inconsistencias entre piezas).
+**Nota para las sesiones con modelo inferior (R3, R6)**: ambas tienen el diseño
+cerrado en este documento, servicios destino ya existentes y criterios de éxito
+verificables punto por punto. **No requieren decisiones de arquitectura.** Si al
+ejecutarlas aparece una decisión de diseño no contemplada aquí, la regla es
+**parar y preguntar** (PRINCIPIOS §1), no improvisar.
 
 ---
 
-## 4. Eventos (doc 17)
+## 5. Eventos del bloque (doc 17)
 
-| Evento | Dirección | Cuándo |
-|---|---|---|
-| `mission.*` (started/completed/failed/cancelled) | ya se emiten (T4a) | sin cambios |
-| `mission.checkpoint_reached` | **nuevo (R5)** | nodo `checkpoint` completado → notificación |
-| `tool.executed` | **nuevo (R1)**, `{tool_id, action, ok, duration_ms}` | materia prima del Learner (doc 15) para `tool_stats` |
-| `agent.execution_started/completed` | **nuevo (R3)** | la UI de agente deja de sondear a ciegas |
-| `approval.requested/resolved` | ya existen (A1) | el checkpoint los reutiliza |
-
-Regla de doc 17 respetada: un evento se añade **cuando su consumidor existe**.
-
----
-
-## 5. Matriz de conexión (qué toca este bloque y qué NO)
-
-| Sistema | Qué hace este bloque | Qué queda fuera |
-|---|---|---|
-| **ToolManager (14 tools)** | R1 las hace por fin alcanzables; R2 añade `aithera` | Tools nuevas de dominio |
-| **MEL** | Consumidor: el bucle pide capacidad `AGENTIC`; los locales especializados ya reparten | MEL v2 (Learning/Recommendation, V1.2) |
-| **WPMS** | R2 lo opera desde el chat; R4 el orquestador por proyecto | Vistas nuevas del Workspace |
-| **Automation Engine** | R3 `AgentTaskAction`→misión; R2 crea reglas y cron desde el chat | Learner del AE (V1.2) |
-| **MOS** | Sin cambios: el contexto ya llega por el enricher; los errores a `mem_error` | Compactación avanzada |
-| **ApprovalGate + permisos** | R1 respeta el límite; R5 reutiliza el gate para checkpoints | Permisos nuevos |
-| **Gateway/Telegram** | R5 usa `notify()` para avisos y aprobación remota | Canales nuevos |
-| **Learner (V1.1)** | Deja `tool.executed` + trazas como materia prima | El Learner en sí |
-| **Hermes (V1.1)** | El bucle vive en `NullRuntime`; Hermes traerá el suyo sin tocar el executor | HermesRuntime |
-| **MVP-beta (O5)** | — | **Plan aparte**: instalador, auto-start, onboarding → `1.0.0` |
-| **Escáner de hardware** | — | **Plan aparte**: recomendar modelo local por CPU/GPU/RAM |
-
----
-
-## 6. Modelo y esfuerzo por sesión
-
-| Sprint | Contenido | Modelo | Esfuerzo |
+| Evento | Emite | Payload | Sprint |
 |---|---|---|---|
-| **R1** | Bucle de tool-use + límite de seguridad | **Opus** | **Alto** |
-| **R2** | Tools de autogestión de Aithera | **Sonnet** | **Alto** |
-| **R3** | agent_manager → TIE + AE → submit_mission | **Opus** | **Medio** |
-| **R4** | Orquestador de proyecto + frontera de autoridad | **Opus** | **Alto** |
-| **R5** | Checkpoints verificables + notificaciones + cron | **Opus** | **Alto** |
-| **R6** | Autoconocimiento + navegación fluida | **Sonnet** | **Alto** |
-| **R7** | E2E + perf + auditoría + cierre `0.9.5` | **Opus** | **Alto** |
+| `orchestration.started` | orchestrator | `{run_id, n_objectives}` | R2 |
+| `orchestration.objective_completed` | orchestrator | `{run_id, objective_id, ok}` | R2 |
+| `orchestration.completed` | orchestrator | `{run_id, ok, duration_ms}` | R2 |
+| `tie.tool_used` | tie (toolloop) | `{mission_id, tool_id, action, ok}` | R1 |
+| `mission.checkpoint_reached` | tie (executor) | `{mission_id, node_id}` | R5 |
 
-**Por qué Opus en R1/R4/R5**: son los tres sprints donde un error tiene
-consecuencias reales — ejecutar una acción no autorizada (R1), cruzar la frontera
-de autoridad entre proyectos (R4), o romper el contrato congelado del executor
-(R5). R2 y R6 son amplios pero mecánicos sobre APIs ya probadas.
+Regla de doc 17: **metadatos, nunca contenido**. Un evento se añade cuando su
+consumidor existe — nada especulativo.
+
+---
+
+## 6. Matriz de conexión (qué toca este bloque y qué NO)
+
+| Sistema | Qué hace este bloque | Qué NO |
+|---|---|---|
+| **TIE** | Le añade el bucle de tools (R1) y lo invoca N veces en paralelo (R2) | No lo reescribe: planner/executor/gates/tracer siguen igual |
+| **MEL** | Lo usa para elegir modelo (AGENTIC en R1, REASON y SUMMARIZE en R2) | No lo toca. El MEL **no** elige tools (Δ11) |
+| **AE** | `AgentTaskAction` delega en el TIE (R4) | No cambia triggers, conditions ni el motor de reglas |
+| **WPMS** | `aithera_tool` crea proyectos/tareas vía `workspace_service` (R3) | No duplica su lógica ni recalcula progreso |
+| **MOS** | El TIE ya lo consulta por el enricher | Sin cambios |
+| **ApprovalGate** | Reusado para checkpoints (R5) | No se crea un mecanismo de pausa nuevo |
+| **Gateway** | `set_handler(orchestrator.handle)` (R2) + `notify` (R5) | Los adapters no se tocan |
+| **Learner** | Los eventos y trazas quedan como materia prima | No se construye (V1.1) |
+| **Hermes** | El registro de runtimes sigue abierto | No se construye (V1.1) |
 
 ---
 
 ## 7. Criterios de cierre del bloque
 
-1. **Cero alucinación con herramientas**: toda tarea que requiera una tool la
-   ejecuta de verdad o explica por qué no pudo. El test de regresión del Δ2 pasa.
-2. **Aithera se opera a sí misma** desde el chat: proyectos, tareas, milestones,
-   agentes (con skills y tools), automatizaciones, reglas de email y cron jobs.
-3. **Los agentes ejecutan de verdad**: el placeholder de V0.5 ya no existe.
-4. **Orquestador por proyecto** con frontera de autoridad **probada**.
-5. **Flujo completo con paradas**: la misión se detiene en cada hito verificable,
-   avisa por el canal elegido, y reanuda tras aprobación (incluso tras reinicio).
-6. **El chat conoce sus capacidades** sin filtrar código.
-7. Suite verde, `tsc`/`build` limpios, verificación en vivo con limpieza, docs al
-   día, **tag `v0.9.5`**.
+1. **La prueba del hallazgo**: *"lista los archivos de mi carpeta"* devuelve los
+   archivos **reales**. Cero alucinación en tareas con herramienta.
+2. **La prueba del mensaje múltiple** (§0): varios objetivos → misiones
+   concurrentes, dependencias respetadas, una respuesta consolidada.
+3. **La prueba de no-regresión**: un mensaje simple responde igual de rápido que
+   hoy, con streaming, y **sin llamadas extra al LLM**.
+4. **La prueba de autogestión**: pedir por chat un proyecto con tareas y agentes
+   lo crea de verdad.
+5. **La prueba del agente**: un agente ejecuta la tarea real que se le pide, con
+   sus tools y sus límites.
+6. **La prueba de honestidad**: cuando algo no se puede hacer (sin permiso, sin
+   tool, sin datos), Aithera **lo dice** — nunca lo finge.
+7. Suite completa verde · fronteras modulares vigiladas · migración 24.ª aplicada
+   y verificada contra Postgres real · verificación en vivo con limpieza
+   confirmada · informe de auditoría entregado.
+8. Bump a **`0.9.5`** + tag `v0.9.5`.
 
 ---
-*Plan 2026-07-18. Construido tras auditar el código real (10 deltas frente a los
-docs, uno de ellos crítico: el TIE nunca había ejecutado una tool). Consume docs
-11-B, 14, 10, 18, 11-A, 19, 17, 16. NO cubre MVP-beta (O5) ni el escáner de
-hardware — planes aparte, por decisión del usuario.*
+
+*Documento reescrito el 2026-07-19 tras la decisión de arquitectura del usuario:
+el Orquestador es una capa POR ENCIMA del TIE, con misiones concurrentes y
+anidadas. La versión anterior asumía Orquestador ≈ TIE y no cubría el caso real
+de un mensaje con varios objetivos. Los 11 deltas de la auditoría del código real
+se conservan y se amplían (Δ3 nuevo).*
