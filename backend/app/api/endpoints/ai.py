@@ -146,6 +146,55 @@ async def activate_provider(provider_name: str, model: Optional[str] = None):
     return await ai_manager.health_check()
 
 
+# --- V1.0: varios proveedores activos a la vez ---------------------------
+# `activate` (arriba) sigue marcando el proveedor del chat LEGACY. Lo que decide
+# qué proveedores participan en el enrutado del MEL es este interruptor: por
+# defecto TODOS los configurados participan, y apagar uno es explícito. Se
+# persiste en la tabla `Config` (`provider_enabled:<id>`), mismo patrón que los
+# permisos de A3b — sin migración.
+_PROVIDER_ENABLED_PREFIX = "provider_enabled:"
+
+
+class ProviderEnabledBody(BaseModel):
+    enabled: bool
+
+
+@router.get("/providers/enabled")
+def get_providers_enabled():
+    """Qué proveedores participan en el enrutado del MEL (los ausentes = sí)."""
+    from app.db.database import SessionLocal
+    from app.db.models import Config
+
+    db = SessionLocal()
+    try:
+        rows = db.query(Config).filter(Config.key.like(f"{_PROVIDER_ENABLED_PREFIX}%")).all()
+        return {r.key[len(_PROVIDER_ENABLED_PREFIX):]: (r.value or "on").lower() != "off" for r in rows}
+    finally:
+        db.close()
+
+
+@router.post("/providers/{provider_name}/enabled")
+def set_provider_enabled(provider_name: str, body: ProviderEnabledBody):
+    """Activa/desactiva un proveedor para el enrutado del MEL. Varios pueden
+    estar activos a la vez — el MEL elige por capacidad entre todos."""
+    from app.db.database import SessionLocal
+    from app.db.models import Config
+
+    key = f"{_PROVIDER_ENABLED_PREFIX}{provider_name}"
+    db = SessionLocal()
+    try:
+        row = db.query(Config).filter(Config.key == key).first()
+        value = "on" if body.enabled else "off"
+        if row:
+            row.value = value
+        else:
+            db.add(Config(key=key, value=value))
+        db.commit()
+        return {"provider": provider_name, "enabled": body.enabled}
+    finally:
+        db.close()
+
+
 class TestConnectionRequest(BaseModel):
     model: Optional[str] = None
     api_key: Optional[str] = None

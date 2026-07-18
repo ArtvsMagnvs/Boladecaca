@@ -171,6 +171,40 @@ CATALOG: dict[str, dict] = {
                        "relative_cost": 30, "is_local": False},
             "haiku":  {"scores": _scores(80, 84, 82, 82, 78, 76, 82, 78),
                        "relative_cost": 10, "is_local": False},
+            # `fable` es el modelo rápido de gama alta del CLI: casi calidad de
+            # sonnet con menos coste/latencia.
+            "fable":  {"scores": _scores(86, 84, 85, 86, 85, 86, 90, 85),
+                       "relative_cost": 15, "is_local": False},
+        },
+    },
+    # --- V1.0: proveedores nuevos (2026-07-18) ---
+    "kimi": {
+        # Kimi destaca en contexto largo y razonamiento; buen generalista.
+        "default": {"scores": _scores(84, 82, 84, 86, 82, 85, 82, 85),
+                    "relative_cost": 28, "is_local": False},
+        "models": {
+            "kimi-k3": {"scores": _scores(86, 84, 86, 88, 84, 88, 85, 87),
+                        "relative_cost": 35, "is_local": False},
+        },
+    },
+    "glm": {
+        # GLM: fuerte en tareas estructuradas y código, coste contenido.
+        "default": {"scores": _scores(82, 84, 84, 82, 80, 82, 85, 82),
+                    "relative_cost": 22, "is_local": False},
+        "models": {
+            "glm-5.2-max": {"scores": _scores(86, 86, 87, 86, 84, 87, 89, 86),
+                            "relative_cost": 40, "is_local": False},
+        },
+    },
+    "qwen": {
+        # Qwen por API (de pago) — distinto de los Qwen locales de Ollama.
+        "default": {"scores": _scores(83, 84, 84, 84, 81, 82, 82, 83),
+                    "relative_cost": 26, "is_local": False},
+        "models": {
+            "qwen4.7-max": {"scores": _scores(87, 86, 87, 87, 85, 87, 86, 87),
+                            "relative_cost": 42, "is_local": False},
+            "qwen-turbo":  {"scores": _scores(74, 78, 76, 76, 72, 70, 72, 73),
+                            "relative_cost": 8, "is_local": False},
         },
     },
 }

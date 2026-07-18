@@ -27,6 +27,25 @@ class BaseAIProvider(ABC):
             self._http = httpx.AsyncClient()
         return self._http
 
+    def with_model(self, model: str) -> "BaseAIProvider":
+        """[V1.0 multi-modelo] Vista de ESTE proveedor apuntando a otro de sus
+        modelos, compartiendo credenciales y el cliente httpx persistente.
+
+        Por qué: un proveedor = una API key, pero MUCHOS modelos (los 4 de Claude
+        Code, los GPT-*, los Qwen, los locales de Ollama…). El MEL necesita poder
+        elegir `code -> opus` y `chat -> haiku` dentro del MISMO proveedor. En vez
+        de añadir un parámetro por-llamada a `generate()` en los 11 proveedores,
+        se clona la instancia cambiando solo el modelo: sin handshake TLS extra,
+        sin reinstanciar nada, y sin tocar el contrato de la clase.
+
+        Devuelve `self` si ya apunta a ese modelo (caso común, coste cero)."""
+        if not model or model == self.model:
+            return self
+        clone = self.__class__.__new__(self.__class__)
+        clone.__dict__.update(self.__dict__)   # comparte _http, api_key, base_url…
+        clone.model = model
+        return clone
+
     async def aclose(self) -> None:
         """Cierra el cliente compartido (llamado por AIManager.aclose() en el
         shutdown del lifespan). Fail-soft: nunca lanza."""

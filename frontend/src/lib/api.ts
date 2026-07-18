@@ -1076,6 +1076,20 @@ export const api = {
   testProvider: (provider: string, body: { model?: string; api_key?: string; base_url?: string } = {}) =>
     request<AITestConnectionResult>(`/ai/configured/${provider}/test`, { method: "POST", body: JSON.stringify(body) }),
   getOllamaModels: () => request<{ models: string[] }>("/ai/ollama/models"),
+  // V1.0: varios proveedores activos a la vez. `activateProvider` (arriba) solo
+  // marca el del chat legacy; esto decide quién participa en el enrutado del MEL.
+  getProvidersEnabled: () => request<Record<string, boolean>>("/ai/providers/enabled"),
+  setProviderEnabled: (provider: string, enabled: boolean) =>
+    request<{ provider: string; enabled: boolean }>(`/ai/providers/${provider}/enabled`, {
+      method: "POST",
+      body: JSON.stringify({ enabled }),
+    }),
+  // Cambia solo el modelo primario de un proveedor ya configurado.
+  updateProvider: (provider: string, data: { model?: string; api_key?: string; base_url?: string }) =>
+    request<AIProviderEntry>("/ai/configured", {
+      method: "POST",
+      body: JSON.stringify({ provider, ...data }),
+    }),
 
   // --- Chat ---
   getChatHistory: (limit = 50) => request<{ role: string; content: string; created_at: string }[]>(`/chat/history?limit=${limit}`),

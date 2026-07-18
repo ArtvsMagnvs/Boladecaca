@@ -29,6 +29,9 @@ from .providers.deepseek_provider import DeepSeekProvider
 from .providers.openrouter_provider import OpenRouterProvider
 from .providers.grok_provider import GrokProvider
 from .providers.claude_code_provider import ClaudeCodeProvider
+from .providers.kimi_provider import KimiProvider
+from .providers.glm_provider import GLMProvider
+from .providers.qwen_provider import QwenProvider
 from .catalog import PROVIDER_CATALOG, get_provider_info, list_provider_names
 
 from app.db.database import SessionLocal
@@ -63,6 +66,9 @@ PROVIDER_CLASSES = {
     "openrouter": OpenRouterProvider,
     "grok": GrokProvider,
     "claude_code": ClaudeCodeProvider,
+    "kimi": KimiProvider,
+    "glm": GLMProvider,
+    "qwen": QwenProvider,
 }
 
 # Fallback por defecto cuando el proveedor primario falla: Ollama local,

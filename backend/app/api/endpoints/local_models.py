@@ -32,7 +32,7 @@ async def get_catalog():
     finally:
         db.close()
 
-    runtime_ok = bool(installed) or await _ollama_alive()
+    runtime_ok = bool(installed) or await local_installer.runtime_alive()
 
     families = []
     for family, fam in LOCAL_CATALOG.items():
@@ -62,26 +62,20 @@ async def get_catalog():
     }
 
 
-async def _ollama_alive() -> bool:
-    import httpx
-    from app.core.config import settings
-    try:
-        async with httpx.AsyncClient(timeout=4.0) as client:
-            r = await client.get(f"{settings.OLLAMA_BASE_URL.rstrip('/')}/api/tags")
-            return r.status_code == 200
-    except Exception:
-        return False
-
-
 class TagBody(BaseModel):
     tag: str
 
 
 @router.post("/install")
-def install_model(body: TagBody):
+async def install_model(body: TagBody):
     """Lanza la descarga en segundo plano (idempotente). Devuelve el progreso
-    inicial; la UI hace polling a /install/status."""
-    return local_installer.start(body.tag)
+    inicial; la UI hace polling a /install/status.
+
+    `async def` NO es decorativo: la descarga se lanza con `asyncio.create_task`,
+    que exige un event loop corriendo. Con `def`, FastAPI ejecuta esto en el
+    threadpool (sin loop) y la tarea nunca arrancaba — ese era exactamente el
+    bug de la barra clavada en 0%."""
+    return await local_installer.start(body.tag)
 
 
 @router.get("/install/status")
@@ -93,8 +87,8 @@ def install_status(tag: str):
 
 
 @router.post("/install/cancel")
-def install_cancel(body: TagBody):
-    if not local_installer.cancel(body.tag):
+async def install_cancel(body: TagBody):
+    if not await local_installer.cancel(body.tag):
         raise HTTPException(status_code=400, detail="no hay una descarga en curso para ese modelo")
     return {"cancelled": True}
 

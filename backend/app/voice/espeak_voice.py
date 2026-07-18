@@ -157,12 +157,21 @@ class eSpeakVoice:
             if os.path.exists(path):
                 return path
         
-        # Try to find in PATH
+        # Try to find in PATH.
+        # FIX (V1.0): antes usaba `text=True`, que decodifica con la codificacion
+        # local de Windows; si `where` devolvia un byte fuera de ese juego (rutas
+        # con acentos, consola en cp850), el hilo lector de subprocess reventaba
+        # con UnicodeDecodeError DENTRO de un hilo de fondo — visible en los logs
+        # y fuera del alcance del `except` de abajo. Se leen bytes y se decodifica
+        # a mano tolerando cualquier byte invalido.
         try:
-            result = subprocess.run(["where", "espeak-ng"], capture_output=True, text=True)
+            result = subprocess.run(["where", "espeak-ng"], capture_output=True)
             if result.returncode == 0:
-                return result.stdout.strip().split('\n')[0]
-        except:
+                out = (result.stdout or b"").decode("utf-8", errors="replace")
+                first = out.strip().splitlines()
+                if first:
+                    return first[0]
+        except Exception:
             pass
         
         return None

@@ -60,6 +60,9 @@ export default function Agents() {
   const [formDesc, setFormDesc] = useState("");
   const [formPrompt, setFormPrompt] = useState("");
   const [formTools, setFormTools] = useState<string[]>([]);
+  // Qué descripciones de tool están desplegadas (se cortaban a 2 líneas y no
+  // había forma de leer los límites de seguridad de cada una).
+  const [expandedTools, setExpandedTools] = useState<Set<string>>(new Set());
   const [formTimeout, setFormTimeout] = useState(300);
   const [formActive, setFormActive] = useState(true);
 
@@ -502,8 +505,30 @@ export default function Agents() {
                     className="h-4 w-4 mt-0.5 accent-accent"
                   />
                   <div className="min-w-0 flex-1">
-                    <p className="text-sm font-medium text-ink truncate">{tool.name}</p>
-                    <p className="text-[10px] text-ink-faint line-clamp-2">{tool.description}</p>
+                    <p className="text-sm font-medium text-ink">{tool.name}</p>
+                    {/* La descripción explica QUÉ puede hacer la tool y con qué
+                        límites de seguridad — cortarla a 2 líneas ocultaba justo
+                        esa parte. Ahora se despliega entera bajo demanda. */}
+                    <p className={`text-[10px] text-ink-faint ${expandedTools.has(tool.tool_id) ? "" : "line-clamp-2"}`}>
+                      {tool.description}
+                    </p>
+                    {(tool.description?.length ?? 0) > 90 && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.preventDefault();   // no marca/desmarca el checkbox del label
+                          e.stopPropagation();
+                          setExpandedTools((prev) => {
+                            const next = new Set(prev);
+                            next.has(tool.tool_id) ? next.delete(tool.tool_id) : next.add(tool.tool_id);
+                            return next;
+                          });
+                        }}
+                        className="text-[10px] text-accent hover:underline mt-0.5"
+                      >
+                        {expandedTools.has(tool.tool_id) ? "ver menos" : "ver más"}
+                      </button>
+                    )}
                     <p className="text-[10px] text-accent mt-0.5">
                       {tool.actions.length} accion{tool.actions.length !== 1 ? "es" : ""}
                     </p>

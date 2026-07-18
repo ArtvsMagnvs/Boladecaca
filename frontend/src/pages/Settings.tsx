@@ -893,7 +893,27 @@ function IntelligenceSettings() {
   if (!policies) return <p className="text-xs text-ink-faint">Cargando…</p>;
 
   // Etiqueta legible de un model_key: el label del proveedor si lo conocemos.
-  const modelLabel = (key: string) => models.find((m) => m.key === key)?.label ?? key.split(":")[0];
+  // Etiqueta legible de un model_key. Marca "(local)" porque una misma familia
+  // (Qwen, DeepSeek…) puede estar a la vez en el PC y por API de pago, y el
+  // usuario necesita distinguirlas de un vistazo.
+  const modelLabel = (key: string) => {
+    const m = models.find((x) => x.key === key);
+    if (!m) return key.split(":")[0];
+    return `${m.label}${m.is_local ? " (local)" : ""} · ${m.model}`;
+  };
+
+  // Modelos agrupados por proveedor para el selector en cascada. El nombre del
+  // grupo ya lleva "(local)", así que las opciones solo muestran el modelo.
+  const groupedModels = (() => {
+    const groups = new Map<string, MelModel[]>();
+    for (const m of models) {
+      const groupLabel = `${m.label}${m.is_local ? " (local)" : ""}`;
+      const list = groups.get(groupLabel);
+      if (list) list.push(m);
+      else groups.set(groupLabel, [m]);
+    }
+    return Array.from(groups.entries());
+  })();
 
   return (
     <div className="space-y-3">
@@ -981,8 +1001,15 @@ function IntelligenceSettings() {
                             className="bg-base-900 border border-base-600 rounded px-2 py-1 text-ink text-[11px] max-w-[60%]"
                           >
                             <option value="">Automático</option>
-                            {models.map((m) => (
-                              <option key={m.key} value={m.key}>{m.label} · {m.model}</option>
+                            {/* Agrupado por PROVEEDOR y luego modelo: una misma
+                                familia (p.ej. Qwen) puede estar en local y por
+                                API, así que el grupo marca cuál es cuál. */}
+                            {groupedModels.map(([groupLabel, items]) => (
+                              <optgroup key={groupLabel} label={groupLabel}>
+                                {items.map((m) => (
+                                  <option key={m.key} value={m.key}>{m.model}</option>
+                                ))}
+                              </optgroup>
                             ))}
                           </select>
                         </div>
@@ -1307,6 +1334,7 @@ interface EditState {
 
 export default function Settings() {
   const [providers, setProviders] = useState<AIProviderEntry[]>([]);
+  const [providersEnabled, setProvidersEnabled] = useState<Record<string, boolean>>({});
   const [aiStatus, setAiStatus] = useState<{ provider: string | null; model: string | null; healthy: boolean } | null>(null);
   const [loading, setLoading] = useState(true);
   const [editState, setEditState] = useState<EditState | null>(null);
@@ -1328,16 +1356,33 @@ export default function Settings() {
   const loadData = async () => {
     setLoading(true);
     try {
-      const [providersData, statusData] = await Promise.all([
+      const [providersData, statusData, enabledMap] = await Promise.all([
         api.getConfiguredProviders(),
-        api.getAIStatus()
+        api.getAIStatus(),
+        // V1.0: qué proveedores participan en el enrutado del MEL. Los que no
+        // aparecen en el mapa están activos (apagar es explícito).
+        api.getProvidersEnabled().catch(() => ({} as Record<string, boolean>)),
       ]);
       setProviders(providersData);
       setAiStatus(statusData);
+      setProvidersEnabled(enabledMap);
     } catch (e) {
       console.error("Error cargando configuración:", e);
     } finally {
       setLoading(false);
+    }
+  };
+
+  // V1.0: varios proveedores pueden estar activos A LA VEZ — el MEL reparte
+  // entre todos. Este toggle decide quién participa; el chat concreto se elige
+  // en la sección Inteligencia.
+  const toggleProviderEnabled = async (provider: string, enabled: boolean) => {
+    setProvidersEnabled(prev => ({ ...prev, [provider]: enabled }));
+    try {
+      await api.setProviderEnabled(provider, enabled);
+    } catch (e) {
+      setProvidersEnabled(prev => ({ ...prev, [provider]: !enabled }));  // revierte
+      console.error("No se pudo cambiar el proveedor:", e);
     }
   };
 
@@ -1409,6 +1454,18 @@ export default function Settings() {
       await loadData();
     } catch (e) {
       console.error("Error activando proveedor:", e);
+    }
+  };
+
+  // V1.0: cambia el modelo primario de un proveedor sin abrir el modal de
+  // edición (una API key da acceso a varios modelos).
+  const handleSelectModel = async (provider: string, model: string) => {
+    setProviders(prev => prev.map(p => p.provider === provider ? { ...p, model } : p));
+    try {
+      await api.updateProvider(provider, { model });
+    } catch (e) {
+      console.error("No se pudo cambiar el modelo:", e);
+      await loadData();  // revierte al estado real
     }
   };
 
@@ -1549,52 +1606,93 @@ export default function Settings() {
             <LocalModelsSettings />
           </div>
 
-          {/* V1.0 (MEL E2): Inteligencia — qué modelo ejecuta cada tarea */}
-          <div className="glass-surface rounded-2xl p-4">
-            <h3 className="text-sm font-medium text-ink mb-3">Inteligencia</h3>
-            <IntelligenceSettings />
-          </div>
-
-          {/* V0.9 (Automation Engine A3b): Permisos & Autonomía */}
-          <div className="glass-surface rounded-2xl p-4">
-            <h3 className="text-sm font-medium text-ink mb-3">Permisos</h3>
-            <PermissionsSettings />
-          </div>
-
         {loading ? (
           <div className="text-center text-ink-dim py-10">Cargando...</div>
         ) : (
           <div className="flex flex-col gap-4">
             <div>
-              <h3 className="text-sm font-medium text-ink mb-3">Proveedores de IA</h3>
-              {providers.map(p => (
+              <h3 className="text-sm font-medium text-ink mb-1">Proveedores de IA</h3>
+              <p className="text-xs text-ink-dim mb-3">
+                Puedes tener varios proveedores activos a la vez: Aithera reparte cada tarea
+                entre todos según su fuerza. El modelo del chat se elige en <b>Inteligencia</b>.
+              </p>
+              {providers.map(p => {
+                // Sin entrada en el mapa = participa (apagar es explícito).
+                const enabled = providersEnabled[p.provider] !== false;
+                const models = p.available_models || [];
+                return (
                 <div key={p.provider} className="glass-surface rounded-xl p-4 mb-3">
-                  <div className="flex items-center justify-between mb-1">
-                    <div className="flex items-center gap-2">
+                  <div className="flex items-center justify-between mb-1 gap-2">
+                    <div className="flex items-center gap-2 min-w-0">
                       <span className="font-medium text-ink text-sm">{p.label}</span>
-                      {p.is_active && <span className="text-xs px-2 py-0.5 rounded bg-signal-ok/15 text-signal-ok">Activo</span>}
-                      {p.has_api_key && !p.is_active && <span className="text-xs px-2 py-0.5 rounded bg-base-700 text-ink-dim">Configurado</span>}
+                      {p.is_configured && enabled && (
+                        <span className="text-xs px-2 py-0.5 rounded bg-signal-ok/15 text-signal-ok">Activo</span>
+                      )}
+                      {p.is_configured && !enabled && (
+                        <span className="text-xs px-2 py-0.5 rounded bg-base-700 text-ink-dim">En pausa</span>
+                      )}
+                      {p.is_active && (
+                        <span className="text-xs px-2 py-0.5 rounded bg-accent/15 text-accent" title="Proveedor del chat directo (legacy)">
+                          Chat
+                        </span>
+                      )}
                     </div>
-                    <div className="flex gap-1">
+                    <div className="flex items-center gap-2 shrink-0">
                       <button onClick={() => openEdit(p)} className="text-xs px-2 py-1 rounded bg-base-700 text-ink-dim border border-base-600 hover:bg-base-600">
                         {p.has_api_key ? "Editar" : "Configurar"}
                       </button>
-                      {!p.is_active && p.is_configured && (
-                        <button onClick={() => handleActivate(p.provider)} className="text-xs px-2 py-1 rounded bg-accent/15 text-accent border border-accent/30 hover:bg-accent/25">
-                          Activar
-                        </button>
+                      {p.is_configured && (
+                        <Toggle
+                          checked={enabled}
+                          onChange={(v) => toggleProviderEnabled(p.provider, v)}
+                          label={`Usar ${p.label} en el enrutado`}
+                        />
                       )}
                     </div>
                   </div>
-                  <p className="text-xs text-ink-faint">
-                    {p.model || "—"}
-                    {p.has_api_key && p.api_key_preview && <span className="ml-2 opacity-50">key: {p.api_key_preview}</span>}
-                  </p>
+
+                  {/* Selector de modelo: una API key da acceso a varios modelos.
+                      El elegido aquí es el PRIMARIO del proveedor; el MEL puede
+                      usar el resto por capacidad si le convienen. */}
+                  {p.is_configured && models.length > 0 ? (
+                    <div className="flex items-center gap-2 mt-2">
+                      <span className="text-[11px] text-ink-dim shrink-0">Modelo</span>
+                      <select
+                        value={p.model || ""}
+                        onChange={(e) => handleSelectModel(p.provider, e.target.value)}
+                        className="bg-base-900 border border-base-600 rounded px-2 py-1 text-ink text-[11px] flex-1 min-w-0"
+                      >
+                        {!models.includes(p.model || "") && p.model && (
+                          <option value={p.model}>{p.model}</option>
+                        )}
+                        {models.map(m => <option key={m} value={m}>{m}</option>)}
+                      </select>
+                    </div>
+                  ) : (
+                    <p className="text-xs text-ink-faint mt-1">{p.model || "—"}</p>
+                  )}
+
+                  {p.has_api_key && p.api_key_preview && (
+                    <p className="text-[11px] text-ink-faint mt-1 opacity-50">key: {p.api_key_preview}</p>
+                  )}
                   {!p.has_api_key && p.requires_key && (
                     <p className="text-xs text-signal-warn mt-1">Sin API key — pulsa "Configurar"</p>
                   )}
                 </div>
-              ))}
+                );
+              })}
+            </div>
+
+            {/* V1.0 (MEL E2): Inteligencia — qué modelo ejecuta cada tarea */}
+            <div className="glass-surface rounded-2xl p-4">
+              <h3 className="text-sm font-medium text-ink mb-3">Inteligencia</h3>
+              <IntelligenceSettings />
+            </div>
+
+            {/* V0.9 (Automation Engine A3b): Permisos & Autonomía */}
+            <div className="glass-surface rounded-2xl p-4">
+              <h3 className="text-sm font-medium text-ink mb-3">Permisos</h3>
+              <PermissionsSettings />
             </div>
 
             <div className="glass-surface rounded-2xl p-4">

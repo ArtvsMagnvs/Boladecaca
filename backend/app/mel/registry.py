@@ -40,18 +40,29 @@ def list_available() -> list[ModelRef]:
 
     out: list[ModelRef] = []
     seen: set[str] = set()
+    disabled = _disabled_providers()
     try:
         for entry in ai_manager.list_configured():
             if not entry.get("is_configured"):
                 continue
             provider = entry["provider"]
-            model = entry.get("model") or ""
-            if not model:
+            # [V1.0] Varios proveedores pueden estar activos A LA VEZ (el MEL
+            # reparte entre todos). `is_active` del AIManager ya solo marca el
+            # del chat legacy; lo que decide si un proveedor participa en el
+            # enrutado es este interruptor explícito del usuario.
+            if provider in disabled:
                 continue
-            ref = ModelRef(provider=provider, model=model,
-                           is_local=_catalog_is_local(provider, model))
-            out.append(ref)
-            seen.add(ref.key)
+
+            # Su modelo configurado + TODOS los del catálogo del proveedor: una
+            # sola API key da acceso a varios modelos (los 4 de Claude Code, los
+            # GPT-*, los Qwen…), y el usuario quiere poder mandar `code` a uno y
+            # `chat` a otro DENTRO del mismo proveedor.
+            for model in _models_of(entry):
+                ref = ModelRef(provider=provider, model=model,
+                               is_local=_catalog_is_local(provider, model))
+                if ref.key not in seen:
+                    out.append(ref)
+                    seen.add(ref.key)
     except Exception as e:
         logger.error(f"[registry] list_available falló: {type(e).__name__}: {e}")
 
@@ -68,6 +79,40 @@ def list_available() -> list[ModelRef]:
     except Exception as e:
         logger.error(f"[registry] modelos locales no disponibles: {type(e).__name__}: {e}")
     return out
+
+
+def _models_of(entry: dict) -> list[str]:
+    """Modelos utilizables de un proveedor configurado: el que tiene puesto
+    (primero, para que gane a igualdad de score) + los del catálogo. Ollama se
+    excluye a propósito: sus modelos vienen de `local_models`, que refleja lo
+    que hay DESCARGADO de verdad — listar el catálogo entero ofrecería modelos
+    sin instalar."""
+    model = entry.get("model") or ""
+    if entry.get("provider") == "ollama":
+        return [model] if model else []
+    models = [model] if model else []
+    for m in entry.get("available_models") or []:
+        if m and m not in models:
+            models.append(m)
+    return models
+
+
+def _disabled_providers() -> set[str]:
+    """Proveedores que el usuario ha apagado para el enrutado del MEL. Se guarda
+    en la tabla `Config` (`provider_enabled:<id>` = "off"), mismo patrón que los
+    permisos de A3b — sin migración. Por defecto TODO proveedor configurado
+    participa: apagar es una acción explícita."""
+    from app.db.database import SessionLocal
+    from app.db.models import Config
+
+    db = SessionLocal()
+    try:
+        rows = db.query(Config).filter(Config.key.like("provider_enabled:%")).all()
+        return {r.key.split(":", 1)[1] for r in rows if (r.value or "").lower() == "off"}
+    except Exception:
+        return set()
+    finally:
+        db.close()
 
 
 def _enabled_local_tags() -> list[str]:

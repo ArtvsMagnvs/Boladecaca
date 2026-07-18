@@ -95,6 +95,33 @@ PROVIDER_CATALOG: Dict[str, Dict[str, Any]] = {
         "models": ["grok-4.3"],
         "supports_auto_detect": False,
     },
+    # --- V1.0: proveedores anadidos a peticion del usuario (2026-07-18) ---
+    # Los tres exponen Chat Completions con contrato OpenAI, asi que heredan de
+    # OpenAICompatibleProvider sin logica propia.
+    "kimi": {
+        "label": "Kimi (Moonshot)",
+        "requires_key": True,
+        "default_model": "kimi-k3",
+        "models": ["kimi-k3", "kimi-k2.6"],
+        "supports_auto_detect": False,
+    },
+    "glm": {
+        "label": "GLM (Z.ai)",
+        "requires_key": True,
+        "default_model": "glm-5.2",
+        "models": ["glm-5.2", "glm-5.2-max", "glm-5.1"],
+        "supports_auto_detect": False,
+    },
+    # Qwen POR API (de pago). Distinto de los Qwen LOCALES que corren en Ollama:
+    # una misma familia puede estar en los dos sitios, por eso la pantalla
+    # Inteligencia marca "(local)" en los que corren en el PC del usuario.
+    "qwen": {
+        "label": "Qwen (API)",
+        "requires_key": True,
+        "default_model": "qwen-max",
+        "models": ["qwen-max", "qwen4.7-max", "qwen-plus", "qwen-turbo"],
+        "supports_auto_detect": False,
+    },
 }
 
 

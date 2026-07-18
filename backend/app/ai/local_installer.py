@@ -1,38 +1,49 @@
 # app/ai/local_installer.py — instalación de modelos locales con 1 clic (V1.0)
 #
-# Descarga automática vía `POST /api/pull` de Ollama con `stream=true`: Ollama
-# emite líneas JSON con el progreso real (`total`/`completed`), que aquí se
-# traducen a un porcentaje consultable desde la UI.
+# Descarga vía el CLI de Ollama en un proceso INVISIBLE (`ollama pull <tag>`),
+# parseando su barra de progreso para reflejar el % real en la UI.
 #
-# Por qué en segundo plano y no una llamada bloqueante: un modelo son 5-21 GB;
-# ninguna petición HTTP (ni el timeout duro del ToolManager, 300 s máx) aguanta
-# eso. Mismo patrón que `DownloadTool`: `start()` devuelve al instante un id,
-# y `status()`/`cancel()` consultan/paran después.
+# Por qué el CLI y no la API HTTP (petición del usuario, 2026-07-18): es la vía
+# más directa —la misma que usaría el usuario en su terminal—, hereda tal cual el
+# manejo de reintentos/reanudación del cliente oficial, y sobre todo **cancelar
+# es matar el proceso**, que es fiable de verdad; con la API había que confiar en
+# que el servidor atendiera una señal cooperativa.
 #
-# Al terminar con éxito, el modelo se da de alta en la tabla `local_models` —
-# ahí es cuando pasa a ser un candidato REAL para el MEL (registry lo ve y el
-# Rule Engine puede elegirlo).
+# BUG CORREGIDO (2026-07-18): la versión anterior lanzaba la descarga con
+# `asyncio.create_task()` desde un endpoint SÍNCRONO (`def`, que FastAPI ejecuta
+# en el threadpool, sin event loop). Eso lanzaba `RuntimeError: no running event
+# loop` DESPUÉS de haber creado la entrada del job — de ahí los dos síntomas que
+# reportó el usuario: la barra aparecía clavada en 0% (el job existía pero nadie
+# lo ejecutaba) y "Cancelar" no hacía nada (no había proceso que matar). Es el
+# mismo patrón `def` vs `async def` que ya mordió en WPMS W4. Ahora los endpoints
+# son `async def` y la descarga corre en un subproceso real.
 from __future__ import annotations
 
 import asyncio
-import json
+import re
 from datetime import datetime
 from typing import Any, Optional
-
-import httpx
 
 from app.core.logging_config import get_system_logger
 from app.ai.local_catalog import find_model
 
 logger = get_system_logger("ai.local_installer")
 
-# {tag: {status, percent, downloaded_gb, total_gb, error, _cancel, _task}}
+# {tag: {status, percent, downloaded, total, step, error, _proc}}
 _JOBS: dict[str, dict[str, Any]] = {}
 
+# La barra de Ollama emite códigos ANSI y se refresca con \r. Se limpian para
+# quedarse con el texto plano de la última línea de progreso.
+_ANSI = re.compile(r"\x1B\[[0-?]*[ -/]*[@-~]|\x1B\][^\x07]*\x07|\x1B[<-?]")
+# "pulling a3de86cd:  42% ▕███  ▏ 2.2 GB/5.2 GB  12 MB/s  4m2s"
+_PCT = re.compile(r"(\d{1,3})\s*%")
+_SIZES = re.compile(r"([\d.]+\s*[KMGT]?B)\s*/\s*([\d.]+\s*[KMGT]?B)")
+_STEP = re.compile(r"(pulling manifest|verifying|writing manifest|success|pulling\s+\S+)")
 
-def _base_url() -> str:
-    from app.core.config import settings
-    return settings.OLLAMA_BASE_URL.rstrip("/")
+
+def _ollama_cli() -> Optional[str]:
+    import shutil
+    return shutil.which("ollama")
 
 
 def status(tag: str) -> Optional[dict]:
@@ -44,91 +55,120 @@ def status(tag: str) -> Optional[dict]:
 
 
 def all_jobs() -> dict[str, dict]:
-    """Todas las instalaciones vivas/recientes — la UI las pinta de una vez."""
     return {tag: status(tag) for tag in _JOBS}
 
 
-def start(tag: str) -> dict:
-    """Lanza la descarga en segundo plano. Idempotente: si ya está en curso,
-    devuelve el estado actual en vez de duplicar la descarga."""
+async def start(tag: str) -> dict:
+    """Lanza `ollama pull <tag>` en segundo plano. Idempotente: si ya está
+    descargando, devuelve el estado actual sin duplicar el proceso."""
     job = _JOBS.get(tag)
     if job and job.get("status") == "downloading":
         return status(tag)
 
-    _JOBS[tag] = {
-        "tag": tag, "status": "downloading", "percent": 0.0,
-        "downloaded_gb": 0.0, "total_gb": None, "error": None, "_cancel": False,
-    }
-    _JOBS[tag]["_task"] = asyncio.create_task(_pull(tag))
+    cli = _ollama_cli()
+    if not cli:
+        _JOBS[tag] = {"tag": tag, "status": "failed", "percent": 0.0,
+                      "downloaded": None, "total": None, "step": None,
+                      "error": "El comando `ollama` no está instalado o no está en el PATH."}
+        return status(tag)
+
+    _JOBS[tag] = {"tag": tag, "status": "downloading", "percent": 0.0,
+                  "downloaded": None, "total": None, "step": "iniciando…", "error": None}
+    # Se lanza aquí (endpoint async -> hay event loop) y se deja corriendo: una
+    # descarga de 5-21 GB no cabe en el ciclo de vida de una petición HTTP.
+    asyncio.create_task(_pull(tag, cli))
     return status(tag)
 
 
-def cancel(tag: str) -> bool:
-    """Cancela una descarga en curso. Ollama deja el progreso parcial en su
-    caché, así que reintentar más tarde REANUDA en vez de empezar de cero."""
+async def cancel(tag: str) -> bool:
+    """Cancela matando el proceso. Ollama conserva lo ya descargado en su caché,
+    así que reintentar más tarde REANUDA en vez de empezar de cero."""
     job = _JOBS.get(tag)
     if not job or job.get("status") != "downloading":
         return False
-    job["_cancel"] = True
-    task = job.get("_task")
-    if task and not task.done():
-        task.cancel()
+    proc = job.get("_proc")
+    if proc is not None and proc.returncode is None:
+        try:
+            proc.kill()
+        except ProcessLookupError:
+            pass
+    job["status"] = "cancelled"
+    job["step"] = "cancelado"
     return True
 
 
-async def _pull(tag: str) -> None:
+async def _pull(tag: str, cli: str) -> None:
     job = _JOBS[tag]
     try:
-        async with httpx.AsyncClient(timeout=None) as client:
-            async with client.stream("POST", f"{_base_url()}/api/pull",
-                                     json={"model": tag, "stream": True}) as resp:
-                resp.raise_for_status()
-                async for line in resp.aiter_lines():
-                    if job["_cancel"]:
-                        job["status"] = "cancelled"
-                        return
-                    if not line.strip():
-                        continue
-                    try:
-                        data = json.loads(line)
-                    except json.JSONDecodeError:
-                        continue
+        proc = await asyncio.create_subprocess_exec(
+            cli, "pull", tag,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.STDOUT,   # la barra sale por stderr
+        )
+        job["_proc"] = proc
 
-                    # Ollama informa el fallo en el propio cuerpo (HTTP sigue 200):
-                    # p.ej. un tag que no existe en el registro.
-                    if data.get("error"):
-                        job["status"] = "failed"
-                        job["error"] = str(data["error"])
-                        return
+        buf = ""
+        while True:
+            chunk = await proc.stdout.read(2048)
+            if not chunk:
+                break
+            buf += chunk.decode("utf-8", errors="replace")
+            # La barra se refresca con \r; nos quedamos con el último tramo.
+            parts = re.split(r"[\r\n]", buf)
+            buf = parts[-1] if len(parts) > 1 else buf
+            for raw in parts[:-1] or [buf]:
+                _apply_progress(job, raw)
+            if len(buf) > 4096:      # nunca crecer sin límite
+                buf = buf[-1024:]
 
-                    total = data.get("total")
-                    completed = data.get("completed")
-                    if total:
-                        job["total_gb"] = round(total / (1024 ** 3), 2)
-                        if completed:
-                            job["downloaded_gb"] = round(completed / (1024 ** 3), 2)
-                            job["percent"] = round(completed / total * 100, 1)
-                    job["step"] = data.get("status", "")
-
-        job["percent"] = 100.0
-        job["status"] = "done"
-        _register_installed(tag)
-        logger.info(f"[local_installer] modelo instalado: {tag}")
+        await proc.wait()
+        if job["status"] == "cancelled":
+            return
+        if proc.returncode == 0:
+            job["percent"] = 100.0
+            job["status"] = "done"
+            job["step"] = "instalado"
+            _register_installed(tag)
+            logger.info(f"[local_installer] modelo instalado: {tag}")
+        else:
+            job["status"] = "failed"
+            job["error"] = job.get("_last_line") or f"`ollama pull` terminó con código {proc.returncode}"
     except asyncio.CancelledError:
         job["status"] = "cancelled"
-    except httpx.ConnectError:
-        job["status"] = "failed"
-        job["error"] = f"no se pudo conectar con Ollama en {_base_url()} (¿está arrancado?)"
     except Exception as e:
         job["status"] = "failed"
         job["error"] = f"{type(e).__name__}: {e}"
         logger.error(f"[local_installer] fallo instalando {tag}: {e}")
+    finally:
+        job.pop("_proc", None)
+
+
+def _apply_progress(job: dict, raw: str) -> None:
+    """Traduce una línea de la barra de Ollama a estado consultable."""
+    line = _ANSI.sub("", raw).strip()
+    if not line:
+        return
+    job["_last_line"] = line[:300]
+
+    step = _STEP.search(line)
+    if step:
+        job["step"] = step.group(1)
+
+    sizes = _SIZES.search(line)
+    if sizes:
+        job["downloaded"], job["total"] = sizes.group(1).strip(), sizes.group(2).strip()
+
+    pct = _PCT.search(line)
+    if pct:
+        value = int(pct.group(1))
+        if 0 <= value <= 100:
+            # La barra puede reiniciarse por capa; nos quedamos con el máximo
+            # visto para que el porcentaje no retroceda en pantalla.
+            job["percent"] = float(max(value, int(job.get("percent") or 0)))
 
 
 def _register_installed(tag: str) -> None:
-    """Alta en `local_models` → a partir de aquí el MEL lo ve como candidato.
-    Best-effort: si la BD falla, el modelo ya está descargado y se puede
-    reintentar el alta; nunca se pierde la descarga por esto."""
+    """Alta en `local_models` → a partir de aquí el MEL lo ve como candidato."""
     from app.db.database import SessionLocal
     from app.db.models import LocalModel
 
@@ -157,13 +197,40 @@ def _register_installed(tag: str) -> None:
 
 
 async def installed_tags() -> set[str]:
-    """Modelos realmente presentes en Ollama (fuente de verdad del disco).
-    Se cruza con el catálogo para que la UI sepa qué está instalado aunque el
-    usuario lo bajara a mano con `ollama pull`."""
+    """Modelos realmente presentes (fuente de verdad del disco), vía `ollama list`."""
+    cli = _ollama_cli()
+    if not cli:
+        return set()
     try:
-        async with httpx.AsyncClient(timeout=8.0) as client:
-            r = await client.get(f"{_base_url()}/api/tags")
-            r.raise_for_status()
-            return {m.get("name", "") for m in r.json().get("models", [])}
+        proc = await asyncio.create_subprocess_exec(
+            cli, "list", stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL,
+        )
+        out, _ = await asyncio.wait_for(proc.communicate(), timeout=15)
+        tags: set[str] = set()
+        for line in out.decode("utf-8", errors="replace").splitlines()[1:]:  # salta cabecera
+            name = line.split()[0] if line.split() else ""
+            if name:
+                tags.add(name)
+                # `ollama list` muestra "modelo:latest"; el catálogo puede pedir
+                # "modelo" a secas — se registran ambas formas.
+                if name.endswith(":latest"):
+                    tags.add(name[: -len(":latest")])
+        return tags
     except Exception:
         return set()
+
+
+async def runtime_alive() -> bool:
+    """¿Está Ollama operativo? Se pregunta al propio CLI (misma vía que todo lo
+    demás), no por HTTP."""
+    cli = _ollama_cli()
+    if not cli:
+        return False
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            cli, "list", stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL,
+        )
+        await asyncio.wait_for(proc.wait(), timeout=10)
+        return proc.returncode == 0
+    except Exception:
+        return False
