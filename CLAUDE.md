@@ -1342,7 +1342,49 @@ cierra con integración Orchestrator + MVP-beta.
   con modelos de fuerzas distintas por capacidad (p.ej. Ornith code-especialista) o
   a mano con Personalizado. **Pendiente como planes APARTE** (no MEL v1): integración
   Orchestrator (AE `AgentTaskAction`→`tie.submit_mission`) y MVP-beta.
-- **V1.1** — Hermes (Nous Research) como sistema de agentes bajo el TIE + Learner
+- **V1.0 — Capacitación de tools (bloque CERRADO sobre `master`, 2026-07-18)**:
+petición directa del usuario ANTES de la integración del Orchestrator — "revisa
+si las tools existentes realmente funcionan en testeos en vivo o si están
+puestas pero no son funcionales" + añadir las que faltaban de una lista concreta.
+Sin bump (sigue `0.9.2`).
+- **Auditoría en vivo de las 6 existentes** (contra sistemas REALES, no mocks):
+  filesystem/shell/powershell/git → **22/22 OK**, incluidas las defensas
+  (path traversal, binario fuera de whitelist, encadenamiento de comandos, repo
+  fuera de HOME). email/calendar → lectura real OK; la escritura
+  (create_draft/send_email/create_event) se verificó con el cliente de Google
+  MOCKEADO a propósito: enviar un email o crear un evento real en la cuenta del
+  usuario no se hace sin permiso explícito. **Hallazgo real (config externa, no
+  bug)**: la Google Calendar API NO está habilitada en el proyecto de Google
+  Cloud (403 real) → `list_events`/`get_event`/`create_event`/`sync_to_aithera`
+  fallan hasta habilitarla a mano en Google Cloud Console; `find_free_slots`
+  degrada bien porque ya tenía fail-soft alrededor de la llamada a Google.
+- **Adjuntos en el Email Assistant**: `create_draft`/`send_email` ganan
+  `attachments: list[str]` dentro del MISMO `email_tool.py` (no un sistema
+  aparte) — `MIMEMultipart` + reuso literal de la validación de paths de
+  `FilesystemTool` (solo dentro de HOME, límite 15MB). Verificado: adjunto real
+  embebido en el MIME, `Content-Disposition` correcto, path fuera de HOME
+  rechazado, caso sin adjuntos idéntico a antes.
+- **8 tools nuevas** (ver §8 para el detalle): `process`, `secrets`, `memory`,
+  `model`, `download`, `search` (Brave+SerpAPI con fallback, configurables en
+  Ajustes → Búsqueda web), `browser` (Playwright/Chromium real) y `desktop`
+  (ratón/teclado + OCR nativo de Windows). Total: **14 tools, 91 acciones**.
+- **Permisos**: `browser.use`/`computer.use` pasan de `available=False`
+  ("próximamente") a `True` — cambio de UN flag, exactamente como el diseño de
+  A3b anticipaba; el frontend no necesitó tocarse (ya leía el flag).
+- **Rendimiento**: `desktop_tool` importaba pyautogui+winocr a nivel de módulo
+  (+0.44 s en el import de `app.main`, medido, porque el ToolManager registra
+  todas las tools al arrancar) → corregido a import LAZY, mismo patrón que
+  Playwright. Arranque de ~1.93 s → ~1.73 s.
+- Tests: `test_new_tools.py` (31) + 2 de `test_permissions.py` actualizados.
+  Suite: **539 passed**. `tsc`/`vite build` limpios.
+- **Pendiente REAL que esto destapa** (el siguiente bloque): `agent_manager.
+  _run_execution()` sigue siendo el **placeholder de V0.5** — ignora la tarea
+  del usuario y ejecuta acciones fijas de demo (`list_dir`/`list_scripts`/
+  `git status`) según qué tools tenga el agente. Las 14 tools existen y son
+  asignables, pero **ningún agente decide todavía cuál usar**: eso es
+  exactamente lo que resuelve la integración del Orchestrator.
+
+**V1.1** — Hermes (Nous Research) como sistema de agentes bajo el TIE + Learner
 
 **Estado del git**: branch `master` con historia activa. V0.7.1 commiteado
 (commit `abf4493`, tag `v0.7.1`). Trabajo V0.8 sobre `master`: B21
@@ -1710,6 +1752,7 @@ Docs: `PLAN_MAESTRO_2026/10` (Hermes/AgentRuntime) + `15` (Learning System) + `0
 | `/api/tools` | `tools.py` | 2.3KB | Catálogo de herramientas + ejecución |
 | `/api/memory` | `memory.py` | 5.6KB | Búsqueda y stats de memoria semántica + V0.85 M2: `ingest/status`, `ingest/run` + M3: `briefing`, `stats` extendido |
 | `/api/telegram` | `telegram.py` | ~110 líneas | V0.8: status + configure (token cifrado DPAPI) del canal Telegram |
+| `/api/search` | `search_config.py` | ~95 líneas | V1.0 (Tools): status + configure/deconfigure de los proveedores de búsqueda (Brave/SerpAPI), keys cifradas DPAPI — mismo patrón que Telegram |
 | `/api/tie` | `tie.py` | — | V1.0 TIE: misiones (list/get/cancel/approve-plan/delete) |
 | `/api/mel` | `mel.py` | — | V1.0 MEL: capability-report (E1b) + policies/active + models/primary/restore + overrides (E2/E2b) |
 
@@ -1740,22 +1783,55 @@ Exception handler global en `main.py:113` que captura y loguea todo.
 
 ---
 
-## 8. ToolManager — 8 herramientas registradas
+## 8. ToolManager — 14 herramientas registradas (91 acciones)
 
 El paquete `app.tools` se importa en `main.py:15` como efecto secundario
 para auto-registrar las herramientas en el `ToolManager`. Sin este import,
 `GET /api/tools/` devuelve `[]` y el AgentManager no puede ejecutar nada.
+El catálogo lo consume la UI de agentes (`allowed_tools`) de forma DINÁMICA:
+registrar una tool nueva la hace asignable sin tocar el frontend.
 
-| Tool | Archivo | Tamaño | Capacidades |
-|------|---------|--------|-------------|
-| `filesystem` | `filesystem_tool.py` | 11KB | list_dir, read_file, write_file (con whitelist de rutas) |
-| `shell` | `shell_tool.py` | 7.6KB | ejecutar comandos con whitelist (python, git, npm, uvicorn) |
-| `git` | `git_tool.py` | 9.2KB | status, log, diff, commit |
-| `powershell` | `powershell_tool.py` | 7.9KB | scripts específicos aprobados |
-| `email` | `email_tool.py` | **44KB** | Gmail REST + auto-reply + meeting detection |
-| `calendar` | `calendar_tool.py` | **29KB** | Google Calendar + availability + proposals |
-| `base` | `base.py` | 2.3KB | Interfaz `BaseTool` para todas las herramientas |
-| `tool_manager` | `tool_manager.py` | 11.7KB | Registro centralizado + validación |
+| Tool | Archivo | Capacidades | Añadida |
+|------|---------|-------------|---------|
+| `filesystem` | `filesystem_tool.py` | list_dir, read_file, write_file, create_dir, delete_file, file_exists (whitelist: solo dentro de HOME) | V0.4 |
+| `shell` | `shell_tool.py` | ejecutar comandos con whitelist estricta (python, pip, git, npm, node, npx, uvicorn) | V0.4 |
+| `git` | `git_tool.py` | status, log, diff, branch_list, show_file, add, commit | V0.4 |
+| `powershell` | `powershell_tool.py` | run_script (solo .ps1 predefinidos en `~/AitheraScripts`), list_scripts | V0.5 |
+| `email` | `email_tool.py` | Gmail REST + auto-reply + meeting detection + **adjuntos** (V1.0) | V0.7 |
+| `calendar` | `calendar_tool.py` | Google Calendar + availability + free slots + proposals | V0.7 |
+| `process` | `process_tool.py` | list_processes, cpu_status, ram_status, open_program (whitelist), close_program (protege el sistema y el propio backend) | V1.0 |
+| `secrets` | `secrets_tool.py` | get/set/list(enmascarado)/delete — cifrado DPAPI en tabla `Config` (namespace `secret:`) | V1.0 |
+| `memory` | `memory_tool.py` | search/save/update/delete sobre el MOS (vía `memory_router`, nunca ChromaDB directo) | V1.0 |
+| `model` | `model_tool.py` | list/load/pull/delete modelos de Ollama + gpu_ram_status (psutil + nvidia-smi) | V1.0 |
+| `download` | `download_tool.py` | download_url (tarea de fondo, no bloquea el timeout del manager), get_download_status, cancel_download | V1.0 |
+| `search` | `search_tool.py` | search_web/news/images/videos — Brave Search API primero, SerpAPI como respaldo (Ajustes → Búsqueda web) | V1.0 |
+| `browser` | `browser_tool.py` | Playwright/Chromium real: open_url, new_tab, close_tab, google_search, click, type, scroll, wait_for_element, download_file, upload_file, screenshot, get_html, get_text | V1.0 |
+| `desktop` | `desktop_tool.py` | click, double_click, type, hotkey, move_mouse (SIEMPRE confirmación) + screenshot, ocr, find_text_on_screen (OCR nativo de Windows vía winocr) | V1.0 |
+| — | `base.py` | Interfaz `BaseTool` que implementan todas | V0.4 |
+| — | `tool_manager.py` | Registro centralizado + whitelist por agente + timeout duro + log de auditoría | V0.4 |
+
+**Dependencias de las tools de V1.0**: `psutil` (process/model), `playwright`
+(browser — requiere además `playwright install chromium` UNA vez, ~300MB fuera
+de pip), `pyautogui` + `winocr` (desktop). Playwright y pyautogui/winocr se
+importan de forma **LAZY** a propósito: importarlos a nivel de módulo añadía
+~0.44 s al arranque de `app.main` (medido) porque el ToolManager registra todas
+las tools al importar, aunque nadie use nunca esas tools.
+
+**Elección de OCR (V1.0)**: `winocr` (motor nativo de Windows) en vez de
+`pytesseract` (exige instalar el binario Tesseract aparte, un instalador de
+Windows no automatizable) o `easyocr` (arrastra su propia versión de PyTorch,
+con riesgo real de romper la que ya usan sentence-transformers/ChromaDB —
+confirmado al intentar instalarlo: quiso bajar torch 2.13.0 sobre el 2.12.1+cpu
+existente).
+
+**Limitaciones reales conocidas** (verificadas en vivo, no supuestas):
+`browser.google_search` funciona a nivel de código pero Google bloquea el
+tráfico headless como sospechoso → para buscar de verdad se usa `search`
+(Brave/SerpAPI), no el navegador. En la máquina del usuario, `desktop.hotkey`
+con `Ctrl+A`/`Ctrl+C` se comporta de forma anómala — reproducido igual con 3
+mecanismos de inyección independientes (pyautogui, librería `keyboard`,
+SendInput con scancodes físicos), lo que descarta un fallo de la tool; otras
+combinaciones (`Ctrl+Z`, teclas sueltas) funcionan bien.
 
 **Validaciones del ExecutionEngine** (en `tool_manager.py`):
 1. La tool debe estar en el registro
@@ -2109,14 +2185,15 @@ Registro/arranque en el `lifespan` de `main.py` (`gateway.register(...)` +
 
 ---
 
-*Última actualización: 2026-07-18 — V1.0 MEL v1 (bloque completo E1-E2b: núcleo
-del Model Execution Layer + Catálogo Auto-Investigado + el SWITCH de call-sites +
-pantalla Inteligencia + personalización de políticas + override explícito del
-usuario/pin de proyecto). Sin bump (sigue `0.9.2`). Suite backend: 508 passed.
-Bloques cerrados hasta ahora: V0.2 → V0.7.3 → V0.8 → V0.85 (MOS) → V0.87 (WPMS) →
-V0.9 (Automation Engine) → V1.0 TIE v1 (T1-T5) → V1.0 MEL v1 (E1-E2b). Siguiente
-(planes aparte): integración Orchestrator (AE→tie.submit_mission) → MVP-beta (→
-cierre `1.0.0`).*
+*Última actualización: 2026-07-18 — V1.0 Capacitación de tools (auditoría en vivo
+de las 6 existentes + adjuntos en el Email Assistant + 8 tools nuevas: process,
+secrets, memory, model, download, search, browser, desktop → 14 tools/91 acciones;
+`browser.use`/`computer.use` activados en Permisos). Sin bump (sigue `0.9.2`).
+Suite backend: 539 passed. Bloques cerrados hasta ahora: V0.2 → V0.7.3 → V0.8 →
+V0.85 (MOS) → V0.87 (WPMS) → V0.9 (Automation Engine) → V1.0 TIE v1 (T1-T5) →
+V1.0 MEL v1 (E1-E2b) → V1.0 Tools. Siguiente: **integración Orchestrator**
+(sustituir el placeholder de V0.5 en `agent_manager._run_execution` por
+delegación real al TIE) → MVP-beta (→ cierre `1.0.0`).*
 *Construido desde el estado real del repositorio (código + Alembic + docs de fase).*
 *Sustituye a la versión V0.2 anterior, que declaraba un estado obsoleto.*
 
