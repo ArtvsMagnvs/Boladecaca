@@ -59,6 +59,13 @@ class Settings:
     # Concurrencia de olas del executor (T3/V1.2). En V1.0 la ola es de tamaño 1
     # (secuencial); el semáforo entra en V1.2 con las olas paralelas.
     TIE_MAX_PARALLEL = int(os.getenv("TIE_MAX_PARALLEL", "3"))
+    # V1.0 (R1, doc 23): vueltas máximas del bucle de tool-use por nodo
+    # (elegir→ejecutar→observar). 5 basta para encadenar varias herramientas sin
+    # que un modelo que se atasca queme tokens indefinidamente.
+    TIE_TOOL_MAX_ITERS = int(os.getenv("TIE_TOOL_MAX_ITERS", "5"))
+    # Timeout por llamada a herramienta dentro del bucle (segundos). El
+    # ToolManager lo acota además a su propio máximo duro.
+    TIE_TOOL_TIMEOUT_S = int(os.getenv("TIE_TOOL_TIMEOUT_S", "60"))
 
     # V1.0 (MEL E1b, doc 19 §5.4/doc 22 §3·E1b): cada cuántos días se re-investigan
     # las capacidades de los modelos configurados (el número que pidió el usuario).

@@ -47,6 +47,7 @@ FORBIDDEN_MODULES = (
     ("app.tie.missions", TIE_DIR),
     ("app.tie.pipeline", TIE_DIR),
     ("app.tie.router", TIE_DIR),
+    ("app.tie.toolloop", TIE_DIR),   # R1: el bucle es interno del TIE
     ("app.tie.graph", TIE_DIR),
     ("app.tie.enricher", TIE_DIR),
     ("app.tie.planner", TIE_DIR),

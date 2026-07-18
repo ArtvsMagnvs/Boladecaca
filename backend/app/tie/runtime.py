@@ -145,21 +145,38 @@ class NullRuntime(AgentRuntime):
         from app.services import chat_service
 
         t0 = time.monotonic()
-        # tool_use básico: si el nodo pide EXACTAMENTE una tool con acción/params
-        # en metadata, se ejecuta por el ToolManager inyectado (whitelist honrada).
-        tool_req = task.metadata.get("tool_call") if task.metadata else None
-        if tool_req and tools is not None:
-            res = await tools.execute(
-                tool_id=tool_req.get("tool_id"),
-                action=tool_req.get("action"),
-                params=tool_req.get("params", {}),
-                allowed_tools=task.tools or None,
+
+        # [R1, doc 23 Δ2] BUCLE DE TOOL-USE REAL.
+        #
+        # Antes aquí solo se ejecutaba una tool si el nodo traía
+        # `metadata.tool_call` ya resuelto (tool_id + action + params). NADIE
+        # escribía jamás ese campo —el planner solo emite `tools: [nombres]`—,
+        # así que la rama era código muerto y TODO nodo caía al camino de chat:
+        # de ahí que Aithera inventara datos que debía haber consultado.
+        #
+        # Ahora, si el nodo tiene herramientas permitidas, se delega en el bucle
+        # (elegir→ejecutar→observar), que es quien decide QUÉ tool y con qué
+        # parámetros en tiempo de ejecución.
+        if task.tools and tools is not None:
+            from app.core.config import settings
+            from app.tie import toolloop
+
+            loop_res = await toolloop.run(
+                instruction=task.instruction,
+                context=task.context or "",
+                allowed_tools=list(task.tools),
+                tool_manager=tools,
+                max_iters=settings.TIE_TOOL_MAX_ITERS,
+                model_override=_model_override_from_hint(task.model_hint),
+                project_id=task.project_id,
+                timeout_s=settings.TIE_TOOL_TIMEOUT_S,
             )
             dur = int((time.monotonic() - t0) * 1000)
+            # `ok=False` con motivo → nodo FALLIDO. Es deliberado: preferimos que
+            # el paso falle y se vea por qué, a devolver una respuesta inventada.
             return AgentResult(
-                task_id=task.id, success=bool(res.get("success")),
-                result=res, tool_calls=[res],
-                error=res.get("error"), duration_ms=dur,
+                task_id=task.id, success=loop_res.ok, output=loop_res.answer,
+                tool_calls=loop_res.tool_calls, error=loop_res.error, duration_ms=dur,
             )
 
         # camino de chat (el 100% del camino corto de V1.0/T1)

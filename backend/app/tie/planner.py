@@ -53,6 +53,11 @@ Reglas:
   El grafo debe ser acíclico (un nodo no puede depender de sí mismo ni formar ciclos).
 - "tools": SOLO herramientas de esta lista disponible: {tools}. Si un paso no usa
   herramientas, deja la lista vacía. NUNCA inventes herramientas.
+  IMPORTANTE: las herramientas que pongas aquí SE VAN A USAR DE VERDAD — el paso
+  las ejecutará contra el sistema real del usuario. Si un paso necesita un dato
+  del sistema (archivos, emails, agenda, procesos, web...), DEBES darle la
+  herramienta correspondiente: sin ella no podrá obtenerlo y el paso fallará.
+  Da a cada nodo solo las que ese paso necesita, no todas por si acaso.
 - "approval_required": true SOLO para acciones sensibles (enviar algo, borrar,
   ejecutar comandos que cambian el sistema). El usuario confirmará esos pasos.
 - Prefiere 2-3 nodos. No infles el plan. Devuelve SOLO el JSON."""
