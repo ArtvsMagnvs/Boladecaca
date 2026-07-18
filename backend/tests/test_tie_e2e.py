@@ -72,48 +72,49 @@ def _fake_node_execution(monkeypatch):
 
 
 def _fake_llm_boundary(monkeypatch, *, plan_json: str, plan_fails_first: bool = False):
-    """El ÚNICO punto de contacto con un LLM en todo el e2e: `ai_manager.chat`.
-    Enruta por el contenido del `system_prompt` — el mismo truco que usan
-    intents/planner/responder para pedir cada uno su propia capacidad (T2)."""
-    from app.ai.ai_manager import ai_manager
+    """[E2] Tras el switch, el ÚNICO punto de contacto con un LLM en el camino
+    del router (intents/planner/responder) es `mel.complete`. Se enruta por
+    `req.capability` (CLASSIFY=intent, REASON=plan, SUMMARIZE=responder) — más
+    limpio que el antiguo match por system_prompt. La ejecución de nodos se
+    mockea aparte en `chat_service.answer` (_fake_node_execution)."""
+    import app.mel as mel
+    from app.mel import Capability, ExecutionResult, ServedBy, Usage
 
     state = {"plan_calls": 0}
 
-    async def _chat(message="", system_prompt=None, **kw):
-        sp = system_prompt or ""
-        if "clasificador de intenciones" in sp:
-            return {
-                "response": json.dumps({
-                    "type": "execute",
-                    "goal": "revisar los últimos emails y enviar un resumen",
-                    "domain": ["email"],
-                    "confidence": 0.92,
-                    "requires_planning": True,
-                    "requires_tools": [],
-                    "requires_browser": False,
-                    "requires_computer": False,
-                    "requires_automation": False,
-                    "requires_memory": False,
-                    "memory_types": [],
-                    "context_query": None,
-                    "model_capability": "reason",
-                }),
-                "model": "fake-classifier", "tokens": 10, "error": False,
-            }
-        if "planificador de Aithera" in sp:
+    def _res(text: str, model: str = "fake") -> ExecutionResult:
+        return ExecutionResult(text=text, ok=True, served_by=ServedBy(model, model),
+                               usage=Usage(tokens=10))
+
+    async def _complete(req):
+        cap = req.capability
+        if cap == Capability.CLASSIFY:
+            return _res(json.dumps({
+                "type": "execute",
+                "goal": "revisar los últimos emails y enviar un resumen",
+                "domain": ["email"],
+                "confidence": 0.92,
+                "requires_planning": True,
+                "requires_tools": [],
+                "requires_browser": False,
+                "requires_computer": False,
+                "requires_automation": False,
+                "requires_memory": False,
+                "memory_types": [],
+                "context_query": None,
+                "model_capability": "reason",
+            }), "fake-classifier")
+        if cap == Capability.REASON:
             state["plan_calls"] += 1
             if plan_fails_first and state["plan_calls"] == 1:
-                return {"response": "esto no es JSON en absoluto", "model": "fake-planner", "tokens": 5, "error": False}
-            return {"response": plan_json, "model": "fake-planner", "tokens": 15, "error": False}
-        if "respondiendo al usuario tras completar una tarea" in sp:
-            return {
-                "response": "He revisado tus últimos emails y te he enviado el resumen, como pediste.",
-                "model": "fake-responder", "tokens": 12, "error": False,
-            }
-        # fallback genérico (no debería usarse en estos tests, pero nunca rompe)
-        return {"response": "ok", "model": "fake-generic", "tokens": 1, "error": False}
+                return _res("esto no es JSON en absoluto", "fake-planner")
+            return _res(plan_json, "fake-planner")
+        if cap == Capability.SUMMARIZE:
+            return _res("He revisado tus últimos emails y te he enviado el resumen, como pediste.",
+                        "fake-responder")
+        return _res("ok", "fake-generic")
 
-    monkeypatch.setattr(ai_manager, "chat", _chat)
+    monkeypatch.setattr(mel, "complete", _complete)
     return state
 
 

@@ -124,14 +124,16 @@ async def test_complete_ok_devuelve_served_by(monkeypatch):
 @pytest.mark.anyio
 async def test_complete_salta_al_siguiente_si_el_primero_falla(monkeypatch):
     avail = [ModelRef("ollama", "llama3", True), ModelRef("anthropic", "claude-opus-4-8", False)]
-    # el primer candidato de la cadena falla (transitorio); el segundo responde
+    # SUMMARIZE: la cadena Economy pone el local (ollama) PRIMERO (barato,
+    # score sobre umbral) — el primer candidato falla (transitorio) y el
+    # segundo (anthropic) responde. Verifica el salto de cadena.
     def responder(ref):
         if ref.provider == "ollama":
             return {"error": True, "response": "connection timeout"}
         return {"response": "ok segundo", "tokens": 3}
     _fake_registry(monkeypatch, avail, responder)
 
-    res = await executor.complete(ExecutionRequest(capability=Capability.CHAT, prompt="x"))
+    res = await executor.complete(ExecutionRequest(capability=Capability.SUMMARIZE, prompt="x"))
     assert res.ok and "segundo" in res.text
     assert res.served_by.fallbacks_used >= 1
 

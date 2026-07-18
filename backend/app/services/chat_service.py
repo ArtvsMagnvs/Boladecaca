@@ -21,7 +21,6 @@ import asyncio
 from dataclasses import dataclass
 from typing import Optional
 
-from app.ai.reasoning_filter import strip_reasoning
 from app.db.database import SessionLocal
 from app.db.models import ChatMessage
 from app.memory import memory_manager, memory_router
@@ -104,11 +103,17 @@ class ChatAnswer:
 
 
 async def answer(
-    message: str, *, channel: str = "web", persist_chat_message: bool = True
+    message: str, *, channel: str = "web", persist_chat_message: bool = True,
+    model_override: Optional[str] = None,
 ) -> ChatAnswer:
     """Pipeline UNICO de chat (no streaming): system prompt (con memoria y
-    fuentes) + IA + strip_reasoning + persistencia. Usado por POST /api/chat
-    (chat.py) y por el Gateway (gateway.py::chat_message_handler).
+    fuentes) + MEL + persistencia. Usado por POST /api/chat (chat.py) y por el
+    Gateway (gateway.py::chat_message_handler).
+
+    [E2, doc 22 §3·E2] La llamada al modelo pasa por el MEL: pide la capacidad
+    CHAT y el MEL elige el modelo por la política activa (el `strip_reasoning`
+    B21 ya lo aplica el MEL). El resto (system prompt con memoria, orden de
+    persistencia) NO cambia.
 
     El mensaje del usuario se indexa ANTES de llamar a la IA (si la IA falla,
     el mensaje sigue quedando en memoria — mismo orden que el codigo legacy).
@@ -117,15 +122,23 @@ async def answer(
     historial de la UI de escritorio) — asi se comportaba ya el Gateway antes
     de esta consolidacion; la memoria semantica (ChromaDB) SIEMPRE se escribe,
     independientemente de este flag.
-    """
-    from app.ai.ai_manager import ai_manager  # import diferido: patrón de email_service.py
+
+    `model_override` [E2b, doc 14 §3.5]: id EXACTO de un modelo pedido
+    explícitamente por el usuario. En E2 nadie lo pasa (siempre None → decide
+    la política); E2b lo cablea desde el camino corto del TIE."""
+    from app.mel import Capability, ExecutionRequest, complete as mel_complete
 
     system_prompt = await build_system_prompt(message)
 
     memory_manager.store_conversation("user", message, metadata={"channel": channel})
 
-    result = await ai_manager.chat(message=message, system_prompt=system_prompt)
-    text = strip_reasoning(result.get("response", "")) or ""
+    res = await mel_complete(ExecutionRequest(
+        capability=Capability.CHAT, prompt=message, system_prompt=system_prompt,
+        model_override=model_override,
+    ))
+    text = res.text or ""   # el MEL ya aplicó strip_reasoning (B21)
+    model = res.served_by.model if res.served_by else None
+    tokens = res.usage.tokens if res.usage else None
 
     if text:
         memory_manager.store_conversation("assistant", text, metadata={"channel": channel})
@@ -133,13 +146,12 @@ async def answer(
     if persist_chat_message:
         db = SessionLocal()
         try:
-            db.add(ChatMessage(role="user", content=message, model_used=result.get("model")))
+            db.add(ChatMessage(role="user", content=message, model_used=model))
             db.add(ChatMessage(
-                role="assistant", content=text,
-                model_used=result.get("model"), tokens_used=result.get("tokens"),
+                role="assistant", content=text, model_used=model, tokens_used=tokens,
             ))
             db.commit()
         finally:
             db.close()
 
-    return ChatAnswer(text=text, model=result.get("model"), tokens=result.get("tokens"))
+    return ChatAnswer(text=text, model=model, tokens=tokens)

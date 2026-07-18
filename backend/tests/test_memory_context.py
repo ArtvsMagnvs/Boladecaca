@@ -16,23 +16,20 @@ pytestmark = pytest.mark.skipif(
 )
 
 
-class FakeAI:
-    """Mismo patron que tests/test_email_ai_reply.py: reemplaza el ai_manager
-    entero via monkeypatch en el modulo donde SE USA (import diferido)."""
+def _fake_mel(monkeypatch, text="respuesta de prueba", ok=True, raises=False):
+    """[E2] chat_service.answer llama al MEL (mel.complete), no a ai_manager.
+    Este helper reemplaza el seam correcto (la API pública del MEL)."""
+    import app.mel as mel
+    from app.mel import ExecutionResult, ServedBy, Usage
 
-    def __init__(self, response="respuesta de prueba", error=False, delay=0.0):
-        self._response = response
-        self._error = error
-        self._delay = delay
-        self.last_system_prompt = None
-        self.last_message = None
-
-    async def chat(self, message, system_prompt=None):
-        if self._delay:
-            await asyncio.sleep(self._delay)
-        self.last_message = message
-        self.last_system_prompt = system_prompt
-        return {"response": self._response, "error": self._error, "model": "fake-model", "tokens": 7}
+    async def _complete(req):
+        if raises:
+            raise RuntimeError("proveedor caido")
+        return ExecutionResult(
+            text=text if ok else "", ok=ok,
+            served_by=ServedBy("fake", "fake-model"), usage=Usage(tokens=7),
+        )
+    monkeypatch.setattr(mel, "complete", _complete)
 
 
 @pytest.fixture(autouse=True)
@@ -99,9 +96,7 @@ async def test_answer_persiste_chat_message_por_defecto(monkeypatch, client):
     from app.db.database import SessionLocal
     from app.db.models import ChatMessage
 
-    fake = FakeAI(response="hola desde el test")
-    import app.ai.ai_manager as aim
-    monkeypatch.setattr(aim, "ai_manager", fake)
+    _fake_mel(monkeypatch, text="hola desde el test")
 
     before = SessionLocal()
     try:
@@ -129,9 +124,7 @@ async def test_answer_persist_chat_message_false_no_escribe_sql(monkeypatch):
     from app.db.database import SessionLocal
     from app.db.models import ChatMessage
 
-    fake = FakeAI(response="respuesta de telegram")
-    import app.ai.ai_manager as aim
-    monkeypatch.setattr(aim, "ai_manager", fake)
+    _fake_mel(monkeypatch, text="respuesta de telegram")
 
     db = SessionLocal()
     try:
@@ -155,13 +148,11 @@ async def test_answer_persist_chat_message_false_no_escribe_sql(monkeypatch):
 @pytest.mark.anyio
 async def test_answer_indexa_mensaje_de_usuario_aunque_la_ia_falle(monkeypatch):
     """[V0.6, preservado en la consolidacion] El mensaje del usuario se
-    indexa ANTES de llamar a la IA: si la IA lanza, el mensaje no se pierde."""
-    class BoomAI:
-        async def chat(self, message, system_prompt=None):
-            raise RuntimeError("proveedor caido")
-
-    import app.ai.ai_manager as aim
-    monkeypatch.setattr(aim, "ai_manager", BoomAI())
+    indexa ANTES de llamar a la IA: si la IA lanza, el mensaje no se pierde.
+    El `store_conversation` del user va antes de `mel.complete` — un fallo
+    catastrofico del MEL (que en produccion NO lanza, pero aqui se fuerza para
+    validar el orden) propaga la excepcion tras haber indexado ya el mensaje."""
+    _fake_mel(monkeypatch, raises=True)
 
     marker = "mensaje-que-debe-sobrevivir-al-fallo-de-ia"
     with pytest.raises(RuntimeError):

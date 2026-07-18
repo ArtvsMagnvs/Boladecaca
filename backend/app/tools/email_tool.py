@@ -75,6 +75,24 @@ def strip_reasoning(text: str) -> str:
     return _canonical(text)
 
 
+async def _mel_chat(prompt: str, system_prompt: str, capability: str = "extract") -> Dict[str, Any]:
+    """[E2, doc 22 §3·E2] Adaptador fino: las 6 llamadas de IA de EmailTool pasan
+    por el MEL (capacidades EXTRACT/CLASSIFY/DRAFT segun la tarea) en vez de
+    `ai_manager.chat` directo. Devuelve el MISMO shape dict que ai_manager.chat
+    (`{"response", "error"}`) para no tocar el parseo downstream (diff minimo).
+    El MEL ya aplica strip_reasoning (B21)."""
+    from app.mel import Capability, ExecutionRequest, complete as mel_complete
+
+    try:
+        cap = Capability(capability)
+    except ValueError:
+        cap = Capability.EXTRACT
+    res = await mel_complete(ExecutionRequest(
+        capability=cap, prompt=prompt, system_prompt=system_prompt,
+    ))
+    return {"response": res.text if res.ok else "", "error": not res.ok}
+
+
 def _rule_can_promote_safe(r) -> bool:
     """V0.7.3 (Sprint 4, B6): wrapper fail-soft de rule_can_promote."""
     try:
@@ -728,9 +746,7 @@ class EmailTool(BaseTool):
             return email_resp
         email = email_resp["result"]
 
-        # Luego pedimos a la IA que clasifique
-        from app.ai.ai_manager import ai_manager
-
+        # Luego pedimos a la IA que clasifique (via MEL, capacidad CLASSIFY)
         prompt = (
             "Clasifica este email en UNA de estas categorias: "
             "meeting, urgent, follow_up, informational, spam.\n"
@@ -745,9 +761,10 @@ class EmailTool(BaseTool):
             f"Cuerpo (primeros 500 chars): {(email.get('body_text') or '')[:500]}"
         )
         try:
-            ai_resp = await ai_manager.chat(
-                message=prompt,
-                system_prompt="Eres un clasificador de emails. Responde SOLO con JSON valido.",
+            ai_resp = await _mel_chat(
+                prompt,
+                "Eres un clasificador de emails. Responde SOLO con JSON valido.",
+                capability="classify",
             )
             text = ai_resp.get("response", "")
             # Intentar parsear el JSON de la respuesta
@@ -917,7 +934,6 @@ async def extract_meeting_datetime(subject: str, body: str) -> Optional[str]:
          "el lunes", "el martes", dias de la semana, formatos dd/mm/yyyy
     """
     try:
-        from app.ai.ai_manager import ai_manager
         today = _dt.now()
         prompt = (
             f"Hoy es {today.strftime('%Y-%m-%d %A')}.\n"
@@ -929,9 +945,10 @@ async def extract_meeting_datetime(subject: str, body: str) -> Optional[str]:
             f"Asunto: {subject or '(sin asunto)'}\n\n"
             f"Cuerpo: {(body or '')[:1500]}"
         )
-        ai_resp = await ai_manager.chat(
-            message=prompt,
-            system_prompt="Eres un extractor de fechas. Responde SOLO con JSON valido.",
+        ai_resp = await _mel_chat(
+            prompt,
+            "Eres un extractor de fechas. Responde SOLO con JSON valido.",
+            capability="extract",
         )
         text = ai_resp.get("response", "")
         import re as _re
@@ -1044,7 +1061,6 @@ async def generate_meeting_reschedule_reply(
     """V0.7 extra: usa la IA para redactar una respuesta amable proponiendo
     la nueva fecha. NO usa plantilla - es texto generado por IA."""
     try:
-        from app.ai.ai_manager import ai_manager
         prompt = (
             f"Redacta una respuesta breve, profesional y amable (en espanol) a "
             f"este email:\n\n"
@@ -1064,14 +1080,13 @@ async def generate_meeting_reschedule_reply(
             "- Maximo 5 lineas\n"
             "- Solo el cuerpo del email, sin asunto"
         )
-        ai_resp = await ai_manager.chat(
-            message=prompt,
-            system_prompt=(
-                "Eres Aithera, un asistente personal de IA. "
-                "Redactas emails breves, amables y profesionales en espanol."
-            ),
+        ai_resp = await _mel_chat(
+            prompt,
+            "Eres Aithera, un asistente personal de IA. "
+            "Redactas emails breves, amables y profesionales en espanol.",
+            capability="draft",
         )
-        # FIX: sin cadena de pensamiento del modelo dentro del email
+        # El MEL ya aplica strip_reasoning (B21); strip idempotente por si acaso.
         return strip_reasoning(ai_resp.get("response", ""))
     except Exception as e:
         # Fallback si IA falla
@@ -1089,7 +1104,6 @@ async def generate_meeting_reschedule_reply(
 async def detect_meeting_confirmation(sender_email: str, subject: str, body: str) -> bool:
     """V0.7 extra: usa la IA para detectar si un email confirma una reunion."""
     try:
-        from app.ai.ai_manager import ai_manager
         prompt = (
             f"Este email es respuesta a una propuesta de reunion. "
             f"Determina si CONFIRMA la fecha propuesta o si la rechaza/propone otra.\n"
@@ -1098,9 +1112,10 @@ async def detect_meeting_confirmation(sender_email: str, subject: str, body: str
             f"Asunto: {subject}\n"
             f"Cuerpo: {body[:1000]}"
         )
-        ai_resp = await ai_manager.chat(
-            message=prompt,
-            system_prompt="Eres un clasificador. Responde SOLO con JSON valido.",
+        ai_resp = await _mel_chat(
+            prompt,
+            "Eres un clasificador. Responde SOLO con JSON valido.",
+            capability="extract",
         )
         import re as _re
         m = _re.search(r"\{[^{}]+\}", ai_resp.get("response", ""))
@@ -1124,7 +1139,6 @@ async def generate_meeting_accept_reply(
     La IA genera un email corto y amable confirmando la fecha.
     """
     try:
-        from app.ai.ai_manager import ai_manager
         prompt = (
             f"Redacta una respuesta breve, profesional y amable (en espanol) confirmando "
             f"una reunion propuesta:\n\n"
@@ -1140,14 +1154,13 @@ async def generate_meeting_accept_reply(
             "- Maximo 4 lineas\n"
             "- Solo el cuerpo del email, sin asunto"
         )
-        ai_resp = await ai_manager.chat(
-            message=prompt,
-            system_prompt=(
-                "Eres Aithera, un asistente personal de IA. "
-                "Redactas emails breves, amables y profesionales en espanol."
-            ),
+        ai_resp = await _mel_chat(
+            prompt,
+            "Eres Aithera, un asistente personal de IA. "
+            "Redactas emails breves, amables y profesionales en espanol.",
+            capability="draft",
         )
-        # FIX: sin cadena de pensamiento del modelo dentro del email
+        # El MEL ya aplica strip_reasoning (B21); strip idempotente por si acaso.
         return strip_reasoning(ai_resp.get("response", ""))
     except Exception as e:
         print(f"[email_tool] generate_meeting_accept_reply IA fallo: {e}")
@@ -1252,7 +1265,6 @@ async def _llm_meeting_detection(subject: str, body: str) -> MeetingDetection:
     con un reason explicito (no asumimos silenciosamente que no es reunion).
     """
     try:
-        from app.ai.ai_manager import ai_manager
         today = _dt.now()
         prompt = (
             f"Hoy es {today.strftime('%Y-%m-%d %A, %H:%M')}.\n\n"
@@ -1267,13 +1279,12 @@ async def _llm_meeting_detection(subject: str, body: str) -> MeetingDetection:
             f"Asunto: {subject or '(sin asunto)'}\n\n"
             f"Cuerpo: {(body or '')[:2000]}"
         )
-        ai_resp = await ai_manager.chat(
-            message=prompt,
-            system_prompt=(
-                "Eres un asistente experto en detectar propuestas de reunion en emails. "
-                "Responde SOLO con JSON valido. Si no hay fecha concreta, "
-                "is_meeting_proposal=false."
-            ),
+        ai_resp = await _mel_chat(
+            prompt,
+            "Eres un asistente experto en detectar propuestas de reunion en emails. "
+            "Responde SOLO con JSON valido. Si no hay fecha concreta, "
+            "is_meeting_proposal=false.",
+            capability="extract",
         )
         m = re.search(r"\{[^{}]+\}", ai_resp.get("response", ""))
         if m:

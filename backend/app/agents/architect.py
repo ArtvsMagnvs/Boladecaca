@@ -1,6 +1,5 @@
 # Architect Agent - AI Agent for project architecture assistance
 from typing import Dict, Any, Optional
-from app.ai.ai_manager import ai_manager
 
 
 SYSTEM_PROMPT = """Eres Aithera Architect, un agente especializado en arquitectura de software y diseño de sistemas.
@@ -22,13 +21,20 @@ class ArchitectAgent:
         self.name = "Architect"
         self.system_prompt = SYSTEM_PROMPT
     
+    async def _mel(self, prompt: str, capability: str) -> Dict[str, Any]:
+        """[E2, doc 22 §3·E2] Las llamadas del Architect pasan por el MEL. Shape
+        dict compatible con lo que devolvía ai_manager.chat."""
+        from app.mel import Capability, ExecutionRequest, complete as mel_complete
+        res = await mel_complete(ExecutionRequest(
+            capability=Capability(capability), prompt=prompt, system_prompt=self.system_prompt,
+        ))
+        return {"response": res.text, "model": res.served_by.model if res.served_by else None,
+                "error": not res.ok}
+
     async def analyze(self, query: str) -> Dict[str, Any]:
         """Analyze a query related to architecture."""
-        return await ai_manager.chat(
-            message=query,
-            system_prompt=self.system_prompt
-        )
-    
+        return await self._mel(query, "reason")
+
     async def review_code(self, code: str, language: str = "python") -> Dict[str, Any]:
         """Review code and provide architecture feedback."""
         prompt = f"""Por favor revisa el siguiente código en {language} y proporciona retroalimentación sobre:
@@ -42,7 +48,7 @@ Código a revisar:
 ```{language}
 {code}
 ```"""
-        return await ai_manager.chat(prompt, self.system_prompt)
+        return await self._mel(prompt, "code")
 
 
 # Global architect agent instance

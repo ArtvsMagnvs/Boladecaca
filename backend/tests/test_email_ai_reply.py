@@ -86,15 +86,28 @@ def test_update_ai_prompt(client):
 # generate_ai_reply (LLM mockeado)
 # ----------------------------------------------------------------------
 
+# [E2] generate_ai_reply llama al MEL (mel.complete), no a ai_manager directo.
+# Se mockea el seam correcto: la API pública del MEL.
+def _fake_mel(monkeypatch, text="", ok=True, on_prompt=None):
+    import app.mel as mel
+    from app.mel import ExecutionResult, ServedBy, Usage
+
+    async def _complete(req):
+        if on_prompt:
+            on_prompt(req.prompt)
+        return ExecutionResult(text=text if ok else "", ok=ok,
+                               served_by=ServedBy("fake", "fake"), usage=Usage())
+    monkeypatch.setattr(mel, "complete", _complete)
+
+
 @pytest.mark.anyio
 async def test_generate_ai_reply_ok(monkeypatch):
-    class FakeAI:
-        async def chat(self, message, system_prompt=None):
-            assert "Responde cordialmente" in message
-            assert "losmagnoviajes" in message
-            return {"response": "Hola! Esta semana lo tengo complicado, te propongo vernos el jueves.", "error": False}
-    import app.ai.ai_manager as aim
-    monkeypatch.setattr(aim, "ai_manager", FakeAI())
+    def _check(prompt):
+        assert "Responde cordialmente" in prompt
+        assert "losmagnoviajes" in prompt
+    _fake_mel(monkeypatch,
+              text="Hola! Esta semana lo tengo complicado, te propongo vernos el jueves.",
+              on_prompt=_check)
     out = await svc.generate_ai_reply(
         "Responde cordialmente proponiendo otro dia",
         "Los Magno Viajes <losmagnoviajes@gmail.com>", "Reunion", "Podemos vernos manana?",
@@ -104,11 +117,7 @@ async def test_generate_ai_reply_ok(monkeypatch):
 
 @pytest.mark.anyio
 async def test_generate_ai_reply_fail_soft(monkeypatch):
-    class FakeAI:
-        async def chat(self, message, system_prompt=None):
-            return {"response": "", "error": True}
-    import app.ai.ai_manager as aim
-    monkeypatch.setattr(aim, "ai_manager", FakeAI())
+    _fake_mel(monkeypatch, ok=False)
     assert await svc.generate_ai_reply("da igual", "a@b.com", "s", "b") is None
 
 
@@ -312,11 +321,9 @@ def test_strip_reasoning_variantes():
 
 @pytest.mark.anyio
 async def test_generate_ai_reply_sin_think(monkeypatch):
-    class FakeAI:
-        async def chat(self, message, system_prompt=None):
-            return {"response": "<think>drafting...</think>Nos vemos el jueves!", "error": False}
-    import app.ai.ai_manager as aim
-    monkeypatch.setattr(aim, "ai_manager", FakeAI())
+    # El MEL ya devuelve texto limpio (aplica strip_reasoning B21); aquí el
+    # fake devuelve texto ya sin <think> para reflejarlo.
+    _fake_mel(monkeypatch, text="Nos vemos el jueves!")
     out = await svc.generate_ai_reply("responde", "a@b.com", "s", "b")
     assert out == "Nos vemos el jueves!"
     assert "<think>" not in out

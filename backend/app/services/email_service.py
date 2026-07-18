@@ -245,18 +245,20 @@ async def llm_triage(subject: str, sender: str, snippet: str = "") -> Optional[s
     """Etapa 2: pregunta al proveedor IA activo. Devuelve None si falla o
     la respuesta no es una categoria valida (el caller decide el fallback)."""
     try:
-        from app.ai.ai_manager import ai_manager
-        result = await ai_manager.chat(
-            _TRIAGE_PROMPT.format(
+        # [E2, doc 22 §3·E2] triaje etapa 2 → capacidad CLASSIFY del MEL.
+        from app.mel import Capability, ExecutionRequest, complete as mel_complete
+        result = await mel_complete(ExecutionRequest(
+            capability=Capability.CLASSIFY,
+            prompt=_TRIAGE_PROMPT.format(
                 sender=(sender or "")[:200],
                 subject=(subject or "")[:200],
                 snippet=(snippet or "")[:300],
             ),
             system_prompt="Eres un clasificador de emails. Respondes con una sola palabra.",
-        )
-        if result.get("error"):
+        ))
+        if not result.ok:
             return None
-        answer = (result.get("response") or "").strip().lower()
+        answer = (result.text or "").strip().lower()
         # tolerar respuestas tipo "categoria: reunion" o con puntuacion
         for cat in TRIAGE_CATEGORIES:
             if cat in answer:
@@ -367,7 +369,9 @@ async def generate_ai_reply(
     de la regla (ai_prompt). Fail-soft: None si el LLM falla o devuelve vacio
     (el caller decide fallback: plantilla o alerta)."""
     try:
-        from app.ai.ai_manager import ai_manager
+        # [E2, doc 22 §3·E2] redacción de respuesta → capacidad DRAFT del MEL
+        # (prosa en nombre del usuario). El MEL ya aplica strip_reasoning (B21).
+        from app.mel import Capability, ExecutionRequest, complete as mel_complete
         message = (
             f"Instruccion del usuario para responder: {ai_prompt}\n"
             + (f"Contexto adicional: {extra_context}\n" if extra_context else "")
@@ -376,13 +380,12 @@ async def generate_ai_reply(
             f"Asunto: {(subject or '')[:200]}\n"
             f"Cuerpo:\n{(body or '')[:1500]}"
         )
-        result = await ai_manager.chat(message, system_prompt=_AI_REPLY_SYSTEM)
-        if result.get("error"):
+        result = await mel_complete(ExecutionRequest(
+            capability=Capability.DRAFT, prompt=message, system_prompt=_AI_REPLY_SYSTEM,
+        ))
+        if not result.ok:
             return None
-        # FIX (2026-07-02): sin cadena de pensamiento (<think>) en emails
-        from app.tools.email_tool import strip_reasoning
-        text = strip_reasoning(result.get("response") or "")
-        return text or None
+        return result.text or None
     except Exception as e:
         print(f"[email] generate_ai_reply fallo (fail-soft): {e}")
         return None

@@ -154,20 +154,20 @@ async def summary():
                 "category": classification.get("result", {}).get("classification", {}).get("category", "informational") if classification.get("success") else "informational",
             })
 
-    # 3) Resumen IA
-    from app.ai.ai_manager import ai_manager
+    # 3) Resumen IA — [E2, doc 22 §3·E2] capacidad SUMMARIZE del MEL.
+    from app.mel import Capability, ExecutionRequest, complete as mel_complete
     lines = [f"- [{c['category']}] De {c['from']}: {c['subject']}" for c in classified]
     prompt = (
         "Dame un resumen ejecutivo (max 200 palabras) de estos emails. "
         "Destaca los urgentes y los follow-ups pendientes.\n\n"
         + "\n".join(lines)
     )
-    ai_resp = await ai_manager.chat(
-        message=prompt,
+    ai_resp = await mel_complete(ExecutionRequest(
+        capability=Capability.SUMMARIZE, prompt=prompt,
         system_prompt="Eres un asistente que resume bandejas de entrada de forma concisa.",
-    )
+    ))
     return {
-        "summary": ai_resp.get("response", ""),
+        "summary": ai_resp.text if ai_resp.ok else "",
         "classified": classified,
     }
 

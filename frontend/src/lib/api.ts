@@ -582,6 +582,16 @@ export interface PermissionCatalog {
   profile: "manual" | "balanced" | "full" | string;
 }
 
+// MEL — Inteligencia (V1.0 E2). `compiled` = {capacidad: [model_key,...]} (la
+// cadena ordenada primario→respaldos que decide qué modelo ejecuta cada tarea).
+export interface MelPolicy {
+  name: string;
+  version: number;
+  compiled: Record<string, string[]>;
+  pristine: boolean;
+  is_active: boolean;
+}
+
 export const api = {
   // --- Salud del backend ---
   async health(): Promise<boolean> {
@@ -1254,6 +1264,14 @@ export const api = {
     request<PermissionCatalog>("/automation/permissions/profile", {
       method: "POST",
       body: JSON.stringify({ profile }),
+    }),
+
+  // --- MEL: Inteligencia (V1.0 E2) ---
+  getMelPolicies: () => request<MelPolicy[]>("/mel/policies"),
+  setActiveMelPolicy: (name: string) =>
+    request<{ active: string }>("/mel/policies/active", {
+      method: "POST",
+      body: JSON.stringify({ name }),
     }),
 
   // --- TIE: misiones (V1.0 T4b) ---

@@ -72,14 +72,30 @@ async def complete(
 ) -> dict:
     """Ejecuta una petición al modelo adecuado para `capability`. Punto ÚNICO de
     llamada al LLM del TIE — intents/planner/responder pasan por aquí. Devuelve
-    `{response, model, tokens, error}` (mismo shape que `ai_manager.chat`).
+    `{response, model, tokens, error}` (mismo shape que `ai_manager.chat` — el
+    caller no se entera del cambio).
 
-    [Shim del MEL] En T2 delega en `ai_manager.chat` (proveedor activo). E1:
-    esta función se reescribe a `mel.complete(ExecutionRequest(capability=...))`
-    y los hints fast/smart migran a las políticas del MEL — el TIE no cambia."""
-    from app.ai.ai_manager import ai_manager
+    [E2, doc 22 §3·E2] EL SWITCH que este archivo ya anunciaba: delega en
+    `mel.complete(ExecutionRequest(capability=...))`. El MEL elige el modelo por
+    la política activa; `fast()`/`smart()` quedan como hints heredados de T2 que
+    ya nadie consulta (el reparto real lo hacen las cadenas compiladas). El TIE
+    conserva su API interna (`router.complete`) — solo cambia a QUÉ delega."""
+    from app.mel import Capability, ExecutionRequest, complete as mel_complete
 
-    result = await ai_manager.chat(message=prompt, system_prompt=system_prompt)
-    # anotamos qué capacidad se pidió (traza/observabilidad; el MEL lo formaliza)
-    result.setdefault("capability", capability)
-    return result
+    # capability es un string (p.ej. "reason") que coincide con el valor del enum.
+    try:
+        cap = Capability(capability)
+    except ValueError:
+        cap = Capability.CHAT
+    res = await mel_complete(ExecutionRequest(
+        capability=cap, prompt=prompt, system_prompt=system_prompt,
+    ))
+    # Adaptación al shape dict de siempre (response/model/tokens/error): el
+    # caller (intents/planner/responder) lee result.get("response")/.get("error").
+    return {
+        "response": res.text,
+        "model": res.served_by.model if res.served_by else None,
+        "tokens": res.usage.tokens if res.usage else None,
+        "error": not res.ok,
+        "capability": capability,
+    }

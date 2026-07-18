@@ -4,7 +4,7 @@
 // V0.6 (Fase 3 Memory System): nueva seccion "Memoria" con stats, gestion
 // de preferencias del usuario y borrado del historial de ChromaDB.
 import { useState, useEffect } from "react";
-import { api, type AIProviderEntry, type ContextItem, type MemoryStats, type TelegramStatus, type ElevenLabsCfgStatus, type PermissionCatalog } from "@/lib/api";
+import { api, type AIProviderEntry, type ContextItem, type MemoryStats, type TelegramStatus, type ElevenLabsCfgStatus, type PermissionCatalog, type MelPolicy } from "@/lib/api";
 import { useAppStore } from "@/store/useAppStore";
 import type { QualityTier } from "@/avcs";
 import { Toggle } from "@/components/Toggle";
@@ -544,6 +544,118 @@ const AUTONOMY_PROFILES: Array<{ id: string; label: string; hint: string }> = [
   { id: "full", label: "Autónomo", hint: "Aithera actúa sin preguntar. Revisa el historial cuando quieras." },
 ];
 
+/**
+ * V1.0 (MEL E2, doc 22 §3·E2): Inteligencia — qué modelo ejecuta cada tipo de
+ * tarea. El usuario elige una POLÍTICA (no un modelo); el MEL decide el resto.
+ * Versión mínima de E2: 3 tarjetas + selector de activa + la cadena por
+ * capacidad. El builder Custom y las pantallas Actividad/Recomendaciones son V1.2.
+ */
+const MEL_POLICY_META: Record<string, { label: string; hint: string }> = {
+  economy: { label: "Economía", hint: "Prioriza el coste: usa el modelo local para tareas simples y el mejor de pago solo cuando hace falta." },
+  quality: { label: "Calidad", hint: "El mejor modelo para cada tarea, sin importar el coste." },
+  offline: { label: "Sin conexión", hint: "Solo modelos locales (sin internet). Puede no cubrir todas las tareas." },
+};
+const MEL_CAP_LABEL: Record<string, string> = {
+  chat: "Chat", classify: "Clasificar", extract: "Extraer datos", summarize: "Resumir",
+  draft: "Redactar", reason: "Razonar", code: "Programar", analyze: "Analizar",
+};
+
+function IntelligenceSettings() {
+  const [policies, setPolicies] = useState<MelPolicy[] | null>(null);
+  const [expanded, setExpanded] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = async () => {
+    try {
+      setPolicies(await api.getMelPolicies());
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "No se pudieron cargar las políticas.");
+    }
+  };
+  useEffect(() => { load(); }, []);
+
+  const activate = async (name: string) => {
+    setBusy(true);
+    setError(null);
+    try {
+      await api.setActiveMelPolicy(name);
+      await load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "No se pudo cambiar la política.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (!policies) return <p className="text-xs text-ink-faint">Cargando…</p>;
+
+  // Muestra un modelo de forma legible: "proveedor" (quita el id largo).
+  const modelName = (key: string) => key.split(":")[0];
+
+  return (
+    <div className="space-y-3">
+      <p className="text-xs text-ink-dim">
+        Elige cómo Aithera reparte las tareas entre tus modelos. Tú eliges la estrategia;
+        Aithera decide qué modelo concreto usa para cada cosa.
+      </p>
+      {error && (
+        <div className="text-xs text-signal-error bg-signal-error/10 border border-signal-error/30 rounded-lg px-3 py-2">
+          {error}
+        </div>
+      )}
+      {policies.map((p) => {
+        const meta = MEL_POLICY_META[p.name] ?? { label: p.name, hint: "" };
+        const isOpen = expanded === p.name;
+        return (
+          <div
+            key={p.name}
+            className={`rounded-xl p-3 border ${p.is_active ? "border-accent/50 bg-accent/5" : "border-base-700 bg-base-800/40"}`}
+          >
+            <div className="flex items-center justify-between gap-2">
+              <div className="min-w-0">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-medium text-ink">{meta.label}</span>
+                  {p.is_active && <span className="text-[10px] px-2 py-0.5 rounded bg-signal-ok/15 text-signal-ok">Activa</span>}
+                </div>
+                <p className="text-[11px] text-ink-faint mt-0.5">{meta.hint}</p>
+              </div>
+              {!p.is_active && (
+                <button
+                  onClick={() => activate(p.name)}
+                  disabled={busy}
+                  className="shrink-0 text-xs px-3 py-1.5 rounded-lg bg-accent/15 text-accent border border-accent/30 hover:bg-accent/25 disabled:opacity-50"
+                >
+                  Usar esta
+                </button>
+              )}
+            </div>
+            <button
+              onClick={() => setExpanded(isOpen ? null : p.name)}
+              className="text-[10px] text-accent hover:underline mt-2"
+            >
+              {isOpen ? "ocultar detalle" : "ver qué modelo hace cada tarea"}
+            </button>
+            {isOpen && (
+              <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1">
+                {Object.entries(p.compiled).map(([cap, chain]) => (
+                  <div key={cap} className="flex items-center justify-between text-[11px] py-0.5 border-b border-base-700/40">
+                    <span className="text-ink-dim">{MEL_CAP_LABEL[cap] ?? cap}</span>
+                    <span className="text-ink-faint truncate ml-2">
+                      {chain.length ? modelName(chain[0]) : "— (sin modelo)"}
+                      {chain.length > 1 && <span className="opacity-50"> → {chain.slice(1).map(modelName).join(" → ")}</span>}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function PermissionsSettings() {
   const [catalog, setCatalog] = useState<PermissionCatalog | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -1046,6 +1158,12 @@ export default function Settings() {
                 </p>
               </div>
             </div>
+          </div>
+
+          {/* V1.0 (MEL E2): Inteligencia — qué modelo ejecuta cada tarea */}
+          <div className="glass-surface rounded-2xl p-4">
+            <h3 className="text-sm font-medium text-ink mb-3">Inteligencia</h3>
+            <IntelligenceSettings />
           </div>
 
           {/* V0.9 (Automation Engine A3b): Permisos & Autonomía */}

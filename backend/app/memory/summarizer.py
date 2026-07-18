@@ -219,10 +219,13 @@ _SUMMARY_SYSTEM = (
 
 
 async def _try_llm_summary(data: dict[str, Any]) -> Optional[str]:
-    """Ollama primero (coste 0) -> proveedor activo -> None (el caller usa la
-    plantilla determinista). Nunca lanza."""
-    from app.ai.ai_manager import ai_manager
-    from app.ai.reasoning_filter import strip_reasoning
+    """[E2, doc 22 §3·E2] Resumen vía MEL, capacidad SUMMARIZE. Coste 0 primero:
+    `policy_override="economy"` fuerza la política Economy (local primero, cloud
+    de respaldo) SIN importar la política activa del usuario — este es un job de
+    fondo nocturno, no debe encarecerse porque el usuario haya puesto Quality
+    para el chat. Si nada responde → None (el caller usa la plantilla
+    determinista). Nunca lanza. El MEL ya aplica strip_reasoning (B21)."""
+    from app.mel import Capability, ExecutionRequest, complete as mel_complete
 
     prompt = (
         f"Datos del {data['date']}: {data['triaged_total']} emails triados "
@@ -231,23 +234,15 @@ async def _try_llm_summary(data: dict[str, Any]) -> Optional[str]:
         f"{data['conversations_count']} intervenciones en el chat.\n"
         "Escribe el resumen del dia."
     )
-
-    ollama = ai_manager.providers.get("ollama")
-    if ollama is not None:
-        try:
-            if await ollama.health_check():
-                result = await ollama.generate(prompt, system_prompt=_SUMMARY_SYSTEM)
-                if not result.get("error") and result.get("response"):
-                    return strip_reasoning(result["response"]).strip() or None
-        except Exception as e:
-            print(f"[summarizer] Ollama fallo (fail-soft, sigo con proveedor activo): {e}")
-
     try:
-        result = await ai_manager.chat(prompt, system_prompt=_SUMMARY_SYSTEM)
-        if not result.get("error") and result.get("response"):
-            return strip_reasoning(result["response"]).strip() or None
+        res = await mel_complete(ExecutionRequest(
+            capability=Capability.SUMMARIZE, prompt=prompt, system_prompt=_SUMMARY_SYSTEM,
+            policy_override="economy",
+        ))
+        if res.ok and res.text.strip():
+            return res.text.strip()
     except Exception as e:
-        print(f"[summarizer] proveedor activo fallo (fail-soft, uso plantilla): {e}")
+        print(f"[summarizer] MEL fallo (fail-soft, uso plantilla): {e}")
     return None
 
 

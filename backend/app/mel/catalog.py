@@ -56,7 +56,15 @@ def _scores(chat, classify, extract, summarize, draft, reason, code, analyze) ->
 # el proveedor no está, cae a _UNKNOWN_*.
 CATALOG: dict[str, dict] = {
     "ollama": {
-        "default": {"scores": _scores(55, 60, 55, 58, 55, 50, 52, 50),
+        # Calibración honesta (E2, 2026-07-18): un modelo local llama3-class es
+        # bueno-suficiente en tareas ESTRUCTURADAS baratas (classify/summarize/
+        # extract ≥ umbral Economy 55 → local gana, ahorra coste/latencia) pero
+        # genuinamente más flojo en generación ABIERTA (chat/draft/reason/code/
+        # analyze < 55 → cloud gana bajo Economy cuando hay uno). Así Economy da
+        # el reparto ideal calidad/coste SIN degradar el chat del usuario, en vez
+        # de mandarlo todo al local por ser gratis. En Offline (solo local) sigue
+        # cubriendo todo — esa política no filtra por umbral (doc 19 §4).
+        "default": {"scores": _scores(48, 60, 55, 58, 48, 45, 50, 48),
                     "relative_cost": 0, "is_local": True},
         "models": {},   # llama3 y demás dinámicos usan el default local
     },

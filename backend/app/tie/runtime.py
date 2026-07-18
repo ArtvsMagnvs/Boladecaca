@@ -174,22 +174,24 @@ class NullRuntime(AgentRuntime):
         """[T4b] Streaming REAL por tokens: es lo que el usuario ve en el chat de
         Electron (`/api/chat/stream`). Mismo system prompt que el camino no
         streaming (`chat_service.build_system_prompt` — memoria del MOS con
-        atribución de fuente) y mismo filtro incremental de razonamiento (B21):
-        el bloque <think> de los modelos razonadores NUNCA se emite."""
-        from app.ai.ai_manager import ai_manager
-        from app.ai.reasoning_filter import StreamingReasoningFilter
+        atribución de fuente).
+
+        [E2, doc 22 §3·E2] El streaming pasa por `mel.stream` (capacidad CHAT):
+        el MEL elige el modelo por la política activa y aplica el filtro
+        incremental B21 (el bloque <think> NUNCA se emite) — antes ese filtro
+        vivía aquí; ahora es del MEL, así que este runtime solo reenvía los
+        chunks ya limpios."""
+        from app.mel import Capability, ExecutionRequest, stream as mel_stream
         from app.services import chat_service
 
         try:
             system_prompt = await chat_service.build_system_prompt(task.instruction)
-            filt = StreamingReasoningFilter()
-            async for raw in ai_manager.chat_stream(task.instruction, system_prompt):
-                visible = filt.feed(raw)
-                if visible:
-                    yield AgentChunk(task_id=task.id, kind="text", payload=visible)
-            tail = filt.flush()
-            if tail:
-                yield AgentChunk(task_id=task.id, kind="text", payload=tail)
+            req = ExecutionRequest(
+                capability=Capability.CHAT, prompt=task.instruction, system_prompt=system_prompt,
+            )
+            async for chunk in mel_stream(req):
+                if chunk:
+                    yield AgentChunk(task_id=task.id, kind="text", payload=chunk)
         except Exception as e:
             logger.error(f"[NullRuntime] stream_task falló: {type(e).__name__}: {e}")
             yield AgentChunk(task_id=task.id, kind="status", payload=f"error: {e}")

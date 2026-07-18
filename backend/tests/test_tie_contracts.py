@@ -121,13 +121,20 @@ def test_conversational_fallback():
 
 
 # ---------------------------------------------------------------------------
-# Clasificador — con ai_manager fake (sin credenciales)
+# Clasificador — con el MEL fake (sin credenciales). [E2] El clasificador llama
+# a router.complete → mel.complete; el seam de mock es mel.complete (la API
+# pública), no ai_manager.chat (que ya nadie llama directo).
 # ---------------------------------------------------------------------------
 def _fake_ai(monkeypatch, response: str, error: bool = False):
-    async def _chat(message, system_prompt=None):
-        return {"response": response, "model": "fake", "tokens": 10, "error": error}
-    import app.ai.ai_manager as aim
-    monkeypatch.setattr(aim.ai_manager, "chat", _chat)
+    import app.mel as mel
+    from app.mel import ExecutionResult, ServedBy, Usage
+
+    async def _complete(req):
+        return ExecutionResult(
+            text="" if error else response, ok=not error,
+            served_by=ServedBy("fake", "fake"), usage=Usage(tokens=10),
+        )
+    monkeypatch.setattr(mel, "complete", _complete)
 
 
 @pytest.mark.anyio

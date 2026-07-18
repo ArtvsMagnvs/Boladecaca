@@ -15,9 +15,9 @@ from app.db.database import get_db, SessionLocal
 from app.db.models import ChatMessage
 from app.db.schemas import ChatRequest, ChatResponse
 from app.memory.memory_manager import memory_manager
-# B21 (2026-07-02): separar la cadena de pensamiento de los modelos
-# razonadores (MiniMax <think>) de la respuesta que ve el usuario.
-from app.ai.reasoning_filter import StreamingReasoningFilter
+# [E2] El filtro B21 (separar <think> de la respuesta) ya vive en el MEL —
+# tanto el camino TIE (NullRuntime.stream_task) como el legacy (mel.stream)
+# reciben texto ya limpio; este endpoint no lo aplica.
 from app.services import chat_service
 
 router = APIRouter(prefix="/chat", tags=["Chat"])
@@ -60,10 +60,9 @@ async def chat_stream(request: ChatRequest):
 
     async def event_generator():
         full_response = ""
+        # [E2] El modelo real lo elige el MEL; para el etiquetado del historial
+        # basta el proveedor activo (la vía TIE ya no usa esto).
         model_used = ai_manager.current_provider_name
-        # B21: filtro incremental — el bloque <think> inicial se retiene y
-        # NO se emite; el historial y la memoria guardan la respuesta limpia.
-        reasoning_filter = StreamingReasoningFilter()
         try:
             if settings.TIE_ENABLED:
                 # [V1.0 T4b] El chat de Electron pasa por el TIE: entiende antes de
@@ -86,18 +85,19 @@ async def chat_stream(request: ChatRequest):
                         # mete en el texto de la respuesta.
                         yield f"event: {kind}\ndata: {safe}\n\n"
             else:
-                async for chunk in ai_manager.chat_stream(request.message, system_prompt):
-                    visible = reasoning_filter.feed(chunk)
+                # [E2, doc 22 §3·E2] Camino legacy (TIE_ENABLED=false): el
+                # streaming pasa por `mel.stream` (capacidad CHAT). El MEL ya
+                # aplica el filtro B21, así que aquí se reciben chunks ya limpios.
+                from app.mel import Capability, ExecutionRequest, stream as mel_stream
+
+                async for visible in mel_stream(ExecutionRequest(
+                    capability=Capability.CHAT, prompt=request.message, system_prompt=system_prompt,
+                )):
                     if not visible:
                         continue
                     full_response += visible
                     safe_chunk = visible.replace("\r", "").replace("\n", "\\n")
                     yield f"data: {safe_chunk}\n\n"
-                tail = reasoning_filter.flush()
-                if tail:
-                    full_response += tail
-                    safe_tail = tail.replace("\r", "").replace("\n", "\\n")
-                    yield f"data: {safe_tail}\n\n"
         finally:
             # V0.6: almacenamos la respuesta del asistente.
             if full_response:
