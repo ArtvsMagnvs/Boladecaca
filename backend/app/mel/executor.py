@@ -26,7 +26,7 @@ from app.mel.contracts import (
     Usage,
 )
 from app.mel.fallback import FailureAction, breakers, classify_failure
-from app.mel.policies import _compile_policy, policy_store
+from app.mel.policies import policy_store
 from app.mel.contracts import PolicyName
 
 logger = get_system_logger("mel.executor")
@@ -36,14 +36,17 @@ _MAX_HOPS = 3   # máx. saltos de cadena por request (doc 19 §8.1)
 
 def _chain_for(req: ExecutionRequest, available: list[ModelRef]) -> list[ModelRef]:
     """La cadena de candidatos para esta petición: la de la política activa, o la
-    de `policy_override` si el caller la pidió (p.ej. el summarizer → offline)."""
+    de `policy_override` si el caller la pidió (p.ej. el summarizer → economy).
+    `policy_override` lee la política PERSISTIDA por nombre (respeta las ediciones
+    del usuario), no la recompila desde el catálogo."""
     if req.policy_override:
+        name = req.policy_override.lower()
         try:
-            name = PolicyName(req.policy_override.lower())
-            by_key = {r.key: r for r in available}
-            chains = _compile_policy(name, available)
-            return [by_key[k] for k in chains.get(req.capability.value, []) if k in by_key]
-        except (ValueError, KeyError):
+            PolicyName(name)  # valida que sea un nombre conocido
+            chain = policy_store.chain_for_named(name, req.capability, available)
+            if chain:
+                return chain
+        except ValueError:
             pass  # override inválido → cae a la política activa
     return policy_store.active_chain(req.capability, available)
 

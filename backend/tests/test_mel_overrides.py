@@ -158,6 +158,20 @@ def test_overrides_crud():
     assert overrides.override_model_for(1, "chat") is None
 
 
+@pytest.mark.anyio
+async def test_policy_override_respeta_las_ediciones_del_usuario(monkeypatch):
+    """Regresión: policy_override='custom' debe LEER la política personalizada
+    persistida (con las ediciones del usuario), no recompilarla desde el catálogo.
+    Antes ignoraba `set_primary` y devolvía siempre el orden de calidad."""
+    _fake_registry(monkeypatch, AVAIL, lambda ref: {"response": f"por {ref.provider}", "tokens": 1})
+    policy_store.ensure_compiled(AVAIL)
+    # el usuario fija code -> ollama en Custom (Quality lo pondría en anthropic)
+    policy_store.set_primary("custom", "code", "ollama:llama3", AVAIL)
+    req = ExecutionRequest(capability=Capability.CODE, prompt="x", policy_override="custom")
+    res = await executor.complete(req)
+    assert res.ok and res.served_by.provider == "ollama"   # respeta la edición
+
+
 def test_pin_especifico_de_capacidad_gana_sobre_global():
     from app.mel import overrides
     overrides.set_project_override(3, "ollama:llama3")                       # global

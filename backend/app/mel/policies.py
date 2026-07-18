@@ -172,6 +172,40 @@ class PolicyStore:
         finally:
             db.close()
 
+    def chain_for_named(self, name: str, capability: Capability,
+                        available: list[ModelRef]) -> list[ModelRef]:
+        """La cadena de una política CONCRETA por nombre (la usa `policy_override`).
+        Lee la persistida —así respeta las ediciones del usuario, igual que
+        `active_chain`—; si no está persistida, la compila en memoria. Nunca
+        recompila una política editada desde el catálogo (bug corregido: antes
+        `policy_override` ignoraba las ediciones)."""
+        from app.db.database import SessionLocal
+        from app.mel.models import MelPolicy
+
+        by_key = {r.key: r for r in available}
+        db = SessionLocal()
+        try:
+            row = db.query(MelPolicy).filter(MelPolicy.name == name).first()
+            if row and row.compiled:
+                keys = row.compiled.get(capability.value, [])
+                chain = [by_key[k] for k in keys if k in by_key]
+                if chain:
+                    return chain
+        except Exception as e:
+            logger.error(f"[policies] chain_for_named({name}) falló, compilo en memoria: {e!r}")
+        finally:
+            db.close()
+
+        # No persistida (o vacía tras filtrar) → compila en memoria.
+        try:
+            if name == PolicyName.CUSTOM.value:
+                chains = _compile_custom(available)
+            else:
+                chains = _compile_policy(PolicyName(name), available)
+        except ValueError:
+            return []
+        return [by_key[k] for k in chains.get(capability.value, []) if k in by_key]
+
     def active_chain(self, capability: Capability, available: list[ModelRef]) -> list[ModelRef]:
         """La cadena (lista de ModelRef reales y disponibles) de la política activa
         para una capacidad. Si no hay política persistida o la DB falla, compila la
