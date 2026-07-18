@@ -640,4 +640,29 @@ class AIProviderConfig(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow)
 
+
+class LocalModel(Base):
+    """
+    V1.0 (Modelos locales especializados): un modelo local INSTALADO en Ollama
+    que participa en el enrutado del MEL.
+
+    Por qué una tabla propia y no `ai_provider_configs`: esa tabla guarda UN
+    modelo por proveedor (`provider` es unique), y la visión del usuario exige
+    que convivan VARIOS locales a la vez (Ornith programando, Qwen conversando,
+    DeepSeek razonando) para que el MEL reparta cada tarea al especialista.
+    Todos comparten el mismo runtime (`ollama`), así que no son proveedores
+    distintos: son modelos distintos del MISMO proveedor.
+
+    `enabled` permite tener un modelo descargado pero fuera del enrutado (sin
+    borrar los GB del disco). `family` enlaza con `app/ai/local_catalog.py`.
+    """
+    __tablename__ = 'local_models'
+    id = Column(Integer, primary_key=True)
+    family = Column(String(40), index=True)        # "qwen"|"ornith"|"deepseek"|"qwen_vision"
+    model_tag = Column(String(250), unique=True, nullable=False)  # lo que entiende `ollama pull`
+    label = Column(String(150))
+    size_gb = Column(Float)
+    enabled = Column(Boolean, default=True, index=True)  # ¿participa en el enrutado del MEL?
+    installed_at = Column(DateTime, default=datetime.utcnow)
+
 init_db()

@@ -31,12 +31,15 @@ logger = get_system_logger("mel.registry")
 
 def list_available() -> list[ModelRef]:
     """Los (proveedor, modelo) realmente utilizables: configurados en el
-    AIManager. La SALUD no se comprueba aquí (sería una llamada de red por
-    proveedor — rompería el presupuesto <1 ms del Rule Engine); la viabilidad
-    real (breaker cerrado) la decide el fallback en la ejecución (doc 19 §9.1)."""
+    AIManager, MÁS los modelos locales especializados instalados y habilitados
+    (tabla `local_models`, V1.0). La SALUD no se comprueba aquí (sería una
+    llamada de red por proveedor — rompería el presupuesto <1 ms del Rule
+    Engine); la viabilidad real (breaker cerrado) la decide el fallback en la
+    ejecución (doc 19 §9.1)."""
     from app.ai.ai_manager import ai_manager
 
     out: list[ModelRef] = []
+    seen: set[str] = set()
     try:
         for entry in ai_manager.list_configured():
             if not entry.get("is_configured"):
@@ -45,11 +48,42 @@ def list_available() -> list[ModelRef]:
             model = entry.get("model") or ""
             if not model:
                 continue
-            out.append(ModelRef(provider=provider, model=model,
-                                is_local=_catalog_is_local(provider, model)))
+            ref = ModelRef(provider=provider, model=model,
+                           is_local=_catalog_is_local(provider, model))
+            out.append(ref)
+            seen.add(ref.key)
     except Exception as e:
         logger.error(f"[registry] list_available falló: {type(e).__name__}: {e}")
+
+    # [V1.0 multi-modelo local] Cada modelo local habilitado es un candidato
+    # PROPIO para el MEL: así "Ornith programa y Qwen conversa" es una decisión
+    # real del Rule Engine, no una preferencia teórica. Todos comparten el
+    # runtime `ollama`, por eso son (provider="ollama", model=<tag>).
+    try:
+        for tag in _enabled_local_tags():
+            ref = ModelRef(provider="ollama", model=tag, is_local=True)
+            if ref.key not in seen:
+                out.append(ref)
+                seen.add(ref.key)
+    except Exception as e:
+        logger.error(f"[registry] modelos locales no disponibles: {type(e).__name__}: {e}")
     return out
+
+
+def _enabled_local_tags() -> list[str]:
+    """Tags de `local_models` habilitados. Fail-soft: si la tabla aún no existe
+    (BD antigua sin migrar), devuelve vacío y el MEL sigue con lo de siempre."""
+    from app.db.database import SessionLocal
+    from app.db.models import LocalModel
+
+    db = SessionLocal()
+    try:
+        rows = db.query(LocalModel).filter(LocalModel.enabled.is_(True)).all()
+        return [r.model_tag for r in rows if r.model_tag]
+    except Exception:
+        return []
+    finally:
+        db.close()
 
 
 def get_ref(provider: str) -> Optional[ModelRef]:
@@ -64,27 +98,36 @@ def get_ref(provider: str) -> Optional[ModelRef]:
     return ModelRef(provider=provider, model=model, is_local=_catalog_is_local(provider, model))
 
 
-async def execute(ref: ModelRef, prompt: str, system_prompt: Optional[str] = None) -> dict:
-    """Ejecuta una petición contra un proveedor CONCRETO (no el activo del
-    AIManager) — el MEL enruta él mismo. Devuelve el dict del proveedor
-    (`{response, model, tokens?, error?}`). Lanza si el proveedor no existe (el
-    executor lo trata como fallo y salta al siguiente candidato)."""
+def _instance_for(ref: ModelRef):
+    """La instancia de proveedor que atiende ESTE ModelRef. Para los locales, el
+    ref puede apuntar a un modelo distinto del que tiene configurado el
+    proveedor `ollama` (varios especialistas comparten runtime): en ese caso se
+    usa la vista `with_model()` — misma conexión, otro modelo."""
     from app.ai.ai_manager import ai_manager
 
     inst = ai_manager.providers.get(ref.provider)
     if inst is None:
         raise RuntimeError(f"proveedor no instanciado: {ref.provider}")
+    if ref.model and getattr(inst, "model", None) != ref.model:
+        with_model = getattr(inst, "with_model", None)
+        if callable(with_model):
+            return with_model(ref.model)
+    return inst
+
+
+async def execute(ref: ModelRef, prompt: str, system_prompt: Optional[str] = None) -> dict:
+    """Ejecuta una petición contra un (proveedor, modelo) CONCRETO — el MEL
+    enruta él mismo. Devuelve el dict del proveedor (`{response, model, tokens?,
+    error?}`). Lanza si el proveedor no existe (el executor lo trata como fallo y
+    salta al siguiente candidato)."""
+    inst = _instance_for(ref)
     return await inst.generate(prompt, system_prompt)
 
 
 async def stream(ref: ModelRef, prompt: str, system_prompt: Optional[str] = None) -> AsyncIterator[str]:
-    """Streaming contra un proveedor concreto — chunks de texto crudos (el filtro
-    B21 lo aplica el executor/caller)."""
-    from app.ai.ai_manager import ai_manager
-
-    inst = ai_manager.providers.get(ref.provider)
-    if inst is None:
-        raise RuntimeError(f"proveedor no instanciado: {ref.provider}")
+    """Streaming contra un (proveedor, modelo) concreto — chunks de texto crudos
+    (el filtro B21 lo aplica el executor/caller)."""
+    inst = _instance_for(ref)
     async for chunk in inst.generate_stream(prompt, system_prompt):
         yield chunk
 

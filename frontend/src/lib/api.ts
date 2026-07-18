@@ -602,6 +602,45 @@ export interface MelPolicy {
   is_active: boolean;
 }
 
+// --- Modelos locales especializados (V1.0) ---
+export interface LocalModelJob {
+  tag: string;
+  status: "downloading" | "done" | "failed" | "cancelled";
+  percent: number;
+  downloaded_gb: number;
+  total_gb: number | null;
+  error: string | null;
+  step?: string;
+}
+
+export interface LocalModelEntry {
+  tag: string;
+  label: string;
+  size_gb: number;
+  tier: string;
+  recommended: boolean;
+  notes: string;
+  installed: boolean;
+  enabled: boolean;
+  job: LocalModelJob | null;
+}
+
+export interface LocalModelFamily {
+  family: string;
+  label: string;
+  category: string;
+  description: string;
+  is_runtime: boolean;
+  install_url: string | null;
+  models: LocalModelEntry[];
+}
+
+export interface LocalModelCatalog {
+  categories: Array<{ id: string; label: string; description: string }>;
+  families: LocalModelFamily[];
+  runtime_ok: boolean;
+}
+
 // Un (proveedor, modelo) configurado — para los selectores de personalización.
 export interface MelModel {
   key: string;        // "provider:model" — lo que va en las cadenas
@@ -1313,6 +1352,30 @@ export const api = {
       body: JSON.stringify({ name }),
     }),
   getMelModels: () => request<MelModel[]>("/mel/models"),
+
+  // --- Modelos locales especializados (V1.0) ---
+  getLocalCatalog: () => request<LocalModelCatalog>("/local-models/catalog"),
+  installLocalModel: (tag: string) =>
+    request<LocalModelJob>("/local-models/install", {
+      method: "POST",
+      body: JSON.stringify({ tag }),
+    }),
+  getLocalInstallStatus: (tag: string) =>
+    request<LocalModelJob>(`/local-models/install/status?tag=${encodeURIComponent(tag)}`),
+  cancelLocalInstall: (tag: string) =>
+    request<{ cancelled: boolean }>("/local-models/install/cancel", {
+      method: "POST",
+      body: JSON.stringify({ tag }),
+    }),
+  setLocalModelEnabled: (tag: string, enabled: boolean) =>
+    request<{ tag: string; enabled: boolean }>("/local-models/enable", {
+      method: "POST",
+      body: JSON.stringify({ tag, enabled }),
+    }),
+  deleteLocalModel: (tag: string) =>
+    request<{ tag: string; deleted: boolean }>(`/local-models/${encodeURIComponent(tag)}`, {
+      method: "DELETE",
+    }),
   setMelPolicyPrimary: (name: string, capability: string, model_key: string | null) =>
     request<{ ok: boolean }>(`/mel/policies/${name}/primary`, {
       method: "PATCH",

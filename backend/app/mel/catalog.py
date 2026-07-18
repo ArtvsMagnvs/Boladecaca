@@ -33,9 +33,12 @@ _UNKNOWN_LOCAL_PROFILE = {
 }
 
 
-def _scores(chat, classify, extract, summarize, draft, reason, code, analyze) -> dict:
+def _scores(chat, classify, extract, summarize, draft, reason, code, analyze,
+            vision: int = 40) -> dict:
     """Helper legible: 8 números en el orden de la taxonomía activa. Las
-    reservadas (research/vision/agentic) heredan de reason/analyze como prior."""
+    reservadas (research/agentic) heredan de reason como prior. `vision` es
+    opcional (default 40 = "no es multimodal"): solo los modelos de visión
+    reales lo suben."""
     return {
         Capability.CHAT: chat,
         Capability.CLASSIFY: classify,
@@ -46,7 +49,7 @@ def _scores(chat, classify, extract, summarize, draft, reason, code, analyze) ->
         Capability.CODE: code,
         Capability.ANALYZE: analyze,
         Capability.RESEARCH: reason,     # research ≈ razonamiento largo (prior)
-        Capability.VISION: 40,
+        Capability.VISION: vision,
         Capability.AGENTIC: reason,
     }
 
@@ -66,7 +69,42 @@ CATALOG: dict[str, dict] = {
         # cubriendo todo — esa política no filtra por umbral (doc 19 §4).
         "default": {"scores": _scores(48, 60, 55, 58, 48, 45, 50, 48),
                     "relative_cost": 0, "is_local": True},
-        "models": {},   # llama3 y demás dinámicos usan el default local
+        # [V1.0 modelos locales especializados] El default de arriba describe un
+        # llama3-class genérico. Estos overrides describen a los ESPECIALISTAS
+        # del catálogo local (app/ai/local_catalog.py) por sus fuerzas reales —
+        # y son lo que hace que el reparto del MEL sea de verdad: con Ornith y
+        # DeepSeek instalados, `code` va a Ornith y `reason` a DeepSeek sin que
+        # el usuario configure nada. Todos coste 0 (locales).
+        "models": {
+            # — General (Qwen): buen generalista, sin picos —
+            "qwen3:8b":  {"scores": _scores(60, 68, 66, 68, 58, 54, 54, 56),
+                          "relative_cost": 0, "is_local": True},
+            "qwen3:14b": {"scores": _scores(68, 72, 70, 72, 66, 62, 60, 64),
+                          "relative_cost": 0, "is_local": True},
+            "qwen3:32b": {"scores": _scores(74, 76, 75, 76, 72, 70, 68, 72),
+                          "relative_cost": 0, "is_local": True},
+            # — Programación (Ornith): pico en code, flojo razonando (el propio
+            #   usuario lo describe así; el auto-catálogo E1b puede ajustarlo) —
+            "hf.co/deepreinforce-ai/Ornith-1.0-9B-GGUF:Q4_K_M":
+                {"scores": _scores(55, 60, 66, 58, 54, 52, 82, 58),
+                 "relative_cost": 0, "is_local": True},
+            "hf.co/deepreinforce-ai/Ornith-1.0-35B-GGUF:Q4_K_M":
+                {"scores": _scores(62, 65, 72, 64, 60, 60, 90, 66),
+                 "relative_cost": 0, "is_local": True},
+            # — Razonamiento (DeepSeek R1): pico en reason/analyze —
+            "deepseek-r1:8b":  {"scores": _scores(58, 62, 64, 62, 56, 72, 62, 70),
+                                "relative_cost": 0, "is_local": True},
+            "deepseek-r1:14b": {"scores": _scores(62, 66, 68, 66, 60, 80, 68, 78),
+                                "relative_cost": 0, "is_local": True},
+            "deepseek-r1:32b": {"scores": _scores(68, 70, 72, 70, 66, 86, 74, 84),
+                                "relative_cost": 0, "is_local": True},
+            # — Visión (Qwen-VL): los ÚNICOS con vision alta; buenos leyendo
+            #   documentos/capturas (extract), medianos en el resto —
+            "qwen2.5vl:7b":  {"scores": _scores(58, 64, 68, 62, 55, 52, 48, 60, vision=78),
+                              "relative_cost": 0, "is_local": True},
+            "qwen2.5vl:32b": {"scores": _scores(66, 70, 76, 70, 62, 62, 56, 70, vision=88),
+                              "relative_cost": 0, "is_local": True},
+        },
     },
     "openai": {
         "default": {"scores": _scores(88, 85, 85, 86, 87, 88, 88, 86),
@@ -115,6 +153,25 @@ CATALOG: dict[str, dict] = {
         "default": {"scores": _scores(84, 82, 80, 82, 84, 84, 82, 84),
                     "relative_cost": 65, "is_local": False},
         "models": {},
+    },
+    # V1.0: Claude via el CLI local del usuario. Calidad de gama alta (es Claude),
+    # con dos matices propios de ir por CLI:
+    #   - `relative_cost` 20 y NO 90: no se paga por token, va con la suscripcion
+    #     que el usuario YA tiene. Bajo Economy sigue siendo caro comparado con un
+    #     local gratis, pero mucho mas barato que abrir una API de pago.
+    #   - `is_local` False: corre en el equipo, pero NECESITA internet y la sesion
+    #     del CLI. Marcarlo local haria que la politica Offline contara con el
+    #     estando sin conexion — justo lo que Offline promete evitar.
+    # Pico en CODE: es un agente de programacion, no un chat generico.
+    "claude_code": {
+        "default": {"scores": _scores(88, 82, 86, 88, 88, 90, 94, 88),
+                    "relative_cost": 20, "is_local": False},
+        "models": {
+            "opus":   {"scores": _scores(92, 85, 88, 92, 93, 95, 96, 92),
+                       "relative_cost": 30, "is_local": False},
+            "haiku":  {"scores": _scores(80, 84, 82, 82, 78, 76, 82, 78),
+                       "relative_cost": 10, "is_local": False},
+        },
     },
 }
 

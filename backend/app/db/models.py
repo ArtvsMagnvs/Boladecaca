@@ -15,4 +15,5 @@ from app.db.database import (
     MemoryJobRun,  # V0.85 (MOS M1): tracking de jobs de memoria
     Decision,  # V0.85 (MOS M1): Decision Memory (tabla + espejo mem_decision)
     AIProviderConfig,
+    LocalModel,  # V1.0: modelos locales especializados (varios a la vez, MEL reparte)
 )

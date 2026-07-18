@@ -19,6 +19,26 @@ class OllamaProvider(BaseAIProvider):
     def provider_name(self) -> str:
         return "ollama"
 
+    def with_model(self, model: str) -> "OllamaProvider":
+        """[V1.0 multi-modelo local] Devuelve una vista de ESTE proveedor apuntando
+        a otro modelo ya instalado en el mismo Ollama.
+
+        Por qué existe: todos los modelos locales (Qwen, Ornith, DeepSeek…) corren
+        en el MISMO runtime, así que son un solo proveedor con varios modelos —
+        pero `BaseAIProvider` fija el modelo en el constructor. En vez de tocar el
+        contrato de los 8 proveedores con un parámetro por-llamada que solo usaría
+        Ollama, se clona esta instancia cambiando el modelo y COMPARTIENDO el
+        cliente httpx persistente (doc 12 A2): sin handshake TLS extra, sin
+        conexiones nuevas por modelo.
+
+        Devuelve `self` si ya apunta a ese modelo (caso común, coste cero)."""
+        if model == self.model:
+            return self
+        clone = OllamaProvider.__new__(OllamaProvider)
+        clone.__dict__.update(self.__dict__)   # comparte _client y base_url
+        clone.model = model
+        return clone
+
     async def generate(self, prompt: str, system_prompt: Optional[str] = None) -> Dict[str, Any]:
         """Generate response using Ollama."""
         url = f"{self.base_url}/api/generate"

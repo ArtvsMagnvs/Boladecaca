@@ -28,6 +28,7 @@ from .providers.minimax_provider import MinimaxProvider, MINIMAX_HARDCODED_KEY
 from .providers.deepseek_provider import DeepSeekProvider
 from .providers.openrouter_provider import OpenRouterProvider
 from .providers.grok_provider import GrokProvider
+from .providers.claude_code_provider import ClaudeCodeProvider
 from .catalog import PROVIDER_CATALOG, get_provider_info, list_provider_names
 
 from app.db.database import SessionLocal
@@ -47,8 +48,9 @@ def _dec(v: Optional[str]) -> Optional[str]:
     return secrets.decrypt(v) if v else v
 
 
-# Proveedores que no requieren API key (hoy solo Ollama, local).
-NO_KEY_PROVIDERS = {"ollama"}
+# Proveedores que no requieren API key: Ollama (local) y Claude Code (usa la
+# sesion ya iniciada del CLI del usuario, V1.0).
+NO_KEY_PROVIDERS = {"ollama", "claude_code"}
 
 # Fabrica: nombre de proveedor -> clase que lo implementa.
 PROVIDER_CLASSES = {
@@ -60,6 +62,7 @@ PROVIDER_CLASSES = {
     "deepseek": DeepSeekProvider,
     "openrouter": OpenRouterProvider,
     "grok": GrokProvider,
+    "claude_code": ClaudeCodeProvider,
 }
 
 # Fallback por defecto cuando el proveedor primario falla: Ollama local,

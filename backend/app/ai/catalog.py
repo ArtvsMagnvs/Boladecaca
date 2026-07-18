@@ -36,6 +36,16 @@ PROVIDER_CATALOG: Dict[str, Dict[str, Any]] = {
         "models": [],  # se autodetectan via GET /api/tags del propio Ollama
         "supports_auto_detect": True,
     },
+    # V1.0: Claude via el CLI de Claude Code que el usuario ya tiene logueado.
+    # NO requiere API key — la suscripcion Pro/Max no expone una utilizable, pero
+    # el CLI si esta autenticado. Ver app/ai/providers/claude_code_provider.py.
+    "claude_code": {
+        "label": "Claude Code (CLI local)",
+        "requires_key": False,
+        "default_model": "sonnet",
+        "models": ["sonnet", "opus", "haiku", "fable"],
+        "supports_auto_detect": False,
+    },
     "openai": {
         "label": "OpenAI",
         "requires_key": True,

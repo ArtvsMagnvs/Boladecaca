@@ -4,7 +4,7 @@
 // V0.6 (Fase 3 Memory System): nueva seccion "Memoria" con stats, gestion
 // de preferencias del usuario y borrado del historial de ChromaDB.
 import { useState, useEffect } from "react";
-import { api, type AIProviderEntry, type ContextItem, type MemoryStats, type TelegramStatus, type SearchStatus, type SearchProviderStatus, type ElevenLabsCfgStatus, type PermissionCatalog, type MelPolicy, type MelModel, type MelOverride } from "@/lib/api";
+import { api, type AIProviderEntry, type ContextItem, type MemoryStats, type TelegramStatus, type SearchStatus, type SearchProviderStatus, type ElevenLabsCfgStatus, type PermissionCatalog, type MelPolicy, type MelModel, type MelOverride, type LocalModelCatalog } from "@/lib/api";
 import { useAppStore } from "@/store/useAppStore";
 import type { QualityTier } from "@/avcs";
 import { Toggle } from "@/components/Toggle";
@@ -661,6 +661,183 @@ const MEL_CAP_LABEL: Record<string, string> = {
 const MEL_CAPS_ORDER = ["chat", "classify", "extract", "summarize", "draft", "reason", "code", "analyze"];
 const MEL_POLICY_ORDER = ["economy", "quality", "offline", "custom"];
 const MEL_EDITABLE = new Set(["economy", "quality", "custom"]);
+
+/**
+ * V1.0 (Modelos locales especializados): instalar con 1 clic los modelos que
+ * corren en el PC del usuario, agrupados por su especialidad. El MEL reparte
+ * después cada tarea al especialista (Ornith programa, DeepSeek razona…).
+ *
+ * La marca "recomendado" es una sugerencia curada por tamaño, NO una medición
+ * del equipo: el escáner de hardware llega en una actualización futura. Por eso
+ * cada tarjeta muestra los GB reales — el dato con el que el usuario decide hoy.
+ */
+const CATEGORY_ICON: Record<string, string> = {
+  runtime: "⚙️", general: "💬", coding: "💻", reasoning: "🧠", vision: "👁️",
+};
+
+function LocalModelsSettings() {
+  const [catalog, setCatalog] = useState<LocalModelCatalog | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = async () => {
+    try {
+      setCatalog(await api.getLocalCatalog());
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "No se pudo cargar el catálogo de modelos.");
+    }
+  };
+  useEffect(() => { load(); }, []);
+
+  // Mientras haya una descarga viva, refresca solo (el progreso vive en el backend).
+  const hasActiveJob = (catalog?.families ?? []).some((f) =>
+    f.models.some((m) => m.job?.status === "downloading"));
+  useEffect(() => {
+    if (!hasActiveJob) return;
+    const id = setInterval(load, 1500);
+    return () => clearInterval(id);
+  }, [hasActiveJob]);
+
+  const install = async (tag: string) => {
+    setBusy(tag); setError(null);
+    try { await api.installLocalModel(tag); await load(); }
+    catch (e) { setError(e instanceof Error ? e.message : "No se pudo iniciar la descarga."); }
+    finally { setBusy(null); }
+  };
+  const cancel = async (tag: string) => {
+    try { await api.cancelLocalInstall(tag); await load(); } catch { /* ya terminó */ }
+  };
+  const toggle = async (tag: string, enabled: boolean) => {
+    setBusy(tag);
+    try { await api.setLocalModelEnabled(tag, enabled); await load(); }
+    catch (e) { setError(e instanceof Error ? e.message : "No se pudo cambiar el estado."); }
+    finally { setBusy(null); }
+  };
+  const remove = async (tag: string, label: string) => {
+    if (!confirm(`¿Eliminar "${label}"? Se liberará el espacio en disco.`)) return;
+    setBusy(tag);
+    try { await api.deleteLocalModel(tag); await load(); }
+    catch (e) { setError(e instanceof Error ? e.message : "No se pudo eliminar."); }
+    finally { setBusy(null); }
+  };
+
+  if (!catalog) return <p className="text-xs text-ink-faint">Cargando…</p>;
+
+  return (
+    <div className="space-y-4">
+      <p className="text-xs text-ink-dim">
+        Modelos que corren en tu ordenador, cada uno bueno en algo distinto. Instala los que
+        quieras y Aithera repartirá cada tarea al que mejor la hace.
+      </p>
+
+      {!catalog.runtime_ok && (
+        <div className="text-xs text-signal-warn bg-signal-warn/10 border border-signal-warn/30 rounded-lg px-3 py-2">
+          Ollama no responde. Es el motor que ejecuta estos modelos —{" "}
+          <a href="https://ollama.com/download" target="_blank" rel="noreferrer" className="underline">
+            instálalo aquí
+          </a>{" "}y vuelve a esta pantalla.
+        </div>
+      )}
+      {error && (
+        <div className="text-xs text-signal-error bg-signal-error/10 border border-signal-error/30 rounded-lg px-3 py-2">
+          {error}
+        </div>
+      )}
+
+      {catalog.families.filter((f) => !f.is_runtime).map((fam) => (
+        <div key={fam.family} className="rounded-xl border border-base-700 bg-base-800/40 p-3">
+          <div className="flex items-center gap-2">
+            <span>{CATEGORY_ICON[fam.category] ?? "•"}</span>
+            <span className="text-sm font-medium text-ink">{fam.label}</span>
+          </div>
+          <p className="text-[11px] text-ink-faint mt-0.5 mb-2">{fam.description}</p>
+
+          <div className="space-y-2">
+            {fam.models.map((m) => {
+              const job = m.job;
+              const downloading = job?.status === "downloading";
+              return (
+                <div key={m.tag} className="rounded-lg border border-base-700/60 bg-base-900/40 p-2.5">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-xs font-medium text-ink">{m.label}</span>
+                        <span className="text-[10px] text-ink-faint">{m.size_gb} GB</span>
+                        {m.recommended && (
+                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-accent/15 text-accent">sugerido</span>
+                        )}
+                        {m.installed && (
+                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-signal-ok/15 text-signal-ok">instalado</span>
+                        )}
+                      </div>
+                      <p className="text-[10px] text-ink-faint mt-0.5">{m.notes}</p>
+                    </div>
+
+                    <div className="shrink-0 flex items-center gap-1">
+                      {!m.installed && !downloading && (
+                        <button
+                          onClick={() => install(m.tag)}
+                          disabled={busy === m.tag || !catalog.runtime_ok}
+                          className="text-[11px] px-2.5 py-1 rounded-lg bg-accent/15 text-accent border border-accent/30 hover:bg-accent/25 disabled:opacity-50"
+                        >
+                          Instalar
+                        </button>
+                      )}
+                      {downloading && (
+                        <button
+                          onClick={() => cancel(m.tag)}
+                          className="text-[11px] px-2.5 py-1 rounded-lg bg-base-700 text-ink-dim border border-base-600 hover:bg-base-600"
+                        >
+                          Cancelar
+                        </button>
+                      )}
+                      {m.installed && (
+                        <>
+                          <Toggle
+                            checked={m.enabled}
+                            onChange={(v) => toggle(m.tag, v)}
+                            disabled={busy === m.tag}
+                          />
+                          <button
+                            onClick={() => remove(m.tag, m.label)}
+                            disabled={busy === m.tag}
+                            className="text-[11px] px-2 py-1 rounded-lg text-signal-error hover:bg-signal-error/10 disabled:opacity-50"
+                            title="Eliminar del disco"
+                          >
+                            ×
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  </div>
+
+                  {downloading && (
+                    <div className="mt-2">
+                      <div className="h-1.5 rounded-full bg-base-700 overflow-hidden">
+                        <div
+                          className="h-full bg-accent transition-all"
+                          style={{ width: `${job?.percent ?? 0}%` }}
+                        />
+                      </div>
+                      <p className="text-[10px] text-ink-faint mt-1">
+                        {job?.percent ?? 0}%
+                        {job?.total_gb ? ` · ${job.downloaded_gb}/${job.total_gb} GB` : ""}
+                        {job?.step ? ` · ${job.step}` : ""}
+                      </p>
+                    </div>
+                  )}
+                  {job?.status === "failed" && (
+                    <p className="text-[10px] text-signal-error mt-1">{job.error}</p>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
 
 function IntelligenceSettings() {
   const [policies, setPolicies] = useState<MelPolicy[] | null>(null);
@@ -1364,6 +1541,12 @@ export default function Settings() {
                 </p>
               </div>
             </div>
+          </div>
+
+          {/* V1.0: Modelos locales especializados (instalación 1 clic) */}
+          <div className="glass-surface rounded-2xl p-4">
+            <h3 className="text-sm font-medium text-ink mb-3">Modelos locales</h3>
+            <LocalModelsSettings />
           </div>
 
           {/* V1.0 (MEL E2): Inteligencia — qué modelo ejecuta cada tarea */}
