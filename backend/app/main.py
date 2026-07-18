@@ -210,14 +210,19 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         log_error("startup", e, "No se pudo iniciar el planificador (el backend sigue; los jobs del MOS quedan sin programar)")
 
-    # V1.0 (MEL v1, E1b, doc 19 §5.4): suscribe la investigación automática de
-    # capacidades a `provider.model_configured` + programa el refresco periódico
-    # (cada MEL_RESEARCH_REFRESH_DAYS días — reusa el scheduler ya arrancado
-    # arriba). Best-effort: si falla, el resto del MEL sigue funcionando (E1 no
-    # depende de esto — el auto-catálogo solo ENRIQUECE el catálogo curado).
+    # V1.0 (MEL v1, doc 19): deja el Model Execution Layer LISTO al arrancar.
+    # (1) `ensure_ready()` compila las políticas si no existen (idempotente —
+    #     no-op si ya están; rápido, solo lecturas de BD + unos inserts): así hay
+    #     una política activa (Economy por defecto) DESDE el primer request, en vez
+    #     de compilarse perezosamente en la primera llamada. (2) E1b (doc 19 §5.4):
+    #     suscribe la investigación automática a `provider.model_configured` +
+    #     programa el refresco periódico (reusa el scheduler ya arrancado arriba).
+    # Best-effort: si algo falla, el resto del MEL sigue (el executor recompila de
+    # forma defensiva en la primera llamada, y el auto-catálogo solo ENRIQUECE).
     try:
         import app.mel as mel
 
+        mel.ensure_ready()
         mel.register_handlers()
         from app.automation import scheduler_service
 
@@ -226,12 +231,14 @@ async def lifespan(app: FastAPI):
             minutes=settings.MEL_RESEARCH_REFRESH_DAYS * 24 * 60,
             id="mel_research_refresh", first_run_delay_s=90,
         )
+        active = next((p["name"] for p in mel.policies() if p.get("is_active")), "?")
         log_info(
             "startup",
-            f"MEL: catálogo auto-investigado activo (refresco cada {settings.MEL_RESEARCH_REFRESH_DAYS}d)",
+            f"MEL listo — política activa '{active}'; catálogo auto-investigado "
+            f"(refresco cada {settings.MEL_RESEARCH_REFRESH_DAYS}d)",
         )
     except Exception as e:
-        log_error("startup", e, "No se pudo activar el catálogo auto-investigado del MEL (no crítico)")
+        log_error("startup", e, "No se pudo inicializar el MEL en el arranque (no crítico; recompila en el primer uso)")
 
     # V0.9 (Automation A3): siembra las 5 reglas predefinidas (idempotente, sin
     # duplicar en arranques posteriores) y registra el catalogo de acciones
