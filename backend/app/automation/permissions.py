@@ -77,16 +77,19 @@ CATALOG: list[PermissionDef] = [
         description="Hacer commits o modificar el repositorio de tus proyectos.",
         group="Sistema", risk="high",
     ),
-    # --- Futuros: la tool todavía no existe, el permiso ya sí (doc 20 A3b) ---
+    # [Δ 2026-07-18] activadas: Browser Tool y Desktop Tool ya existen
+    # (app/tools/browser_tool.py, app/tools/desktop_tool.py) — se cambia
+    # SOLO el flag `available`, tal como el comentario de PermissionDef ya
+    # anticipaba. Grupo real, ya no "Próximamente".
     PermissionDef(
         id="browser.use", label="Usar el navegador web",
         description="Navegar por internet en tu nombre (buscar, rellenar formularios).",
-        group="Próximamente", risk="medium", available=False,
+        group="Sistema", risk="medium", available=True,
     ),
     PermissionDef(
         id="computer.use", label="Controlar el ordenador",
         description="Manejar tu ordenador directamente (clics, teclado).",
-        group="Próximamente", risk="high", available=False,
+        group="Sistema", risk="high", available=True,
     ),
 ]
 
@@ -94,8 +97,10 @@ _BY_ID: dict[str, PermissionDef] = {p.id: p for p in CATALOG}
 
 # Perfiles rápidos (el equivalente a "omitir permisos" de Claude). `manual` es
 # el default seguro — todo apagado, Aithera pregunta siempre. `full` NO
-# incluye los `available=False` (no hay nada que autorizar de una tool que
-# no existe todavía).
+# incluye los `available=False` (no hay nada que autorizar de una tool que no
+# existe todavía) — hoy [Δ 2026-07-18] el catálogo no tiene ninguna entrada
+# `available=False` (browser.use/computer.use ya se activaron), pero la regla
+# se deja intacta para el próximo permiso que se reserve así.
 PROFILES: dict[str, frozenset[str]] = {
     "manual": frozenset(),
     "balanced": frozenset(p.id for p in CATALOG if p.available and p.risk == "low"),

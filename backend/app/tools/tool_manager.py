@@ -38,11 +38,16 @@ class ToolManager:
     # ------------------------------------------------------------------
 
     def _register_default_tools(self):
-        """Registra las herramientas incluidas por defecto (V0.4 + V0.5 + V0.7).
+        """Registra las herramientas incluidas por defecto (V0.4 + V0.5 + V0.7 + V1.0/1.1).
 
         V0.4 incluia 3: filesystem, shell, git.
         V0.5 anadio PowerShellTool para ejecutar scripts .ps1 predefinidos.
         V0.7 anadio EmailTool (Gmail) y CalendarTool (Google Calendar).
+        V1.0/1.1 anade ProcessTool, SecretsTool, MemoryTool, ModelTool y
+        DownloadTool (capacitacion del Orchestrator, doc de sesion "Tools
+        faltantes"). Browser/Desktop/Search quedan fuera hasta decidir
+        proveedor de busqueda y confirmar las dependencias pesadas
+        (Playwright, pyautogui+OCR).
         """
         from .filesystem_tool import FilesystemTool
         from .shell_tool import ShellTool
@@ -50,6 +55,14 @@ class ToolManager:
         from .powershell_tool import PowerShellTool
         from .email_tool import EmailTool
         from .calendar_tool import CalendarTool
+        from .process_tool import ProcessTool
+        from .secrets_tool import SecretsTool
+        from .memory_tool import MemoryTool
+        from .model_tool import ModelTool
+        from .download_tool import DownloadTool
+        from .search_tool import SearchTool
+        from .browser_tool import BrowserTool
+        from .desktop_tool import DesktopTool
 
         self.register(FilesystemTool())
         self.register(ShellTool())
@@ -57,6 +70,14 @@ class ToolManager:
         self.register(PowerShellTool())
         self.register(EmailTool())
         self.register(CalendarTool())
+        self.register(ProcessTool())
+        self.register(SecretsTool())
+        self.register(MemoryTool())
+        self.register(ModelTool())
+        self.register(DownloadTool())
+        self.register(SearchTool())
+        self.register(BrowserTool())
+        self.register(DesktopTool())
 
     def register(self, tool: BaseTool) -> None:
         """Registra una herramienta. Permite anadir herramientas custom en el futuro."""

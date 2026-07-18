@@ -434,6 +434,16 @@ export interface TelegramStatus {
   token_masked: string;
 }
 
+export interface SearchProviderStatus {
+  configured: boolean;
+  key_masked: string;
+}
+
+export interface SearchStatus {
+  brave: SearchProviderStatus;
+  serpapi: SearchProviderStatus;
+}
+
 export interface ElevenLabsCfgStatus {
   configured: boolean;
   source: "config" | "env" | "none";
@@ -719,6 +729,16 @@ export const api = {
     }),
   deconfigureTelegram: () =>
     request<TelegramStatus>("/telegram/configure", { method: "DELETE" }),
+
+  // --- Search Tool (V1.0/1.1 Tools) ---
+  getSearchStatus: () => request<SearchStatus>("/search/status"),
+  configureSearchProvider: (provider: "brave" | "serpapi", api_key: string) =>
+    request<SearchStatus>("/search/configure", {
+      method: "POST",
+      body: JSON.stringify({ provider, api_key }),
+    }),
+  deconfigureSearchProvider: (provider: "brave" | "serpapi") =>
+    request<SearchStatus>(`/search/configure/${provider}`, { method: "DELETE" }),
 
   // --- Email + Calendar (V0.7 Fase 4) ---
   // Email status

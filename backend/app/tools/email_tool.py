@@ -27,18 +27,75 @@
 import dataclasses
 import json
 import base64
+import mimetypes
 import os
 import re
 from datetime import datetime
+from email import encoders
+from email.mime.base import MIMEBase
+from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from typing import Dict, Any, List, Literal, Optional
 
 from .base import BaseTool
+from .filesystem_tool import _resolve_user_path, _is_path_allowed
 from app.integrations import google_auth
 
 
 # Etiquetas validas para el campo "matching" de las auto-reply rules.
 VALID_MATCHINGS = {"sender_contains", "subject_contains", "sender_domain"}
+
+# Limite conservador para adjuntos: Gmail rechaza mensajes > 25MB, y
+# base64 infla el tamano binario ~33%. 15MB binario -> ~20MB tras
+# codificar, con margen para cabeceras/cuerpo.
+MAX_ATTACHMENT_TOTAL_BYTES = 15 * 1024 * 1024
+
+
+def _build_mime_message(to: str, subject: str, body: str,
+                        attachments: Optional[List[str]] = None):
+    """Construye el mensaje MIME a enviar/guardar como borrador. Sin adjuntos,
+    comportamiento IDENTICO a antes (MIMEText simple). Con adjuntos, cambia a
+    MIMEMultipart y adjunta cada archivo — reusando la MISMA validacion de
+    paths que FilesystemTool (solo dentro de HOME, nunca zonas del sistema).
+
+    Devuelve (mensaje, None) si OK, o (None, error) si algun adjunto es invalido.
+    """
+    if not attachments:
+        msg = MIMEText(body)
+        msg["to"] = to
+        msg["subject"] = subject
+        return msg, None
+
+    msg = MIMEMultipart()
+    msg["to"] = to
+    msg["subject"] = subject
+    msg.attach(MIMEText(body))
+
+    total_size = 0
+    for path_str in attachments:
+        path = _resolve_user_path(path_str)
+        if not _is_path_allowed(path):
+            return None, f"adjunto fuera de zonas permitidas: {path_str}"
+        if not path.exists() or not path.is_file():
+            return None, f"adjunto no existe: {path_str}"
+
+        size = path.stat().st_size
+        total_size += size
+        if total_size > MAX_ATTACHMENT_TOTAL_BYTES:
+            limit_mb = MAX_ATTACHMENT_TOTAL_BYTES // (1024 * 1024)
+            return None, f"los adjuntos superan el limite de {limit_mb}MB"
+
+        ctype, encoding = mimetypes.guess_type(str(path))
+        if ctype is None or encoding is not None:
+            ctype = "application/octet-stream"
+        maintype, subtype = ctype.split("/", 1)
+        part = MIMEBase(maintype, subtype)
+        part.set_payload(path.read_bytes())
+        encoders.encode_base64(part)
+        part.add_header("Content-Disposition", "attachment", filename=path.name)
+        msg.attach(part)
+
+    return msg, None
 
 
 def _extract_email_address(from_header: str) -> str:
@@ -213,6 +270,7 @@ class EmailTool(BaseTool):
                     "to": "string",
                     "subject": "string",
                     "body": "string",
+                    "attachments": "lista opcional de paths (dentro de HOME, max 15MB total)",
                 },
             },
             {
@@ -223,6 +281,7 @@ class EmailTool(BaseTool):
                     "to": "string",
                     "subject": "string",
                     "body": "string",
+                    "attachments": "lista opcional de paths (dentro de HOME, max 15MB total)",
                 },
             },
             {
@@ -681,6 +740,7 @@ class EmailTool(BaseTool):
         to = params.get("to", "")
         subject = params.get("subject", "")
         body = params.get("body", "")
+        attachments = params.get("attachments")
         if not to or not subject:
             return {
                 "success": False,
@@ -688,11 +748,12 @@ class EmailTool(BaseTool):
                 "error": "faltan parametros: to y subject son obligatorios",
             }
 
+        msg, err = _build_mime_message(to, subject, body, attachments)
+        if err:
+            return {"success": False, "result": None, "error": err}
+
         def _do():
             service = build("gmail", "v1", credentials=creds, cache_discovery=False)
-            msg = MIMEText(body)
-            msg["to"] = to
-            msg["subject"] = subject
             raw = base64.urlsafe_b64encode(msg.as_bytes()).decode()
             return service.users().drafts().create(
                 userId="me", body={"message": {"raw": raw}}
@@ -711,6 +772,7 @@ class EmailTool(BaseTool):
         to = params.get("to", "")
         subject = params.get("subject", "")
         body = params.get("body", "")
+        attachments = params.get("attachments")
         if not to or not subject:
             return {
                 "success": False,
@@ -718,11 +780,12 @@ class EmailTool(BaseTool):
                 "error": "faltan parametros: to y subject son obligatorios",
             }
 
+        msg, err = _build_mime_message(to, subject, body, attachments)
+        if err:
+            return {"success": False, "result": None, "error": err}
+
         def _do():
             service = build("gmail", "v1", credentials=creds, cache_discovery=False)
-            msg = MIMEText(body)
-            msg["to"] = to
-            msg["subject"] = subject
             raw = base64.urlsafe_b64encode(msg.as_bytes()).decode()
             return service.users().messages().send(
                 userId="me", body={"raw": raw}

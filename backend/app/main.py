@@ -22,6 +22,9 @@ from app.api.endpoints import automation
 from app.api.endpoints import tie as tie_endpoints
 # V0.8 (Fase 5 Clientes): router de configuracion del canal Telegram.
 from app.api.endpoints import telegram as telegram_endpoints
+# V1.0/1.1 (Tools): configuracion de Search Tool (Brave/SerpAPI, mismo patron
+# de secreto cifrado que Telegram).
+from app.api.endpoints import search_config as search_config_endpoints
 # V1.0 (MEL v1, E1b): router del Model Execution Layer (informe de capacidades
 # auto-investigado). El import registra ademas los modelos de app.mel
 # (mel_executions/mel_policies/mel_capability_reports) antes del create_all.
@@ -391,6 +394,7 @@ app.include_router(tools.router, prefix="/api")
 app.include_router(memory.router, prefix="/api")
 # V0.8 (Fase 5 Clientes): configuracion del canal Telegram (status/configure).
 app.include_router(telegram_endpoints.router, prefix="/api")
+app.include_router(search_config_endpoints.router, prefix="/api")
 # V0.9 (Automation Engine A1): ApprovalGate (listar/resolver aprobaciones).
 app.include_router(automation.router, prefix="/api")
 # V1.0 (TIE v1, T4): misiones, grafo, kill-switch y aprobacion de planes.

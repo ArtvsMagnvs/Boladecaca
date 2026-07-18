@@ -78,6 +78,32 @@ anyio==4.14.0
 # Trae su propio httpx; ya esta fijado arriba en version compatible.
 python-telegram-bot==21.10
 
+# --- Sistema (V1.0/1.1, Tools: Process/Model) ---
+# psutil: procesos/CPU/RAM multiplataforma. Sin dependencias nativas propias
+# en Windows (wheel precompilado) -> instalacion instantanea.
+psutil==7.2.2
+
+# --- Browser Tool (V1.0/1.1) ---
+# Playwright: automatizacion de navegador real (Chromium). Requiere ademas
+# `playwright install chromium` UNA vez (descarga el binario del navegador,
+# ~300MB, fuera de pip). Sin eso instalado, Browser Tool falla con un error
+# claro al primer uso (import lazy).
+playwright==1.61.0
+
+# --- Desktop Tool (V1.0/1.1) ---
+# pyautogui: control de raton/teclado + captura de pantalla. Pura Python +
+# wheels precompilados (Pillow, pygetwindow, pyperclip...), sin binarios
+# externos que instalar.
+pyautogui==0.9.54
+# winocr: OCR usando el motor NATIVO de Windows (Windows.Media.Ocr, WinRT) --
+# se prefirio sobre pytesseract (exige instalar el binario Tesseract-OCR
+# aparte, un instalador de Windows que no se puede automatizar sin
+# intervencion) y sobre easyocr (arrastra su propia version de PyTorch,
+# arriesgando romper la que ya usa sentence-transformers/ChromaDB). Cero
+# descargas de modelos, cero conflictos de dependencias, funciona ya en
+# cualquier Windows 10/11 sin instalar nada mas.
+winocr==0.0.15
+
 # --- Planificador de jobs (V0.9 Automation A2a) ---
 # APScheduler: el planificador unico del backend. Absorbe los jobs asyncio de
 # V0.85 (ingesta, resumen nocturno) + el nuevo lifecycle del MOS. 3.x (linea

@@ -4,7 +4,7 @@
 // V0.6 (Fase 3 Memory System): nueva seccion "Memoria" con stats, gestion
 // de preferencias del usuario y borrado del historial de ChromaDB.
 import { useState, useEffect } from "react";
-import { api, type AIProviderEntry, type ContextItem, type MemoryStats, type TelegramStatus, type ElevenLabsCfgStatus, type PermissionCatalog, type MelPolicy, type MelModel, type MelOverride } from "@/lib/api";
+import { api, type AIProviderEntry, type ContextItem, type MemoryStats, type TelegramStatus, type SearchStatus, type SearchProviderStatus, type ElevenLabsCfgStatus, type PermissionCatalog, type MelPolicy, type MelModel, type MelOverride } from "@/lib/api";
 import { useAppStore } from "@/store/useAppStore";
 import type { QualityTier } from "@/avcs";
 import { Toggle } from "@/components/Toggle";
@@ -373,6 +373,101 @@ function EmailGoogleStatus() {
  * conserva el guardado. Los cambios aplican al reiniciar el backend (el
  * polling del canal se monta en el arranque).
  */
+/**
+ * V1.0/1.1 (Tools, petición del usuario 2026-07-18): Search Tool combina 2
+ * proveedores — Brave Search API se prueba primero (plan gratuito de 2000
+ * consultas/mes); si falla o no está configurado, cae a SerpAPI. Ambos son
+ * opcionales e independientes; basta con configurar uno para que funcione.
+ */
+function SearchProviderCard({
+  label, hint, signupUrl, status, onSave, onDelete,
+}: {
+  label: string; hint: string; signupUrl: string;
+  status: SearchProviderStatus | undefined;
+  onSave: (key: string) => Promise<void>;
+  onDelete: () => Promise<void>;
+}) {
+  const [key, setKey] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  return (
+    <div className="rounded-xl p-3 border border-base-700 bg-base-800/40">
+      <div className="flex items-center justify-between mb-1">
+        <span className="text-sm font-medium text-ink">{label}</span>
+        {status?.configured ? (
+          <span className="text-[10px] px-2 py-0.5 rounded bg-signal-ok/15 text-signal-ok">
+            Configurado ({status.key_masked})
+          </span>
+        ) : (
+          <span className="text-[10px] px-2 py-0.5 rounded bg-base-700 text-ink-dim">Sin configurar</span>
+        )}
+      </div>
+      <p className="text-[11px] text-ink-faint mb-2">
+        {hint}{" "}
+        <a href={signupUrl} target="_blank" rel="noreferrer" className="text-accent underline">
+          Consigue tu API key aquí
+        </a>.
+      </p>
+      <div className="flex gap-2">
+        <input
+          value={key}
+          onChange={(e) => setKey(e.target.value)}
+          type="password"
+          placeholder={status?.configured ? "Nueva key (deja vacío para no cambiarla)" : "Pega tu API key"}
+          className="flex-1 bg-base-700 border border-base-600 rounded-lg px-3 py-1.5 text-xs text-ink placeholder:text-ink-faint focus:outline-none focus:border-accent/50"
+        />
+        <button
+          onClick={async () => { setSaving(true); await onSave(key); setKey(""); setSaving(false); }}
+          disabled={saving || !key.trim()}
+          className="text-xs px-3 py-1.5 rounded-lg bg-accent text-base-950 font-medium hover:bg-accent-glow disabled:opacity-50"
+        >
+          Guardar
+        </button>
+        {status?.configured && (
+          <button
+            onClick={onDelete}
+            className="text-xs px-3 py-1.5 rounded-lg bg-signal-error/15 text-signal-error border border-signal-error/30 hover:bg-signal-error/25"
+          >
+            Borrar
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function SearchSettings() {
+  const [status, setStatus] = useState<SearchStatus | null>(null);
+
+  const refresh = async () => {
+    try { setStatus(await api.getSearchStatus()); } catch (e) { console.error(e); }
+  };
+  useEffect(() => { refresh(); }, []);
+
+  return (
+    <div className="space-y-3">
+      <p className="text-xs text-ink-dim">
+        Aithera prueba primero Brave; si falla o no está configurado, usa SerpAPI. Con uno
+        solo ya funciona — configura los dos si quieres respaldo automático.
+      </p>
+      <SearchProviderCard
+        label="Brave Search API" hint="Gratis hasta 2.000 consultas/mes."
+        signupUrl="https://api.search.brave.com/register"
+        status={status?.brave}
+        onSave={async (k) => { await api.configureSearchProvider("brave", k); refresh(); }}
+        onDelete={async () => { await api.deconfigureSearchProvider("brave"); refresh(); }}
+      />
+      <SearchProviderCard
+        label="SerpAPI (Google)" hint="Resultados de Google reales. Plan gratuito limitado (~100/mes)."
+        signupUrl="https://serpapi.com/manage-api-key"
+        status={status?.serpapi}
+        onSave={async (k) => { await api.configureSearchProvider("serpapi", k); refresh(); }}
+        onDelete={async () => { await api.deconfigureSearchProvider("serpapi"); refresh(); }}
+      />
+    </div>
+  );
+}
+
 function TelegramSettings() {
   const [status, setStatus] = useState<TelegramStatus | null>(null);
   const [token, setToken] = useState("");
@@ -1357,6 +1452,12 @@ export default function Settings() {
                 key, la voz usa eSpeak (offline).
               </p>
               <ElevenLabsSettings />
+            </div>
+
+            {/* V1.0/1.1 (Tools): seccion Busqueda web (Search Tool) */}
+            <div className="glass-surface rounded-2xl p-4">
+              <h3 className="text-sm font-medium text-ink mb-3">Búsqueda web</h3>
+              <SearchSettings />
             </div>
 
             {/* V0.8 (Fase 5 Clientes): seccion Telegram */}

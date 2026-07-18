@@ -41,10 +41,14 @@ def _tables_and_clean():
 # ---------------------------------------------------------------------------
 # Catálogo + fail-closed por defecto
 # ---------------------------------------------------------------------------
-def test_catalogo_tiene_9_permisos_2_no_disponibles():
+def test_catalogo_tiene_9_permisos_todos_disponibles():
+    # [Δ 2026-07-18] browser.use/computer.use se activaron (available=True):
+    # Browser Tool y Desktop Tool ya existen de verdad (app/tools/browser_tool.py,
+    # app/tools/desktop_tool.py). El catálogo sigue teniendo 9 entradas — solo
+    # cambió el flag, tal como el diseño de A3b ya anticipaba.
     assert len(CATALOG) == 9
-    unavailable = [p for p in CATALOG if not p.available]
-    assert {p.id for p in unavailable} == {"browser.use", "computer.use"}
+    assert all(p.available for p in CATALOG)
+    assert {"browser.use", "computer.use"} <= {p.id for p in CATALOG}
 
 
 def test_sin_config_nada_esta_pre_autorizado():
@@ -56,9 +60,21 @@ def test_permiso_desconocido_nunca_pre_autorizado():
     assert permission_service.is_pre_authorized("algo.que.no.existe") is False
 
 
-def test_permiso_no_disponible_no_se_puede_activar():
+def test_permiso_no_disponible_no_se_puede_activar(monkeypatch):
+    # El catálogo real ya no tiene ninguna entrada available=False (browser.use/
+    # computer.use se activaron), pero el guard de set_permission() sigue
+    # siendo un comportamiento real que debe protegerse para el PRÓXIMO permiso
+    # que se reserve así — se prueba con una entrada sintética inyectada.
+    from app.automation import permissions as permissions_module
+    from app.automation.permissions import PermissionDef
+
+    fake = PermissionDef(
+        id="_test.futuro", label="x", description="x", group="x", risk="low", available=False,
+    )
+    monkeypatch.setitem(permissions_module._BY_ID, "_test.futuro", fake)
+
     with pytest.raises(ValueError, match="no disponible"):
-        permission_service.set_permission("browser.use", True)
+        permission_service.set_permission("_test.futuro", True)
 
 
 def test_permiso_inexistente_lanza():
