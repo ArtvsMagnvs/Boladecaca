@@ -153,11 +153,30 @@ async def lifespan(app: FastAPI):
                 if c.strip()
             }
             gateway.register(TelegramAdapter(token, allowed))
-            await gateway.start_all()
-            log_info(
-                "startup",
-                f"Canal Telegram iniciado ({len(allowed)} chat_id autorizados)",
-            )
+
+            # Arranque EN BACKGROUND (mismo criterio que la memoria en M5, doc 12
+            # A1). Antes esto era `await gateway.start_all()` en linea, y el
+            # adapter de Telegram tiene timeouts de 30s: con la red caida o lenta,
+            # el arranque ENTERO del backend se quedaba esperando ahi (~30s
+            # medidos en el log del usuario, 2026-07-19) antes de aceptar la
+            # primera peticion. Un canal que tarda en conectar no puede retrasar
+            # a todo lo demas; el Gateway ya es fail-soft, asi que se conecta
+            # cuando pueda y el resto del backend sigue disponible.
+            async def _start_channels_background() -> None:
+                try:
+                    await gateway.start_all()
+                    log_info(
+                        "startup",
+                        f"Canal Telegram iniciado ({len(allowed)} chat_id autorizados)",
+                    )
+                except Exception as e:
+                    log_error(
+                        "startup", e,
+                        "No se pudo iniciar el canal Telegram (el backend sigue sin el)",
+                    )
+
+            asyncio.create_task(_start_channels_background())
+            log_info("startup", "Canal Telegram conectando en background...")
         else:
             log_info("startup", "Telegram no configurado (sin token) — canal omitido")
     except Exception as e:

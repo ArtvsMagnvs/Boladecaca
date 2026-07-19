@@ -30,6 +30,7 @@ mismo contrato de degradacion graceful de siempre, solo cambia CUANDO se
 resuelve.
 """
 import asyncio
+from contextlib import contextmanager
 import os
 from datetime import datetime
 from typing import List, Optional, Dict, Any
@@ -43,6 +44,57 @@ CHROMA_PATH = os.environ.get("AITHERA_CHROMA_PATH") or os.path.join(
     os.environ.get("APPDATA") or ".", "Aithera", "chroma"
 )
 os.makedirs(CHROMA_PATH, exist_ok=True)
+
+# Modelo de embeddings. Un solo sitio: lo usan _do_init() y la comprobacion de
+# cache de _offline_if_model_cached().
+EMBEDDING_MODEL = "all-MiniLM-L6-v2"
+
+
+def _model_is_cached(model_name: str) -> bool:
+    """True si el modelo ya esta descargado en la cache de HuggingFace.
+
+    HF guarda cada repo como `models--<org>--<nombre>`. sentence-transformers
+    resuelve el nombre corto contra la org `sentence-transformers`."""
+    hub = os.environ.get("HF_HOME") or os.path.join(
+        os.path.expanduser("~"), ".cache", "huggingface"
+    )
+    carpeta = os.path.join(hub, "hub", f"models--sentence-transformers--{model_name}")
+    return os.path.isdir(carpeta)
+
+
+@contextmanager
+def _offline_if_model_cached(model_name: str):
+    """Evita que cargar los embeddings dependa de tener internet.
+
+    EL PROBLEMA (medido en el arranque real del usuario, 2026-07-19):
+    sentence-transformers consulta HuggingFace por si hay una version nueva
+    AUNQUE el modelo ya este descargado entero. Si la red falla en ese momento,
+    `huggingface_hub` reintenta 5 veces con espera exponencial —1+2+4+8+16 = 31
+    segundos EXACTOS de bloqueo— y solo entonces tira de la copia local. El
+    modelo no cambia nunca, asi que esos 31s no compran absolutamente nada.
+
+    Si el modelo ESTA en cache, forzamos modo offline mientras se construye: la
+    carga es instantanea y no toca la red. Si NO esta (primera instalacion), se
+    deja el comportamiento normal para que pueda descargarlo.
+
+    El env se restaura al salir para no dejar a TODO el proceso en offline: hay
+    otros componentes (Whisper de voz) que comparten la cache de HF y si podrian
+    necesitar descargar algo."""
+    if not _model_is_cached(model_name):
+        yield
+        return
+
+    previos = {k: os.environ.get(k) for k in ("HF_HUB_OFFLINE", "TRANSFORMERS_OFFLINE")}
+    os.environ["HF_HUB_OFFLINE"] = "1"
+    os.environ["TRANSFORMERS_OFFLINE"] = "1"
+    try:
+        yield
+    finally:
+        for k, v in previos.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
 
 
 class MemoryManager:
@@ -71,9 +123,10 @@ class MemoryManager:
             from chromadb.utils import embedding_functions
 
             self._client = chromadb.PersistentClient(path=CHROMA_PATH)
-            self._ef = embedding_functions.SentenceTransformerEmbeddingFunction(
-                model_name="all-MiniLM-L6-v2"
-            )
+            with _offline_if_model_cached(EMBEDDING_MODEL):
+                self._ef = embedding_functions.SentenceTransformerEmbeddingFunction(
+                    model_name=EMBEDDING_MODEL
+                )
             self._conversations = self._client.get_or_create_collection(
                 "conversations", embedding_function=self._ef
             )
