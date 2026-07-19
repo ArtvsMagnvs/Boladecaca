@@ -1,8 +1,8 @@
 # Ollama AI Provider
 import json
 import httpx
-from typing import Dict, Any, Optional, AsyncIterator
-from .base import BaseAIProvider
+from typing import Dict, Any, List, Optional, AsyncIterator
+from .base import BaseAIProvider, normalize_history
 
 
 class OllamaProvider(BaseAIProvider):
@@ -23,18 +23,45 @@ class OllamaProvider(BaseAIProvider):
     # (Qwen, Ornith, DeepSeek…) comparten runtime, así que son un proveedor con
     # varios modelos — el clon reusa el mismo cliente httpx.
 
-    async def generate(self, prompt: str, system_prompt: Optional[str] = None) -> Dict[str, Any]:
-        """Generate response using Ollama."""
-        url = f"{self.base_url}/api/generate"
+    def _endpoint_and_payload(self, prompt: str, system_prompt: Optional[str],
+                              history: Optional[List[Dict[str, Any]]], stream: bool):
+        """[R6.5a] Ollama tiene DOS APIs y solo una admite conversacion:
+          - `/api/generate`: un prompt suelto + system. Es la que se ha usado
+            siempre y NO puede llevar historial.
+          - `/api/chat`: array de mensajes, como OpenAI.
 
-        payload = {
-            "model": self.model,
-            "prompt": prompt,
-            "stream": False
-        }
+        Sin historial se sigue usando `/api/generate` con el MISMO payload de
+        siempre — cero regresion, byte a byte. Solo se cambia de endpoint cuando
+        de verdad hay turnos previos que enviar. Ojo: las dos APIs devuelven el
+        texto en sitios distintos (`response` vs `message.content`), y de eso se
+        encarga `_extract_chunk`."""
+        turnos = normalize_history(history)
+        if not turnos:
+            payload = {"model": self.model, "prompt": prompt, "stream": stream}
+            if system_prompt:
+                payload["system"] = system_prompt
+            return f"{self.base_url}/api/generate", payload, False
 
+        messages = []
         if system_prompt:
-            payload["system"] = system_prompt
+            messages.append({"role": "system", "content": system_prompt})
+        messages.extend(turnos)
+        messages.append({"role": "user", "content": prompt})
+        return f"{self.base_url}/api/chat", {
+            "model": self.model, "messages": messages, "stream": stream,
+        }, True
+
+    @staticmethod
+    def _extract_chunk(data: Dict[str, Any], es_chat: bool) -> str:
+        """El texto de una respuesta, venga del endpoint que venga."""
+        if es_chat:
+            return (data.get("message") or {}).get("content", "")
+        return data.get("response", "")
+
+    async def generate(self, prompt: str, system_prompt: Optional[str] = None,
+                       messages: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
+        """Generate response using Ollama."""
+        url, payload, es_chat = self._endpoint_and_payload(prompt, system_prompt, messages, stream=False)
 
         try:
             client = self._get_client()  # V0.9 A2a: cliente persistente por proveedor
@@ -43,7 +70,7 @@ class OllamaProvider(BaseAIProvider):
             data = response.json()
 
             return {
-                "response": data.get("response", ""),
+                "response": self._extract_chunk(data, es_chat),
                 "model": self.model,
                 "provider": self.provider_name
             }
@@ -55,18 +82,10 @@ class OllamaProvider(BaseAIProvider):
                 "error": True
             }
 
-    async def generate_stream(self, prompt: str, system_prompt: Optional[str] = None) -> AsyncIterator[str]:
+    async def generate_stream(self, prompt: str, system_prompt: Optional[str] = None,
+                              messages: Optional[List[Dict[str, Any]]] = None) -> AsyncIterator[str]:
         """Generate response using Ollama, yielding incremental text chunks."""
-        url = f"{self.base_url}/api/generate"
-
-        payload = {
-            "model": self.model,
-            "prompt": prompt,
-            "stream": True
-        }
-
-        if system_prompt:
-            payload["system"] = system_prompt
+        url, payload, es_chat = self._endpoint_and_payload(prompt, system_prompt, messages, stream=True)
 
         try:
             client = self._get_client()  # V0.9 A2a: cliente persistente por proveedor
@@ -79,7 +98,7 @@ class OllamaProvider(BaseAIProvider):
                         data = json.loads(line)
                     except json.JSONDecodeError:
                         continue
-                    chunk = data.get("response", "")
+                    chunk = self._extract_chunk(data, es_chat)
                     if chunk:
                         yield chunk
                     if data.get("done"):

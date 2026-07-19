@@ -6,8 +6,8 @@
 # en vez de heredar de OpenAICompatibleProvider.
 import json
 import httpx
-from typing import Dict, Any, Optional, AsyncIterator
-from .base import BaseAIProvider
+from typing import Dict, Any, List, Optional, AsyncIterator
+from .base import BaseAIProvider, normalize_history
 
 
 class GeminiProvider(BaseAIProvider):
@@ -24,19 +24,29 @@ class GeminiProvider(BaseAIProvider):
     def provider_name(self) -> str:
         return "gemini"
 
-    def _build_payload(self, prompt: str, system_prompt: Optional[str]) -> Dict[str, Any]:
-        payload: Dict[str, Any] = {
-            "contents": [{"role": "user", "parts": [{"text": prompt}]}]
-        }
+    def _build_payload(self, prompt: str, system_prompt: Optional[str],
+                       history: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
+        """[R6.5a] Gemini es el que mas se aleja del resto: no usa "messages"
+        sino "contents", el texto va envuelto en "parts", y al asistente lo
+        llama "model" en vez de "assistant" — mandarle "assistant" es un 400.
+        El system tampoco va en el array: es "systemInstruction"."""
+        contents = [
+            {"role": ("model" if m["role"] == "assistant" else "user"),
+             "parts": [{"text": m["content"]}]}
+            for m in normalize_history(history)
+        ]
+        contents.append({"role": "user", "parts": [{"text": prompt}]})
+        payload: Dict[str, Any] = {"contents": contents}
         if system_prompt:
             payload["systemInstruction"] = {"parts": [{"text": system_prompt}]}
         return payload
 
-    async def generate(self, prompt: str, system_prompt: Optional[str] = None) -> Dict[str, Any]:
+    async def generate(self, prompt: str, system_prompt: Optional[str] = None,
+                       messages: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
         url = f"{self.base_url}/{self.model}:generateContent?key={self.api_key}"
         try:
             client = self._get_client()  # V0.9 A2a: cliente persistente por proveedor
-            response = await client.post(url, json=self._build_payload(prompt, system_prompt), timeout=180.0)
+            response = await client.post(url, json=self._build_payload(prompt, system_prompt, messages), timeout=180.0)
             response.raise_for_status()
             data = response.json()
             text = data["candidates"][0]["content"]["parts"][0]["text"]
@@ -55,11 +65,12 @@ class GeminiProvider(BaseAIProvider):
                 "error": True,
             }
 
-    async def generate_stream(self, prompt: str, system_prompt: Optional[str] = None) -> AsyncIterator[str]:
+    async def generate_stream(self, prompt: str, system_prompt: Optional[str] = None,
+                              messages: Optional[List[Dict[str, Any]]] = None) -> AsyncIterator[str]:
         url = f"{self.base_url}/{self.model}:streamGenerateContent?alt=sse&key={self.api_key}"
         try:
             client = self._get_client()  # V0.9 A2a: cliente persistente por proveedor
-            async with client.stream("POST", url, json=self._build_payload(prompt, system_prompt), timeout=180.0) as response:
+            async with client.stream("POST", url, json=self._build_payload(prompt, system_prompt, messages), timeout=180.0) as response:
                 response.raise_for_status()
                 async for line in response.aiter_lines():
                     if not line.startswith("data:"):

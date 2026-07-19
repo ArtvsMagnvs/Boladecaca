@@ -94,6 +94,13 @@ class ExecutionRequest:
     policy_override: Optional[str] = None   # "offline" p.ej. para jobs nocturnos; raro
     model_override: Optional[str] = None    # [E2b, §7b] id EXACTO ya resuelto por el
                                             # usuario — por encima de política y catálogo
+    # [R6.5a] Turnos ANTERIORES de la conversación, formato canónico
+    # [{"role": "user"|"assistant", "content": str}]. Extensión APPEND-ONLY —
+    # misma disciplina que `exclude` en E1b: nunca se cambia una firma que ya
+    # existe. `[]` = comportamiento idéntico al de siempre, bit a bit.
+    # El turno ACTUAL sigue en `prompt` y el system en `system_prompt`: así los
+    # ~15 call-sites que ya existen no se enteran de nada.
+    messages: list = field(default_factory=list)
     exclude: tuple[str, ...] = ()           # [E1b, §5.4.2] model_keys a EXCLUIR de la
                                             # selección — lo usa research.py para no
                                             # dejar que un modelo se autoevalúe cuando

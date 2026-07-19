@@ -1,8 +1,55 @@
 # Base AI Provider Interface
 from abc import ABC, abstractmethod
-from typing import Optional, Dict, Any, AsyncIterator
+from typing import Optional, Dict, Any, AsyncIterator, List
 
 import httpx
+
+
+# ---------------------------------------------------------------------------
+# Historial de conversacion (R6.5a) — el canal que faltaba
+# ---------------------------------------------------------------------------
+# EL CONTRATO, en una linea: `messages` son los turnos ANTERIORES; el turno
+# ACTUAL sigue viajando en `prompt`, y el system en `system_prompt`.
+#
+# Por que asi y no metiendo todo en `messages`: mantiene `prompt` con el mismo
+# significado que ha tenido siempre (cero regresion para los ~15 call-sites que
+# ya existen), y deja el system aparte — que es lo que Anthropic y Gemini
+# necesitan de todas formas, porque en sus APIs NO va dentro del array.
+#
+# Formato canonico: [{"role": "user"|"assistant", "content": "..."}]. Cada
+# proveedor lo traduce a lo suyo (Gemini usa "model" en vez de "assistant";
+# Ollama necesita otro endpoint; Claude Code no tiene API de mensajes y lo
+# aplana). Un proveedor que ignore el parametro sigue funcionando igual: por eso
+# es opcional en toda la jerarquia.
+VALID_ROLES = ("user", "assistant")
+
+
+def normalize_history(messages: Optional[List[Dict[str, Any]]]) -> List[Dict[str, str]]:
+    """Sanea el historial ANTES de que lo vea ningun proveedor.
+
+    Es una frontera de confianza: estos turnos vienen de la BD y acabaran en el
+    payload de una API externa. Se descartan los que no tienen contenido, se
+    normalizan los roles, y se IGNORAN los `system` (el system prompt tiene su
+    propio parametro — colar uno aqui podria pisar las instrucciones reales).
+
+    Nunca lanza: ante una entrada rara devuelve lo que si es utilizable. Un
+    historial mal formado no puede tumbar una respuesta."""
+    if not messages:
+        return []
+    out: List[Dict[str, str]] = []
+    for m in messages:
+        if not isinstance(m, dict):
+            continue
+        content = m.get("content")
+        if not isinstance(content, str) or not content.strip():
+            continue
+        role = str(m.get("role") or "").strip().lower()
+        if role == "system":
+            continue          # el system va por `system_prompt`, no por aqui
+        if role not in VALID_ROLES:
+            role = "user"     # ante la duda, el rol menos privilegiado
+        out.append({"role": role, "content": content})
+    return out
 
 
 class BaseAIProvider(ABC):
@@ -63,9 +110,16 @@ class BaseAIProvider(ABC):
         pass
 
     @abstractmethod
-    async def generate(self, prompt: str, system_prompt: Optional[str] = None) -> Dict[str, Any]:
+    async def generate(self, prompt: str, system_prompt: Optional[str] = None,
+                       messages: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
         """
         Generate a response from the AI (non-streaming).
+
+        `messages` [R6.5a]: turnos ANTERIORES de la conversacion, formato
+        canonico [{"role": "user"|"assistant", "content": str}]. El turno actual
+        va en `prompt` y el system en `system_prompt` (ver `normalize_history`).
+        Opcional en toda la jerarquia: un proveedor que lo ignore sigue siendo
+        valido y se comporta como siempre.
 
         Returns:
             Dict with keys: 'response' (str), 'model' (str), 'tokens' (int, optional)
@@ -73,9 +127,12 @@ class BaseAIProvider(ABC):
         pass
 
     @abstractmethod
-    async def generate_stream(self, prompt: str, system_prompt: Optional[str] = None) -> AsyncIterator[str]:
+    async def generate_stream(self, prompt: str, system_prompt: Optional[str] = None,
+                              messages: Optional[List[Dict[str, Any]]] = None) -> AsyncIterator[str]:
         """
         Generate a response from the AI as a stream of text chunks.
+
+        `messages`: igual que en `generate`.
 
         Yields:
             str: incremental text chunks as they arrive from the provider.

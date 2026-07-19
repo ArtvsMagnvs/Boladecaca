@@ -169,7 +169,13 @@ async def _try_one(req: ExecutionRequest, ref: ModelRef) -> tuple[Optional[dict]
     vacía (doc 19 §8.1)."""
     for attempt in (1, 2):
         try:
-            raw = await registry.execute(ref, req.prompt, req.system_prompt)
+            # [R6.5a] `messages` SOLO se pasa cuando de verdad hay historial.
+            # Sin él, la llamada es byte a byte la de siempre — así el cambio es
+            # ADITIVO de verdad: nada que envuelva o sustituya a `registry`
+            # (tests, futuros decoradores) tiene que enterarse de nada.
+            raw = (await registry.execute(ref, req.prompt, req.system_prompt, messages=req.messages)
+                   if req.messages
+                   else await registry.execute(ref, req.prompt, req.system_prompt))
         except Exception as e:
             action, reason = classify_failure(exc=e)
             return None, f"{type(e).__name__}: {e}", reason
@@ -222,7 +228,11 @@ async def stream(req: ExecutionRequest) -> AsyncIterator[str]:
     # vez y protege a toda la aplicación.
     guard = RepetitionGuard()
     try:
-        async for raw in registry.stream(ref, req.prompt, req.system_prompt):
+        # Mismo criterio que en `complete`: sin historial, la llamada de siempre.
+        origen = (registry.stream(ref, req.prompt, req.system_prompt, messages=req.messages)
+                  if req.messages
+                  else registry.stream(ref, req.prompt, req.system_prompt))
+        async for raw in origen:
             visible = filt.feed(raw)
             if visible:
                 yield visible

@@ -1,8 +1,8 @@
 # Anthropic AI Provider
 import json
 import httpx
-from typing import Dict, Any, Optional, AsyncIterator
-from .base import BaseAIProvider
+from typing import Dict, Any, List, Optional, AsyncIterator
+from .base import BaseAIProvider, normalize_history
 
 
 class AnthropicProvider(BaseAIProvider):
@@ -19,18 +19,23 @@ class AnthropicProvider(BaseAIProvider):
     def provider_name(self) -> str:
         return "anthropic"
 
-    def _build_payload(self, prompt: str, system_prompt: Optional[str], stream: bool) -> Dict[str, Any]:
+    def _build_payload(self, prompt: str, system_prompt: Optional[str], stream: bool,
+                       history: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
+        """[R6.5a] Anthropic tiene su propio formato: el system va en su PROPIO
+        campo de nivel superior, nunca dentro de `messages` (a diferencia de
+        OpenAI). El historial si va en el array, antes del turno actual."""
         payload = {
             "model": self.model,
             "max_tokens": 4096,
-            "messages": [{"role": "user", "content": prompt}],
+            "messages": normalize_history(history) + [{"role": "user", "content": prompt}],
             "stream": stream
         }
         if system_prompt:
             payload["system"] = system_prompt
         return payload
 
-    async def generate(self, prompt: str, system_prompt: Optional[str] = None) -> Dict[str, Any]:
+    async def generate(self, prompt: str, system_prompt: Optional[str] = None,
+                       messages: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
         """Generate response using Anthropic Claude."""
         headers = {
             "x-api-key": self.api_key,
@@ -38,7 +43,7 @@ class AnthropicProvider(BaseAIProvider):
             "Content-Type": "application/json"
         }
 
-        payload = self._build_payload(prompt, system_prompt, stream=False)
+        payload = self._build_payload(prompt, system_prompt, stream=False, history=messages)
 
         try:
             client = self._get_client()  # V0.9 A2a: cliente persistente por proveedor
@@ -65,7 +70,8 @@ class AnthropicProvider(BaseAIProvider):
                 "error": True
             }
 
-    async def generate_stream(self, prompt: str, system_prompt: Optional[str] = None) -> AsyncIterator[str]:
+    async def generate_stream(self, prompt: str, system_prompt: Optional[str] = None,
+                              messages: Optional[List[Dict[str, Any]]] = None) -> AsyncIterator[str]:
         """Generate response using Anthropic Claude, yielding incremental text chunks via SSE."""
         headers = {
             "x-api-key": self.api_key,
@@ -73,7 +79,7 @@ class AnthropicProvider(BaseAIProvider):
             "Content-Type": "application/json"
         }
 
-        payload = self._build_payload(prompt, system_prompt, stream=True)
+        payload = self._build_payload(prompt, system_prompt, stream=True, history=messages)
 
         try:
             client = self._get_client()  # V0.9 A2a: cliente persistente por proveedor

@@ -7,8 +7,8 @@
 # was exactly the kind of duplication flagged in the Fase 0 audit.
 import json
 import httpx
-from typing import Dict, Any, Optional, AsyncIterator
-from .base import BaseAIProvider
+from typing import Dict, Any, List, Optional, AsyncIterator
+from .base import BaseAIProvider, normalize_history
 
 
 class OpenAICompatibleProvider(BaseAIProvider):
@@ -46,17 +46,26 @@ class OpenAICompatibleProvider(BaseAIProvider):
         headers.update(self.extra_headers)
         return headers
 
-    def _build_messages(self, prompt: str, system_prompt: Optional[str]):
+    def _build_messages(self, prompt: str, system_prompt: Optional[str],
+                        history: Optional[List[Dict[str, Any]]] = None):
+        """[R6.5a] system -> historial -> turno actual, que es exactamente el
+        orden que espera el formato de OpenAI. Este metodo es el UNICO punto de
+        cambio para los 8 proveedores que heredan de esta clase (OpenAI,
+        MiniMax, DeepSeek, OpenRouter, Grok, Kimi, GLM, Qwen).
+
+        Sin historial el resultado es identico byte a byte al de antes."""
         messages = []
         if system_prompt:
             messages.append({"role": "system", "content": system_prompt})
+        messages.extend(normalize_history(history))
         messages.append({"role": "user", "content": prompt})
         return messages
 
-    async def generate(self, prompt: str, system_prompt: Optional[str] = None) -> Dict[str, Any]:
+    async def generate(self, prompt: str, system_prompt: Optional[str] = None,
+                       messages: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
         payload = {
             "model": self.model,
-            "messages": self._build_messages(prompt, system_prompt),
+            "messages": self._build_messages(prompt, system_prompt, messages),
             self.max_tokens_param: self.max_tokens_value,
         }
         try:
@@ -78,10 +87,11 @@ class OpenAICompatibleProvider(BaseAIProvider):
                 "error": True,
             }
 
-    async def generate_stream(self, prompt: str, system_prompt: Optional[str] = None) -> AsyncIterator[str]:
+    async def generate_stream(self, prompt: str, system_prompt: Optional[str] = None,
+                              messages: Optional[List[Dict[str, Any]]] = None) -> AsyncIterator[str]:
         payload = {
             "model": self.model,
-            "messages": self._build_messages(prompt, system_prompt),
+            "messages": self._build_messages(prompt, system_prompt, messages),
             self.max_tokens_param: self.max_tokens_value,
             "stream": True,
         }

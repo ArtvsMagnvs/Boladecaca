@@ -25,9 +25,9 @@ import asyncio
 import json
 import os
 import shutil
-from typing import Any, AsyncIterator, Dict, Optional
+from typing import Any, AsyncIterator, Dict, List, Optional
 
-from .base import BaseAIProvider
+from .base import BaseAIProvider, normalize_history
 
 # Modelos que acepta `--model` (alias oficiales del CLI).
 AVAILABLE_MODELS = ["sonnet", "opus", "haiku", "fable"]
@@ -129,13 +129,41 @@ class ClaudeCodeProvider(BaseAIProvider):
             "session_id": data.get("session_id"),
         }
 
-    async def generate(self, prompt: str, system_prompt: Optional[str] = None) -> Dict[str, Any]:
-        return await self._run(prompt, system_prompt)
+    @staticmethod
+    def _with_history(prompt: str, history: Optional[List[Dict[str, Any]]]) -> str:
+        """[R6.5a] El CLI (`claude -p`) recibe UN texto: no tiene API de mensajes
+        con roles, a diferencia de todos los demás proveedores. Así que el
+        historial se aplana como transcripción delante del turno actual.
 
-    async def generate_stream(self, prompt: str, system_prompt: Optional[str] = None) -> AsyncIterator[str]:
+        Es una degradación HONESTA y hay que saberlo: el modelo ve la
+        conversación como texto plano, no como turnos estructurados. Funciona
+        bien para dar continuidad, pero con menos fidelidad que un array de
+        mensajes de verdad. Si el CLI acaba exponiendo mensajes con roles, este
+        es el único sitio que habría que cambiar.
+
+        Sin historial devuelve el prompt TAL CUAL — cero regresión."""
+        turnos = normalize_history(history)
+        if not turnos:
+            return prompt
+        etiqueta = {"user": "Usuario", "assistant": "Tú"}
+        transcripcion = "\n".join(
+            f"{etiqueta[m['role']]}: {m['content']}" for m in turnos
+        )
+        return (
+            "Conversación hasta ahora:\n"
+            f"{transcripcion}\n\n"
+            f"Usuario: {prompt}"
+        )
+
+    async def generate(self, prompt: str, system_prompt: Optional[str] = None,
+                       messages: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
+        return await self._run(self._with_history(prompt, messages), system_prompt)
+
+    async def generate_stream(self, prompt: str, system_prompt: Optional[str] = None,
+                              messages: Optional[List[Dict[str, Any]]] = None) -> AsyncIterator[str]:
         """El modo -p del CLI entrega la respuesta completa: se emite en un solo
         chunk. Cumple el contrato sin fingir un streaming que no existe."""
-        result = await self._run(prompt, system_prompt)
+        result = await self._run(self._with_history(prompt, messages), system_prompt)
         text = result.get("response", "")
         if text:
             yield text

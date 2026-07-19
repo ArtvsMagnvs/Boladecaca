@@ -160,20 +160,41 @@ def _instance_for(ref: ModelRef):
     return inst
 
 
-async def execute(ref: ModelRef, prompt: str, system_prompt: Optional[str] = None) -> dict:
+async def execute(ref: ModelRef, prompt: str, system_prompt: Optional[str] = None,
+                  messages: Optional[list] = None) -> dict:
     """Ejecuta una petición contra un (proveedor, modelo) CONCRETO — el MEL
     enruta él mismo. Devuelve el dict del proveedor (`{response, model, tokens?,
     error?}`). Lanza si el proveedor no existe (el executor lo trata como fallo y
-    salta al siguiente candidato)."""
+    salta al siguiente candidato).
+
+    `messages` [R6.5a]: turnos previos de la conversación. Se pasa TAL CUAL al
+    proveedor, que lo traduce a su formato. Si un proveedor no lo acepta (una
+    implementación antigua, o de terceros), se reintenta sin él: el historial es
+    una mejora, nunca un motivo para quedarse sin respuesta."""
     inst = _instance_for(ref)
+    if messages:
+        try:
+            return await inst.generate(prompt, system_prompt, messages=messages)
+        except TypeError:
+            logger.info(f"[registry] {ref.provider} no acepta historial; sigo sin él")
     return await inst.generate(prompt, system_prompt)
 
 
-async def stream(ref: ModelRef, prompt: str, system_prompt: Optional[str] = None) -> AsyncIterator[str]:
+async def stream(ref: ModelRef, prompt: str, system_prompt: Optional[str] = None,
+                 messages: Optional[list] = None) -> AsyncIterator[str]:
     """Streaming contra un (proveedor, modelo) concreto — chunks de texto crudos
-    (el filtro B21 lo aplica el executor/caller)."""
+    (el filtro B21 lo aplica el executor/caller). Misma degradación que
+    `execute` si el proveedor no admite historial."""
     inst = _instance_for(ref)
-    async for chunk in inst.generate_stream(prompt, system_prompt):
+    if messages:
+        try:
+            gen = inst.generate_stream(prompt, system_prompt, messages=messages)
+        except TypeError:
+            logger.info(f"[registry] {ref.provider} no acepta historial en streaming; sigo sin él")
+            gen = inst.generate_stream(prompt, system_prompt)
+    else:
+        gen = inst.generate_stream(prompt, system_prompt)
+    async for chunk in gen:
         yield chunk
 
 
