@@ -196,6 +196,7 @@ async def lifespan(app: FastAPI):
         from app.automation import scheduler_service
         from app.memory.ingestion import ingest_email, ingest_calendar
         from app.memory.summarizer import run_summarizer
+        from app.memory.profile import distill as distill_profile
         from app.memory.lifecycle import lifecycle_manager
 
         scheduler_service.start()
@@ -211,6 +212,10 @@ async def lifespan(app: FastAPI):
         )
         # Resumen nocturno (M3): 03:30 local.
         scheduler_service.add_cron_job(run_summarizer, hour=3, minute=30, id="mos_summarizer")
+        # [R6.5c] Destilado del perfil: 03:45 local, tras el resumen y antes del
+        # lifecycle — trabajo propio (checkpoint por mensaje de chat, no por
+        # día), por eso es un job aparte y no una llamada dentro del summarizer.
+        scheduler_service.add_cron_job(distill_profile, hour=3, minute=45, id="mos_profile_distill")
         # Lifecycle (A2a): tras el summarizer, hora local configurable (default 04:00).
         scheduler_service.add_cron_job(
             lifecycle_manager.run, hour=settings.MEMORY_LIFECYCLE_HOUR, minute=0, id="mos_lifecycle"
@@ -231,7 +236,8 @@ async def lifespan(app: FastAPI):
             )
         log_info(
             "startup",
-            "APScheduler iniciado — ingesta (email/cal), resumen nocturno 03:30, lifecycle "
+            "APScheduler iniciado — ingesta (email/cal), resumen nocturno 03:30, "
+            "perfil 03:45, lifecycle "
             f"{settings.MEMORY_LIFECYCLE_HOUR:02d}:00, limpieza de misiones 04:30 (local)",
         )
     except Exception as e:

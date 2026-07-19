@@ -156,6 +156,32 @@ def _memory_query(user_message: str, history: list[dict]) -> str:
     return f"{previo}\n{actual}".strip() if previo else actual
 
 
+def _profile_block() -> str:
+    """[R6.5c] Hechos estables del usuario (nombre, ocupación, preferencias
+    duraderas…), destilados de noche por `app.memory.profile`.
+
+    DETERMINISTA a propósito, no semántico: `mos_ctx` de abajo depende de
+    ganar un hueco en el `top_k` de una búsqueda por similitud — y en
+    `mem_personal` compiten cientos de emails ingeridos (M2) que a menudo
+    puntúan más alto que una frase corta como "Se llama X". Hallazgo real de
+    la verificación en vivo de R6.5c: con solo `context()`, un hecho recién
+    guardado no aparecía ni una vez en top_k=8 frente al buzón real del
+    usuario — el criterio de cierre #1 del sprint ("se usa en una
+    conversación NUEVA") fallaba en la práctica. Por eso "quién es el
+    usuario" no se busca, se LEE entero (acotado por `MAX_FACTS_PER_RUN`,
+    unas pocas decenas como mucho — barato, sin LLM, sin ranking)."""
+    try:
+        from app.memory.profile import list_facts
+
+        hechos = list_facts()
+    except Exception as e:
+        print(f"[chat_service] list_facts error: {e}")
+        return ""
+    if not hechos:
+        return ""
+    return "\n".join(f"- {h['value']}" for h in hechos)
+
+
 async def _mos_context_block(query: str) -> str:
     """Memoria del MOS con atribucion de fuente. memory_router.context() ya
     cubre conversaciones (mem_conversational, alias de la coleccion legacy) +
@@ -211,8 +237,11 @@ async def build_system_prompt(user_message: str, *, history: Optional[list] = No
         return base
     consulta = _memory_query(user_message, history or [])
     prefs = _preferences_block(consulta)
+    profile = _profile_block()
     mos_ctx = await _mos_context_block(consulta)
     parts = [base]
+    if profile:
+        parts.append(f"Lo que sabes del usuario:\n{profile}")
     if prefs:
         parts.append(prefs)
     if mos_ctx:

@@ -12,6 +12,9 @@
 #   GET    /api/memory/ingest/status      -> [V0.85 M2] ultima pasada de ingesta por job
 #   POST   /api/memory/ingest/run         -> [V0.85 M2] fuerza una pasada de ingesta
 #   GET    /api/memory/briefing?date=     -> [V0.85 M3] resumen del dia + urgentes + agenda + top remitentes
+#   GET    /api/memory/profile            -> [R6.5c] hechos estables destilados del usuario
+#   DELETE /api/memory/profile/{key}      -> [R6.5c] borra un hecho
+#   POST   /api/memory/profile/run        -> [R6.5c] fuerza una pasada del destilado
 #
 # NOTA: si ChromaDB no esta disponible, todos los endpoints devuelven 503
 # (excepto /stats que devuelve el error en el cuerpo).
@@ -256,6 +259,42 @@ async def ingest_run(job: Literal["email", "calendar", "all"] = Query("all")):
     if job in ("calendar", "all"):
         results.append(await ingest_calendar())
     return {"results": results}
+
+
+# ----------------------------------------------------------------------
+# Perfil del usuario (R6.5c, doc 23) — hechos estables destilados del chat.
+# Visible y reversible: el usuario ve lo que Aithera cree saber de él y puede
+# borrar cualquier cosa.
+# ----------------------------------------------------------------------
+
+@router.get("/profile")
+def get_profile():
+    """Todos los hechos guardados sobre el usuario, para Ajustes."""
+    from app.memory.profile import list_facts
+
+    items = list_facts()
+    return {"items": items, "count": len(items)}
+
+
+@router.delete("/profile/{key}", status_code=204)
+async def delete_profile_fact(key: str):
+    """Borra un hecho por su key. Reversible: si vuelve a aparecer en el chat,
+    se re-extrae la próxima noche."""
+    from app.memory.profile import delete_fact
+
+    ok = await delete_fact(key)
+    if not ok:
+        raise HTTPException(status_code=404, detail=f"hecho no encontrado: {key}")
+    return None
+
+
+@router.post("/profile/run")
+async def run_profile_distill():
+    """Fuerza una pasada del destilado nocturno (para probar sin esperar a las
+    03:45). Mismo patrón que POST /ingest/run."""
+    from app.memory.profile import distill
+
+    return await distill()
 
 
 # ----------------------------------------------------------------------

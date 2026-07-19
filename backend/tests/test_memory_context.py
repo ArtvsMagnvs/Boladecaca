@@ -76,6 +76,41 @@ async def test_build_system_prompt_cita_fuente_de_memoria_mos():
 
 
 @pytest.mark.anyio
+async def test_build_system_prompt_incluye_hechos_del_perfil_SIEMPRE(monkeypatch):
+    """[R6.5c] Hallazgo real de la verificación en vivo: los hechos del perfil
+    compiten por un hueco en el top_k de `context()` contra cientos de emails
+    ingeridos en la misma colección, y casi nunca ganan. `_profile_block()` los
+    lee ENTEROS (determinista, sin ranking) — deben aparecer aunque la query
+    del usuario no se parezca en nada al hecho guardado."""
+    from app.memory import profile
+
+    await memory_router.store(
+        content="Se llama TestProfileR65C",
+        memory_type=MemoryType.PERSONAL, source="profile",
+        metadata={"kind": "profile_fact", "key": "nombre_test_r65c", "label": "nombre"},
+        dedup_key="profile:nombre_test_r65c",
+    )
+    try:
+        prompt = await chat_service.build_system_prompt("¿qué tiempo hace hoy?")
+        assert "TestProfileR65C" in prompt
+        assert "Lo que sabes del usuario:" in prompt
+    finally:
+        await profile.delete_fact("nombre_test_r65c")
+
+
+@pytest.mark.anyio
+async def test_profile_block_falla_sin_romper_el_prompt(monkeypatch):
+    from app.memory import profile
+
+    def _rompe():
+        raise RuntimeError("chroma caído")
+
+    monkeypatch.setattr(profile, "list_facts", _rompe)
+    prompt = await chat_service.build_system_prompt("hola")
+    assert prompt  # no lanzó, no se quedó sin prompt
+
+
+@pytest.mark.anyio
 async def test_build_system_prompt_respeta_presupuesto_de_latencia(monkeypatch):
     """[doc 07 §8] Si memory_router.context() excede 300ms, contexto vacio —
     el chat no espera. Se fuerza con un context() artificialmente lento."""

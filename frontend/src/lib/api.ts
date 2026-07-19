@@ -263,6 +263,15 @@ export interface ContextItem {
   updated_at?: string;
 }
 
+// [R6.5c] Hecho estable destilado del chat (distinto de ContextItem: éste lo
+// escribe Aithera sola, de noche, no el usuario a mano en un formulario).
+export interface ProfileFact {
+  key: string;
+  label: string;
+  value: string;
+  updated_at?: string;
+}
+
 export interface MemorySearchItem {
   content: string;
   key?: string;
@@ -1074,6 +1083,10 @@ export const api = {
     request<{ items: MemorySearchItem[]; count: number }>(`/memory/context/search?q=${encodeURIComponent(q)}&n_results=${n_results}`),
   deleteContext: (key: string) =>
     request(`/memory/context/${encodeURIComponent(key)}`, { method: "DELETE" }),
+  // [R6.5c] Perfil destilado: lo que Aithera cree saber de ti, visible y borrable.
+  getProfile: () => request<{ items: ProfileFact[]; count: number }>("/memory/profile"),
+  deleteProfileFact: (key: string) =>
+    request(`/memory/profile/${encodeURIComponent(key)}`, { method: "DELETE" }),
   indexDocument: (data: { id: string; title: string; content: string; path?: string }) =>
     request<{ id: string; indexed: boolean }>("/memory/documents", {
       method: "POST",

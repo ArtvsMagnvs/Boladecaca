@@ -4,7 +4,7 @@
 // V0.6 (Fase 3 Memory System): nueva seccion "Memoria" con stats, gestion
 // de preferencias del usuario y borrado del historial de ChromaDB.
 import { useState, useEffect } from "react";
-import { api, type AIProviderEntry, type ContextItem, type MemoryStats, type TelegramStatus, type SearchStatus, type SearchProviderStatus, type ElevenLabsCfgStatus, type PermissionCatalog, type MelPolicy, type MelModel, type MelOverride, type LocalModelCatalog } from "@/lib/api";
+import { api, type AIProviderEntry, type ContextItem, type ProfileFact, type MemoryStats, type TelegramStatus, type SearchStatus, type SearchProviderStatus, type ElevenLabsCfgStatus, type PermissionCatalog, type MelPolicy, type MelModel, type MelOverride, type LocalModelCatalog } from "@/lib/api";
 import { useAppStore } from "@/store/useAppStore";
 import type { QualityTier } from "@/avcs";
 import { Toggle } from "@/components/Toggle";
@@ -1418,6 +1418,8 @@ export default function Settings() {
   const [memStats, setMemStats] = useState<MemoryStats | null>(null);
   const [memLoading, setMemLoading] = useState(false);
   const [contextItems, setContextItems] = useState<ContextItem[]>([]);
+  // [R6.5c] Perfil destilado del chat, distinto de las preferencias manuales de arriba.
+  const [profileFacts, setProfileFacts] = useState<ProfileFact[]>([]);
   const [newCtxKey, setNewCtxKey] = useState("");
   const [newCtxContent, setNewCtxContent] = useState("");
   const [newCtxCategory, setNewCtxCategory] = useState("preference");
@@ -1466,12 +1468,14 @@ export default function Settings() {
   const loadMemory = async () => {
     setMemLoading(true);
     try {
-      const [stats, ctx] = await Promise.all([
+      const [stats, ctx, profile] = await Promise.all([
         api.getMemoryStats(),
         api.listContext(),
+        api.getProfile(),
       ]);
       setMemStats(stats);
       setContextItems(ctx.items || []);
+      setProfileFacts(profile.items || []);
       setMemMessage(null);
     } catch (e) {
       setMemMessage({ kind: "err", text: `Error cargando memoria: ${(e as Error).message}` });
@@ -1508,6 +1512,19 @@ export default function Settings() {
       await loadMemory();
     } catch (e) {
       setMemMessage({ kind: "err", text: `Error eliminando: ${(e as Error).message}` });
+    }
+  };
+
+  // [R6.5c] Un hecho borrado es reversible: si vuelve a salir en el chat, la
+  // próxima pasada nocturna lo vuelve a destilar. No es un "prohibir".
+  const handleDeleteProfileFact = async (key: string, label: string) => {
+    if (!confirm(`Olvidar '${label}'?`)) return;
+    try {
+      await api.deleteProfileFact(key);
+      setMemMessage({ kind: "ok", text: `'${label}' olvidado` });
+      await loadMemory();
+    } catch (e) {
+      setMemMessage({ kind: "err", text: `Error olvidando: ${(e as Error).message}` });
     }
   };
 
@@ -1934,6 +1951,39 @@ export default function Settings() {
                               className="text-[10px] px-2 py-1 rounded bg-signal-error/10 text-signal-error border border-signal-error/20 hover:bg-signal-error/20 shrink-0"
                             >
                               Eliminar
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* [R6.5c] Perfil destilado — lo que Aithera cree saber de ti, sola,
+                      de tus conversaciones. Distinto de las preferencias de arriba
+                      (esas las escribes tú a mano). Visible y borrable: sin esto sería
+                      una caja negra acumulando suposiciones sobre datos personales. */}
+                  <div className="border-t border-base-700/50 pt-3">
+                    <h4 className="text-xs font-medium text-ink mb-1">
+                      Lo que Aithera sabe de ti ({profileFacts.length})
+                    </h4>
+                    <p className="text-[10px] text-ink-faint mb-2">
+                      Se destila solo, de noche, de tus conversaciones — nunca de una charla suelta.
+                    </p>
+                    {profileFacts.length === 0 ? (
+                      <p className="text-xs text-ink-faint">Todavía no ha aprendido nada estable de ti.</p>
+                    ) : (
+                      <div className="space-y-2 max-h-48 overflow-y-auto">
+                        {profileFacts.map((f) => (
+                          <div key={f.key} className="bg-base-900/40 rounded-lg p-2 flex items-start justify-between gap-2">
+                            <div className="min-w-0 flex-1">
+                              <p className="text-xs text-ink font-medium truncate">{f.label}</p>
+                              <p className="text-[11px] text-ink-dim mt-0.5">{f.value}</p>
+                            </div>
+                            <button
+                              onClick={() => handleDeleteProfileFact(f.key, f.label)}
+                              className="text-[10px] px-2 py-1 rounded bg-signal-error/10 text-signal-error border border-signal-error/20 hover:bg-signal-error/20 shrink-0"
+                            >
+                              Olvidar
                             </button>
                           </div>
                         ))}
