@@ -1183,6 +1183,82 @@ function PermissionsSettings() {
           </div>
         ))}
       </div>
+
+      <NotifyChannelSetting />
+    </div>
+  );
+}
+
+/**
+ * [R5] Por dónde avisa Aithera cuando una misión se para en un entregable.
+ *
+ * Vive dentro de Permisos porque responde a la misma pregunta que el resto de
+ * la sección: cuánto quiere el usuario que Aithera le interrumpa, y cómo.
+ *
+ * Telegram sólo se ofrece si hay un chat_id autorizado de verdad: prometer un
+ * aviso que no va a llegar es peor que no ofrecerlo.
+ */
+function NotifyChannelSetting() {
+  const [channel, setChannel] = useState<string>("ui");
+  const [available, setAvailable] = useState<string[]>(["ui"]);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    api
+      .getNotifyChannel()
+      .then((r) => {
+        setChannel(r.channel);
+        setAvailable(r.available);
+      })
+      .catch(() => {});
+  }, []);
+
+  const pick = async (next: string) => {
+    setSaving(true);
+    const previo = channel;
+    setChannel(next);
+    try {
+      const r = await api.setNotifyChannel(next);
+      setChannel(r.channel);
+    } catch {
+      setChannel(previo); // no se guardó: no dejamos la UI mintiendo
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const OPCIONES: Array<{ id: string; label: string; hint: string }> = [
+    { id: "ui", label: "Solo en Aithera", hint: "Lo ves al abrir la app" },
+    { id: "telegram", label: "Telegram", hint: "Además te escribe al móvil" },
+  ];
+
+  return (
+    <div className="pt-3 border-t border-base-700/40 space-y-2">
+      <h4 className="text-[10px] uppercase tracking-wide text-ink-faint">Avisos</h4>
+      <p className="text-[11px] text-ink-dim">
+        Cuando Aithera termina algo que puedes comprobar, se para y te avisa. Elige por dónde.
+      </p>
+      <div className="grid grid-cols-2 gap-2">
+        {OPCIONES.map((opt) => {
+          const disponible = available.includes(opt.id);
+          return (
+            <button
+              key={opt.id}
+              onClick={() => disponible && pick(opt.id)}
+              disabled={saving || !disponible}
+              title={disponible ? undefined : "Configura Telegram más abajo para poder elegirlo"}
+              className={`text-left rounded-xl border px-3 py-2.5 transition-colors disabled:opacity-40 ${
+                channel === opt.id ? "border-accent/50 bg-accent/10" : "border-base-700 hover:border-base-600"
+              }`}
+            >
+              <p className={`text-xs font-medium ${channel === opt.id ? "text-accent" : "text-ink"}`}>
+                {opt.label}
+              </p>
+              <p className="text-[10px] text-ink-faint mt-0.5">{opt.hint}</p>
+            </button>
+          );
+        })}
+      </div>
     </div>
   );
 }

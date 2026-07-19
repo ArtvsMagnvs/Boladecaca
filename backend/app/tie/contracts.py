@@ -173,12 +173,25 @@ class TaskNode:
     est_cost: Optional[float] = None
     # — control (V1.0) —
     approval_required: bool = False                  # → ApprovalGate (V0.9) — T3
+    # [R5] ¿El resultado de este paso es algo que el usuario PUEDE COMPROBAR?
+    # Campo append-only. Un checkpoint no pide permiso para actuar (eso es
+    # `approval_required`, y va ANTES): marca un ENTREGABLE, y la misión se para
+    # DESPUÉS de producirlo para que el usuario lo revise antes de seguir.
+    # Los dos pueden convivir en un mismo nodo — son preguntas distintas
+    # («¿puedo hacerlo?» / «¿te vale lo que he hecho?»), por eso cada uno lleva
+    # su propio id de aprobación y su propio rastro.
+    checkpoint: bool = False
     max_retries: int = 0                             # política real en V1.2
     # — estado y resultado (los escribe SOLO el executor, T3) —
     state: NodeState = NodeState.PENDING
     gate_id: Optional[str] = None                    # [T3] id del ApprovalGate si el nodo pidió permiso;
                                                      # persistido para que resume_pending() pueda consultar
                                                      # el veredicto tras un reinicio (extensión append-only)
+    # [R5] id de la aprobación del CHECKPOINT (distinta de `gate_id`: aquella
+    # autoriza a actuar, ésta da por bueno lo ya hecho). Sirve además de marca de
+    # idempotencia — si está puesto, este checkpoint ya se anunció — y permite
+    # recuperar el veredicto tras un reinicio, igual que `gate_id`.
+    checkpoint_gate_id: Optional[str] = None
     confidence: Optional[float] = None               # confianza del planner en el nodo
     result: Optional[dict] = None                    # salida estructurada del runtime
     # [R4] Rastro real de herramientas del nodo (lo produce el bucle de R1).

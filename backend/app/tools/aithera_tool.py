@@ -146,11 +146,11 @@ class AitheraTool(BaseTool):
                         "enabled": "bool opcional (default false — nace desactivada, HITL)"}},
             {"id": "create_cron_job", "description": (
                 "Atajo de create_rule para un recordatorio/acción diaria a una hora fija "
-                "(reutiliza el mismo mecanismo — sin scheduler paralelo)."),
+                "(reutiliza el mismo mecanismo — sin scheduler paralelo). Queda ACTIVO."),
              "requires_confirmation": True,
              "params": {"name": "string", "hour": "int 0-23", "minute": "int 0-59 (default 0)",
                         "action_type": "string", "action_config": "dict",
-                        "enabled": "bool opcional (default false)"}},
+                        "enabled": "bool opcional (default true — el usuario lo ha pedido)"}},
             {"id": "list_rules", "description": "Lista las reglas de automatización.",
              "requires_confirmation": False, "params": {"project_id": "int opcional"}},
             {"id": "toggle_rule", "description": "Activa o desactiva una regla (arma/desarma en caliente).",
@@ -395,9 +395,26 @@ class AitheraTool(BaseTool):
         finally:
             db.close()
 
+        armada = False
         if enabled:
-            automation_engine.arm_rule(rule_id, trigger_type, trigger_config)
-        return {"success": True, "result": {"id": rule_id, "enabled": bool(enabled)}, "error": None}
+            # Armar es un detalle de EJECUCION; lo que importa ya esta en la BD.
+            # Si el planificador no esta arriba (scripts, tests, un arranque a
+            # medias), la regla NO se pierde: `load_rules()` la arma en el
+            # siguiente arranque. Fallar aqui diria "no se pudo crear" cuando si
+            # se creo — mentir sobre lo que ha pasado.
+            try:
+                automation_engine.arm_rule(rule_id, trigger_type, trigger_config)
+                armada = True
+            except Exception as e:
+                from app.core.logging_config import get_system_logger
+
+                get_system_logger("tools.aithera").info(
+                    f"[aithera] regla {rule_id} creada pero no armada ahora "
+                    f"({type(e).__name__}); se armara al arrancar: {e}"
+                )
+        return {"success": True,
+                "result": {"id": rule_id, "enabled": bool(enabled), "armed": armada},
+                "error": None}
 
     async def _create_rule(self, params: Dict[str, Any]) -> Dict[str, Any]:
         err = self._validate_rule_fields(params, ["name", "trigger_type", "trigger_config", "action_type", "action_config"])
@@ -421,11 +438,19 @@ class AitheraTool(BaseTool):
         if not (0 <= minute <= 59):
             return {"success": False, "result": None, "error": "minute debe estar entre 0 y 59"}
 
+        # [R5] Nace ACTIVO, al revés que `create_rule`. No es una excepción a la
+        # regla HITL, es la regla bien entendida: las 5 reglas predefinidas de A3
+        # nacen desactivadas porque NADIE las pidió (se siembran solas), mientras
+        # que esto es un recordatorio concreto que el usuario acaba de pedir Y
+        # confirmar en el ApprovalGate. Un recordatorio que hay que ir a activar
+        # a otra pantalla, y que mientras tanto no suena, es un bug desde el
+        # punto de vista del usuario. Queda persistido en `automation_rules`, así
+        # que `load_rules()` lo vuelve a armar en cada arranque.
         return await self._insert_rule(
             name=params["name"], trigger_type="schedule", trigger_config={"cron": {"hour": hour, "minute": minute}},
             action_type=params["action_type"], action_config=params["action_config"],
             condition_config=None, project_id=None, cooldown_s=0,
-            enabled=bool(params.get("enabled", False)),
+            enabled=bool(params.get("enabled", True)),
         )
 
     async def _list_rules(self, params: Dict[str, Any]) -> Dict[str, Any]:

@@ -39,6 +39,12 @@ _NODE_TASKS: dict[str, asyncio.Task] = {}
 
 # action_type con el que el TIE pide permiso al ApprovalGate de V0.9.
 GATE_ACTION_TYPE = "tie_resume"
+# [R5] action_type del CHECKPOINT. Distinto a propósito: `tie_resume` autoriza a
+# ejecutar un paso (y al aprobarlo el nodo vuelve al ready-set), mientras que un
+# checkpoint da por bueno un paso YA hecho (y al aprobarlo simplemente se sigue
+# con el resto). Compartir action_type obligaría a distinguirlos por un flag
+# dentro del payload y a que `_apply_gate_verdict` hiciera dos cosas distintas.
+CHECKPOINT_ACTION_TYPE = "tie_checkpoint"
 
 
 # ---------------------------------------------------------------------------
@@ -83,7 +89,33 @@ async def run(graph: TaskGraph, mission: Mission, *, trace_id: str) -> Mission:
         if mission.id in _CANCELLED:
             continue  # el kill-switch llegó durante el nodo: la cabecera lo resuelve
 
+        # [R5] ¿Este paso era un ENTREGABLE? Se para para que el usuario lo
+        # compruebe ANTES de seguir, y se le avisa por su canal.
+        if await _pause_at_checkpoint(node, graph, mission, trace_id):
+            mission.state = "waiting"
+            return mission
+
     return _finalize(graph, mission, trace_id)
+
+
+async def _pause_at_checkpoint(node: TaskNode, graph: TaskGraph, mission: Mission,
+                               trace_id: str) -> bool:
+    """¿Hay que parar aquí? True si se abrió el gate del checkpoint.
+
+    Sólo se para si (a) el nodo estaba marcado como entregable, (b) salió BIEN
+    —no tiene sentido pedir que revises algo que ha fallado; de eso ya se encarga
+    la degradación de T3—, (c) no se anunció ya (idempotencia al reanudar) y
+    (d) QUEDA TRABAJO POR HACER. Lo último importa: si era el último paso, parar
+    sería pedirle al usuario que apruebe seguir con nada — el responder le va a
+    entregar el resultado igualmente."""
+    if not node.checkpoint or node.state != NodeState.DONE or node.checkpoint_gate_id:
+        return False
+    queda_trabajo = any(n.state not in _TERMINAL for n in graph.nodes.values())
+    if not queda_trabajo:
+        return False
+
+    await _open_checkpoint_gate(node, graph, mission, trace_id)
+    return True
 
 
 def cancel(mission_id: str) -> bool:
@@ -235,6 +267,83 @@ async def _open_gate(node: TaskNode, graph: TaskGraph, mission: Mission, trace_i
     logger.info(f"[executor] nodo {node.id} esperando aprobación (gate {gate_id})")
 
 
+async def _open_checkpoint_gate(node: TaskNode, graph: TaskGraph, mission: Mission,
+                                trace_id: str) -> None:
+    """Abre la aprobación de un ENTREGABLE y avisa al usuario por su canal.
+
+    El nodo se queda en DONE —está hecho de verdad, y decir otra cosa sería
+    mentir en la UI—; lo que pasa a `waiting` es la MISIÓN. Igual que el gate de
+    T3, todo el estado vive en disco: el usuario puede tardar días.
+
+    Si tiene el permiso pre-autorizado (A3b), el gate se auto-resuelve al
+    instante y la misión sigue sola — el usuario que no quiera pararse en cada
+    entregable no tiene que hacer nada especial."""
+    from app.automation import approval_gate
+    from app.core.notify import notify_user
+
+    resumen = _deliverable_summary(node)
+    gate_id = await approval_gate.request_approval(
+        kind="tie.checkpoint",
+        title=f"Listo: {node.goal[:180]}",
+        summary=(f"He terminado un paso que puedes comprobar de «{mission.goal[:200]}».\n\n"
+                 f"{resumen}\n\n¿Sigo con el resto?"),
+        action_type=CHECKPOINT_ACTION_TYPE,
+        action_payload={"trace_id": trace_id, "node_id": node.id, "mission_id": mission.id},
+        channel=mission.channel or "hub",
+    )
+    node.checkpoint_gate_id = gate_id
+    _checkpoint(trace_id, graph)
+    tracer.set_state(trace_id, "waiting")
+    logger.info(f"[executor] checkpoint en el nodo {node.id} (gate {gate_id}) — misión en espera")
+
+    # El aviso es un EXTRA: la aprobación ya es visible en Aithera. Va lo ÚLTIMO
+    # y entre try/except a propósito — para cuando se intenta, el gate ya está
+    # abierto y persistido, así que un canal roto no puede dejar la misión a
+    # medias (gate abierto pero sin marcar como esperando). `notify_user` ya
+    # captura lo suyo; esto cubre el resto (fail-soft de doc 23 R5).
+    try:
+        await notify_user(
+            f"✅ {node.goal[:180]}\n\n{resumen}\n\nLo tienes esperando tu visto bueno en Aithera."
+        )
+    except Exception as e:
+        logger.info(f"[executor] no se pudo avisar del checkpoint (la misión sigue esperando): {e!r}")
+
+
+def _deliverable_summary(node: TaskNode) -> str:
+    """Qué enseñarle al usuario del entregable. Lo que el nodo produjo DE VERDAD,
+    recortado — nunca una frase inventada de relleno."""
+    salida = ""
+    if isinstance(node.result, dict):
+        salida = str(node.result.get("output") or "").strip()
+    if not salida:
+        return "(sin salida de texto; puedes revisar el paso en la vista de la misión)"
+    return salida[:600] + ("…" if len(salida) > 600 else "")
+
+
+async def _apply_checkpoint_verdict(trace_id: str, node_id: str, approved: bool) -> None:
+    """Aplica el veredicto de un CHECKPOINT. Aprobado: se sigue con el resto.
+    Rechazado: el entregable no vale, así que el nodo pasa a FAILED y la
+    degradación de T3 hace lo suyo (los que dependían de él se saltan, y la
+    misión entrega lo que sí valga explicando qué no)."""
+    graph = tracer.load_graph(trace_id)
+    meta = tracer.get_meta(trace_id)
+    if graph is None or meta is None:
+        logger.error(f"[executor] veredicto de checkpoint para una traza inexistente: {trace_id}")
+        return
+    node = graph.nodes.get(node_id)
+    if node is None or node.state != NodeState.DONE:
+        return  # ya aplicado (idempotencia) o el nodo cambió
+
+    mission = _mission_from_meta(meta, graph)
+    tracer.set_state(trace_id, "running")
+
+    if not approved:
+        node.error = "el usuario no ha dado por bueno este entregable"
+        _fail_node(node, graph, mission, trace_id)
+
+    await run(graph, mission, trace_id=trace_id)
+
+
 async def _apply_gate_verdict(trace_id: str, node_id: str, approved: bool) -> None:
     """Aplica el veredicto de un gate y sigue. Se invoca desde el handler del
     evento `approval.resolved` (en background — NUNCA dentro del resolve() del
@@ -269,7 +378,8 @@ async def _on_approval_resolved(event) -> None:
     `create_task`, así que el POST /approvals/{id}/resolve responde al instante
     aunque el resto del grafo tarde minutos."""
     payload = event.payload or {}
-    if payload.get("action") != GATE_ACTION_TYPE:
+    action = payload.get("action")
+    if action not in (GATE_ACTION_TYPE, CHECKPOINT_ACTION_TYPE):
         return  # no es un gate del TIE (p.ej. un email_send del AE)
     gate_id = payload.get("gate_id")
     approved = payload.get("resolution") == "approved"
@@ -283,7 +393,10 @@ async def _on_approval_resolved(event) -> None:
         trace_id, node_id = data.get("trace_id"), data.get("node_id")
         if not trace_id or not node_id:
             return
-        await _apply_gate_verdict(trace_id, node_id, approved)
+        if action == CHECKPOINT_ACTION_TYPE:
+            await _apply_checkpoint_verdict(trace_id, node_id, approved)
+        else:
+            await _apply_gate_verdict(trace_id, node_id, approved)
     except Exception as e:
         logger.error(f"[executor] fallo aplicando el veredicto del gate {gate_id}: {e!r}")
 
@@ -296,6 +409,13 @@ async def _gate_executor(payload: dict) -> str:
     return f"aprobación registrada; reanudación del nodo {payload.get('node_id')} en curso"
 
 
+async def _checkpoint_executor(payload: dict) -> str:
+    """Ejecutor registrado para `tie_checkpoint`. Igual que `_gate_executor`: NO
+    reanuda aquí (eso es event-driven, para no bloquear el request HTTP que
+    resuelve la aprobación); existe para que el gate no reporte "sin ejecutor"."""
+    return f"entregable revisado; la misión sigue desde el paso {payload.get('node_id')}"
+
+
 def register_gate_handlers() -> None:
     """Cablea el TIE con el ApprovalGate + el bus. Idempotente. Lo llama el
     `lifespan` (T4); los tests lo invocan directamente."""
@@ -303,6 +423,11 @@ def register_gate_handlers() -> None:
     from app.core.events import subscribe, unsubscribe
 
     approval_gate.register_executor(GATE_ACTION_TYPE, _gate_executor)
+    # [R5] Mismo motivo que el de arriba: sin ejecutor registrado, `resolve()`
+    # loguea "sin ejecutor para action_type=..." como ERROR y ensucia la
+    # auditoría con un fallo que no existe. Quien reanuda de verdad es el
+    # handler del evento, no esto.
+    approval_gate.register_executor(CHECKPOINT_ACTION_TYPE, _checkpoint_executor)
     unsubscribe("approval.resolved", _on_approval_resolved)  # evita duplicar al re-registrar
     subscribe("approval.resolved", _on_approval_resolved)
 
@@ -435,6 +560,29 @@ async def _resume_trace(trace_id: str) -> bool:
             if appr is None or appr.status == "pending":
                 return False  # sigue esperando al usuario: nada que reanudar
             await _apply_gate_verdict(trace_id, node.id, appr.status == "approved")
+            return True
+
+    # [R5] Lo mismo para un CHECKPOINT: el nodo esta DONE (se hizo), pero la
+    # mision quedo esperando el visto bueno. Si el usuario lo dio mientras el
+    # backend estaba caido, el evento se perdio y hay que leerlo del disco.
+    #
+    # SOLO si la traza esta en `waiting`: a diferencia de un gate de nodo —cuyo
+    # estado WAITING_APPROVAL cambia al aplicarlo, y por tanto no se vuelve a
+    # mirar—, un checkpoint aprobado deja el nodo en DONE con su gate_id puesto
+    # para siempre. Sin esta condicion, cualquier reinicio POSTERIOR volveria a
+    # aplicar un veredicto ya aplicado y relanzaria el grafo por su cuenta.
+    if (meta.get("state") or "") == "waiting":
+        from app.automation import approval_gate
+
+        for node in graph.nodes.values():
+            if node.state != NodeState.DONE or not node.checkpoint_gate_id:
+                continue
+            appr = approval_gate.get(node.checkpoint_gate_id)
+            if appr is None:
+                continue
+            if appr.status == "pending":
+                return False  # sigue esperando su visto bueno
+            await _apply_checkpoint_verdict(trace_id, node.id, appr.status == "approved")
             return True
 
     mission = _mission_from_meta(meta, graph)

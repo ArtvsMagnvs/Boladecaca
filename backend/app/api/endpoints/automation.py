@@ -225,3 +225,43 @@ def set_autonomy_profile(payload: AutonomyProfilePayload):
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     return _catalog_out(permission_service.get_catalog())
+
+
+# ---------------------------------------------------------------------------
+# [R5] Canal de avisos — por dónde quiere el usuario que Aithera le avise
+# cuando una misión se para en un entregable (doc 23 R5).
+# ---------------------------------------------------------------------------
+
+@router.get("/notify-channel")
+def get_notify_channel():
+    """Canal preferido + los que están realmente disponibles ahora mismo. La UI
+    no debe ofrecer Telegram si no hay un chat_id autorizado: prometer un aviso
+    que nunca va a llegar es peor que no ofrecerlo."""
+    from app.core.notify import get_preferred_channel
+    from app.db.database import Config, SessionLocal
+
+    db = SessionLocal()
+    try:
+        row = db.query(Config).filter(Config.key == "telegram_chat_id").first()
+        telegram_listo = bool((row.value if row else "") or "")
+    finally:
+        db.close()
+
+    return {
+        "channel": get_preferred_channel(),
+        "available": ["ui"] + (["telegram"] if telegram_listo else []),
+        "telegram_ready": telegram_listo,
+    }
+
+
+class NotifyChannelPayload(BaseModel):
+    channel: str
+
+
+@router.post("/notify-channel")
+def set_notify_channel(payload: NotifyChannelPayload):
+    from app.core.notify import set_preferred_channel
+
+    if payload.channel not in ("ui", "telegram"):
+        raise HTTPException(status_code=400, detail=f"canal no soportado: {payload.channel!r}")
+    return {"channel": set_preferred_channel(payload.channel)}

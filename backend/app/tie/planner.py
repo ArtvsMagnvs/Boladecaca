@@ -42,6 +42,7 @@ es un paso VERIFICABLE. Formato:
       "depends_on": [],
       "tools": [],
       "approval_required": false,
+      "checkpoint": false,
       "model_hint": "fast|smart",
       "context_query": null
     }
@@ -61,6 +62,16 @@ Reglas:
   Da a cada nodo solo las que ese paso necesita, no todas por si acaso.
 - "approval_required": true SOLO para acciones sensibles (enviar algo, borrar,
   ejecutar comandos que cambian el sistema). El usuario confirmará esos pasos.
+- "checkpoint": true si al terminar ESE paso queda algo que el usuario PUEDE
+  COMPROBAR por su cuenta — un entregable. La misión se parará ahí para que lo
+  revise antes de seguir, así que márcalo solo cuando de verdad haya algo que
+  mirar, no en cada paso.
+  SÍ es checkpoint: "redactar el borrador del email" (puede leerlo), "generar el
+  informe" (puede abrirlo), "crear el proyecto con sus tareas" (puede verlo en
+  el Workspace).
+  NO es checkpoint: "buscar los emails de esta semana", "leer el archivo",
+  "consultar la agenda" — son pasos intermedios; pararse ahí solo molesta.
+  Si el plan tiene un único paso, no lo marques: no hay nada después que parar.
 - Prefiere 2-3 nodos. No infles el plan. Devuelve SOLO el JSON."""
 
 
@@ -110,6 +121,7 @@ def _parse_nodes(data: dict) -> list[TaskNode]:
             depends_on=depends,
             tools=tools,
             approval_required=bool(rn.get("approval_required")),
+            checkpoint=bool(rn.get("checkpoint")),
             model_hint=(str(rn["model_hint"]) if rn.get("model_hint") else None),
             context_query=(str(rn["context_query"]) if rn.get("context_query") else None),
         ))

@@ -1365,6 +1365,17 @@ export const api = {
       body: JSON.stringify({ approved, note }),
     }),
 
+  // --- Canal de avisos (R5): por dónde avisa Aithera al parar en un entregable ---
+  getNotifyChannel: () =>
+    request<{ channel: string; available: string[]; telegram_ready: boolean }>(
+      "/automation/notify-channel",
+    ),
+  setNotifyChannel: (channel: string) =>
+    request<{ channel: string }>("/automation/notify-channel", {
+      method: "POST",
+      body: JSON.stringify({ channel }),
+    }),
+
   // --- Permisos & Autonomía (V0.9 A3b) ---
   getPermissions: () => request<PermissionCatalog>("/automation/permissions"),
   setPermission: (id: string, enabled: boolean) =>
