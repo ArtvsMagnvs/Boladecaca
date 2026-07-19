@@ -39,6 +39,21 @@ guion simple por elemento."""
 CONTEXT_TIMEOUT_S = 0.3  # doc 07 §8: presupuesto de latencia del contexto del MOS
 CONTEXT_MAX_TOKENS = 1200
 
+# ---------------------------------------------------------------------------
+# Continuidad de la conversación (R6.5b, doc 23)
+# ---------------------------------------------------------------------------
+# EL PRESUPUESTO, y por qué es obligatorio: sin tope, una conversación larga
+# acaba metiendo cientos de turnos en CADA mensaje — se come la ventana del
+# modelo, encarece cada respuesta y, con MiniMax (2048 tokens de salida máx),
+# deja sin sitio a la respuesta. Se recorta por los turnos MÁS ANTIGUOS: lo
+# reciente es lo que da continuidad.
+HISTORY_MAX_TURNS = 12        # 6 intercambios; suficiente para no perder el hilo
+HISTORY_MAX_CHARS = 6000      # tope duro; manda el que se alcance primero
+
+# Cuánto del turno anterior entra en la CONSULTA semántica al MOS (ver
+# `_memory_query`). Corto a propósito: es una consulta, no contexto.
+QUERY_PREV_CHARS = 300
+
 
 def _preferences_block(query: str) -> str:
     """Preferencias/hechos del usuario (coleccion legacy 'user_context'). Se
@@ -56,6 +71,89 @@ def _preferences_block(query: str) -> str:
     lines = ["Contexto del usuario (preferencias y hechos relevantes):"]
     lines += [f"- {it['content']}" for it in items]
     return "\n".join(lines)
+
+
+def recent_turns(session_id: Optional[str], *, max_turns: int = HISTORY_MAX_TURNS,
+                 max_chars: int = HISTORY_MAX_CHARS) -> list[dict]:
+    """Los últimos turnos de ESTA conversación, listos para `ExecutionRequest.
+    messages` (formato canónico de R6.5a).
+
+    Se piden a la BD los más RECIENTES (`ORDER BY id DESC LIMIT`) y luego se
+    devuelven en orden cronológico: traer la conversación entera para quedarse
+    con el final sería absurdo en una charla de 500 mensajes.
+
+    El recorte por caracteres se hace desde el final hacia atrás — se conservan
+    los turnos recientes y se sueltan los viejos, que es lo que mantiene el hilo.
+
+    Sin `session_id` devuelve [] : un mensaje sin conversación (el AE, un agente,
+    un canal sin sesión) no tiene historial que recuperar, y adivinarlo mezclaría
+    conversaciones ajenas."""
+    if not session_id:
+        return []
+    db = SessionLocal()
+    try:
+        filas = (
+            db.query(ChatMessage)
+            .filter(ChatMessage.session_id == session_id)
+            .order_by(ChatMessage.id.desc())
+            .limit(max_turns)
+            .all()
+        )
+    except Exception as e:
+        print(f"[chat_service] no se pudo leer el historial: {e}")
+        return []
+    finally:
+        db.close()
+
+    # `filas` viene del MÁS NUEVO al más viejo (ORDER BY id DESC). Se recorre en
+    # ese orden justamente para recortar: cuando se acaba el presupuesto, lo que
+    # se queda fuera es lo VIEJO. Al final se le da la vuelta una sola vez, para
+    # que el modelo lea la conversación en su orden natural.
+    turnos: list[dict] = []
+    total = 0
+    for fila in filas:
+        contenido = (fila.content or "").strip()
+        if not contenido:
+            continue
+        if total + len(contenido) > max_chars and turnos:
+            break                          # cabe lo reciente; lo viejo se suelta
+        turnos.append({
+            "role": "assistant" if fila.role == "assistant" else "user",
+            "content": contenido,
+        })
+        total += len(contenido)
+    turnos.reverse()
+    return turnos
+
+
+def _memory_query(user_message: str, history: list[dict]) -> str:
+    """La consulta con la que se busca en el MOS.
+
+    [R6.5b] EL ARREGLO DE MÁS IMPACTO DEL SPRINT, y el más barato: hasta ahora
+    la consulta era el mensaje actual A SECAS. Por eso Aithera recordaba cosas
+    de hace días pero no de qué se estaba hablando hace diez segundos: si
+    preguntas «¿y cuánto cuesta?», ese texto no se parece a NADA en la memoria,
+    así que la búsqueda semántica no recuperaba el producto del que hablabais.
+
+    Añadiendo el último turno del usuario, la consulta pasa a tener de qué
+    agarrarse. Arregla de paso el recuerdo ENTRE conversaciones, sin ningún
+    modelo nuevo ni coste adicional."""
+    actual = (user_message or "").strip()
+    previo = ""
+    for turno in reversed(history):
+        if turno["role"] != "user":
+            continue
+        candidato = (turno["content"] or "").strip()
+        # Si el "turno anterior" ES el mensaje actual, el historial se leyó
+        # DESPUÉS de persistirlo. Duplicar el texto en la consulta no aporta
+        # nada y sesga la búsqueda. Salta al turno de usuario de antes.
+        # (Visto en la verificación en vivo de R6.5b: producía la consulta
+        # «¿y cuánto cuesta?\n¿y cuánto cuesta?».)
+        if candidato == actual:
+            continue
+        previo = candidato[:QUERY_PREV_CHARS]
+        break
+    return f"{previo}\n{actual}".strip() if previo else actual
 
 
 async def _mos_context_block(query: str) -> str:
@@ -97,17 +195,23 @@ def _capabilities_block() -> str:
         return ""
 
 
-async def build_system_prompt(user_message: str) -> str:
+async def build_system_prompt(user_message: str, *, history: Optional[list] = None) -> str:
     """[V0.85 M4] Sustituye a chat.py::_build_system_prompt (ahora async: el
-    contexto del MOS es una llamada async con presupuesto de latencia)."""
+    contexto del MOS es una llamada async con presupuesto de latencia).
+
+    `history` [R6.5b]: los turnos previos. NO se meten en el system prompt — su
+    sitio es `ExecutionRequest.messages` (R6.5a). Aquí se usan SOLO para
+    construir una consulta de memoria que tenga de qué agarrarse
+    (ver `_memory_query`)."""
     base = DEFAULT_SYSTEM_PROMPT
     caps = _capabilities_block()
     if caps:
         base = f"{base}\n\n{caps}"
     if not user_message:
         return base
-    prefs = _preferences_block(user_message)
-    mos_ctx = await _mos_context_block(user_message)
+    consulta = _memory_query(user_message, history or [])
+    prefs = _preferences_block(consulta)
+    mos_ctx = await _mos_context_block(consulta)
     parts = [base]
     if prefs:
         parts.append(prefs)
@@ -126,6 +230,7 @@ class ChatAnswer:
 async def answer(
     message: str, *, channel: str = "web", persist_chat_message: bool = True,
     model_override: Optional[str] = None, project_id: Optional[int] = None,
+    session_id: Optional[str] = None,
 ) -> ChatAnswer:
     """Pipeline UNICO de chat (no streaming): system prompt (con memoria y
     fuentes) + MEL + persistencia. Usado por POST /api/chat (chat.py) y por el
@@ -146,15 +251,23 @@ async def answer(
 
     `model_override` [E2b, doc 14 §3.5]: id EXACTO de un modelo pedido
     explícitamente por el usuario. En E2 nadie lo pasa (siempre None → decide
-    la política); E2b lo cablea desde el camino corto del TIE."""
+    la política); E2b lo cablea desde el camino corto del TIE.
+
+    `session_id` [R6.5b]: la conversación a la que pertenece este turno. Con él
+    se recuperan los turnos previos (con presupuesto) y se persiste el turno
+    nuevo en la misma conversación. Sin él, el comportamiento es el de siempre:
+    un mensaje suelto sin continuidad — que es lo correcto para el AE, los
+    agentes y cualquier canal sin conversación."""
     from app.mel import Capability, ExecutionRequest, complete as mel_complete
 
-    system_prompt = await build_system_prompt(message)
+    history = recent_turns(session_id)
+    system_prompt = await build_system_prompt(message, history=history)
 
     memory_manager.store_conversation("user", message, metadata={"channel": channel})
 
     res = await mel_complete(ExecutionRequest(
         capability=Capability.CHAT, prompt=message, system_prompt=system_prompt,
+        messages=history,          # [R6.5b] los turnos previos, vía el canal de R6.5a
         model_override=model_override,
         # [E2b] project_id en context_tags → el MEL consulta el pin de proyecto
         # (mel_overrides) si lo hay. Sin project_id, tags vacío (chat general).
@@ -170,9 +283,11 @@ async def answer(
     if persist_chat_message:
         db = SessionLocal()
         try:
-            db.add(ChatMessage(role="user", content=message, model_used=model))
+            db.add(ChatMessage(role="user", content=message, model_used=model,
+                               session_id=session_id))
             db.add(ChatMessage(
                 role="assistant", content=text, model_used=model, tokens_used=tokens,
+                session_id=session_id,
             ))
             db.commit()
         finally:

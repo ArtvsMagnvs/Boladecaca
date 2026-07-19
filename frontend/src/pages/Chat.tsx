@@ -193,6 +193,10 @@ export default function Chat() {
           onStatus: (s) => useChatStore.getState().setTieStatus(sid, s),
           onMission: (id) => useChatStore.getState().setMissionId(sid, id),
           signal: controller.signal,
+          // [R6.5b] La pestaña ya tenía identidad en localStorage desde el
+          // sprint de sesiones; hasta ahora nunca salía del navegador. Con esto
+          // el backend puede recuperar el hilo de ESTA conversación.
+          sessionId: sid,
         },
       );
       const finalSession = useChatStore.getState().sessions.find((s) => s.id === sid);

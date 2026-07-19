@@ -357,6 +357,10 @@ class AgentExecutionResponse(BaseModel):
 
 class ChatRequest(BaseModel):
     message: str
+    # [R6.5b] Conversacion a la que pertenece el mensaje. Opcional: un cliente
+    # que no lo mande (o el chat legacy) sigue funcionando sin continuidad,
+    # exactamente como antes.
+    session_id: Optional[str] = None
 
 
 class ChatResponse(BaseModel):

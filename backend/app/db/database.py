@@ -238,6 +238,12 @@ class ChatMessage(Base):
     model_used = Column(String(100))
     tokens_used = Column(Integer)
     agent_id = Column(Integer)
+    # [R6.5b] A qué CONVERSACIÓN pertenece este turno. El frontend ya tenía
+    # pestañas con su propio id (`aithera.chat.sessions`) pero no lo enviaba, y
+    # esta tabla era plana: sin esto, "los últimos turnos" mezclaría pestañas
+    # distintas. Nullable a propósito — los mensajes anteriores a R6.5b no
+    # tienen sesión y deben seguir siendo válidos.
+    session_id = Column(String(64), index=True)
     # V0.85 (MOS M5, doc 12 A3): indexado — historial ordenado por fecha (get_chat_history).
     created_at = Column(DateTime, default=datetime.utcnow, index=True)
 

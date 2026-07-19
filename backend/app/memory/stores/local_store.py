@@ -107,7 +107,14 @@ class LocalMemoryStore(IMemoryStore):
         if not self.healthy or not content:
             return ""
 
-        now = datetime.utcnow()
+        # Reloj LOCAL a proposito: en el MOS el bucket de dia (`date`) y la
+        # atribucion de `context()` son de CALENDARIO LOCAL (doc 07 §7, misma
+        # convencion que summarizer.py). Los callers de summarize() consultan el
+        # rango con date.today() (local): store() y sus callers DEBEN usar el
+        # mismo reloj. Si aqui se sellara en UTC, un item creado en la franja en
+        # que la fecha local ya cambio pero la UTC aun no (madrugada en TZ>UTC)
+        # caeria en el dia equivocado y summarize(hoy) devolveria vacio.
+        now = datetime.now()
         item_id = (
             f"{memory_type.value}:{dedup_key}"
             if dedup_key

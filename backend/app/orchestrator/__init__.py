@@ -65,7 +65,7 @@ async def _tie_handle(envelope) -> str:
     return await tie.handle(envelope)
 
 
-async def handle_stream(text: str, *, channel: str = "web"):
+async def handle_stream(text: str, *, channel: str = "web", session_id: Optional[str] = None):
     """Entrada STREAMING del chat — la MISMA decisión que `handle()`, pero
     emitiendo eventos `(kind, payload)` como `tie.handle_stream`.
 
@@ -86,7 +86,7 @@ async def handle_stream(text: str, *, channel: str = "web"):
 
     text = (text or "").strip()
     if not text:
-        async for ev in tie.handle_stream(text, channel=channel):
+        async for ev in tie.handle_stream(text, channel=channel, session_id=session_id):
             yield ev
         return
 
@@ -96,12 +96,16 @@ async def handle_stream(text: str, *, channel: str = "web"):
         intent = await tie.classify(text, channel=channel)
     except Exception as e:
         logger.error(f"[orchestrator] clasificación falló, delego en el TIE: {type(e).__name__}: {e}")
-        async for ev in tie.handle_stream(text, channel=channel):
+        async for ev in tie.handle_stream(text, channel=channel, session_id=session_id):
             yield ev
         return
 
     if len(intent.objectives) < 2:
-        async for ev in tie.handle_stream(text, channel=channel, intent=intent):
+        # [R6.5b] Un solo encargo = una charla: lleva el hilo de la conversación.
+        # Varios encargos (abajo) son misiones de fondo independientes; ahí el
+        # historial del chat no pinta nada.
+        async for ev in tie.handle_stream(text, channel=channel, intent=intent,
+                                          session_id=session_id):
             yield ev
         return
 

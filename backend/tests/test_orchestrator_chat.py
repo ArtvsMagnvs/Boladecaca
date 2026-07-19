@@ -55,21 +55,27 @@ async def test_un_solo_encargo_delega_en_el_tie_sin_reclasificar(monkeypatch):
         llamadas["classify"] += 1
         return Intent(type=IntentType.CONVERSATIONAL, goal=text, confidence=0.9)
 
-    async def _tie_stream(text, *, channel="web", intent=None):
+    async def _tie_stream(text, *, channel="web", intent=None, session_id=None):
         llamadas["tie_stream"] += 1
         llamadas["intent_recibido"] = intent
+        llamadas["session_recibida"] = session_id
         yield ("text", "respuesta corta")
 
     monkeypatch.setattr(tie, "classify", _classify)
     monkeypatch.setattr(tie, "handle_stream", _tie_stream)
 
-    eventos = [ev async for ev in orchestrator.handle_stream("hola que tal")]
+    eventos = [ev async for ev in orchestrator.handle_stream("hola que tal",
+                                                            session_id="s-1")]
 
     assert ("text", "respuesta corta") in eventos
     assert llamadas["tie_stream"] == 1
     assert llamadas["classify"] == 1, "se clasificó más de una vez"
     assert llamadas["intent_recibido"] is not None, (
         "no se reutilizó el intent: el TIE volvería a clasificar (llamada extra al LLM)"
+    )
+    assert llamadas["session_recibida"] == "s-1", (
+        "[R6.5b] el Orquestador se comió la sesión: el chat perdería el hilo al "
+        "pasar por él, que es justo el camino que usa la interfaz principal"
     )
 
 

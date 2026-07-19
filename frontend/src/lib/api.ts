@@ -1142,12 +1142,16 @@ export const api = {
       // [2026-07-19] Para poder PARAR desde el botón del chat. Sin esto no había
       // forma de interrumpir una respuesta ya lanzada.
       signal?: AbortSignal;
+      // [R6.5b] La pestaña de chat a la que pertenece el mensaje. El backend la
+      // usa para recuperar los turnos previos de ESTA conversación (y no de otra
+      // pestaña). Opcional: sin ella el backend responde como siempre, sin hilo.
+      sessionId?: string;
     },
   ): Promise<void> {
     const response = await fetch(`${API_URL}/chat/stream`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ message }),
+      body: JSON.stringify({ message, session_id: opts?.sessionId }),
       signal: opts?.signal,
     });
     if (!response.ok || !response.body) {

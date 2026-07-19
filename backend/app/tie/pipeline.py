@@ -123,7 +123,8 @@ async def handle(envelope) -> str:
         return "He tenido un problema interno procesando eso. Inténtalo otra vez."
 
 
-async def handle_stream(text: str, *, channel: str = "web", intent: Optional[Intent] = None):
+async def handle_stream(text: str, *, channel: str = "web", intent: Optional[Intent] = None,
+                        session_id: Optional[str] = None):
     """[T4b] Entrada STREAMING — la que usa `/api/chat/stream` (el chat de
     Electron). Emite tuplas `(kind, payload)`:
       ("status", "analizando"|"planificando"|…)  → feedback inmediato (≤1 s, doc 11 B.5)
@@ -133,6 +134,10 @@ async def handle_stream(text: str, *, channel: str = "web", intent: Optional[Int
     El camino corto (~80%) streamea TOKENS de verdad (mismo UX de siempre); el
     complejo emite estados gruesos y la respuesta final del responder — el detalle
     paso a paso, en vivo, se ve en la vista de misión (que sondea el grafo).
+
+    `session_id` [R6.5b]: la conversación del chat. Solo viaja por el camino
+    corto (una charla tiene hilo); una misión compleja es trabajo de fondo y su
+    contexto lo aporta el planner, no el historial del chat.
 
     `intent` (2026-07-19): el Orquestador YA clasificó para decidir si el mensaje
     traía varios encargos. Se le pasa aquí para no pagar una SEGUNDA llamada al
@@ -181,7 +186,7 @@ async def handle_stream(text: str, *, channel: str = "web", intent: Optional[Int
     try:
         async for ev in _stream_body(text, intent, mission, trace_id, channel,
                                      prefetched, memory_router, tool_manager, approval_gate,
-                                     force_model):
+                                     force_model, session_id):
             yield ev
     finally:
         _close_if_orphan(trace_id)
@@ -203,14 +208,16 @@ def _close_if_orphan(trace_id: str) -> None:
 
 
 async def _stream_body(text, intent, mission, trace_id, channel, prefetched,
-                       memory_router, tool_manager, approval_gate, force_model):
+                       memory_router, tool_manager, approval_gate, force_model,
+                       session_id=None):
     """El cuerpo real del streaming. Separado para que `handle_stream` pueda
     envolverlo en un `finally` que cierre la traza si el cliente se va."""
     # --- camino corto: tokens de verdad ---
     if intent.is_short_path:
         acc = ""
         task = AgentTask(id=AgentTask.new_id(), instruction=text, channel=channel,
-                         tools=intent.requires_tools, model_hint=force_model)
+                         tools=intent.requires_tools, model_hint=force_model,
+                         session_id=session_id)
         runtime = get_runtime("null")
         async for chunk in runtime.stream_task(
             task, memory=memory_router, tools=tool_manager, approval_gate=approval_gate

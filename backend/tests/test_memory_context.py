@@ -179,16 +179,19 @@ async def test_answer_indexa_mensaje_de_usuario_aunque_la_ia_falle(monkeypatch):
 async def test_endpoint_chat_delega_en_chat_service(monkeypatch, client):
     calls = []
 
-    async def _fake_answer(message, *, channel="web", persist_chat_message=True):
-        calls.append((message, channel, persist_chat_message))
+    async def _fake_answer(message, *, channel="web", persist_chat_message=True,
+                           session_id=None, **_):
+        calls.append((message, channel, persist_chat_message, session_id))
         return chat_service.ChatAnswer(text="respuesta simulada", model="m", tokens=1)
 
     monkeypatch.setattr(chat_service, "answer", _fake_answer)
 
-    r = client.post("/api/chat/", json={"message": "hola"})
+    r = client.post("/api/chat/", json={"message": "hola", "session_id": "s-1"})
     assert r.status_code == 200
     assert r.json()["response"] == "respuesta simulada"
-    assert calls == [("hola", "web", True)]
+    # [R6.5b] La sesión del cuerpo tiene que llegar hasta chat_service: si se
+    # queda por el camino, la continuidad no existe aunque todo lo demás esté.
+    assert calls == [("hola", "web", True, "s-1")]
 
 
 @pytest.mark.anyio
@@ -198,7 +201,7 @@ async def test_gateway_handler_delega_en_chat_service_con_persist_false(monkeypa
 
     calls = []
 
-    async def _fake_answer(message, *, channel="web", persist_chat_message=True):
+    async def _fake_answer(message, *, channel="web", persist_chat_message=True, **_):
         calls.append((message, channel, persist_chat_message))
         return chat_service.ChatAnswer(text="", model=None, tokens=None)
 

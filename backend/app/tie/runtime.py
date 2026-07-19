@@ -50,6 +50,11 @@ class AgentTask:
     # debe volver a preguntar una por una: el usuario vio la lista completa y
     # dijo que sí. Lo pone el executor cuando `node.gate_id` no es None.
     actions_pre_approved: bool = False
+    # [R6.5b] Conversacion del chat a la que pertenece esta tarea. Solo la lleva
+    # el camino corto (una charla); una mision de fondo o un agente no tienen
+    # conversacion, y ahi debe ser None — mezclar el historial de un chat en una
+    # tarea automatica seria contaminar su contexto.
+    session_id: Optional[str] = None
 
     @staticmethod
     def new_id() -> str:
@@ -237,9 +242,15 @@ class NullRuntime(AgentRuntime):
         from app.services import chat_service
 
         try:
-            system_prompt = await chat_service.build_system_prompt(task.instruction)
+            # [R6.5b] Continuidad: los turnos previos de ESTA conversacion. Es
+            # el MISMO `recent_turns` que usa `answer()` — un solo sitio, como
+            # ya se hizo en M4 con el system prompt.
+            history = chat_service.recent_turns(task.session_id)
+            system_prompt = await chat_service.build_system_prompt(
+                task.instruction, history=history)
             req = ExecutionRequest(
                 capability=Capability.CHAT, prompt=task.instruction, system_prompt=system_prompt,
+                messages=history,
                 model_override=_model_override_from_hint(task.model_hint),  # [E2b] override explícito
             )
             async for chunk in mel_stream(req):

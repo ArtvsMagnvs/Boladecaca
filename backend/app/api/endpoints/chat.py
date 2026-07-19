@@ -30,7 +30,8 @@ async def chat(request: ChatRequest):
     [V0.85 M4] Delega en chat_service.answer() — mismo pipeline que usa el
     Gateway (Telegram, etc.), con memoria del MOS y atribucion de fuente.
     """
-    result = await chat_service.answer(request.message, channel="web")
+    result = await chat_service.answer(request.message, channel="web",
+                                       session_id=request.session_id)
     return ChatResponse(
         response=result.text or "No response",
         model=result.model,
@@ -52,7 +53,11 @@ async def chat_stream(request: ChatRequest):
     emitiendo chunks mientras la IA genera, algo que answer() (no streaming)
     no puede hacer — pero comparte la MISMA construccion de contexto.
     """
-    system_prompt = await chat_service.build_system_prompt(request.message)
+    # [R6.5b] Los turnos previos de ESTA pestaña del chat. Se leen ANTES de
+    # persistir el mensaje actual (que se guarda al final, en el `finally`), así
+    # que el historial es exactamente "lo dicho hasta ahora".
+    history = chat_service.recent_turns(request.session_id)
+    system_prompt = await chat_service.build_system_prompt(request.message, history=history)
 
     # Almacenamos el user message al principio para que quede indexado
     # aunque la IA falle o el cliente cancele el stream.
@@ -83,11 +88,13 @@ async def chat_stream(request: ChatRequest):
                 if settings.ORCH_ENABLED:
                     import app.orchestrator as orchestrator
 
-                    origen = orchestrator.handle_stream(request.message, channel="web")
+                    origen = orchestrator.handle_stream(
+                        request.message, channel="web", session_id=request.session_id)
                 else:
                     import app.tie as tie
 
-                    origen = tie.handle_stream(request.message, channel="web")
+                    origen = tie.handle_stream(
+                        request.message, channel="web", session_id=request.session_id)
 
                 async for kind, payload in origen:
                     if not payload:
@@ -109,6 +116,7 @@ async def chat_stream(request: ChatRequest):
 
                 async for visible in mel_stream(ExecutionRequest(
                     capability=Capability.CHAT, prompt=request.message, system_prompt=system_prompt,
+                    messages=history,
                 )):
                     if not visible:
                         continue
@@ -124,8 +132,10 @@ async def chat_stream(request: ChatRequest):
                 )
             db = SessionLocal()
             try:
-                db.add(ChatMessage(role="user", content=request.message, model_used=model_used))
-                db.add(ChatMessage(role="assistant", content=full_response, model_used=model_used))
+                db.add(ChatMessage(role="user", content=request.message, model_used=model_used,
+                                   session_id=request.session_id))
+                db.add(ChatMessage(role="assistant", content=full_response, model_used=model_used,
+                                   session_id=request.session_id))
                 db.commit()
             finally:
                 db.close()
