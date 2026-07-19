@@ -20,6 +20,10 @@ from app.api.endpoints import automation
 # V1.0 (TIE v1, T4): router de misiones del Task Intelligence Engine. El import
 # registra ademas el modelo OrchestratorTrace antes del create_all del lifespan.
 from app.api.endpoints import tie as tie_endpoints
+# V1.0 (R2, Orquestador): runs de orquestacion (un mensaje con varios encargos ->
+# varias misiones). El import registra ademas app.orchestrator.models
+# (orchestration_runs) antes del create_all.
+from app.api.endpoints import orchestrator as orchestrator_endpoints
 # V0.8 (Fase 5 Clientes): router de configuracion del canal Telegram.
 from app.api.endpoints import telegram as telegram_endpoints
 # V1.0/1.1 (Tools): configuracion de Search Tool (Brave/SerpAPI, mismo patron
@@ -281,12 +285,25 @@ async def lifespan(app: FastAPI):
 
         if settings.TIE_ENABLED:
             tie.register_handlers()   # gates de nodo (T3) + gate del plan (T4)
-            gateway.set_handler(tie.handle)
+
+            # [R2] EL SWITCH del Orquestador. Se engancha POR ENCIMA del TIE: un
+            # mensaje con varios encargos se reparte en misiones concurrentes; uno
+            # solo se delega en `tie.handle` sin coste añadido (doc 23 §0).
+            # `ORCH_ENABLED=false` deja el Gateway directamente en el TIE.
+            if settings.ORCH_ENABLED:
+                import app.orchestrator as orchestrator
+
+                gateway.set_handler(orchestrator.handle)
+                destino = "Gateway -> orchestrator.handle -> TIE"
+            else:
+                gateway.set_handler(tie.handle)
+                destino = "Gateway -> tie.handle"
+
             # Misiones a medias de un arranque anterior: se reanudan leyendo el
             # grafo de disco (doc 14 §3.4.3). Incluye los gates que el usuario
             # resolvio con el backend caido (el bus no persiste, doc 17).
             resumed = await tie.executor.resume_pending()
-            log_info("startup", f"TIE v1 activo (Gateway -> tie.handle); {resumed} mision(es) reanudada(s)")
+            log_info("startup", f"TIE v1 activo ({destino}); {resumed} mision(es) reanudada(s)")
         else:
             log_info("startup", "TIE desactivado (TIE_ENABLED=false): el Gateway sigue con el chat legacy")
     except Exception as e:
@@ -401,6 +418,7 @@ app.include_router(local_models_endpoints.router, prefix="/api")
 app.include_router(automation.router, prefix="/api")
 # V1.0 (TIE v1, T4): misiones, grafo, kill-switch y aprobacion de planes.
 app.include_router(tie_endpoints.router, prefix="/api")
+app.include_router(orchestrator_endpoints.router, prefix="/api")
 # V1.0 (MEL v1, E1b): informe de capacidades auto-investigado.
 app.include_router(mel_endpoints.router, prefix="/api")
 

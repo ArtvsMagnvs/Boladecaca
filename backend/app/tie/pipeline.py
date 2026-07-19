@@ -192,11 +192,18 @@ async def submit_mission(
     source: str = "automation",
     channel: Optional[str] = None,
     project_id: Optional[int] = None,
+    run_id: Optional[str] = None,
+    parent_id: Optional[str] = None,
 ) -> Mission:
-    """Entrada PROGRAMÁTICA (AE `AgentTaskAction`, WPMS) — ya sabe que es una
-    misión, así que NO hay camino corto: siempre planifica y ejecuta. Devuelve la
-    Mission con su `outcome`."""
-    mission = new_mission(goal=goal, source=source, channel=channel, project_id=project_id)
+    """Entrada PROGRAMÁTICA (AE `AgentTaskAction`, WPMS, Orquestador) — ya sabe
+    que es una misión, así que NO hay camino corto: siempre planifica y ejecuta.
+    Devuelve la Mission con su `outcome`.
+
+    `run_id`/`parent_id` (R2) son la jerarquía: a qué orquestación pertenece esta
+    misión y de qué misión más amplia nació. El TIE no los interpreta — los
+    guarda en la traza para que la UI y el Learner puedan reconstruir el árbol."""
+    mission = new_mission(goal=goal, source=source, channel=channel, project_id=project_id,
+                          run_id=run_id, parent_id=parent_id)
     intent = await intents.classify(goal, channel=channel)
     intent.requires_planning = True  # una misión explícita nunca es "charla"
     trace_id = tracer.record_start(mission, channel=channel)

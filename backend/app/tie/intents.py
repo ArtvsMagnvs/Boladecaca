@@ -54,6 +54,15 @@ Campos del JSON (todos obligatorios):
     scope "task" = solo para ESTA petición o este mensaje.
     scope "project" = de forma permanente para todo el proyecto ("a partir de ahora", "siempre", "para todo el proyecto").
     scope "unspecified" = nombra un modelo pero no deja claro si es solo para esto o para siempre.
+- "objectives": lista de los encargos DISTINTOS e INDEPENDIENTES que contiene el mensaje,
+  cada uno como una frase imperativa. Si el mensaje pide UNA sola cosa (aunque tenga
+  varios pasos), devuelve lista vacía []. Solo lista 2 o más cuando de verdad son
+  encargos separados que podrían hacerse por su cuenta.
+    Ejemplo de UNO: "busca los vuelos más baratos a Roma y reserva el mejor" -> []
+      (es un solo encargo con dos pasos encadenados).
+    Ejemplo de VARIOS: "investiga los avances en IA, responde el email de Ana, y dime
+      cómo va el proyecto X" -> ["Investigar los últimos avances en IA",
+      "Responder el email de Ana", "Informar del estado del proyecto X"].
 
 Reglas: si dudas, usa type "conversational" y confidence baja. Para charla simple,
 requires_* en false, model_capability "chat". Para tareas complejas de varios pasos,
@@ -139,8 +148,18 @@ def _coerce_intent(data: dict, goal_fallback: str) -> Intent:
         context_query=ctx_q,
         model_capability=cap,
         explicit_model=explicit_model,
+        # [R2] Un solo objetivo no es "descomposición": se normaliza a lista
+        # vacía para que el Orquestador tenga UNA condición clara (>=2 = multi).
+        objectives=_objectives(data.get("objectives")),
         raw=data if isinstance(data, dict) else {},
     )
+
+
+def _objectives(value) -> list[str]:
+    """Normaliza la lista de objetivos del clasificador. Con 0 o 1 devuelve []:
+    un único encargo va por el camino de siempre, sin capa de orquestación."""
+    items = [str(v).strip() for v in value if str(v).strip()] if isinstance(value, list) else []
+    return items if len(items) >= 2 else []
 
 
 async def classify(text: str, *, channel: Optional[str] = None) -> Intent:

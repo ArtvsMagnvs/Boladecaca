@@ -72,6 +72,19 @@ class Settings:
     # Con el permiso pre-autorizado (A3b) la espera es instantánea.
     TIE_TOOL_APPROVAL_WAIT_S = int(os.getenv("TIE_TOOL_APPROVAL_WAIT_S", "120"))
 
+    # --- V1.0 (R2, Orquestador — doc 23) ---
+    # Kill-switch: con False, el Gateway sigue enganchado a `tie.handle` y todo
+    # se comporta exactamente como antes de este bloque.
+    ORCH_ENABLED = os.getenv("ORCH_ENABLED", "true").lower() in ("1", "true", "yes")
+    # Misiones simultáneas como máximo. Protege al MEL y sobre todo a los modelos
+    # LOCALES: lanzar 6 misiones a la vez contra un Ollama con un modelo cargado
+    # las pone a competir por la misma GPU y todas van más lentas.
+    ORCH_MAX_CONCURRENT = int(os.getenv("ORCH_MAX_CONCURRENT", "3"))
+    # Profundidad máxima de anidamiento (objetivo → sub-objetivos). 2 permite el
+    # caso real ("15 canales" → un trabajo por canal) sin abrir la puerta a una
+    # recursión que se dispare sola.
+    ORCH_MAX_DEPTH = int(os.getenv("ORCH_MAX_DEPTH", "2"))
+
     # V1.0 (MEL E1b, doc 19 §5.4/doc 22 §3·E1b): cada cuántos días se re-investigan
     # las capacidades de los modelos configurados (el número que pidió el usuario).
     MEL_RESEARCH_REFRESH_DAYS = int(os.getenv("MEL_RESEARCH_REFRESH_DAYS", "14"))

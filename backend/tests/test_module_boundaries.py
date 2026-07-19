@@ -67,7 +67,50 @@ FORBIDDEN_MODULES = (
     ("app.mel.models", APP_DIR / "mel"),
     ("app.mel.research", APP_DIR / "mel"),
     ("app.mel.overrides", APP_DIR / "mel"),
+    # V1.0 (R2): fronteras del Orquestador. La dependencia va en UN SOLO
+    # sentido (orquestador -> TIE); el test de abajo vigila que no haya ciclo.
+    ("app.orchestrator.contracts", APP_DIR / "orchestrator"),
+    ("app.orchestrator.decomposer", APP_DIR / "orchestrator"),
+    ("app.orchestrator.conductor", APP_DIR / "orchestrator"),
+    ("app.orchestrator.consolidator", APP_DIR / "orchestrator"),
+    ("app.orchestrator.store", APP_DIR / "orchestrator"),
+    ("app.orchestrator.models", APP_DIR / "orchestrator"),
 )
+
+
+def test_el_tie_no_importa_el_orquestador():
+    """[R2] La capa de misiones se apoya en el TIE, NUNCA al revés.
+
+    Un ciclo aquí rompería el arranque (ambos módulos se importan en el lifespan)
+    y, peor, significaría que el TIE ha empezado a saber de orquestación — que es
+    justo la separación que este bloque existe para mantener."""
+    import re as _re
+    from pathlib import Path as _Path
+
+    ofensores = []
+    for py in (APP_DIR / "tie").rglob("*.py"):
+        texto = py.read_text(encoding="utf-8", errors="ignore")
+        for i, linea in enumerate(texto.splitlines(), 1):
+            if linea.lstrip().startswith("#"):
+                continue
+            if _re.search(r"\b(from|import)\s+app\.orchestrator\b", linea):
+                ofensores.append(f"{py.relative_to(APP_DIR.parent)}:{i}")
+    assert not ofensores, (
+        "app.tie importa app.orchestrator (ciclo):\n" + "\n".join(ofensores)
+    )
+
+
+def test_orchestrator_public_api_completa():
+    """El barrel app.orchestrator expone la API publica de R2."""
+    import app.orchestrator as orch
+
+    esperado = {
+        "Objective", "OrchestrationRun",
+        "handle", "submit", "recent_runs", "get_run", "cancel_run",
+    }
+    assert esperado <= set(orch.__all__)
+    for nombre in esperado:
+        assert hasattr(orch, nombre), f"falta {nombre} en el barrel"
 
 
 def test_public_api_completa():

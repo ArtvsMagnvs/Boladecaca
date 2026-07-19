@@ -16,6 +16,8 @@ def new_mission(
     source: str = "user",
     channel: Optional[str] = None,
     project_id: Optional[int] = None,
+    run_id: Optional[str] = None,
+    parent_id: Optional[str] = None,
 ) -> Mission:
     """Crea una misión nueva (en V1.0 no se persiste en tabla propia — su rastro
     vive en `orchestrator_traces` vía el tracer). `source` gobierna los
@@ -27,4 +29,6 @@ def new_mission(
         source=source,
         channel=channel,
         project_id=project_id,
+        run_id=run_id,
+        parent_id=parent_id,
     )

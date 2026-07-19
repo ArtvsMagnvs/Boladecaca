@@ -32,6 +32,11 @@ def record_start(mission: Mission, *, channel: Optional[str] = None) -> str:
             mission_id=mission.id,
             channel=channel or mission.channel,
             state="running",
+            # [R2] Jerarquía: a qué orquestación pertenece y de qué misión nació.
+            # El TIE no los usa para nada — los guarda para que la UI y el
+            # Learner puedan reconstruir el árbol de un mensaje multi-objetivo.
+            run_id=mission.run_id,
+            parent_trace_id=mission.parent_id,
             created_at=datetime.utcnow(),
             updated_at=datetime.utcnow(),
         ))

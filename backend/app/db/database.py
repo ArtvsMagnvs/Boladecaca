@@ -613,6 +613,12 @@ class OrchestratorTrace(Base):
     result = Column(Text)          # resultado bruto
     outcome = Column(Text)         # resumen del responder (T4)
     state = Column(String(20), index=True, default="running")  # running|waiting|done|failed|cancelled
+    # V1.0 (R2, Orquestador): jerarquía de misiones. `run_id` agrupa las misiones
+    # nacidas de UN mensaje del usuario con varios encargos; `parent_trace_id`
+    # enlaza una sub-misión con la misión demasiado amplia que la generó.
+    # Referencias planas indexadas, SIN ForeignKey (mismo criterio del proyecto).
+    run_id = Column(String(36), index=True)
+    parent_trace_id = Column(String(36), index=True)
     created_at = Column(DateTime, default=datetime.utcnow, index=True)
     updated_at = Column(DateTime, default=datetime.utcnow)
 

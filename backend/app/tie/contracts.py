@@ -101,6 +101,17 @@ class Intent:
     # append-only (default None) — la firma congelada de Intent no cambia.
     explicit_model: Optional[dict] = None  # {"name": str, "scope": str} | None
 
+    # — descomposición en objetivos (R2, doc 23 §0) —
+    # Si el mensaje contiene VARIOS encargos distintos ("investiga X, responde el
+    # email de Y, y ponme al día del proyecto Z"), el clasificador los lista aquí.
+    # Lo rellena la MISMA llamada que ya se hacía: detectar que hay varios no
+    # cuesta ni un token extra, y es lo que permite al Orquestador decidir si
+    # monta varias misiones o delega en el camino de siempre.
+    #   []  o 1 elemento → un solo objetivo: el TIE lo trata como hasta ahora.
+    #   >= 2             → el Orquestador descompone y lanza misiones en paralelo.
+    # Campo append-only (default []) — la firma congelada de Intent no cambia.
+    objectives: list[str] = field(default_factory=list)
+
     # — trazabilidad —
     raw: dict = field(default_factory=dict)  # respuesta cruda del clasificador (debug/trace)
 
@@ -241,6 +252,13 @@ class Mission:
     spent_tokens: int = 0
     outcome: Optional[str] = None                    # resumen del resultado (lo escribe el responder)
     reflection_id: Optional[str] = None              # → aprendizaje post-misión (doc 15 §4)
+    # — jerarquía de misiones (R2, doc 23 §0) — campos append-only —
+    # `run_id`: a qué orquestación pertenece (un mensaje del usuario con varios
+    # objetivos produce N misiones que comparten run_id).
+    # `parent_id`: si esta misión nació de descomponer OTRA misión demasiado
+    # amplia ("crea 15 canales" → una sub-misión por canal). None = misión raíz.
+    run_id: Optional[str] = None
+    parent_id: Optional[str] = None
 
     @staticmethod
     def new_id() -> str:
