@@ -58,6 +58,12 @@ class AitheraTool(BaseTool):
         "reglas de auto-respuesta de email — directamente desde el chat."
     )
     requires_confirmation = False  # depende de la acción
+    # NO es una tool que se asigne a un agente: es la capacidad del Orquestador
+    # sobre la propia Aithera (ver `BaseTool.internal`). No aparece en el
+    # catálogo público ni en la UI de agentes; el TIE la tiene siempre a mano, y
+    # cuando el Orquestador encarga a un agente algo de esto, el agente puede
+    # hacerlo sin que nadie le haya marcado ninguna casilla.
+    internal = True
 
     async def execute(self, action: str, params: Dict[str, Any]) -> Dict[str, Any]:
         handler = {

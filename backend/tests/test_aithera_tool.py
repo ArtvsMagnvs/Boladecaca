@@ -37,9 +37,50 @@ def _clean_tables():
         db.close()
 
 
-def test_aithera_tool_registrada():
-    ids = {t["tool_id"] for t in tool_manager.list_tools()}
-    assert "aithera" in ids
+def test_aithera_es_INTERNA_no_asignable_a_un_agente():
+    """[Correccion de diseño 2026-07-19, pedida por el usuario] Operar Aithera
+    NO es una herramienta que se conceda a un agente: es la capacidad del
+    Orquestador sobre su propia casa. Como casilla en la UI implicaba lo
+    contrario — que un agente al que el Orquestador le encarga esto no pudiera
+    hacerlo por no tenerla marcada."""
+    publicas = {t["tool_id"] for t in tool_manager.list_tools()}
+    assert "aithera" not in publicas, "no debe aparecer en el catalogo publico ni en la UI"
+
+    # Pero SI existe y el TIE la ve.
+    internas = {t["tool_id"] for t in tool_manager.list_tools(include_internal=True)}
+    assert "aithera" in internas
+    assert "aithera" in tool_manager.internal_tool_ids()
+    assert tool_manager.get_tool("aithera") is not None
+
+
+def test_un_agente_no_puede_asignarse_la_tool_interna():
+    """La validacion de `allowed_tools` usa el catalogo PUBLICO, asi que pedir
+    'aithera' a mano falla como cualquier tool inexistente."""
+    from app.agents.agent_manager import agent_manager
+
+    with pytest.raises(ValueError) as exc:
+        agent_manager.create_agent(name="[test] colado", allowed_tools=["aithera"])
+    assert "aithera" in str(exc.value)
+
+
+def test_la_whitelist_de_un_agente_no_puede_quitar_las_internas():
+    """El recorte de R4 acota las tools EXTERNAS del agente; las internas no
+    dependen de esa lista. Lo que sigue acotandolas es la frontera de proyecto."""
+    from app.tie.authority import Authority
+
+    a = Authority(allowed_tools=["git"])          # un agente sin 'aithera'
+    assert a.check("shell", "run_command", {}) is not None      # externa: bloqueada
+    assert a.check("aithera", "list_projects", {}) is None      # interna: permitida
+
+
+def test_pero_la_frontera_de_proyecto_sigue_aplicando_a_las_internas():
+    """Que sea interna NO significa barra libre: el orquestador de un proyecto
+    sigue sin poder tocar otro (R4 Δ6)."""
+    from app.tie.authority import Authority
+
+    a = Authority(project_id=7, allowed_tools=["git"])
+    assert a.check("aithera", "create_task", {"project_id": 7}) is None
+    assert a.check("aithera", "create_task", {"project_id": 8}) is not None
 
 
 def test_acciones_de_escritura_piden_confirmacion():

@@ -98,11 +98,23 @@ class ToolManager:
     def get_tool(self, tool_id: str) -> Optional[BaseTool]:
         return self._tools.get(tool_id)
 
-    def list_tools(self) -> List[Dict[str, Any]]:
-        """Devuelve el catalogo de herramientas registradas con sus acciones.
-        Esto es lo que consume el frontend en /api/tools/."""
+    def internal_tool_ids(self) -> set:
+        """Ids de las tools INTERNAS (capacidades de Aithera sobre si misma, ver
+        `BaseTool.internal`). El TIE las tiene siempre disponibles; no se
+        asignan a agentes ni aparecen en la UI."""
+        return {tid for tid, t in self._tools.items() if getattr(t, "internal", False)}
+
+    def list_tools(self, include_internal: bool = False) -> List[Dict[str, Any]]:
+        """Catalogo de herramientas registradas con sus acciones.
+
+        Por defecto SOLO las publicas — es lo que consume el frontend en
+        /api/tools/ y lo que se valida al asignar `allowed_tools` a un agente.
+        El TIE (planner + bucle de tool-use) pide `include_internal=True`
+        porque el Orquestador si puede operar Aithera."""
         out = []
         for tool_id, tool in self._tools.items():
+            if getattr(tool, "internal", False) and not include_internal:
+                continue
             out.append({
                 "tool_id": tool_id,
                 "name": tool.name,

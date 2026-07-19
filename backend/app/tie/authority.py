@@ -92,7 +92,13 @@ class Authority:
         if self.is_unrestricted:
             return None
 
-        if self.allowed_tools is not None and tool_id not in self.allowed_tools:
+        # Las tools INTERNAS (operar la propia Aithera) no pasan por la whitelist
+        # del agente: no son capacidades concedidas, son de la casa. Sí siguen
+        # sujetas a la frontera de proyecto de más abajo, que es lo que impide
+        # que el orquestador de un proyecto toque otro.
+        if (self.allowed_tools is not None
+                and tool_id not in self.allowed_tools
+                and tool_id not in _internal_tool_ids()):
             permitidas = ", ".join(self.allowed_tools) if self.allowed_tools else "(ninguna)"
             return (f"'{tool_id}' está fuera de las herramientas de este encargo. "
                     f"Permitidas: {permitidas}.")
@@ -154,6 +160,18 @@ class Authority:
                 return (f"la ruta '{value}' está fuera de la carpeta de este proyecto "
                         f"({self.repo_path}). No puedes salir de ahí.")
         return None
+
+
+def _internal_tool_ids() -> set:
+    """Tools internas de Aithera (ver `BaseTool.internal`). Ante cualquier fallo
+    devuelve un conjunto vacío: eso hace que la whitelist se aplique tal cual, es
+    decir, MÁS restrictivo — fail-closed, igual que el resto de este módulo."""
+    try:
+        from app.tools import tool_manager
+
+        return tool_manager.internal_tool_ids()
+    except Exception:
+        return set()
 
 
 def orchestrator_of(project_id: int) -> Optional[dict]:

@@ -222,7 +222,10 @@ async def run(
     # caminos que no pasan por el planner (una misión reanudada, un grafo
     # construido a mano, un caller futuro que se olvide de recortar).
     if authority is not None and authority.allowed_tools is not None:
-        allowed_tools = [t for t in allowed_tools if t in authority.allowed_tools]
+        from app.tie.authority import _internal_tool_ids
+
+        permitidas = set(authority.allowed_tools) | _internal_tool_ids()
+        allowed_tools = [t for t in allowed_tools if t in permitidas]
 
     catalog = build_catalog(allowed_tools, tool_manager)
     if not catalog:

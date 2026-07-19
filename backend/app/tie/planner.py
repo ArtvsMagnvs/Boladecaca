@@ -65,12 +65,24 @@ Reglas:
 
 
 def _tools_available() -> list[str]:
+    """El catálogo que ve el planner. Incluye las tools INTERNAS (operar la
+    propia Aithera): el Orquestador puede hacerlo por definición, no es un
+    permiso que nadie le conceda (ver `BaseTool.internal`)."""
     try:
         from app.tools import tool_manager
 
-        return sorted(t["tool_id"] for t in tool_manager.list_tools())
+        return sorted(t["tool_id"] for t in tool_manager.list_tools(include_internal=True))
     except Exception:
         return []
+
+
+def _internal_tools() -> set:
+    try:
+        from app.tools import tool_manager
+
+        return tool_manager.internal_tool_ids()
+    except Exception:
+        return set()
 
 
 def _parse_nodes(data: dict) -> list[TaskNode]:
@@ -117,7 +129,11 @@ async def _generate_graph(goal: str, context: str, mission_id: str,
     # SUS herramientas. Esto es calidad del plan, no seguridad: la seguridad es
     # el recorte determinista de más abajo, que no depende de que el LLM haga caso.
     if authority is not None and authority.allowed_tools is not None:
-        tools = [t for t in tools if t in authority.allowed_tools]
+        # Las internas NO se recortan: no son capacidades que el agente tenga o
+        # deje de tener, son de Aithera. Lo que sí las acota es la frontera de
+        # PROYECTO (R4), que se comprueba en cada llamada.
+        permitidas = set(authority.allowed_tools) | _internal_tools()
+        tools = [t for t in tools if t in permitidas]
     system = _SYSTEM_PROMPT.replace("{tools}", str(tools))
     user = f"OBJETIVO: {goal}"
     if context:
@@ -149,8 +165,9 @@ async def _generate_graph(goal: str, context: str, mission_id: str,
     # persiste en el checkpoint ya viene acotado y una reanudación tras reinicio
     # no puede recuperar permisos que la misión nunca tuvo.
     if authority is not None and authority.allowed_tools is not None:
+        permitidas = set(authority.allowed_tools) | _internal_tools()
         for n in nodes:
-            n.tools = [t for t in n.tools if t in authority.allowed_tools]
+            n.tools = [t for t in n.tools if t in permitidas]
 
     g = graph_mod.build(mission_id, nodes, created_by="planner")
     if authority is not None:

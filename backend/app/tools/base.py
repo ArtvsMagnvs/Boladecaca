@@ -25,6 +25,23 @@ class BaseTool(ABC):
     description: str = ""      # descripcion legible para humanos
     requires_confirmation: bool = False  # pedir confirmacion antes de ejecutar
 
+    # [2026-07-19] Tool INTERNA: capacidad propia de Aithera sobre si misma, no
+    # una herramienta externa que se "concede" a un agente.
+    #
+    # LA DISTINCION (correccion de diseño de R3): `filesystem`, `email` o `shell`
+    # son puertas al mundo de fuera — tiene sentido decidir a que agente se le
+    # abren. Crear un proyecto o dar de alta una regla NO es eso: es el
+    # Orquestador operando su propia casa, algo que puede hacer por definicion.
+    # Ponerlo como casilla junto a las demas implicaba justo lo contrario: que un
+    # agente al que el Orquestador le encarga eso no pudiera hacerlo por no tener
+    # marcada la casilla.
+    #
+    # Una tool interna: NO aparece en el catalogo publico (`/api/tools/`, la UI
+    # de agentes), NO se puede asignar a mano, y NO esta sujeta a la whitelist
+    # del agente. Lo que si sigue aplicando es (a) la confirmacion del usuario en
+    # sus acciones de escritura y (b) la frontera de autoridad por proyecto (R4).
+    internal: bool = False
+
     @abstractmethod
     async def execute(self, action: str, params: Dict[str, Any]) -> Dict[str, Any]:
         """Ejecuta una accion de la herramienta.
