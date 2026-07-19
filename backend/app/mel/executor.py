@@ -27,6 +27,7 @@ from app.mel.contracts import (
 )
 from app.mel.fallback import FailureAction, breakers, classify_failure
 from app.mel.policies import policy_store
+from app.mel.repetition import RepetitionGuard
 from app.mel.contracts import PolicyName
 
 logger = get_system_logger("mel.executor")
@@ -213,11 +214,26 @@ async def stream(req: ExecutionRequest) -> AsyncIterator[str]:
         return
 
     filt = StreamingReasoningFilter()
+    # [Fix 2026-07-19] Guard anti-atasco. Un modelo puede entrar en bucle y
+    # repetir el mismo token cientos de veces (caso real: MiniMax-M2.7 emitió
+    # 窗外 ×221 a mitad de una respuesta por lo demás correcta). La degeneración
+    # es del modelo, pero retransmitirla entera a la pantalla es cosa nuestra.
+    # Aquí, en el único punto por el que sale texto en streaming, se corta una
+    # vez y protege a toda la aplicación.
+    guard = RepetitionGuard()
     try:
         async for raw in registry.stream(ref, req.prompt, req.system_prompt):
             visible = filt.feed(raw)
             if visible:
                 yield visible
+                if guard.feed(visible):
+                    logger.info(
+                        f"[mel] {ref.provider}:{ref.model} se atascó repitiendo "
+                        f"{guard.pattern!r} — stream cortado"
+                    )
+                    yield guard.note
+                    breakers.record_success(ref.provider)  # respondió; solo se atascó
+                    return
         tail = filt.flush()
         if tail:
             yield tail
