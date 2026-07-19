@@ -48,6 +48,9 @@ class ToolManager:
         faltantes"). Browser/Desktop/Search quedan fuera hasta decidir
         proveedor de busqueda y confirmar las dependencias pesadas
         (Playwright, pyautogui+OCR).
+        R3 (bloque Orquestrador) anade AitheraTool: "Aithera se opera a si
+        misma" -- adaptador fino sobre Workspace/Agentes/Automatizacion/Email,
+        ver app/tools/aithera_tool.py.
         """
         from .filesystem_tool import FilesystemTool
         from .shell_tool import ShellTool
@@ -63,6 +66,7 @@ class ToolManager:
         from .search_tool import SearchTool
         from .browser_tool import BrowserTool
         from .desktop_tool import DesktopTool
+        from .aithera_tool import AitheraTool
 
         self.register(FilesystemTool())
         self.register(ShellTool())
@@ -78,6 +82,7 @@ class ToolManager:
         self.register(SearchTool())
         self.register(BrowserTool())
         self.register(DesktopTool())
+        self.register(AitheraTool())
 
     def register(self, tool: BaseTool) -> None:
         """Registra una herramienta. Permite anadir herramientas custom en el futuro."""
