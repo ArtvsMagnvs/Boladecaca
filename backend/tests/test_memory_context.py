@@ -49,8 +49,15 @@ def _cleanup():
 
 @pytest.mark.anyio
 async def test_build_system_prompt_vacio_sin_mensaje():
+    """[R6, doc 23] Ya NO es una igualdad exacta con DEFAULT_SYSTEM_PROMPT: el
+    mapa de capacidades (`app.tie.capabilities_map`) se añade SIEMPRE, incluso
+    sin mensaje del usuario — es estático y cacheado, no depende de la query.
+    Lo que sigue intacto sin mensaje es que NO hay bloque de memoria/MOS (eso
+    sí depende de la query)."""
     prompt = await chat_service.build_system_prompt("")
-    assert prompt == chat_service.DEFAULT_SYSTEM_PROMPT
+    assert prompt.startswith(chat_service.DEFAULT_SYSTEM_PROMPT)
+    assert "Memoria relevante" not in prompt
+    assert "Contexto del usuario" not in prompt
 
 
 @pytest.mark.anyio

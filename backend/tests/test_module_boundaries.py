@@ -54,6 +54,7 @@ FORBIDDEN_MODULES = (
     ("app.tie.planner", TIE_DIR),
     ("app.tie.executor", TIE_DIR),
     ("app.tie.responder", TIE_DIR),
+    ("app.tie.capabilities_map", TIE_DIR),  # R6: el mapa es interno del TIE
     # V1.0 (MEL v1, E1): fronteras del Model Execution Layer. NADIE de fuera de
     # app.mel importa sus internos — y en particular solo app.mel.registry
     # importa ai_manager (doc 19 §1.2), vigilado por test aparte más abajo.

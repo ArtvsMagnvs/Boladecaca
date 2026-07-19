@@ -132,7 +132,11 @@ class BrowserTool(BaseTool):
              "requires_confirmation": False, "params": {"url": "string opcional"}},
             {"id": "close_tab", "description": "Cierra una pestana.",
              "requires_confirmation": False, "params": tab},
-            {"id": "google_search", "description": "Busca una query en Google en la pestana activa.",
+            {"id": "google_search", "description": (
+                "Busca una query en Google en la pestana activa. DESACONSEJADA: Google "
+                "bloquea la navegacion automatizada y suele fallar. Prefiere la tool "
+                "'search' (search_web/search_news/search_images/search_videos) para "
+                "obtener la URL y luego 'open_url' para abrirla."),
              "requires_confirmation": False, "params": {**tab, "query": "string"}},
             {"id": "click", "description": "Clic en un elemento (selector CSS).",
              "requires_confirmation": True, "params": {**tab, "selector": "string (selector CSS)"}},

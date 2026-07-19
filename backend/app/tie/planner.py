@@ -60,6 +60,9 @@ Reglas:
   del sistema (archivos, emails, agenda, procesos, web...), DEBES darle la
   herramienta correspondiente: sin ella no podrá obtenerlo y el paso fallará.
   Da a cada nodo solo las que ese paso necesita, no todas por si acaso.
+  Para buscar algo en internet y abrirlo (una página, un vídeo, una canción...),
+  el nodo necesita AMBAS: "search" (para encontrar la URL) y "browser" (para
+  abrirla) — nunca solo "browser" para eso.
 - "approval_required": true SOLO para acciones sensibles (enviar algo, borrar,
   ejecutar comandos que cambian el sistema). El usuario confirmará esos pasos.
 - "checkpoint": true si al terminar ESE paso queda algo que el usuario PUEDE

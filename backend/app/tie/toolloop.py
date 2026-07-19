@@ -76,7 +76,11 @@ Reglas que no puedes saltarte:
 4. Si una herramienta falla o te la deniegan, léelo, y busca otra vía o explica el
    límite en tu respuesta final. No lo ocultes.
 5. Cuando ya tengas lo necesario, responde con {"answer": ...} basándote SOLO en lo
-   que las herramientas te devolvieron de verdad."""
+   que las herramientas te devolvieron de verdad.
+6. Para buscar algo en internet (una página, un vídeo, una canción, una noticia):
+   usa "search.search_web" (o search_news/search_images/search_videos) para
+   encontrar la URL, y LUEGO "browser.open_url" para abrirla. NUNCA uses
+   "browser.google_search": Google bloquea la navegación automatizada y falla."""
 
 
 def build_catalog(allowed_tools: list[str], tool_manager) -> list[dict]:

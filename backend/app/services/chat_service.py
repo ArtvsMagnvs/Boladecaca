@@ -79,10 +79,31 @@ async def _mos_context_block(query: str) -> str:
         return ""
 
 
+def _capabilities_block() -> str:
+    """[R6, doc 23] Lo que Aithera sabe hacer, generado desde el catálogo real
+    (`app.tie.capabilities_map`) y cacheado ahí mismo — llamarlo aquí en cada
+    mensaje no recorre el catálogo cada vez. Se incluye SIEMPRE (no solo
+    cuando el usuario pregunta "¿qué sabes hacer?"): así el modelo puede
+    ofrecer una capacidad sin que el usuario tenga que adivinar que existe, y
+    el coste es despreciable (tope duro de caracteres, ver `MAX_CHARS`).
+    Best-effort: si el TIE no está disponible en este proceso (p.ej. algunos
+    tests unitarios), el chat sigue funcionando sin este bloque."""
+    try:
+        import app.tie as tie
+
+        return tie.capabilities_summary()
+    except Exception as e:
+        print(f"[chat_service] capabilities_summary error: {e}")
+        return ""
+
+
 async def build_system_prompt(user_message: str) -> str:
     """[V0.85 M4] Sustituye a chat.py::_build_system_prompt (ahora async: el
     contexto del MOS es una llamada async con presupuesto de latencia)."""
     base = DEFAULT_SYSTEM_PROMPT
+    caps = _capabilities_block()
+    if caps:
+        base = f"{base}\n\n{caps}"
     if not user_message:
         return base
     prefs = _preferences_block(user_message)

@@ -46,6 +46,10 @@ from app.tie.missions import new_mission
 # --- Pipeline (la interfaz de orquestación) ---
 from app.tie.pipeline import handle, handle_stream, submit_mission, resolve_plan, register_plan_handlers
 
+# --- Mapa de capacidades (R6, doc 23): lo que Aithera sabe hacer, generado
+# desde el catálogo real. `chat_service.py` lo consume vía esta API pública. ---
+from app.tie.capabilities_map import summary as capabilities_summary
+
 
 def register_handlers() -> None:
     """Cablea el TIE con el ApprovalGate y el bus de eventos: gates de NODO
@@ -91,4 +95,6 @@ __all__ = [
     "submit_mission",
     "resolve_plan",
     "register_handlers",
+    # mapa de capacidades (R6)
+    "capabilities_summary",
 ]
