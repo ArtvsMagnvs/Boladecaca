@@ -123,7 +123,7 @@ async def handle(envelope) -> str:
         return "He tenido un problema interno procesando eso. Inténtalo otra vez."
 
 
-async def handle_stream(text: str, *, channel: str = "web"):
+async def handle_stream(text: str, *, channel: str = "web", intent: Optional[Intent] = None):
     """[T4b] Entrada STREAMING — la que usa `/api/chat/stream` (el chat de
     Electron). Emite tuplas `(kind, payload)`:
       ("status", "analizando"|"planificando"|…)  → feedback inmediato (≤1 s, doc 11 B.5)
@@ -133,6 +133,11 @@ async def handle_stream(text: str, *, channel: str = "web"):
     El camino corto (~80%) streamea TOKENS de verdad (mismo UX de siempre); el
     complejo emite estados gruesos y la respuesta final del responder — el detalle
     paso a paso, en vivo, se ve en la vista de misión (que sondea el grafo).
+
+    `intent` (2026-07-19): el Orquestador YA clasificó para decidir si el mensaje
+    traía varios encargos. Se le pasa aquí para no pagar una SEGUNDA llamada al
+    clasificador en el ~80% de mensajes que son de un solo encargo — la regla de
+    no-regresión de doc 23 §0 ("el camino corto no paga ni una llamada extra").
     """
     from app.automation import approval_gate
     from app.memory import memory_router
@@ -140,10 +145,13 @@ async def handle_stream(text: str, *, channel: str = "web"):
 
     yield ("status", "analizando")
     try:
-        intent_task = asyncio.create_task(intents.classify(text, channel=channel))
-        ctx_task = asyncio.create_task(_prefetch_context(text))
-        intent = await intent_task
-        prefetched = await ctx_task
+        if intent is None:
+            intent_task = asyncio.create_task(intents.classify(text, channel=channel))
+            ctx_task = asyncio.create_task(_prefetch_context(text))
+            intent = await intent_task
+            prefetched = await ctx_task
+        else:
+            prefetched = await _prefetch_context(text)
     except Exception as e:
         logger.error(f"[tie] handle_stream: clasificación falló: {type(e).__name__}: {e}")
         intent, prefetched = Intent.conversational_fallback(text), ""
@@ -160,6 +168,44 @@ async def handle_stream(text: str, *, channel: str = "web"):
     tracer.record_intent(trace_id, intent)
     tracer.emit_started(mission)
 
+    # [Fix 2026-07-19] TRAZA ZOMBI. Si el cliente corta el stream (el botón de
+    # parar, navegar a otra página, cerrar la app), este generador se cierra y
+    # NADA de lo que viene después se ejecuta — incluido `record_end`. La traza
+    # se quedaba en `running` PARA SIEMPRE, y aparecía en Misiones como "En
+    # curso" eternamente aunque no hubiera nadie trabajando en ella (caso real
+    # observado: una traza sin plan y sin outcome, huérfana).
+    #
+    # El `finally` la cierra pase lo que pase. Se comprueba el estado ANTES de
+    # tocarla: si el flujo terminó bien, `record_end` ya la dejó en done/failed/
+    # waiting y aquí no se pisa nada.
+    try:
+        async for ev in _stream_body(text, intent, mission, trace_id, channel,
+                                     prefetched, memory_router, tool_manager, approval_gate,
+                                     force_model):
+            yield ev
+    finally:
+        _close_if_orphan(trace_id)
+
+
+def _close_if_orphan(trace_id: str) -> None:
+    """Cierra una traza que quedó `running` porque su stream se abortó."""
+    try:
+        meta = tracer.get_meta(trace_id)
+        if meta and meta.get("state") == "running":
+            tracer.record_end(
+                trace_id,
+                outcome="Lo paraste antes de que terminara.",
+                state="cancelled",
+            )
+            logger.info(f"[tie] traza {trace_id[:8]} cerrada como cancelada (stream abortado)")
+    except Exception as e:
+        logger.info(f"[tie] no se pudo cerrar la traza abortada {trace_id[:8]}: {e!r}")
+
+
+async def _stream_body(text, intent, mission, trace_id, channel, prefetched,
+                       memory_router, tool_manager, approval_gate, force_model):
+    """El cuerpo real del streaming. Separado para que `handle_stream` pueda
+    envolverlo en un `finally` que cierre la traza si el cliente se va."""
     # --- camino corto: tokens de verdad ---
     if intent.is_short_path:
         acc = ""

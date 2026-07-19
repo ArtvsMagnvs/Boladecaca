@@ -65,6 +65,100 @@ async def _tie_handle(envelope) -> str:
     return await tie.handle(envelope)
 
 
+async def handle_stream(text: str, *, channel: str = "web"):
+    """Entrada STREAMING del chat — la MISMA decisión que `handle()`, pero
+    emitiendo eventos `(kind, payload)` como `tie.handle_stream`.
+
+    [Fix 2026-07-19] EL HUECO QUE CIERRA: `/api/chat/stream` llamaba directamente
+    a `tie.handle_stream`, así que el chat —la interfaz principal— NUNCA pasaba
+    por el Orquestador. Todo R2 (descomposición en varios encargos y misiones en
+    paralelo) solo se activaba desde el Gateway/Telegram. Resultado real
+    reportado por el usuario: "envía un email ... también abre YouTube y pon una
+    canción" acababa en UNA misión con un plan de 2 pasos secuenciales, en vez de
+    dos misiones independientes a la vez.
+
+    NO-REGRESIÓN (doc 23 §0): con 0 o 1 objetivo se delega en `tie.handle_stream`
+    tal cual, y se le PASA el intent ya calculado para no pagar una segunda
+    llamada al clasificador. El ~80% de los mensajes no nota ninguna diferencia,
+    ni en comportamiento ni en coste.
+    """
+    import app.tie as tie
+
+    text = (text or "").strip()
+    if not text:
+        async for ev in tie.handle_stream(text, channel=channel):
+            yield ev
+        return
+
+    yield ("status", "analizando")
+
+    try:
+        intent = await tie.classify(text, channel=channel)
+    except Exception as e:
+        logger.error(f"[orchestrator] clasificación falló, delego en el TIE: {type(e).__name__}: {e}")
+        async for ev in tie.handle_stream(text, channel=channel):
+            yield ev
+        return
+
+    if len(intent.objectives) < 2:
+        async for ev in tie.handle_stream(text, channel=channel, intent=intent):
+            yield ev
+        return
+
+    # --- Varios encargos: se hacen A LA VEZ ---
+    try:
+        async for ev in _orchestrate_stream(text, intent.objectives, channel):
+            yield ev
+    except Exception as e:
+        logger.error(f"[orchestrator] la orquestación falló, delego en el TIE: {type(e).__name__}: {e}")
+        async for ev in tie.handle_stream(text, channel=channel, intent=intent):
+            yield ev
+
+
+async def _orchestrate_stream(text: str, objectives_hint: list[str], channel: Optional[str]):
+    """Descompone, lanza todo en paralelo y va contando el avance.
+
+    El conductor corre en una tarea de fondo y aquí se sondea el estado
+    persistido: así el usuario ve progreso real ("1 de 2 listos") en vez de
+    quedarse minutos mirando un cursor parpadeando."""
+    import asyncio
+
+    objetivos = await _decomposer.decompose(text, objectives_hint=objectives_hint)
+    run = OrchestrationRun(
+        id=OrchestrationRun.new_id(), user_message=text,
+        objectives=objetivos, channel=channel, source="user",
+    )
+    n = len(objetivos)
+    logger.info(f"[orchestrator] chat → run {run.id}: {n} objetivos en paralelo")
+
+    yield ("status", f"son {n} encargos: los hago a la vez")
+
+    tarea = asyncio.create_task(_conductor.run_objectives(run))
+
+    # Progreso mientras corre. Se leen los ids de misión en cuanto existen para
+    # que el usuario pueda abrirlas desde el chat sin esperar al final.
+    anunciadas: set[str] = set()
+    ultimo_hechos = -1
+    while not tarea.done():
+        await asyncio.sleep(1.0)
+        actual = _store.load(run.id)
+        if actual is None:
+            continue
+        for o in actual.objectives:
+            if o.mission_id and o.mission_id not in anunciadas:
+                anunciadas.add(o.mission_id)
+                yield ("mission", o.mission_id)
+        hechos = sum(1 for o in actual.objectives if o.state in ("done", "failed", "skipped", "cancelled"))
+        if hechos != ultimo_hechos and hechos < n:
+            ultimo_hechos = hechos
+            yield ("status", f"{hechos} de {n} terminados")
+
+    run = await tarea
+    run.outcome = await _consolidator.consolidate(run)
+    _store.save(run)
+    yield ("text", run.outcome or "(sin respuesta)")
+
+
 async def _orchestrate(*, message: str, objectives_hint: list[str],
                        channel: Optional[str], source: str = "user") -> str:
     """Descompone → ejecuta en paralelo → consolida."""
@@ -123,5 +217,5 @@ __all__ = [
     # contratos
     "Objective", "OrchestrationRun",
     # API pública
-    "handle", "submit", "recent_runs", "get_run", "cancel_run",
+    "handle", "handle_stream", "submit", "recent_runs", "get_run", "cancel_run",
 ]

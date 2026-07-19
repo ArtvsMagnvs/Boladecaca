@@ -70,9 +70,26 @@ async def chat_stream(request: ChatRequest):
                 # siempre — el TIE ya aplica el filtro B21 dentro del runtime, así
                 # que aquí NO se vuelve a filtrar. El complejo emite estados
                 # ("analizando", "planificando") y luego la respuesta.
-                import app.tie as tie
+                #
+                # [Fix 2026-07-19] Entra por el ORQUESTADOR, no directo al TIE.
+                # Antes el chat llamaba a `tie.handle_stream` y por tanto NUNCA
+                # pasaba por la capa que decide si un mensaje trae VARIOS encargos
+                # independientes — R2 entero solo se activaba desde Telegram. Un
+                # "envía este email ... y también abre YouTube" acababa en una
+                # sola misión con pasos secuenciales en vez de dos misiones a la
+                # vez. `orchestrator.handle_stream` delega en el TIE tal cual
+                # cuando hay un solo encargo (misma no-regresión de doc 23 §0).
+                # Con ORCH_ENABLED=false se vuelve al TIE directo (kill-switch).
+                if settings.ORCH_ENABLED:
+                    import app.orchestrator as orchestrator
 
-                async for kind, payload in tie.handle_stream(request.message, channel="web"):
+                    origen = orchestrator.handle_stream(request.message, channel="web")
+                else:
+                    import app.tie as tie
+
+                    origen = tie.handle_stream(request.message, channel="web")
+
+                async for kind, payload in origen:
                     if not payload:
                         continue
                     safe = str(payload).replace("\r", "").replace("\n", "\\n")

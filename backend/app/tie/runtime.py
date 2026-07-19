@@ -45,6 +45,11 @@ class AgentTask:
     # `app/tie/authority.py`). `{}` = sin restricción. La copia el executor desde
     # `graph.authority`, que es lo que sobrevive al checkpoint.
     authority: dict = field(default_factory=dict)
+    # [Fix 2026-07-19] El usuario YA aprobó las acciones sensibles de este paso
+    # (aprobó el PLAN entero, o el gate de este nodo). El bucle de tool-use no
+    # debe volver a preguntar una por una: el usuario vio la lista completa y
+    # dijo que sí. Lo pone el executor cuando `node.gate_id` no es None.
+    actions_pre_approved: bool = False
 
     @staticmethod
     def new_id() -> str:
@@ -183,6 +188,10 @@ class NullRuntime(AgentRuntime):
                 # agente, proyecto, carpeta). `{}` → sin restricción, que es el
                 # caso del chat del usuario: cero regresión.
                 authority=Authority.from_dict(task.authority),
+                # [Fix 2026-07-19] Si el usuario ya aprobó este paso (el plan
+                # entero o su gate de nodo), el bucle NO vuelve a preguntar por
+                # cada acción sensible de dentro.
+                pre_approved=task.actions_pre_approved,
             )
             dur = int((time.monotonic() - t0) * 1000)
             # `ok=False` con motivo → nodo FALLIDO. Es deliberado: preferimos que

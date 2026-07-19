@@ -188,6 +188,11 @@ async def _execute_node(node: TaskNode, graph: TaskGraph, mission: Mission, trac
         # se persiste en cada transición, así que esto vale igual en una misión
         # recién planificada y en una reanudada tras reiniciar el backend.
         authority=graph.authority or {},
+        # [Fix 2026-07-19] `gate_id` puesto = este nodo YA fue aprobado (por el
+        # gate del plan en T4a, o por su propio gate de nodo en T3). Si el nodo
+        # está corriendo con un gate resuelto, el usuario dijo que sí: el bucle
+        # no tiene que volver a preguntar por cada acción sensible de dentro.
+        actions_pre_approved=node.gate_id is not None,
     )
     runtime = get_runtime(node.runtime)
 
@@ -561,7 +566,21 @@ async def _resume_trace(trace_id: str) -> bool:
     """Reanuda UNA traza. Devuelve True si se reactivó el loop."""
     graph = tracer.load_graph(trace_id)
     meta = tracer.get_meta(trace_id)
-    if graph is None or meta is None:
+    if meta is None:
+        return False
+
+    # [Fix 2026-07-19] Traza SIN plan y en `running`: es una huérfana — su stream
+    # se abortó antes de que hubiera nada que planificar. No se puede reanudar
+    # (no hay grafo), así que dejarla como estaba la condenaba a aparecer "En
+    # curso" para siempre en Misiones, arranque tras arranque. Se cierra.
+    if graph is None:
+        if meta.get("state") == "running":
+            tracer.record_end(
+                trace_id,
+                outcome="Se interrumpió antes de empezar; no llegué a hacer nada.",
+                state="cancelled",
+            )
+            logger.info(f"[executor] traza huérfana {trace_id[:8]} cerrada (sin plan)")
         return False
 
     # ¿Hay un nodo esperando un gate que YA se resolvió mientras el backend

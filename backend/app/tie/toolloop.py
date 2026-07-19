@@ -145,7 +145,8 @@ def _format_catalog(catalog: list[dict]) -> str:
 
 
 async def _ask_permission(entry: dict, params: dict, approval_gate, *,
-                          instruction: str, wait_s: int) -> tuple[bool, str]:
+                          instruction: str, wait_s: int,
+                          pre_approved: bool = False) -> tuple[bool, str]:
     """Pide permiso al USUARIO para una acción sensible y espera su respuesta.
 
     Por qué se pregunta en vez de denegar (regla del usuario, 2026-07-19): el
@@ -160,6 +161,36 @@ async def _ask_permission(entry: dict, params: dict, approval_gate, *,
     Devuelve (concedido, motivo). La espera está acotada: si no contesta a
     tiempo, se sigue sin esa acción y la respuesta final lo dirá — la aprobación
     NO se cancela, sigue pendiente en la UI por si la quiere resolver luego."""
+    # [Fix 2026-07-19] ¿El usuario aprobó YA este paso entero? Aprobar el PLAN
+    # (o el gate de este nodo) autoriza sus acciones sensibles: vio la lista
+    # completa y dijo que sí. Volver a preguntar acción por acción después de
+    # eso es exactamente lo que hacía que aprobar el plan "no sirviera de nada".
+    if pre_approved:
+        return True, "ya lo aprobaste al dar el visto bueno a este paso"
+
+    # ¿YA lo autorizó el usuario en Ajustes → Permisos?
+    #
+    # EL BUG: se abría un gate con `kind="tool.email.send_email"`, un id que NO
+    # existe en el catálogo de permisos (que usa `email.send`). Como
+    # `is_pre_authorized` es fail-closed, el perfil "Autónomo" con los 9
+    # permisos activados no servía de nada: preguntaba igualmente, hasta para
+    # enviar un email que el usuario acababa de pedir por el chat.
+    #
+    # Ahora se traduce la acción a su permiso real ANTES de molestar a nadie.
+    # Sigue habiendo rastro: el gate se abre igual y se auto-resuelve dentro de
+    # `request_approval` (A3b) — "pre-autorizado NUNCA significa silencioso".
+    try:
+        from app.automation import permission_service
+
+        if permission_service.is_tool_action_pre_authorized(entry["tool_id"], entry["action"]):
+            logger.info(
+                f"[toolloop] {entry['tool_id']}.{entry['action']} ya está autorizado "
+                f"en Ajustes → Permisos; no se pregunta"
+            )
+            return True, "autorizado de antemano por el usuario"
+    except Exception as e:      # nunca bloquear por un fallo consultando permisos
+        logger.info(f"[toolloop] no se pudo consultar el permiso (sigo preguntando): {e!r}")
+
     if approval_gate is None:
         return False, "no hay canal de aprobación disponible en este contexto"
 
@@ -211,6 +242,7 @@ async def run(
     project_id: Optional[int] = None,
     timeout_s: int = 60,
     authority: Optional["Authority"] = None,
+    pre_approved: bool = False,
 ) -> ToolLoopResult:
     """Ejecuta el ciclo elegir→ejecutar→observar.
 
@@ -313,6 +345,7 @@ async def run(
             granted, reason = await _ask_permission(
                 entry, params, approval_gate,
                 instruction=instruction, wait_s=approval_wait_s,
+                pre_approved=pre_approved,
             )
             tool_calls.append({"tool_id": tool_id, "action": action,
                                "needed_approval": True, "granted": granted, "reason": reason})

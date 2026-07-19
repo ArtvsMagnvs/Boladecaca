@@ -146,6 +146,56 @@ def _config_set(db, key: str, value: str) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Acciones de tool → permiso del catálogo (Fix 2026-07-19)
+# ---------------------------------------------------------------------------
+# EL BUG QUE CIERRA: el bucle de tool-use (R1) pide permiso con
+# `kind="tool.<tool_id>.<action>"` (p.ej. `tool.email.send_email`), pero el
+# catálogo usa ids de CAPACIDAD (`email.send`). Nunca casaban, y como
+# `is_pre_authorized` es fail-closed, el resultado era que el modo "Autónomo"
+# —con los 9 permisos activados— NO tenía ningún efecto sobre las acciones que
+# pedía el bucle: preguntaba SIEMPRE, hasta para enviar un email que el propio
+# usuario acababa de pedir por el chat.
+#
+# Este mapa es la traducción que faltaba. Se declara por TOOL (todas sus
+# acciones sensibles caen bajo el mismo permiso) y, cuando hace falta afinar,
+# por (tool, acción) concreta.
+_TOOL_PERMISSION: dict[str, str] = {
+    "email": "email.send",
+    "browser": "browser.use",
+    "desktop": "computer.use",
+    "shell": "shell.run",
+    "powershell": "shell.run",
+    "filesystem": "filesystem.write",
+    "git": "git.write",
+    "aithera": "workspace.write",
+    "telegram": "telegram.send",
+}
+
+# Excepciones por acción concreta, cuando una tool cubre dos capacidades
+# distintas. `aithera.run_agent_task` lanza un agente: eso es `agent.execute`,
+# no `workspace.write` — permitir crear tareas no debería implicar poder
+# ejecutar agentes.
+_ACTION_PERMISSION: dict[str, str] = {
+    "aithera.run_agent_task": "agent.execute",
+}
+
+
+def permission_for_tool_action(tool_id: str, action: str) -> Optional[str]:
+    """El permiso del catálogo que gobierna una acción de tool, o None si esa
+    acción no está cubierta por ninguno (→ se pregunta siempre, fail-closed)."""
+    if not tool_id:
+        return None
+    return _ACTION_PERMISSION.get(f"{tool_id}.{action}") or _TOOL_PERMISSION.get(tool_id)
+
+
+def is_tool_action_pre_authorized(tool_id: str, action: str) -> bool:
+    """¿El usuario ya autorizó de antemano esta acción de tool? Traduce al id
+    del catálogo y consulta el estado real. Fail-closed: sin traducción, no."""
+    permiso = permission_for_tool_action(tool_id, action)
+    return bool(permiso) and is_pre_authorized(permiso)
+
+
+# ---------------------------------------------------------------------------
 # API pública del módulo (namespace-módulo, patrón workspace_service/decision_service)
 # ---------------------------------------------------------------------------
 def is_pre_authorized(permission_id: str) -> bool:

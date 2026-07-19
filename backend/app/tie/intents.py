@@ -55,14 +55,29 @@ Campos del JSON (todos obligatorios):
     scope "project" = de forma permanente para todo el proyecto ("a partir de ahora", "siempre", "para todo el proyecto").
     scope "unspecified" = nombra un modelo pero no deja claro si es solo para esto o para siempre.
 - "objectives": lista de los encargos DISTINTOS e INDEPENDIENTES que contiene el mensaje,
-  cada uno como una frase imperativa. Si el mensaje pide UNA sola cosa (aunque tenga
-  varios pasos), devuelve lista vacía []. Solo lista 2 o más cuando de verdad son
-  encargos separados que podrían hacerse por su cuenta.
-    Ejemplo de UNO: "busca los vuelos más baratos a Roma y reserva el mejor" -> []
-      (es un solo encargo con dos pasos encadenados).
-    Ejemplo de VARIOS: "investiga los avances en IA, responde el email de Ana, y dime
-      cómo va el proyecto X" -> ["Investigar los últimos avances en IA",
-      "Responder el email de Ana", "Informar del estado del proyecto X"].
+  cada uno como una frase imperativa.
+
+  LA PRUEBA para decidir, y es la ÚNICA que importa: ¿el segundo encargo NECESITA el
+  resultado del primero? Si NO lo necesita, son encargos SEPARADOS y van en la lista
+  (se harán a la vez, en paralelo). Si SÍ lo necesita, es UN solo encargo con varios
+  pasos encadenados y devuelves [].
+  No cuentes verbos ni pasos: lo que decide es la DEPENDENCIA entre ellos.
+
+    UNO (encadenado, devuelve []): "busca los vuelos más baratos a Roma y reserva el
+      mejor" -> [] (no puedes reservar sin haber buscado antes).
+    UNO (encadenado, devuelve []): "lee el informe y hazme un resumen" -> [] (el
+      resumen necesita la lectura).
+
+    VARIOS (independientes, van en la lista): "envía un email a X con asunto Y, y
+      también abre YouTube y pon la canción Z"
+      -> ["Enviar un email a X con asunto Y", "Abrir YouTube y reproducir la canción Z"]
+      (poner música no necesita para nada que el email se haya enviado).
+    VARIOS: "investiga los avances en IA, responde el email de Ana, y dime cómo va el
+      proyecto X" -> ["Investigar los últimos avances en IA", "Responder el email de
+      Ana", "Informar del estado del proyecto X"].
+
+  Palabras como "también", "y además", "por otro lado", "aparte" casi siempre separan
+  encargos independientes: fíjate en ellas.
 
 Reglas: si dudas, usa type "conversational" y confidence baja. Para charla simple,
 requires_* en false, model_capability "chat". Para tareas complejas de varios pasos,
