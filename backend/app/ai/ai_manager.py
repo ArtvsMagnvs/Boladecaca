@@ -39,6 +39,7 @@ from app.db.models import AIProviderConfig
 # V0.8 (hardening): las API keys se guardan CIFRADAS en reposo (DPAPI). Se
 # cifran al persistir y se descifran solo al instanciar el proveedor.
 from app.core import secrets
+from app.core.latency import StaleWhileRevalidate
 
 
 def _enc(v: Optional[str]) -> Optional[str]:
@@ -147,7 +148,15 @@ class AIManager:
         self._fallback_until: float = 0.0
         self._fallback_active: bool = False
         self._primary_provider_name: Optional[str] = None
+        # `_health_cache` (crudo) lo sigue usando `_maybe_recover_primary`, que
+        # decide si SALIR del modo fallback — ahi si interesa un dato reciente y
+        # no lo consulta la UI en bucle.
         self._health_cache_ttl = 30.0
+        # [Fix 2026-07-19] Lo que consulta la UI (`health_check`) pasa por esta
+        # cache que responde al instante y se refresca por detras. El TTL sube a
+        # 120 s para DESACOPLARLO del sondeo de 30 s del Sidebar: con los dos
+        # numeros iguales, la cache no acertaba nunca (ver `health_check`).
+        self._health = StaleWhileRevalidate(ttl_s=120.0, first_ms=2000)
 
         self._initialize_providers()
 
@@ -696,17 +705,25 @@ class AIManager:
                 "primary_provider": None,
             }
 
-        cache_key = self.current_provider_name
-        cached = self._health_cache.get(cache_key)
-        now = time.monotonic()
-        if cached and (now - cached[0]) < self._health_cache_ttl:
-            healthy = cached[1]
-        else:
-            try:
-                healthy = await self.current_provider.health_check()
-            except Exception:
-                healthy = False
-            self._health_cache[cache_key] = (now, healthy)
+        # [Fix 2026-07-19] NUNCA se espera a la red para pintar el estado.
+        #
+        # EL BUG: el TTL de esta cache es 30 s y el Sidebar (que vive en TODAS
+        # las paginas) preguntaba cada 30 s exactos. Como el tiempo real entre
+        # sondeos siempre es un pelin MAYOR que 30 s (latencia + jitter del
+        # temporizador), la condicion "transcurrido < TTL" fallaba casi siempre:
+        # una cache con ~0% de aciertos POR CONSTRUCCION. Y cada fallo pagaba un
+        # health_check REAL — que en estos proveedores es una peticion de chat de
+        # verdad, hasta 10-15 s sin internet. Esas peticiones colgadas agotaban
+        # las 6 conexiones del navegador y dejaban la UI esperando.
+        #
+        # Ahora: si hay valor cacheado se devuelve YA (aunque este rancio) y el
+        # refresco va por detras. Solo la PRIMERA vez, sin nada que servir, se
+        # espera — y con presupuesto corto.
+        healthy = await self._health.get(
+            self.current_provider_name,
+            lambda: self._probe_current_provider(),
+            default=False,
+        )
 
         return {
             "provider": self.current_provider_name,
@@ -715,6 +732,15 @@ class AIManager:
             "fallback_active": self._fallback_active,
             "primary_provider": self._primary_provider_name,
         }
+
+    async def _probe_current_provider(self) -> bool:
+        """El health check REAL del proveedor activo. Solo lo invoca el refresco
+        en segundo plano de `self._health` (o la primerisima consulta), nunca la
+        ruta que la UI espera."""
+        try:
+            return await self.current_provider.health_check()
+        except Exception:
+            return False
 
     def get_available_providers(self) -> list:
         """Get list of available (instantiated) provider names."""

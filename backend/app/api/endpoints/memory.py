@@ -16,6 +16,7 @@
 # NOTA: si ChromaDB no esta disponible, todos los endpoints devuelven 503
 # (excepto /stats que devuelve el error en el cuerpo).
 
+import asyncio
 from typing import Optional, List, Literal
 
 from fastapi import APIRouter, HTTPException, Query
@@ -82,7 +83,12 @@ async def get_briefing(date: Optional[str] = Query(None, description="YYYY-MM-DD
     else:
         target = _datetime.utcnow().date()
 
-    data = gather_day_data(target)
+    # [Fix 2026-07-19] `gather_day_data` es SINCRONA (abre sesion de BD y lanza
+    # varias consultas sobre triage/actividad/proyectos/tareas). Llamarla
+    # directamente desde un `async def` CONGELA el event loop entero mientras
+    # dura — y el Hub la pide al montar y cada 30s. Su coste crece con los datos
+    # (`_urgent_pending` no esta acotado por dia), asi que iba a empeorar sola.
+    data = await asyncio.to_thread(gather_day_data, target)
     cached = await get_cached_summary(target)
     if cached:
         summary, summary_source = cached, "cached"

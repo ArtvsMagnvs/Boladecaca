@@ -78,7 +78,18 @@ export default function Missions() {
       setMissions(list);
       const sel = selectedRef.current;
       if (sel) {
-        setDetail(await api.getMission(sel));
+        // [Fix 2026-07-19] Una seleccion que ya no existe (recien borrada) no
+        // puede tumbar la carga entera. Antes, su 404 caia al `catch` de abajo
+        // y se mostraba "No se pudieron cargar las misiones" con la lista en
+        // blanco, aunque el resto estuviera perfectamente. Ahora se suelta la
+        // seleccion muerta y se sigue.
+        if (list.some((m) => m.trace_id === sel)) {
+          setDetail(await api.getMission(sel));
+        } else {
+          selectedRef.current = null;
+          setSelected(null);
+          setDetail(null);
+        }
       } else if (list.length && !sel) {
         setSelected(list[0].trace_id);
       }
@@ -191,7 +202,14 @@ export default function Missions() {
                       if (!confirm("¿Borrar esta misión? No se puede deshacer.")) return;
                       act(async () => {
                         await api.deleteMission(m.trace_id);
-                        if (selected === m.trace_id) setSelected(null);
+                        // El ref se asigna en RENDER, y `load()` corre justo
+                        // despues de esto sin que haya habido re-render: hay
+                        // que limpiarlo a mano o volveria a pedir la mision
+                        // recien borrada.
+                        if (selectedRef.current === m.trace_id) {
+                          selectedRef.current = null;
+                          setSelected(null);
+                        }
                       });
                     }}
                     title="Borrar misión"

@@ -138,13 +138,35 @@ def get_credentials() -> Optional[Any]:
         if creds and creds.valid:
             return creds
         if creds and creds.expired and creds.refresh_token:
-            creds.refresh(Request())
+            creds.refresh(_timeout_request())
             TOKEN_PATH.write_text(creds.to_json())
             return creds
         return None
     except Exception as e:
         print(f"[google_auth] error refrescando credenciales: {e}")
         return None
+
+
+# [Fix 2026-07-19] Refresco de token con TIMEOUT EXPLICITO.
+#
+# `Request()` de google-auth usa 120 s por defecto. Sin internet, refrescar el
+# token —que dispara `GET /api/email/status`, y el Hub lo pide al montar y cada
+# 30 s— ocupaba un hilo del pool hasta DOS MINUTOS. Como el token de Google
+# caduca cada ~1 h, el sintoma aparecia de vez en cuando y era dificil de atar a
+# su causa. 15 s sobra para un refresco que normalmente tarda menos de uno.
+GOOGLE_REFRESH_TIMEOUT_S = 15
+
+
+def _timeout_request():
+    """Un `Request` de google-auth que impone nuestro timeout en cada llamada."""
+    from google.auth.transport.requests import Request
+
+    class _TimeoutRequest(Request):
+        def __call__(self, url, method="GET", body=None, headers=None,
+                     timeout=GOOGLE_REFRESH_TIMEOUT_S, **kwargs):
+            return super().__call__(url, method, body, headers, timeout, **kwargs)
+
+    return _TimeoutRequest()
 
 
 def get_credentials_source() -> str:
@@ -199,7 +221,7 @@ def _fetch_email_via_gmail() -> Optional[str]:
 
         creds = Credentials.from_authorized_user_file(str(TOKEN_PATH), GOOGLE_SCOPES)
         if creds and creds.expired and creds.refresh_token:
-            creds.refresh(Request())
+            creds.refresh(_timeout_request())
         service = build("gmail", "v1", credentials=creds)
         profile = service.users().getProfile(userId="me").execute()
         return profile.get("emailAddress")

@@ -65,6 +65,10 @@ interface Props {
   onCommit: (patch: Partial<CardLayout>) => void;
   onMinimize: () => void;
   onToggleExpanded: () => void;
+  // [Fix 2026-07-19] El agente ya NO existe en el backend (lo borro el
+  // usuario): la ventana se cierra Y se olvida su disposicion persistida.
+  // Distinto de `onMinimize`, que la guarda para reabrirla luego.
+  onGone: () => void;
   // El chip pequeño en AgentsSection es OTRA instancia con sus propios datos
   // — se refresca en cada cambio guardado aqui (no solo al cerrar, a
   // diferencia del W2d original: ahora la ventana es persistente, no modal).
@@ -73,6 +77,7 @@ interface Props {
 
 export function AgentWindowCard({
   agentId, layout, bounds, onInteractStart, onCommit, onMinimize, onToggleExpanded, onAgentChanged,
+  onGone,
 }: Props) {
   const [liveH, setLiveH] = useState<number | null>(null);
   const handleCommit = useCallback((patch: Partial<CardLayout>) => { setLiveH(null); onCommit(patch); }, [onCommit]);
@@ -132,10 +137,17 @@ export function AgentWindowCard({
     return list;
   }, [agentId]);
 
+  // [Fix 2026-07-19] Si el agente YA NO EXISTE (lo borro el usuario), esta
+  // tarjeta se cierra sola en vez de quedarse pidiendo un id muerto para
+  // siempre. `onClose` limpia ademas su disposicion persistida (`forget`), que
+  // es lo que la resucitaba en cada recarga. Sin esto, borrar un agente dejaba
+  // sondeos 404 eternos comiendo conexiones del navegador.
   useEffect(() => {
-    loadAgent().catch(() => {});
+    loadAgent().catch((e) => {
+      if (String((e as Error).message).includes("404")) onGone();
+    });
     loadExecutions().catch(() => {});
-  }, [loadAgent, loadExecutions]);
+  }, [loadAgent, loadExecutions, onGone]);
 
   useEffect(() => {
     const hasPending = executions.some((e) => e.status === "pending" || e.status === "running");

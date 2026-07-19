@@ -208,8 +208,10 @@ export default function Agents() {
       nucleoExecIdRef.current = ex.id;
       setCoreState("processing");
       setStatus("idle");
-      // Arranca polling para esta ejecucion
-      pollExecution(ex.id);
+      // Arranca polling para esta ejecucion. Se GUARDA su cancelador: antes se
+      // descartaba y la cadena de sondeos quedaba viva tras salir de la pagina.
+      pollCancelRef.current?.();          // corta el sondeo anterior, si lo hubiera
+      pollCancelRef.current = pollExecution(ex.id);
     } catch (e) {
       setErrorMsg(`Error lanzando tarea: ${(e as Error).message}`);
       setStatus("error");
@@ -251,6 +253,26 @@ export default function Agents() {
       }
     }
   }, [executions, activeExecId, setCoreState, pulseError]);
+
+  // [Fix 2026-07-19] El sondeo se CANCELA al desmontar. Antes, quien llamaba
+  // descartaba la función de limpieza que esto devuelve (línea del `executeTask`),
+  // así que la cadena `setTimeout(tick, 1500)` seguía viva para siempre: al
+  // navegar fuera, `AppLayout` desmonta la página (key={pathname}) pero el
+  // temporizador seguía pidiendo la ejecución cada 1,5s, y cada visita nueva
+  // apilaba OTRA cadena. Esas peticiones eternas son las que agotaban las 6
+  // conexiones del navegador y dejaban la UI esperando.
+  //
+  // Por qué salió ahora y no antes: hasta R4 una ejecución era la demo de V0.5 y
+  // terminaba al instante, así que el sondeo se paraba solo y la fuga no se
+  // notaba. Desde R4 es una misión real del TIE que dura minutos.
+  const pollCancelRef = useRef<(() => void) | null>(null);
+
+  useEffect(() => {
+    return () => {
+      pollCancelRef.current?.();
+      pollCancelRef.current = null;
+    };
+  }, []);
 
   const pollExecution = useCallback((execId: number) => {
     let cancelled = false;

@@ -450,10 +450,30 @@ export interface ElevenLabsCfgStatus {
   key_masked: string;
 }
 
+// [Fix global 2026-07-19] PLAZO MÁXIMO PARA CUALQUIER PETICIÓN.
+//
+// LA RAÍZ del "se congela ~30s": Chromium/Electron sólo permite 6 conexiones
+// simultáneas al mismo origen. `request()` no tenía NINGÚN timeout, así que una
+// petición que no volvía (backend esperando a un proveedor de IA sin internet,
+// o un sondeo contra un id ya borrado) retenía su socket indefinidamente. Con 6
+// así, CUALQUIER fetch nuevo se quedaba en cola hasta que el sistema operativo
+// expiraba un socket — de ahí lo consistente de los ~30s. La UI no estaba
+// bloqueada: el input estaba `disabled` esperando una respuesta que no llegaba.
+//
+// En 2026-07-17 se arregló este mismo síntoma SOLO para `streamChat` (liberando
+// su reader). El fallo de fondo —peticiones sin plazo— seguía abierto para las
+// otras ~80 llamadas del cliente. Esto lo cierra para todas de una vez: pase lo
+// que pase, un socket se libera como muy tarde a los REQUEST_TIMEOUT_MS.
+const REQUEST_TIMEOUT_MS = 20_000;
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  // Se respeta un `signal` explícito de quien llama (p.ej. el health check, que
+  // usa 2s); si no lo hay, se impone el plazo por defecto.
+  const signal = init?.signal ?? AbortSignal.timeout(REQUEST_TIMEOUT_MS);
   const response = await fetch(`${API_URL}${path}`, {
     headers: { "Content-Type": "application/json" },
     ...init,
+    signal,
   });
   if (!response.ok) {
     // FastAPI devuelve {"detail": "..."} en sus errores — sin esto, un popup

@@ -38,7 +38,7 @@ export function WorkspaceCanvas({ projects, onCreateProject, onEditProject, onPr
   const {
     getLayout: getAgentLayout, setLayout: setAgentLayout, bringToFront: bringAgentToFront,
     openFromShelf: openAgentWindow, sendToShelf: closeAgentWindow, toggleExpanded: toggleAgentExpanded,
-    openIds: openAgentIds,
+    openIds: openAgentIds, forget: forgetAgentLayout,
   } = useWorkspaceLayouts(AGENT_LAYOUTS_KEY);
   // El chip pequeño en AgentsSection es OTRA instancia con sus propios datos
   // ya cargados — no se entera sola de que is_active/icon/edicion cambiaron
@@ -151,6 +151,7 @@ export function WorkspaceCanvas({ projects, onCreateProject, onEditProject, onPr
               onMinimize={() => closeAgent(agentId)}
               onToggleExpanded={() => toggleAgentExpanded(agentId)}
               onAgentChanged={bumpAgentsRefresh}
+              onGone={() => { forgetAgentLayout(agentId); bumpAgentsRefresh(); }}
             />
           );
         })}

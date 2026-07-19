@@ -124,6 +124,24 @@ export function useWorkspaceLayouts(storageKey: string = STORAGE_KEY) {
     [setLayout],
   );
 
+  // [Fix 2026-07-19] Olvida la disposicion de una entidad que ya NO existe.
+  //
+  // EL BUG: `openIds` sale solo de lo persistido en localStorage, sin cotejarlo
+  // con lo que existe de verdad. Al borrar un agente o un proyecto, su entrada
+  // se quedaba con `shelved:false` para siempre, asi que en cada carga se
+  // montaba una tarjeta para un id muerto que pedia `getAgent`/`getExecutions`
+  // en bucle contra un 404 — peticiones eternas que agotaban las 6 conexiones
+  // del navegador. Era el enlace directo entre "borre algo" y "la UI se queda
+  // esperando 30s".
+  const forget = useCallback((entityId: number) => {
+    setLayouts((prev) => {
+      if (!(entityId in prev)) return prev;
+      const next = { ...prev };
+      delete next[entityId];
+      return next;
+    });
+  }, []);
+
   const toggleExpanded = useCallback(
     (projectId: number) => {
       const current = layouts[projectId] ?? defaultLayout(projectId);
@@ -144,7 +162,7 @@ export function useWorkspaceLayouts(storageKey: string = STORAGE_KEY) {
     .filter(([, l]) => !l.shelved)
     .map(([id]) => Number(id));
 
-  return { getLayout, setLayout, bringToFront, openFromShelf, sendToShelf, toggleExpanded, openIds };
+  return { getLayout, setLayout, bringToFront, openFromShelf, sendToShelf, toggleExpanded, openIds, forget };
 }
 
 type ResizeDir = "n" | "s" | "e" | "w" | "ne" | "nw" | "se" | "sw";
