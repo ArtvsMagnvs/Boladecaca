@@ -466,7 +466,7 @@ _(parado por ti)_` : "_(parado por ti)_",
               Antes solo salían en Misiones/Automatizaciones: para cuando los
               encontrabas y aprobabas, el bucle ya se había rendido (espera 120s
               y sigue sin esa acción), así que aprobar "no hacía nada". */}
-          <PendingApprovals active={sending} />
+          <PendingApprovals />
           <div ref={messagesEndRef} />
         </div>
 
@@ -587,18 +587,21 @@ _(parado por ti)_` : "_(parado por ti)_",
  * eso aprobar más tarde parecía "no hacer nada": ya no había nadie esperando.
  *
  * Aquí se ve donde estás mirando, con el mismo endpoint genérico de A1 (no hay
- * backend nuevo). Solo sondea mientras Aithera está trabajando: sin nada en
- * curso no hay a quién preguntar.
+ * backend nuevo).
+ *
+ * [Fix 2026-07-19, 2º intento] Sondea SIEMPRE que el chat esté montado, NO solo
+ * mientras `sending`. El primer intento fallaba justo en el caso más común: si
+ * el plan necesita aprobación, el TIE responde «necesito tu visto bueno» y
+ * CIERRA el stream — `sending` pasa a false y el componente dejaba de mirar
+ * exactamente cuando aparecía la aprobación. Si Aithera te está esperando,
+ * tienes que verlo, haya o no una respuesta en curso.
  */
-function PendingApprovals({ active }: { active: boolean }) {
+function PendingApprovals() {
   const [pending, setPending] = useState<Approval[]>([]);
   const [busy, setBusy] = useState<string | null>(null);
+  const appendMessage = useChatStore((s) => s.appendMessage);
 
   useEffect(() => {
-    if (!active) {
-      setPending([]);
-      return;
-    }
     let cancelled = false;
     const load = async () => {
       try {
@@ -609,18 +612,27 @@ function PendingApprovals({ active }: { active: boolean }) {
       }
     };
     void load();
-    const id = window.setInterval(load, 1500);
+    const id = window.setInterval(load, 2000);
     return () => {
       cancelled = true;
       window.clearInterval(id);
     };
-  }, [active]);
+  }, []);
 
   const resolve = async (gateId: string, approved: boolean) => {
     setBusy(gateId);
     try {
       await api.resolveApproval(gateId, approved);
       setPending((prev) => prev.filter((a) => a.gate_id !== gateId));
+      // El stream de esta respuesta ya se cerró, así que la continuación NO va
+      // a llegar sola al chat: se dice explícitamente en vez de dejar al
+      // usuario mirando una pantalla que no cambia.
+      appendMessage(useChatStore.getState().activeSessionId, {
+        role: "assistant",
+        content: approved
+          ? "Permiso concedido — sigo con ello. Puedes ver el avance paso a paso en Misiones."
+          : "Entendido, no lo hago.",
+      });
     } catch {
       /* si falla, el sondeo lo volverá a mostrar */
     } finally {

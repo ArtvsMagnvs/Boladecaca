@@ -479,6 +479,156 @@ decisiones de arquitectura abiertas.
 
 ---
 
+### R6.5 — Memoria conversacional: continuidad, recuerdo y conocerte
+
+**Objetivo**: que Aithera **recuerde la conversación** (lo que acabas de decir),
+**recuerde otras conversaciones** (aunque no tengan que ver), y **te vaya
+conociendo** con el uso.
+
+**Por qué existe este sprint** (hallazgo del 2026-07-19, verificado leyendo el
+código, no supuesto): el chat NO tiene continuidad, y no es un bug ni una
+configuración pendiente — **nunca se construyó el canal**. Toda la pila es de un
+solo turno, desde la base:
+
+| Capa | Estado real | Consecuencia |
+|---|---|---|
+| `BaseAIProvider.generate(prompt, system_prompt)` | un **string**, no una lista de mensajes (así desde V0.2) | el turno anterior no cabe |
+| `ExecutionRequest` del MEL (congelado en E1) | tiene `prompt: str`; **no existe** `messages` | no hay por dónde pasarlo |
+| `chat_service.answer()` / `NullRuntime.stream_task()` | envían `prompt=<mensaje actual>` | el modelo solo ve el último mensaje |
+| Frontend (`api.streamChat`) | manda `{ message }` | ni siquiera identifica la sesión |
+
+Lo que SÍ hay, y por eso el síntoma despista: cada turno **sí** se guarda en
+ChromaDB, y `build_system_prompt()` hace una búsqueda **semántica** sobre esa
+memoria. Por eso Aithera recuerda cosas de hace días («mis reuniones son por la
+tarde») pero no lo que acabas de decir. El motivo es fino y hay que entenderlo
+antes de tocar nada: **la consulta semántica es el mensaje actual a secas**. Si
+dices «¿y cuánto cuesta?», ese texto no se parece a nada, así que no recupera el
+mensaje anterior donde hablabais de un producto concreto. Hay recuerdo, pero no
+continuidad.
+
+**Tres cosas distintas** que este sprint NO debe confundir:
+1. **Continuidad** — los últimos turnos, literales, en el prompt.
+2. **Recuerdo** — traer lo relevante de otras conversaciones (esto ya existe; lo
+   que falla es *cómo se consulta*).
+3. **Conocerte** — destilar hechos estables sobre ti para no redescubrirlos cada
+   vez.
+
+Se dividen en tres sesiones porque la primera toca un contrato congelado y no
+debe mezclarse con nada más.
+
+---
+
+#### R6.5a — El canal de mensajes (contrato)
+
+**Archivos**: `app/mel/contracts.py` (MOD, append-only), `app/ai/providers/base.py`
+(MOD), los 12 proveedores (`openai_compatible.py` cubre 6 de golpe;
+`anthropic_provider.py`, `gemini_provider.py`, `ollama_provider.py`,
+`claude_code_provider.py` tienen formato propio), `app/mel/executor.py` (MOD),
+`tests/test_mel_messages.py` (NEW).
+
+**Tareas**:
+- `ExecutionRequest.messages: list[dict] = []` — extensión **append-only**, misma
+  disciplina que `exclude` en E1b: nunca se cambia una firma existente. `[]` =
+  comportamiento de hoy, bit a bit.
+- `BaseAIProvider.generate/generate_stream` ganan `messages` **opcional**. Un
+  proveedor que lo ignore sigue funcionando igual — eso es lo que permite
+  migrarlos de uno en uno sin romper nada.
+- Los compatibles con OpenAI ya hablan `messages` de forma nativa: traducción
+  directa. Anthropic y Gemini tienen formato propio y necesitan mapeo explícito
+  (roles distintos, system aparte).
+- **Nada cambia de comportamiento en esta sesión.** Al terminar, el chat responde
+  igual que antes; lo único nuevo es que existe la tubería.
+
+**Criterio de éxito verificable**:
+1. Con `messages=[]` → verificar: respuesta **idéntica** a antes (no-regresión
+   sobre la suite entera).
+2. Con 3 turnos → verificar, POR PROVEEDOR y contra el payload real, que llegan
+   los 3 en el formato que ese proveedor espera.
+3. Un proveedor que no implemente `messages` → verificar: no revienta, degrada al
+   prompt suelto.
+
+**Done**: el canal existe y está probado; el comportamiento no ha cambiado.
+**Modelo**: **Opus · Alto** — toca un contrato congelado y 12 integraciones con
+formatos distintos; un error aquí se manifiesta como "un proveedor concreto
+responde raro", que es de lo más caro de diagnosticar.
+
+---
+
+#### R6.5b — Continuidad real (la conversación)
+
+**Archivos**: `app/services/chat_service.py` (MOD), `app/tie/runtime.py` (MOD),
+`app/api/endpoints/chat.py` (MOD: `session_id`), `app/db/database.py` (MOD:
+`ChatMessage.session_id`), migración Alembic 25.ª (aditiva),
+`frontend/src/lib/api.ts` + `store/useChatStore.ts` (MOD: enviar la sesión),
+`tests/test_chat_continuity.py` (NEW).
+
+**Tareas**:
+- **Identidad de sesión**: el frontend YA tiene pestañas con su propio id
+  (`aithera.chat.sessions`) pero no lo envía; y `ChatMessage` es una tabla plana
+  sin concepto de sesión. Se añade `session_id` (columna aditiva indexada) y el
+  frontend lo manda. Sin esto, "los últimos turnos" mezclaría pestañas distintas.
+- **Ventana con presupuesto**: los últimos N turnos de ESA sesión, con tope duro
+  y recorte por los más antiguos. El presupuesto es obligatorio: sin él una
+  conversación larga se come la ventana del modelo y encarece cada mensaje.
+- **La consulta semántica deja de ser el mensaje suelto**: se construye con el
+  contexto reciente (último turno + actual), que es justo lo que hace que «¿y
+  cuánto cuesta?» recupere de qué se hablaba. **Es el arreglo de mayor impacto
+  por línea del sprint**, y no necesita ningún modelo nuevo.
+- **Respetar el presupuesto de latencia** existente (300 ms sobre el MOS): la
+  continuidad no puede volver lento el chat.
+- El camino corto del TIE y `chat_service.answer()` comparten esto — un solo
+  sitio, como ya hicieron en M4.
+
+**Criterio de éxito verificable**:
+1. «Me llamo Alejandro» → «¿cómo me llamo?» → verificar: responde bien.
+2. «Háblame de X» → «¿y cuánto cuesta?» → verificar: sabe de qué X habla.
+3. Dos pestañas a la vez → verificar: **no** se mezclan.
+4. Conversación de 50 turnos → verificar: el prompt NO crece sin límite y la
+   latencia se mantiene.
+
+**Done**: el chat mantiene el hilo, sin mezclar sesiones ni dispararse de tamaño.
+**Modelo**: **Opus · Alto** — decisiones de ventana/presupuesto y una migración;
+equivocarse degrada coste y latencia de TODAS las respuestas.
+
+---
+
+#### R6.5c — Que te vaya conociendo
+
+**Archivos**: `app/memory/profile.py` (NEW), `app/memory/summarizer.py` (MOD:
+engancharlo al job nocturno), `app/api/endpoints/memory.py` (MOD: ver/borrar lo
+aprendido), `frontend/src/pages/Settings.tsx` (MOD), `tests/test_profile.py` (NEW).
+
+**Tareas**:
+- **Destilado de hechos estables**: del historial reciente se extraen hechos
+  DURADEROS sobre el usuario (cómo se llama, a qué se dedica, cómo prefiere que
+  le hablen, qué herramientas usa) y se guardan en `mem_personal` con `dedup_key`
+  estable, para que se **actualicen** en vez de acumularse.
+- **Distinguir hecho de anécdota** — es el corazón del sprint y va en el prompt
+  con ejemplos: «me llamo X» o «trabajo en Y» son hechos; «hoy estoy cansado» o
+  «ábreme el navegador» no. Ante la duda, NO se guarda: un perfil lleno de ruido
+  es peor que uno corto.
+- **Corre en el job nocturno** (donde ya vive el summarizer), no en el camino
+  caliente del chat: conocerte no puede costar latencia en cada mensaje.
+- **Visible y reversible**: pantalla donde ves lo que Aithera cree saber de ti y
+  puedes borrar cualquier cosa. Sin esto es una caja negra que acumula
+  suposiciones — y aquí se guardan datos personales.
+- **Frontera con doc 15 (Learning System)**: esto NO es el Learner. El Learner
+  aprende a hacer TAREAS (skills, patrones); esto solo recuerda HECHOS sobre el
+  usuario. Anotarlo en doc 15 para que V1.1 no lo duplique.
+
+**Criterio de éxito verificable**:
+1. Decir un hecho estable → tras el job nocturno, verificar: se usa en una
+   conversación NUEVA y sin relación.
+2. Decir algo efímero → verificar: **no** se guarda.
+3. Repetir un hecho con otro valor → verificar: se ACTUALIZA (no dos versiones).
+4. Borrar un hecho en Ajustes → verificar: deja de aparecer.
+
+**Done**: Aithera acumula lo que importa de ti, tú lo ves, y puedes borrarlo.
+**Modelo**: **Sonnet · Alto** — el andamiaje (job, MOS, dedup, UI) ya existe; lo
+que se afina es un prompt de extracción y su frontera de privacidad.
+
+---
+
 ### R7 — Cierre: contratos, rendimiento, verificación en vivo y bump `0.9.5`
 
 **Objetivo**: blindar el bloque y cerrarlo con honestidad.
@@ -521,6 +671,9 @@ distinguir deuda real de alcance diferido.
 | **R4** | Agentes reales + AE delega + autoridad por proyecto | **Opus** | **Alto** | Permisos y fronteras; fallo = ampliación silenciosa de privilegios |
 | **R5** | Checkpoints verificables + avisos + cron | **Opus** | **Alto** | Gates + notificaciones + scheduler; fallos difíciles de ver en tests |
 | **R6** | Autoconocimiento + navegación fluida | **Sonnet** | **Alto** | Introspección + prompt, bien acotado |
+| **R6.5a** | Canal de `messages` en MEL + 12 proveedores | **Opus** | **Alto** | Contrato congelado + 12 formatos; un fallo se ve como "ese proveedor responde raro" |
+| **R6.5b** | Continuidad real + ventana con presupuesto | **Opus** | **Alto** | Ventana/coste/latencia de TODAS las respuestas + migración |
+| **R6.5c** | Perfil del usuario (te va conociendo) | **Sonnet** | **Alto** | Andamiaje ya hecho; se afina un prompt y su frontera de privacidad |
 | **R7** | E2E + perf + auditoría + cierre `0.9.5` | **Opus** | **Alto** | Criterio para separar deuda real de alcance diferido |
 
 **Nota para las sesiones con modelo inferior (R3, R6)**: ambas tienen el diseño

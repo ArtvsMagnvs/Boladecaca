@@ -409,6 +409,15 @@ async def _gate_executor(payload: dict) -> str:
     return f"aprobación registrada; reanudación del nodo {payload.get('node_id')} en curso"
 
 
+async def _tool_permission_executor(payload: dict) -> str:
+    """Ejecutor del permiso puntual del bucle de tool-use (R1). NO ejecuta la
+    herramienta: eso lo hace el propio bucle, que está esperando el veredicto y
+    la corre con el ToolManager y su whitelist. Existe para que conceder un
+    permiso no deje un ERROR de 'sin ejecutor' en la auditoría."""
+    return (f"permiso concedido para {payload.get('tool_id')}.{payload.get('action')}; "
+            f"lo ejecuta el paso que lo pidió")
+
+
 async def _checkpoint_executor(payload: dict) -> str:
     """Ejecutor registrado para `tie_checkpoint`. Igual que `_gate_executor`: NO
     reanuda aquí (eso es event-driven, para no bloquear el request HTTP que
@@ -428,6 +437,12 @@ def register_gate_handlers() -> None:
     # auditoría con un fallo que no existe. Quien reanuda de verdad es el
     # handler del evento, no esto.
     approval_gate.register_executor(CHECKPOINT_ACTION_TYPE, _checkpoint_executor)
+    # [2026-07-19] El TERCER gate del TIE: el permiso puntual que pide el bucle
+    # de tool-use (R1) cuando descubre a mitad de camino que necesita una acción
+    # sensible. Tampoco tenía ejecutor, así que cada permiso concedido dejaba un
+    # ERROR falso en el log. Quien ejecuta la acción es el propio bucle (con el
+    # ToolManager y su whitelist); esto solo evita ensuciar la auditoría.
+    approval_gate.register_executor("tie_tool_permission", _tool_permission_executor)
     unsubscribe("approval.resolved", _on_approval_resolved)  # evita duplicar al re-registrar
     subscribe("approval.resolved", _on_approval_resolved)
 
