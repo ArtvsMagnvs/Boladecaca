@@ -72,6 +72,11 @@ class Settings:
     # Con el permiso pre-autorizado (A3b) la espera es instantánea.
     TIE_TOOL_APPROVAL_WAIT_S = int(os.getenv("TIE_TOOL_APPROVAL_WAIT_S", "120"))
 
+    # [2026-07-19] El navegador de Aithera se ve. Si navega por ti, tienes que
+    # poder mirarlo y tomar el control. Solo se pone a True para automatismos de
+    # fondo donde una ventana emergente molestaria.
+    BROWSER_HEADLESS = os.getenv("BROWSER_HEADLESS", "false").strip().lower() in ("1", "true", "yes")
+
     # --- V1.0 (R2, Orquestador — doc 23) ---
     # Kill-switch: con False, el Gateway sigue enganchado a `tie.handle` y todo
     # se comporta exactamente como antes de este bloque.

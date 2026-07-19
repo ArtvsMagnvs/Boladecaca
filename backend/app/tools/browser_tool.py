@@ -11,7 +11,8 @@
 # error claro en el primer uso, en vez de tumbar el arranque del backend.
 #
 # Seguridad:
-# - Headless por defecto (corre en segundo plano, no roba el foco de pantalla).
+# - VISIBLE por defecto (2026-07-19): si Aithera navega por ti, tienes que
+#   poder verlo y tomar el control. `BROWSER_HEADLESS=true` lo oculta.
 # - Descargas/subidas de archivo pasan por la MISMA validacion de paths que
 #   FilesystemTool (solo dentro de HOME).
 # - click/type/download/upload REQUIEREN confirmacion (interactuan de verdad
@@ -26,6 +27,7 @@ import base64
 import uuid
 from typing import Dict, Any, List, Optional
 
+from app.core.config import settings
 from .base import BaseTool
 from .filesystem_tool import _resolve_user_path, _is_path_allowed
 
@@ -49,7 +51,17 @@ async def _ensure_browser():
         ) from e
     _playwright = await async_playwright().start()
     try:
-        _browser = await _playwright.chromium.launch(headless=True)
+        # [Fix 2026-07-19] VISIBLE, no headless. Aithera decia "he abierto el
+        # navegador" y el usuario no veia ninguna ventana: el navegador existia
+        # de verdad, pero invisible. Si Aithera navega POR TI, tienes que poder
+        # mirar lo que hace y tomar el control cuando quieras — un agente que
+        # actua a ciegas en tu ordenador es justo lo contrario de lo que se
+        # busca aqui.
+        #
+        # Ademas funciona MEJOR: Google y otros sitios bloquean el trafico
+        # headless por sospechoso (ya documentado en CLAUDE.md §8 como
+        # limitacion real de `browser.google_search`).
+        _browser = await _playwright.chromium.launch(headless=settings.BROWSER_HEADLESS)
     except Exception as e:
         raise RuntimeError(
             f"no se pudo lanzar Chromium (¿falta 'playwright install chromium'?): {e}"

@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { Link } from "react-router-dom";
-import { api } from "@/lib/api";
+import { api, type Approval } from "@/lib/api";
 import { useAppStore } from "@/store/useAppStore";
 import { useChatStore } from "@/store/useChatStore";
 import MicButton from "@/components/voice/MicButton";
@@ -33,6 +33,8 @@ export default function Chat() {
   const sending = activeSession.sending;
   const [input, setInput] = useState("");
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  // Un AbortController por sesión: parar una pestaña no corta la de al lado.
+  const abortRefs = useRef<Record<string, AbortController>>({});
   // V0.8.1 (Paso 2): selector granular para no re-renderizar el componente
   // en cada cambio de coreState/aiStatus (pitfall #4 de aithera-hub-corestate).
   const backendConnected = useAppStore((s) => s.backendConnected);
@@ -175,6 +177,11 @@ export default function Chat() {
     chat.setMissionId(sid, null);
     setCoreState("thinking");
 
+    // [2026-07-19] Permite PARAR la respuesta en curso desde el boton del chat.
+    // Se guarda por sesion: parar una pestaña no puede cortar la de al lado.
+    const controller = new AbortController();
+    abortRefs.current[sid] = controller;
+
     try {
       await api.streamChat(
         userMessage,
@@ -185,6 +192,7 @@ export default function Chat() {
           // de un "Pensando..." mudo mientras clasifica y planifica.
           onStatus: (s) => useChatStore.getState().setTieStatus(sid, s),
           onMission: (id) => useChatStore.getState().setMissionId(sid, id),
+          signal: controller.signal,
         },
       );
       const finalSession = useChatStore.getState().sessions.find((s) => s.id === sid);
@@ -199,16 +207,37 @@ export default function Chat() {
       // El caller decide si habla la respuesta (voz / conversación).
       return reply;
     } catch (error) {
+      // Parar NO es un fallo: es lo que el usuario ha pedido. Se conserva lo
+      // que ya se habia escrito, para no tirar una respuesta a medio leer.
+      if ((error as Error)?.name === "AbortError") {
+        const parcial = useChatStore.getState().sessions.find((x) => x.id === sid)?.streamingText || "";
+        useChatStore.getState().appendMessage(sid, {
+          role: "assistant",
+          content: parcial ? `${parcial}
+
+_(parado por ti)_` : "_(parado por ti)_",
+        });
+        return null;
+      }
       console.error("Error en streamChat:", error);
       useChatStore.getState().appendMessage(sid, { role: "assistant", content: "Lo siento, hubo un error al procesar tu mensaje." });
       pulseError();
       return null;
     } finally {
+      delete abortRefs.current[sid];
       useChatStore.getState().setSending(sid, false);
     }
   }, [backendConnected, setCoreState, pulseError]);
 
   const handleSend = () => { void sendMessage(input); };
+
+  // [2026-07-19] PARAR lo que esté en curso. Corta la petición de verdad
+  // (AbortController), no solo la UI: sin esto, una respuesta lanzada no se
+  // podía interrumpir de ninguna forma.
+  const handleStop = () => {
+    const sid = useChatStore.getState().activeSessionId;
+    abortRefs.current[sid]?.abort();
+  };
 
   // V0.83: al transcribir por micro, se envía y se responde EN VOZ.
   const handleTranscript = useCallback(async (text: string) => {
@@ -432,29 +461,63 @@ export default function Chat() {
               </div>
             </div>
           )}
+
+          {/* [2026-07-19] Los permisos se piden AQUÍ, donde estás mirando.
+              Antes solo salían en Misiones/Automatizaciones: para cuando los
+              encontrabas y aprobabas, el bucle ya se había rendido (espera 120s
+              y sigue sin esa acción), así que aprobar "no hacía nada". */}
+          <PendingApprovals active={sending} />
           <div ref={messagesEndRef} />
         </div>
 
         {/* Controles: input + voz. Durante Comunicación, la voz mueve la
             presencia (§8) — este panel se queda deliberadamente quieto. */}
         <div className="shrink-0 border-t border-white/5 p-3 flex flex-col gap-2">
-          <div className="flex gap-2">
-            <input
-              type="text"
+          {/* [2026-07-19] `textarea`, no `input`: con un input de una sola línea
+              era IMPOSIBLE escribir un segundo párrafo — Ctrl+Enter enviaba
+              igual porque no había dónde meter el salto. Crece con el texto
+              hasta un tope y luego hace scroll.
+              Tampoco se deshabilita mientras responde: puedes ir escribiendo lo
+              siguiente (el input `disabled` era, además, lo que hacía que la UI
+              pareciera congelada). */}
+          <div className="flex gap-2 items-end">
+            <textarea
               value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && handleSend()}
-              placeholder="Escribe tu mensaje..."
-              className="flex-1 min-w-0 bg-base-800 border border-base-700 rounded-lg px-3 py-2 text-xs text-ink placeholder:text-ink-faint focus:outline-none focus:border-accent/40"
-              disabled={sending}
+              rows={1}
+              onChange={(e) => {
+                setInput(e.target.value);
+                e.target.style.height = "auto";
+                e.target.style.height = `${Math.min(e.target.scrollHeight, 140)}px`;
+              }}
+              onKeyDown={(e) => {
+                if (e.key !== "Enter") return;
+                // Ctrl/Cmd/Shift + Enter = párrafo nuevo. Enter solo = enviar.
+                if (e.ctrlKey || e.metaKey || e.shiftKey) return; // el textarea mete el salto
+                e.preventDefault();
+                handleSend();
+              }}
+              placeholder="Escribe tu mensaje...  (Ctrl+Enter para otro párrafo)"
+              className="flex-1 min-w-0 resize-none bg-base-800 border border-base-700 rounded-lg px-3 py-2 text-xs text-ink placeholder:text-ink-faint focus:outline-none focus:border-accent/40 leading-relaxed"
             />
-            <button
-              onClick={handleSend}
-              disabled={sending || !input.trim()}
-              className="shrink-0 px-3 py-2 bg-accent/15 text-accent rounded-lg text-xs font-medium border border-accent/30 hover:bg-accent/25 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              Enviar
-            </button>
+            {sending ? (
+              <button
+                onClick={handleStop}
+                title="Parar"
+                aria-label="Parar"
+                className="shrink-0 w-9 h-9 flex items-center justify-center bg-signal-error/15 text-signal-error rounded-lg border border-signal-error/30 hover:bg-signal-error/25"
+              >
+                {/* Cuadrado de STOP, sin texto. */}
+                <span className="block w-3 h-3 bg-current rounded-[2px]" />
+              </button>
+            ) : (
+              <button
+                onClick={handleSend}
+                disabled={!input.trim()}
+                className="shrink-0 px-3 py-2 bg-accent/15 text-accent rounded-lg text-xs font-medium border border-accent/30 hover:bg-accent/25 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Enviar
+              </button>
+            )}
           </div>
 
           <div className="flex items-center gap-2">
@@ -510,5 +573,92 @@ export default function Chat() {
         </div>
       </aside>
     </div>
+  );
+}
+
+/**
+ * [2026-07-19] Aprobaciones pendientes, EN EL CHAT.
+ *
+ * EL PROBLEMA QUE RESUELVE: cuando el bucle de tool-use necesita permiso para
+ * algo sensible (hacer clic en una página, enviar un email...), abre un
+ * ApprovalGate y espera hasta 120 s. Esa petición solo se veía en
+ * Misiones/Automatizaciones, así que había que darse cuenta, navegar, buscarla
+ * y aprobarla contrarreloj. Pasado el plazo el bucle sigue SIN esa acción — por
+ * eso aprobar más tarde parecía "no hacer nada": ya no había nadie esperando.
+ *
+ * Aquí se ve donde estás mirando, con el mismo endpoint genérico de A1 (no hay
+ * backend nuevo). Solo sondea mientras Aithera está trabajando: sin nada en
+ * curso no hay a quién preguntar.
+ */
+function PendingApprovals({ active }: { active: boolean }) {
+  const [pending, setPending] = useState<Approval[]>([]);
+  const [busy, setBusy] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!active) {
+      setPending([]);
+      return;
+    }
+    let cancelled = false;
+    const load = async () => {
+      try {
+        const list = await api.getApprovals();
+        if (!cancelled) setPending(list.filter((a) => a.status === "pending"));
+      } catch {
+        /* silencioso: esto es un extra, nunca puede romper el chat */
+      }
+    };
+    void load();
+    const id = window.setInterval(load, 1500);
+    return () => {
+      cancelled = true;
+      window.clearInterval(id);
+    };
+  }, [active]);
+
+  const resolve = async (gateId: string, approved: boolean) => {
+    setBusy(gateId);
+    try {
+      await api.resolveApproval(gateId, approved);
+      setPending((prev) => prev.filter((a) => a.gate_id !== gateId));
+    } catch {
+      /* si falla, el sondeo lo volverá a mostrar */
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  if (!pending.length) return null;
+
+  return (
+    <>
+      {pending.map((a) => (
+        <div key={a.gate_id} className="flex justify-start">
+          <div className="max-w-[85%] rounded-xl border border-signal-warn/40 bg-signal-warn/10 px-3 py-2.5 space-y-2">
+            <p className="text-xs font-medium text-signal-warn">Necesito tu permiso</p>
+            <p className="text-xs text-ink">{a.title}</p>
+            {a.summary && (
+              <p className="text-[11px] text-ink-dim whitespace-pre-wrap">{a.summary}</p>
+            )}
+            <div className="flex gap-2 pt-0.5">
+              <button
+                onClick={() => resolve(a.gate_id, true)}
+                disabled={busy === a.gate_id}
+                className="px-3 py-1.5 rounded-lg text-xs font-medium bg-signal-ok/15 text-signal-ok border border-signal-ok/30 hover:bg-signal-ok/25 disabled:opacity-50"
+              >
+                Permitir
+              </button>
+              <button
+                onClick={() => resolve(a.gate_id, false)}
+                disabled={busy === a.gate_id}
+                className="px-3 py-1.5 rounded-lg text-xs bg-base-700/60 text-ink-dim border border-base-600 hover:text-ink disabled:opacity-50"
+              >
+                No
+              </button>
+            </div>
+          </div>
+        </div>
+      ))}
+    </>
   );
 }

@@ -1136,12 +1136,19 @@ export const api = {
   async streamChat(
     message: string,
     onChunk: (text: string) => void,
-    opts?: { onStatus?: (status: string) => void; onMission?: (traceId: string) => void },
+    opts?: {
+      onStatus?: (status: string) => void;
+      onMission?: (traceId: string) => void;
+      // [2026-07-19] Para poder PARAR desde el botón del chat. Sin esto no había
+      // forma de interrumpir una respuesta ya lanzada.
+      signal?: AbortSignal;
+    },
   ): Promise<void> {
     const response = await fetch(`${API_URL}/chat/stream`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ message }),
+      signal: opts?.signal,
     });
     if (!response.ok || !response.body) {
       throw new Error(`HTTP ${response.status} en /chat/stream`);
