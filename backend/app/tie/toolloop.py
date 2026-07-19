@@ -33,6 +33,7 @@ from dataclasses import dataclass, field
 from typing import Any, Optional
 
 from app.core.logging_config import get_system_logger
+from app.tie.authority import Authority
 from app.tie.intents import _extract_json
 
 logger = get_system_logger("tie.toolloop")
@@ -205,6 +206,7 @@ async def run(
     model_override: Optional[str] = None,
     project_id: Optional[int] = None,
     timeout_s: int = 60,
+    authority: Optional["Authority"] = None,
 ) -> ToolLoopResult:
     """Ejecuta el ciclo elegir→ejecutar→observar.
 
@@ -213,6 +215,14 @@ async def run(
     `CancelledError`: el kill-switch del executor (T3) tiene que poder cortar un
     nodo en vuelo, y tragarse esa cancelación lo rompería."""
     from app.mel import Capability, ExecutionRequest, complete as mel_complete
+
+    # [R4] Defensa en profundidad: el planner ya recortó `node.tools` a la
+    # whitelist del agente ANTES de guardar el grafo, así que aquí normalmente
+    # esto no quita nada. Se repite porque el coste es una línea y cubre los
+    # caminos que no pasan por el planner (una misión reanudada, un grafo
+    # construido a mano, un caller futuro que se olvide de recortar).
+    if authority is not None and authority.allowed_tools is not None:
+        allowed_tools = [t for t in allowed_tools if t in authority.allowed_tools]
 
     catalog = build_catalog(allowed_tools, tool_manager)
     if not catalog:
@@ -275,6 +285,20 @@ async def run(
             transcript.append(f"DENEGADO: {reason}")
             tool_calls.append({"tool_id": tool_id, "action": action, "denied": True, "reason": reason})
             continue
+
+        # [R4] ¿Está DENTRO del alcance del encargo? Esto NO es un permiso que el
+        # usuario pueda conceder sobre la marcha (para eso está el gate de abajo),
+        # es la frontera de autoridad de la misión: los agentes de otro proyecto,
+        # las carpetas de otro proyecto. Se deniega, pero NUNCA en silencio — el
+        # motivo vuelve al modelo y queda en `tool_calls`, así que sale en la
+        # traza de la misión y en la respuesta final.
+        if authority is not None:
+            out_of_scope = authority.check(tool_id, action, params)
+            if out_of_scope:
+                transcript.append(f"FUERA DE TU ALCANCE: {out_of_scope}")
+                tool_calls.append({"tool_id": tool_id, "action": action,
+                                   "denied": True, "out_of_scope": True, "reason": out_of_scope})
+                continue
 
         # Acción sensible → se PREGUNTA al usuario (nunca se deniega por
         # nuestra cuenta). Con el permiso pre-autorizado (A3b) esto es instantáneo.

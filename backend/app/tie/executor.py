@@ -152,6 +152,10 @@ async def _execute_node(node: TaskNode, graph: TaskGraph, mission: Mission, trac
         model_hint=node.model_hint,
         project_id=mission.project_id,   # [E2b] el MEL ve el pin de proyecto de la misión
         channel=mission.channel,
+        # [R4] La frontera se lee del GRAFO, no de la misión: el grafo es lo que
+        # se persiste en cada transición, así que esto vale igual en una misión
+        # recién planificada y en una reanudada tras reiniciar el backend.
+        authority=graph.authority or {},
     )
     runtime = get_runtime(node.runtime)
 
@@ -179,6 +183,9 @@ async def _execute_node(node: TaskNode, graph: TaskGraph, mission: Mission, trac
     node.duration_ms = int((time.monotonic() - t0) * 1000)
     node.tokens = result.tokens
     node.result = result.result if result.result is not None else ({"output": result.output} if result.output else None)
+    # [R4] El rastro de tools del nodo entra en el checkpoint: es la auditoría de
+    # lo que se ejecutó de verdad y de lo que se denegó por autoridad.
+    node.tool_calls = list(result.tool_calls or [])
     node.validation = _validate_result(node, result)
 
     if result.success and node.validation.get("ok"):

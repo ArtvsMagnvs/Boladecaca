@@ -227,10 +227,27 @@ class ChatQueryAction(Action):
 # 4 · AgentTaskAction — único punto de delegación genérica
 # ---------------------------------------------------------------------------
 class AgentTaskAction(Action):
-    """Delega en `agent_manager.create_execution()`. Único punto que V1.0
-    reconecta al Orchestrator (`orchestrator.handle`) sin tocar nada más del
-    Automation Engine (doc 11 §B.4) — por eso vive aislado en su propia clase,
-    sin lógica adicional aquí que luego haya que desenredar."""
+    """[R4, doc 23 Δ4] El punto donde el Automation Engine delega su inteligencia
+    en el TIE — SIEMPRE a través del agente configurado.
+
+    Desde R4, `agent_manager.create_execution()` ya no es el placeholder de V0.5:
+    lanza una misión REAL del TIE (planner → grafo → bucle de tool-use) acotada a
+    las `allowed_tools` de ese agente. Es decir, el AE delega en el TIE sin que
+    esta clase tenga que cambiar de destinatario: lo que cambió es lo que hay al
+    otro lado.
+
+    POR QUÉ SIGUE EXIGIENDO `agent_id` (y no se lanza una misión "suelta" cuando
+    falta): la frontera de permisos de una misión automática es la del agente que
+    la ejecuta. Una regla sin agente produciría una misión SIN frontera, con el
+    catálogo entero de herramientas — y la regla predefinida `agent_task` (A3)
+    nace justamente con `agent_id=None`, así que activarla sin configurarla
+    dejaría de ser inofensiva. Mejor fallar claro y que el usuario elija agente.
+
+    FIRE-AND-FORGET: `create_execution` persiste la fila y lanza la misión como
+    `asyncio.Task`, devolviendo enseguida. Una misión puede durar minutos y el
+    motor de reglas no puede quedarse esperando (bloquearía las demás reglas). La
+    auditoría del RESULTADO la lleva el TIE (`orchestrator_traces` + eventos
+    `mission.*`) y el propio `AgentExecution`."""
 
     async def execute(self, config: dict, trigger_event: "TriggerEvent") -> ActionResult:
         from app.agents.agent_manager import agent_manager
@@ -243,7 +260,8 @@ class AgentTaskAction(Action):
             execution = agent_manager.create_execution(agent_id=int(agent_id), task=task)
         except ValueError as e:
             return ActionResult(ok=False, detail=str(e))
-        return ActionResult(ok=True, detail=f"execution_id={execution.id}", data={"execution_id": execution.id})
+        return ActionResult(ok=True, detail=f"execution_id={execution.id}",
+                            data={"execution_id": execution.id})
 
 
 # ---------------------------------------------------------------------------

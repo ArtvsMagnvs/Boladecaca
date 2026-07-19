@@ -18,6 +18,7 @@ from dataclasses import dataclass, field
 from typing import Any, AsyncIterator, Optional
 
 from app.core.logging_config import get_system_logger
+from app.tie.authority import Authority
 
 logger = get_system_logger("tie.runtime")
 
@@ -40,6 +41,10 @@ class AgentTask:
     channel: Optional[str] = None
     constraints: dict = field(default_factory=dict)  # {timeout_s, max_tool_calls, …}
     metadata: dict = field(default_factory=dict)
+    # [R4] Frontera de autoridad de la misión, serializada (ver
+    # `app/tie/authority.py`). `{}` = sin restricción. La copia el executor desde
+    # `graph.authority`, que es lo que sobrevive al checkpoint.
+    authority: dict = field(default_factory=dict)
 
     @staticmethod
     def new_id() -> str:
@@ -174,6 +179,10 @@ class NullRuntime(AgentRuntime):
                 model_override=_model_override_from_hint(task.model_hint),
                 project_id=task.project_id,
                 timeout_s=settings.TIE_TOOL_TIMEOUT_S,
+                # [R4] La frontera de autoridad de la misión (whitelist del
+                # agente, proyecto, carpeta). `{}` → sin restricción, que es el
+                # caso del chat del usuario: cero regresión.
+                authority=Authority.from_dict(task.authority),
             )
             dur = int((time.monotonic() - t0) * 1000)
             # `ok=False` con motivo → nodo FALLIDO. Es deliberado: preferimos que

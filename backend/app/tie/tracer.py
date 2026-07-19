@@ -128,6 +128,26 @@ def load_graph(trace_id: str) -> Optional[TaskGraph]:
         db.close()
 
 
+def trace_id_for_mission(mission_id: str) -> Optional[str]:
+    """La traza de una misión. [R4] Lo necesita `agent_manager` para recuperar el
+    rastro de herramientas de la misión que acaba de delegar: `submit_mission`
+    devuelve la Mission, no el trace_id. En V1.0 la relación es 1:1 (doc 14
+    §3.6); si en V1.2 una misión llega a tener varias trazas, aquí habrá que
+    decidir cuál — por eso se coge la más reciente y no `.first()` a ciegas."""
+    db = SessionLocal()
+    try:
+        row = (db.query(OrchestratorTrace)
+                 .filter(OrchestratorTrace.mission_id == mission_id)
+                 .order_by(OrchestratorTrace.created_at.desc())
+                 .first())
+        return row.id if row else None
+    except Exception as e:
+        logger.error(f"[tracer] trace_id_for_mission({mission_id}) falló: {type(e).__name__}: {e}")
+        return None
+    finally:
+        db.close()
+
+
 def get_meta(trace_id: str) -> Optional[dict]:
     """Metadatos de la traza (mission_id, channel, state) — el executor los
     necesita al reanudar (la Mission de V1.0 es implícita: vive aquí)."""

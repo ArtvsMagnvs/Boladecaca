@@ -92,7 +92,7 @@ def _fake_intent(monkeypatch, intent: Intent):
 
 
 def _fake_plan(monkeypatch, graph):
-    async def _plan(goal, intent, *, context="", mission_id=None, trace_id=None):
+    async def _plan(goal, intent, *, context="", mission_id=None, trace_id=None, authority=None):
         if graph is not None:
             graph.mission_id = mission_id or graph.mission_id
             if trace_id:

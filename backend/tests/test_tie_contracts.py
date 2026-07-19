@@ -274,7 +274,7 @@ async def test_submit_mission_crea_la_mision_y_deja_traza(monkeypatch):
         return Intent(type=IntentType.CONVERSATIONAL, goal=text, confidence=0.9)
     monkeypatch.setattr(pipeline_mod.intents, "classify", _classify)
 
-    async def _plan(goal, intent, *, context="", mission_id=None, trace_id=None):
+    async def _plan(goal, intent, *, context="", mission_id=None, trace_id=None, authority=None):
         assert intent.requires_planning is True  # T4: la misión explícita se planifica
         return None                              # sin plan válido → degrada
     monkeypatch.setattr(pipeline_mod.planner, "plan", _plan)

@@ -19,7 +19,9 @@ from typing import Optional
 
 from app.core.config import settings
 from app.core.logging_config import get_system_logger
+from app.tie import authority as authority_mod
 from app.tie import enricher, executor, intents, planner, responder, tracer
+from app.tie.authority import Authority
 from app.tie.contracts import Intent, Mission, NodeState, TaskGraph
 from app.tie.missions import new_mission
 from app.tie.runtime import AgentTask, get_runtime
@@ -194,6 +196,8 @@ async def submit_mission(
     project_id: Optional[int] = None,
     run_id: Optional[str] = None,
     parent_id: Optional[str] = None,
+    allowed_tools: Optional[list[str]] = None,
+    repo_path: Optional[str] = None,
 ) -> Mission:
     """Entrada PROGRAMÁTICA (AE `AgentTaskAction`, WPMS, Orquestador) — ya sabe
     que es una misión, así que NO hay camino corto: siempre planifica y ejecuta.
@@ -201,7 +205,12 @@ async def submit_mission(
 
     `run_id`/`parent_id` (R2) son la jerarquía: a qué orquestación pertenece esta
     misión y de qué misión más amplia nació. El TIE no los interpreta — los
-    guarda en la traza para que la UI y el Learner puedan reconstruir el árbol."""
+    guarda en la traza para que la UI y el Learner puedan reconstruir el árbol.
+
+    `allowed_tools`/`repo_path` (R4) acotan la misión cuando la lanza un AGENTE:
+    sus herramientas, su proyecto y su carpeta. Sin ellos la misión no tiene
+    frontera, que es el caso del chat del usuario. Delegar SIN pasar la whitelist
+    del agente sería ampliarle los permisos en silencio."""
     mission = new_mission(goal=goal, source=source, channel=channel, project_id=project_id,
                           run_id=run_id, parent_id=parent_id)
     intent = await intents.classify(goal, channel=channel)
@@ -216,8 +225,35 @@ async def submit_mission(
     explicit = await _resolve_explicit_model(intent, project_id=project_id)
     force_model = explicit["model_key"] if explicit and explicit.get("action") == "force" else None
 
+    # [R4] La frontera de la misión.
+    #
+    # ORQUESTADOR DE PROYECTO (doc 14 §4.3c): si la misión es de un proyecto que
+    # tiene agente `role="orchestrator"` y nadie ha impuesto ya una frontera
+    # (`allowed_tools=None`, es decir: no viene de un agente concreto), la misión
+    # se enruta a ese orquestador y adopta SU alcance — sus herramientas, su
+    # proyecto, su carpeta. Es lo que hace que "el proyecto tiene un responsable"
+    # signifique algo ejecutable y no solo una etiqueta en una columna.
+    if project_id is not None and allowed_tools is None:
+        orch = authority_mod.orchestrator_of(project_id)
+        if orch:
+            allowed_tools = orch["allowed_tools"]
+            repo_path = repo_path or orch["repo_path"]
+            logger.info(
+                f"[tie] misión del proyecto {project_id} enrutada a su orquestador "
+                f"'{orch['name']}' (agente {orch['id']})"
+            )
+
+    # `Authority()` sin campos = sin restricción, así que el comportamiento de
+    # quien no la pasa (el chat del usuario, el Orquestador de R2) no cambia.
+    authority = Authority(
+        project_id=project_id if (allowed_tools is not None or repo_path) else None,
+        repo_path=repo_path,
+        allowed_tools=allowed_tools,
+    )
+
     context = await _context_for(intent, goal)
-    await _complex_path(goal, intent, mission, trace_id, context, force_model=force_model)
+    await _complex_path(goal, intent, mission, trace_id, context,
+                        force_model=force_model, authority=authority)
     return mission
 
 
@@ -262,14 +298,17 @@ async def _run_pipeline(
 
 async def _complex_path(
     text: str, intent: Intent, mission: Mission, trace_id: str, context: str,
-    *, force_model: Optional[str] = None,
+    *, force_model: Optional[str] = None, authority: Optional[Authority] = None,
 ) -> None:
     """planner → (gate del plan) → executor → responder. Escribe `mission.outcome`.
     `force_model` (E2b): si el usuario nombró un modelo para esta tarea, TODOS los
     nodos del plan lo usan (`node.model_hint` = id concreto, que el executor
-    reenvía → el MEL lo trata como override)."""
+    reenvía → el MEL lo trata como override).
+    `authority` (R4): frontera de la misión cuando viene de un agente; el planner
+    recorta el plan a sus tools y la graba en el grafo."""
     graph = await planner.plan(
-        intent.goal or text, intent, context=context, mission_id=mission.id, trace_id=trace_id
+        intent.goal or text, intent, context=context, mission_id=mission.id, trace_id=trace_id,
+        authority=authority,
     )
     if graph is None:
         # El planner no logró un grafo válido ni tras el reintento → degradar al

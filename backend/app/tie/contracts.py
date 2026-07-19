@@ -181,6 +181,13 @@ class TaskNode:
                                                      # el veredicto tras un reinicio (extensión append-only)
     confidence: Optional[float] = None               # confianza del planner en el nodo
     result: Optional[dict] = None                    # salida estructurada del runtime
+    # [R4] Rastro real de herramientas del nodo (lo produce el bucle de R1).
+    # Campo append-only. Antes de R4 este rastro moría en `AgentResult` y no se
+    # guardaba en ningún sitio: el usuario no podía ver qué tools se ejecutaron,
+    # ni —lo importante— qué se DENEGÓ por estar fuera de la autoridad de la
+    # misión. Persistirlo es lo que hace que "nunca se deniega en silencio" sea
+    # cierto de verdad y no solo una intención.
+    tool_calls: list[dict] = field(default_factory=list)
     validation: Optional[dict] = None                # {"ok":bool,"method":"schema|llm|user","notes":str}
     tokens: Optional[int] = None                     # coste real medido
     cost: Optional[float] = None
@@ -213,6 +220,14 @@ class TaskGraph:
     nodes: dict[str, TaskNode] = field(default_factory=dict)
     created_by: str = "planner"                      # "planner"|"user"|"automation"|"learner"
     state: str = "draft"                             # draft|approved|running|done|failed|cancelled
+    # — frontera de autoridad (R4, doc 23 Δ6) — campo append-only —
+    # Alcance de la misión: whitelist de tools heredada del agente, proyecto al
+    # que se limita, y carpeta de la que no puede salir. `{}` = sin restricción
+    # (el chat del usuario). Vive AQUÍ y no en `Mission` a propósito: el grafo es
+    # lo que el executor persiste en cada transición, así que la frontera
+    # sobrevive a un reinicio y `resume_pending()` la recupera sola. Ver
+    # `app/tie/authority.py` para el razonamiento completo.
+    authority: dict = field(default_factory=dict)
 
     def to_dict(self) -> dict:
         return {
@@ -221,6 +236,7 @@ class TaskGraph:
             "nodes": {nid: n.to_dict() for nid, n in self.nodes.items()},
             "created_by": self.created_by,
             "state": self.state,
+            "authority": self.authority,
         }
 
     @classmethod
@@ -229,6 +245,7 @@ class TaskGraph:
         return cls(
             id=d["id"], mission_id=d["mission_id"], nodes=nodes,
             created_by=d.get("created_by", "planner"), state=d.get("state", "draft"),
+            authority=d.get("authority") or {},
         )
 
 

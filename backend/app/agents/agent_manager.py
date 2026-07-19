@@ -26,6 +26,23 @@ from app.db.models import Agent, AgentExecution
 from app.tools import tool_manager
 
 
+def _project_repo_path(project_id: int) -> Optional[str]:
+    """Carpeta del proyecto, para acotar ahi las tools de archivos del agente
+    (R4, doc 14 §4.3c). None si el proyecto no tiene `repo_path`: sin carpeta
+    declarada no hay frontera de rutas que imponer."""
+    try:
+        from app.db.database import Project
+
+        db = SessionLocal()
+        try:
+            project = db.get(Project, int(project_id))
+            return (project.repo_path or None) if project else None
+        finally:
+            db.close()
+    except Exception:
+        return None
+
+
 class AgentManager:
     """Gestiona el ciclo de vida de los agentes y sus ejecuciones."""
 
@@ -231,14 +248,20 @@ class AgentManager:
             db.close()
 
     async def _run_execution(self, execution_id: int) -> None:
-        """Ejecuta una tarea de agente: marca como running, llama a la IA
-        para obtener el plan, ejecuta las tools via ToolManager, y
-        persiste el resultado.
+        """Ejecuta la tarea REAL que se le pidio al agente, delegando en el TIE.
 
-        V0.5 placeholder: la IA todavia no devuelve tool_calls estructurados.
-        Por ahora, cuando un agente tiene tools permitidas, ejecutamos una
-        accion "list_dir" del filesystem como demo end-to-end. En V0.6 esto
-        vendra del LLM."""
+        [R4, doc 23 Delta5] Hasta aqui esto era el placeholder de V0.5: ignoraba
+        por completo `task_description` y ejecutaba una demo fija (`list_dir` /
+        `list_scripts` / `git status`) segun que tools tuviera el agente. Las 14
+        tools existian y eran asignables, pero ningun agente decidia cual usar.
+
+        Ahora la tarea se convierte en una MISION del TIE: planner -> grafo ->
+        bucle de tool-use (R1) -> responder. El agente hereda gratis las tools,
+        el MEL, los gates de aprobacion y la traza.
+
+        FRONTERA DE SEGURIDAD: se le pasan al TIE las `allowed_tools` del agente
+        y su proyecto. Sin eso, delegar AMPLIARIA los permisos en silencio (el
+        planner ve el catalogo entero por defecto)."""
         db = SessionLocal()
         try:
             execution = db.query(AgentExecution).filter(AgentExecution.id == execution_id).first()
@@ -263,67 +286,34 @@ class AgentManager:
                 except (ValueError, TypeError):
                     allowed_tools = []
 
-                tool_calls_log = []
-                result_text = ""
+                # Datos del agente ANTES de soltar la sesion: la mision puede
+                # durar minutos y no queremos mantener una conexion abierta ni
+                # arrastrar objetos ORM a otro contexto.
+                agent_project_id = agent.project_id
+                task_text = execution.task_description or ""
 
-                # V0.5 placeholder de "decision de la IA": si el agente
-                # tiene tools, demostramos que el engine funciona ejecutando
-                # una accion segura por cada tool permitida. En V0.6 esto
-                # vendra de la salida del LLM (function calling).
-                if allowed_tools:
-                    # Si tiene filesystem, listar el home.
-                    if "filesystem" in allowed_tools:
-                        r = await tool_manager.execute(
-                            "filesystem", "list_dir",
-                            {"path": "."},
-                            allowed_tools=allowed_tools,
-                            timeout=agent.max_execution_time,
-                            agent_id=agent.id,
-                            execution_id=execution.id,
-                        )
-                        tool_calls_log.append({"tool_id": "filesystem", "action": "list_dir", "ok": r["success"]})
+                mission = await self._delegate_to_tie(
+                    task=task_text,
+                    allowed_tools=allowed_tools,
+                    project_id=agent_project_id,
+                )
 
-                    # Si tiene powershell, listar scripts disponibles.
-                    if "powershell" in allowed_tools:
-                        r = await tool_manager.execute(
-                            "powershell", "list_scripts", {},
-                            allowed_tools=allowed_tools,
-                            timeout=10,
-                            agent_id=agent.id,
-                            execution_id=execution.id,
-                        )
-                        tool_calls_log.append({"tool_id": "powershell", "action": "list_scripts", "ok": r["success"]})
-
-                    # Si tiene git, status del repo (si existe .git en cwd).
-                    if "git" in allowed_tools:
-                        # Solo si el cwd es un repo.
-                        import os
-                        from pathlib import Path
-                        if (Path.cwd() / ".git").exists():
-                            r = await tool_manager.execute(
-                                "git", "status", {"repo_path": "."},
-                                allowed_tools=allowed_tools,
-                                timeout=10,
-                                agent_id=agent.id,
-                                execution_id=execution.id,
-                            )
-                            tool_calls_log.append({"tool_id": "git", "action": "status", "ok": r["success"]})
-
-                    result_text = (
-                        f"Ejecutadas {len(tool_calls_log)} herramientas en demo V0.5. "
-                        f"En V0.6 la IA decidira que tools llamar."
-                    )
+                # La mision puede acabar esperando una aprobacion del usuario
+                # (gate del plan de T4a). Eso NO es "completada": el agente sigue
+                # a la espera, y decir lo contrario seria mentir en la UI.
+                if mission.state == "waiting":
+                    execution.status = "running"
+                    execution.result = mission.outcome or "Esperando tu aprobacion para continuar."
                 else:
-                    # Agente sin tools: solo refleja el system_prompt.
-                    result_text = (
-                        f"Agente '{agent.name}' (sin herramientas asignadas). "
-                        f"System prompt: {agent.system_prompt or '(no definido)'[:200]}"
-                    )
+                    execution.status = "completed" if mission.state != "failed" else "failed"
+                    execution.result = mission.outcome or ""
+                    if mission.state == "failed":
+                        execution.error_message = mission.outcome or "la mision no pudo completarse"
+                    execution.completed_at = datetime.utcnow()
 
-                execution.status = "completed"
-                execution.result = result_text
-                execution.tool_calls = json.dumps(tool_calls_log, ensure_ascii=False)
-                execution.completed_at = datetime.utcnow()
+                execution.tool_calls = json.dumps(
+                    self._tool_calls_of(mission), ensure_ascii=False, default=str
+                )
                 db.commit()
 
             except asyncio.CancelledError:
@@ -341,6 +331,49 @@ class AgentManager:
                 self._running_tasks.pop(execution_id, None)
         finally:
             db.close()
+
+    async def _delegate_to_tie(self, *, task: str, allowed_tools: List[str],
+                               project_id: Optional[int]):
+        """Convierte la tarea del agente en una mision del TIE, acotada a lo que
+        ese agente puede hacer.
+
+        `allowed_tools` se pasa SIEMPRE, incluso vacia: una lista vacia significa
+        "este agente no tiene herramientas" y el TIE lo respetara (el bucle de R1
+        trata la whitelist vacia como 'ninguna', nunca como 'todas'). Pasar None
+        aqui seria el agujero: el planner veria el catalogo entero."""
+        import app.tie as tie
+
+        repo_path = _project_repo_path(project_id) if project_id else None
+        return await tie.submit_mission(
+            task,
+            source="agent",
+            project_id=project_id,
+            allowed_tools=list(allowed_tools),
+            repo_path=repo_path,
+        )
+
+    @staticmethod
+    def _tool_calls_of(mission) -> List[Dict[str, Any]]:
+        """Rastro real de herramientas de la mision, leido del grafo que el
+        executor dejo persistido (T3). Best-effort: si no se puede leer, se
+        devuelve una lista vacia — el `result` de la ejecucion ya tiene el
+        resumen, y perder el detalle no debe hacer fallar al agente."""
+        try:
+            from app.tie import tracer
+
+            trace_id = tracer.trace_id_for_mission(mission.id)
+            if not trace_id:
+                return []
+            graph = tracer.load_graph(trace_id)
+            if graph is None:
+                return []
+            calls: List[Dict[str, Any]] = []
+            for node in graph.nodes.values():
+                for call in (node.tool_calls or []):
+                    calls.append({"node": node.id, **call})
+            return calls
+        except Exception:
+            return []
 
     def cancel_execution(self, execution_id: int) -> bool:
         """Cancela una ejecucion en curso."""

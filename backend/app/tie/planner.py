@@ -18,6 +18,7 @@ from app.ai.reasoning_filter import strip_reasoning
 from app.core.logging_config import get_system_logger
 from app.tie import graph as graph_mod
 from app.tie import router, tracer
+from app.tie.authority import Authority
 from app.tie.contracts import Intent, TaskGraph, TaskNode
 from app.tie.intents import _extract_json
 
@@ -106,11 +107,17 @@ def _parse_nodes(data: dict) -> list[TaskNode]:
 
 
 async def _generate_graph(goal: str, context: str, mission_id: str,
-                          feedback: Optional[str] = None) -> tuple[Optional[TaskGraph], str, Optional[str]]:
+                          feedback: Optional[str] = None,
+                          authority: Optional[Authority] = None) -> tuple[Optional[TaskGraph], str, Optional[str]]:
     """Una pasada del planner: pide el grafo, lo parsea, lo construye y valida.
     Devuelve (graph|None, motivo, model_used). `feedback` (del intento previo) se
     añade al prompt para que el LLM corrija."""
     tools = _tools_available()
+    # [R4] Si la misión tiene frontera (viene de un agente), el modelo solo ve
+    # SUS herramientas. Esto es calidad del plan, no seguridad: la seguridad es
+    # el recorte determinista de más abajo, que no depende de que el LLM haga caso.
+    if authority is not None and authority.allowed_tools is not None:
+        tools = [t for t in tools if t in authority.allowed_tools]
     system = _SYSTEM_PROMPT.replace("{tools}", str(tools))
     user = f"OBJETIVO: {goal}"
     if context:
@@ -136,7 +143,18 @@ async def _generate_graph(goal: str, context: str, mission_id: str,
     if len(nodes) > _MAX_REASONABLE_NODES:
         return None, f"demasiados nodos ({len(nodes)}); un plan debe tener 2-3 (máx 4)", model_used
 
+    # [R4] EL RECORTE DE SEGURIDAD. Determinista, por código, nunca confiado al
+    # LLM: aunque el prompt ya le enseñó solo sus tools, un modelo puede pedir
+    # otra igualmente. Se recorta ANTES de construir el grafo, así que lo que se
+    # persiste en el checkpoint ya viene acotado y una reanudación tras reinicio
+    # no puede recuperar permisos que la misión nunca tuvo.
+    if authority is not None and authority.allowed_tools is not None:
+        for n in nodes:
+            n.tools = [t for t in n.tools if t in authority.allowed_tools]
+
     g = graph_mod.build(mission_id, nodes, created_by="planner")
+    if authority is not None:
+        g.authority = authority.to_dict()
     ok, reason = graph_mod.validate(g)
     if not ok:
         return None, reason, model_used
@@ -150,17 +168,23 @@ async def plan(
     context: str = "",
     mission_id: Optional[str] = None,
     trace_id: Optional[str] = None,
+    authority: Optional[Authority] = None,
 ) -> Optional[TaskGraph]:
     """Planifica un objetivo complejo → TaskGraph validado, o None si no se pudo
     (el caller degrada a camino corto). 1 reintento con feedback ante grafo
     inválido (doc 14 §3.4.1). Registra el plan en Decision API + tracer (best-effort).
+
+    `authority` (R4) acota la misión: el plan solo puede usar las herramientas
+    del agente, y la frontera queda grabada en el propio grafo para que
+    sobreviva al checkpoint.
     """
     mission_id = mission_id or uuid.uuid4().hex
 
-    g, reason, model_used = await _generate_graph(goal, context, mission_id)
+    g, reason, model_used = await _generate_graph(goal, context, mission_id, authority=authority)
     if g is None:
         logger.info(f"[planner] grafo inválido, 1 reintento. Motivo: {reason}")
-        g, reason, model_used = await _generate_graph(goal, context, mission_id, feedback=reason)
+        g, reason, model_used = await _generate_graph(goal, context, mission_id, feedback=reason,
+                                                      authority=authority)
 
     if g is None:
         logger.info(f"[planner] plan no válido tras reintento — se degradará a camino corto. Motivo: {reason}")
