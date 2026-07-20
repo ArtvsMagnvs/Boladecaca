@@ -36,6 +36,14 @@ Handler = Callable[[Event], Awaitable[None]]
 # Registro interno: name -> [handlers]. "*" = comodin (todos los eventos).
 _subscribers: dict[str, list[Handler]] = {}
 
+# [Auditoría v0.9.5, #10] Referencias vivas a las tasks de handlers en vuelo.
+# `loop.create_task()` sin retener la referencia es el footgun documentado de
+# asyncio: el GC puede recolectar (y cancelar) una task de la que nadie tiene
+# referencia. Con un `approval.resolved` en vuelo eso significaría una misión
+# que nunca se reanuda — sin log, sin error, sin nada. El set retiene la
+# referencia hasta que la task termina; `discard` la suelta sola.
+_inflight: set[asyncio.Task] = set()
+
 
 def subscribe(name: str, handler: Handler) -> None:
     """`name` = nombre exacto o "*" (todos). El comodin es el punto de conexion
@@ -65,7 +73,9 @@ def emit(name: str, source: str, payload: Optional[dict] = None) -> None:
         logger.warning(f"emit({name}) sin event loop activo — evento descartado")
         return
     for handler in handlers:
-        loop.create_task(_run_handler(handler, event))
+        task = loop.create_task(_run_handler(handler, event))
+        _inflight.add(task)
+        task.add_done_callback(_inflight.discard)
 
 
 async def _run_handler(handler: Handler, event: Event) -> None:

@@ -46,7 +46,7 @@ def test_catalogo_tiene_9_permisos_todos_disponibles():
     # Browser Tool y Desktop Tool ya existen de verdad (app/tools/browser_tool.py,
     # app/tools/desktop_tool.py). El catálogo sigue teniendo 9 entradas — solo
     # cambió el flag, tal como el diseño de A3b ya anticipaba.
-    assert len(CATALOG) == 9
+    assert len(CATALOG) == 11  # [Auditoría v0.9.5 D-1] +tie.plan_approval, +tie.checkpoint
     assert all(p.available for p in CATALOG)
     assert {"browser.use", "computer.use"} <= {p.id for p in CATALOG}
 
@@ -228,7 +228,7 @@ def test_endpoint_get_permissions(client):
     r = client.get("/api/automation/permissions")
     assert r.status_code == 200
     body = r.json()
-    assert len(body["permissions"]) == 9
+    assert len(body["permissions"]) == 11  # [D-1] los permisos de Misiones entran al catálogo
     assert body["profile"] == "manual"
 
 

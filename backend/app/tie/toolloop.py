@@ -49,7 +49,12 @@ _MAX_OBSERVATION_CHARS = 4000
 class ToolLoopResult:
     """Lo que el bucle le devuelve al runtime. `answer` vacío con `ok=False`
     significa 'no pude fundamentar una respuesta' — el runtime lo convierte en
-    un nodo fallido, NUNCA en una respuesta inventada."""
+    un nodo fallido, NUNCA en una respuesta inventada.
+
+    [Auditoría v0.9.5, A-1] `ok=True` exige FUNDAMENTO: al menos una tool
+    ejecutada con éxito. Un answer sin ninguna tool detrás es, por contrato,
+    un fallo — aunque suene convincente. Es la misma regla de honestidad de R1
+    (doc 23 Δ2), cerrada ahora también por la vía del answer temprano."""
     ok: bool
     answer: str = ""
     tool_calls: list[dict] = field(default_factory=list)   # rastro para AgentResult
@@ -217,9 +222,28 @@ async def _ask_permission(entry: dict, params: dict, approval_gate, *,
             return False, "el usuario ha rechazado esta acción"
         await asyncio.sleep(1.0)
 
+    # [Auditoría v0.9.5, A-2] Timeout → la aprobación se EXPIRA, nunca se deja
+    # `pending`. Antes quedaba viva en la UI pero aprobarla después no hacía
+    # NADA (la misión ya había seguido y `tie_tool_permission` no tiene
+    # ejecutor a propósito): el usuario aprobaba y el sistema lo ignoraba —
+    # una aprobación cadáver. Expirarla es la semántica honesta: desaparece de
+    # pendientes, queda auditada como caducada, y el modelo busca otra vía o
+    # explica el límite. (La alternativa —pausar el nodo como gate de T3—
+    # exigiría persistir el transcript del bucle en el checkpoint; anotada
+    # como evolución V1.1 en el doc 25, no como parche aquí.)
+    expired = await approval_gate.expire(
+        gate_id, note="caducada: el paso siguió sin esta acción tras esperar sin respuesta"
+    )
+    if not expired:
+        # El usuario resolvió JUSTO al final y ganó la carrera: honrar su veredicto.
+        appr = approval_gate.get(gate_id)
+        if getattr(appr, "status", None) == "approved":
+            return True, "aprobado por el usuario (justo a tiempo)"
+        return False, "el usuario ha rechazado esta acción"
+
     return False, (
-        "he pedido permiso al usuario y sigue pendiente de respuesta; "
-        "la solicitud queda visible en Aithera para que la apruebe cuando quiera"
+        "pedí permiso al usuario y no respondió a tiempo; la solicitud ha caducado "
+        "y he seguido sin esa acción"
     )
 
 
@@ -243,6 +267,7 @@ async def run(
     timeout_s: int = 60,
     authority: Optional["Authority"] = None,
     pre_approved: bool = False,
+    session_key: Optional[str] = None,
 ) -> ToolLoopResult:
     """Ejecuta el ciclo elegir→ejecutar→observar.
 
@@ -289,22 +314,56 @@ async def run(
             return ToolLoopResult(ok=False, tool_calls=tool_calls, iterations=iteration,
                                   error=f"el modelo no respondió: {res.error}")
 
+        # [A-1] ¿Hay FUNDAMENTO? Al menos una tool ejecutada con éxito. Sin esto,
+        # ningún answer se acepta como éxito: sería una respuesta inventada con
+        # forma de misión cumplida (el fallo A de la auditoría v0.9.5).
+        grounded = any(c.get("ok") for c in tool_calls)
+        attempted = len(tool_calls) > 0
+
         data = _extract_json(res.text)
         if not data:
-            # El modelo respondió en prosa. Si es la última vuelta lo damos por
-            # respuesta (mejor eso que nada); si no, se le recuerda el formato.
+            # El modelo respondió en prosa. En la última vuelta se conserva el
+            # texto (mejor eso que nada), pero `ok` sigue exigiendo fundamento;
+            # si no lo hay, el nodo falla con el texto como explicación.
             if iteration >= max_iters:
-                return ToolLoopResult(ok=bool(res.text.strip()), answer=res.text.strip(),
-                                      tool_calls=tool_calls, iterations=iteration)
+                text_out = res.text.strip()
+                if grounded:
+                    return ToolLoopResult(ok=bool(text_out), answer=text_out,
+                                          tool_calls=tool_calls, iterations=iteration)
+                return ToolLoopResult(
+                    ok=False, answer=text_out, tool_calls=tool_calls, iterations=iteration,
+                    error=(text_out[:500] if text_out else "sin respuesta")
+                          + " [sin fundamento: ninguna herramienta se ejecutó con éxito]",
+                )
             transcript.append(f"TU RESPUESTA:\n{res.text[:500]}")
             transcript.append('ERROR: responde SOLO con JSON, {"tool": {...}} o {"answer": "..."}.')
             continue
 
         if "answer" in data:
             answer = str(data["answer"]).strip()
-            return ToolLoopResult(ok=bool(answer), answer=answer,
-                                  tool_calls=tool_calls, iterations=iteration,
-                                  error=None if answer else "el modelo respondió vacío")
+            if grounded:
+                return ToolLoopResult(ok=bool(answer), answer=answer,
+                                      tool_calls=tool_calls, iterations=iteration,
+                                      error=None if answer else "el modelo respondió vacío")
+            # Sin fundamento. Dos casos, con trato distinto:
+            # (a) NI SIQUIERA lo intentó → se le rechaza el answer y se le exige
+            #     usar herramientas (hasta agotar vueltas).
+            # (b) Lo intentó y TODO falló/fue denegado → su answer es con toda
+            #     probabilidad la explicación honesta del límite; se acepta como
+            #     FALLO con esa explicación — el responder la contará tal cual,
+            #     nunca como éxito.
+            if not attempted and iteration < max_iters:
+                transcript.append(
+                    "RECHAZADO: no has ejecutado NINGUNA herramienta todavía. Este paso "
+                    "requiere datos reales del sistema: obténlos con una herramienta del "
+                    "catálogo antes de responder. No inventes el resultado."
+                )
+                continue
+            return ToolLoopResult(
+                ok=False, answer=answer, tool_calls=tool_calls, iterations=iteration,
+                error=(answer[:500] if answer else "el modelo respondió vacío")
+                      + " [sin fundamento: ninguna herramienta se ejecutó con éxito]",
+            )
 
         call = data.get("tool")
         if not isinstance(call, dict):
@@ -338,6 +397,25 @@ async def run(
                 tool_calls.append({"tool_id": tool_id, "action": action,
                                    "denied": True, "out_of_scope": True, "reason": out_of_scope})
                 continue
+
+        # [S2-extra, C-1b] ESCRITURA ETIQUETADA — la otra mitad del aislamiento
+        # de proyecto: una memoria guardada DENTRO de una misión de proyecto
+        # queda etiquetada con ese proyecto, determinista, sin depender de que
+        # el modelo se acuerde de incluirlo. Así el filtro de lectura del MOS
+        # tiene siempre la etiqueta que necesita y dos proyectos no se mezclan
+        # ni al leer ni al escribir.
+        if (tool_id == "memory" and action in ("save_memory", "save", "update_memory")
+                and authority is not None and authority.project_id):
+            meta = dict(params.get("metadata") or {})
+            meta.setdefault("project_id", authority.project_id)
+            params["metadata"] = meta
+
+        # [S3, F-1] SESIÓN DE NAVEGADOR POR MISIÓN. El browser aísla pestañas y
+        # cookies por `_session`: dos misiones concurrentes no pueden pisarse la
+        # pestaña activa. Lo inyecta el bucle (no el modelo) desde el id de la
+        # misión — el modelo ni lo ve ni puede falsearlo.
+        if tool_id == "browser" and session_key:
+            params["_session"] = session_key
 
         # Acción sensible → se PREGUNTA al usuario (nunca se deniega por
         # nuestra cuenta). Con el permiso pre-autorizado (A3b) esto es instantáneo.

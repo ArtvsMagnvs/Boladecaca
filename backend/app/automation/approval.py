@@ -116,9 +116,12 @@ class ApprovalGate:
         # rastro de auditoría en `approvals`, solo que con
         # `resolution_note="auto (permiso pre-autorizado)"` y sin pasar por
         # `pending` de cara al usuario.
-        from app.automation.permissions import is_pre_authorized
+        # [Auditoría v0.9.5, D-1] `is_kind_pre_authorized` cubre TANTO los
+        # permisos directos del catálogo (A3b) COMO los kinds de gate del TIE
+        # (tie.plan/tie.node/tie.checkpoint) vía su traducción declarada.
+        from app.automation.permissions import is_kind_pre_authorized
 
-        if is_pre_authorized(kind):
+        if is_kind_pre_authorized(kind):
             await self.resolve(gate_id, approved=True, note="auto (permiso pre-autorizado)")
             return gate_id
 
@@ -240,6 +243,49 @@ class ApprovalGate:
         return ApprovalResult(
             gate_id=gate_id, status=new_status, executed=executed, result=result, error=error
         )
+
+    # ------------------------------------------------------------------
+    # Expirar una aprobación (auditoría v0.9.5, A-2)
+    # ------------------------------------------------------------------
+    async def expire(self, gate_id: str, note: str = "") -> bool:
+        """Marca una aprobación pendiente como EXPIRED — sin ejecutar nada y sin
+        pasar por resolve(). Es la salida limpia para el caso en que quien la
+        abrió ya no puede honrarla (p. ej. el toolloop siguió adelante tras su
+        timeout de espera): dejarla `pending` sería mentir en la UI, porque
+        aprobarla después no tendría ningún efecto.
+
+        Mismo claim atómico que resolve(): idempotente, y si el usuario gana la
+        carrera (la resolvió justo antes), el expire pierde y no toca nada —
+        devuelve False para que el caller sepa que SÍ hubo veredicto real.
+        Emite `approval.expired` (metadatos, doc 17)."""
+        db = SessionLocal()
+        try:
+            claimed = (
+                db.query(Approval)
+                .filter(Approval.id == gate_id, Approval.status == PENDING)
+                .update(
+                    {
+                        Approval.status: EXPIRED,
+                        Approval.resolved_at: datetime.utcnow(),
+                        Approval.resolution_note: note or "caducada sin respuesta",
+                    },
+                    synchronize_session=False,
+                )
+            )
+            db.commit()
+            if not claimed:
+                return False
+            appr = db.get(Approval, gate_id)
+            action_type = appr.action_type if appr else ""
+        finally:
+            db.close()
+
+        emit(
+            "approval.expired",
+            source="automation",
+            payload={"gate_id": gate_id, "action": action_type},
+        )
+        return True
 
     async def _record_decision(self, kind, title, approved, note) -> Optional[str]:
         """Escribe la decisión en la Decision API (SQL `decisions` + espejo). Best-

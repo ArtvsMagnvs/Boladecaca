@@ -279,11 +279,25 @@ class LocalMemoryStore(IMemoryStore):
         query: str,
         max_tokens: int = 1500,
         memory_types: Optional[list[MemoryType]] = None,
+        project_id: Optional[int] = None,
     ) -> str:
         """Bloque de contexto con ATRIBUCION de fuente por linea. Presupuesto de
         tokens aproximado por caracteres (~4 chars/token). El chat (M4) envuelve
         esta llamada con un timeout de 300 ms."""
         items = await self.search(query, memory_types=memory_types, top_k=8)
+        # [S2-extra, C-1b] AISLAMIENTO DE PROYECTO — filtro DETERMINISTA:
+        # trabajando en el proyecto X, un item etiquetado con el proyecto Y no
+        # entra al contexto NUNCA, por parecido que sea semanticamente (dos
+        # videojuegos del mismo genero son el caso real que motivo esto).
+        # Post-filtro en Python y no `where` de Chroma a proposito: aplica
+        # igual a TODOS los tipos de memoria y a items indexados antes de que
+        # existiera la etiqueta, sin depender de la sintaxis de filtros de la
+        # version de Chroma (leccion M3: los rangos sobre strings ya mordieron).
+        if project_id is not None:
+            def _visible(it) -> bool:
+                pid = (it.metadata or {}).get("project_id")
+                return pid is None or pid == "" or str(pid) == str(project_id)
+            items = [it for it in items if _visible(it)]
         if not items:
             return ""
         budget_chars = max(200, max_tokens * 4)

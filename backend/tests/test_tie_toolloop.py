@@ -117,6 +117,16 @@ class _FakeGate:
             status = self.verdict
         return _A()
 
+    async def expire(self, gate_id, note=""):
+        # [A-2] El toolloop expira la aprobación al agotar la espera. True =
+        # estaba pending y se expiró; False = el usuario resolvió antes.
+        if self.verdict == "pending":
+            self.expired = getattr(self, "expired", [])
+            self.expired.append(gate_id)
+            self.verdict = "expired"
+            return True
+        return False
+
 
 @pytest.mark.anyio
 async def test_accion_sensible_SE_PREGUNTA_al_usuario(monkeypatch):
@@ -170,16 +180,21 @@ async def test_si_el_usuario_rechaza_no_se_ejecuta(monkeypatch):
     assert gate.asked                       # se preguntó
     assert ejecutadas == []                 # y NO se ejecutó
     assert "rechazado" in seen[-1]          # el modelo se entera y lo explica
-    assert res.ok
+    # [A-1] El único paso necesario fue rechazado → el nodo NO puede ser un
+    # éxito. La explicación del modelo se conserva y el responder la contará.
+    assert not res.ok
+    assert "permiso" in res.answer
 
 
 @pytest.mark.anyio
-async def test_sin_respuesta_a_tiempo_sigue_sin_esa_accion(monkeypatch):
-    """La aprobación queda pendiente en la UI; el paso no se cuelga para siempre."""
+async def test_sin_respuesta_a_tiempo_expira_y_falla_honesto(monkeypatch):
+    """[Auditoría v0.9.5, A-2] El timeout EXPIRA la aprobación (nunca la deja
+    pendiente-cadáver en la UI) y el paso termina como fallo honesto (A-1: sin
+    fundamento no hay éxito), con la explicación del modelo conservada."""
     seen = _fake_mel(monkeypatch, [
         json.dumps({"tool": {"tool_id": "email", "action": "send_email",
                              "params": {"to": "x@y.com", "subject": "s", "body": "b"}}}),
-        '{"answer": "Lo dejo pendiente de tu permiso."}',
+        '{"answer": "No pude enviarlo: el permiso caducó sin respuesta."}',
     ])
     gate = _FakeGate("pending")
 
@@ -189,8 +204,10 @@ async def test_sin_respuesta_a_tiempo_sigue_sin_esa_accion(monkeypatch):
     )
 
     assert gate.asked
-    assert "pendiente" in seen[-1]
-    assert res.ok
+    assert getattr(gate, "expired", []), "el timeout debe EXPIRAR la aprobación"
+    assert "caducado" in seen[-1] or "caducad" in seen[-1]
+    assert not res.ok                      # sin tool ejecutada no hay éxito (A-1)
+    assert "caducó" in res.answer          # la explicación del modelo se conserva
 
 
 @pytest.mark.anyio
@@ -255,7 +272,13 @@ async def test_respeta_el_maximo_de_iteraciones(monkeypatch):
 
 @pytest.mark.anyio
 async def test_el_fallo_de_una_tool_vuelve_al_modelo(monkeypatch):
-    """Un error no corta el bucle: el modelo lo ve y puede buscar otra vía."""
+    """Un error no corta el bucle: el modelo lo ve, puede seguir intentando, y
+    su respuesta final se conserva. [Auditoría v0.9.5, A-1] Pero `ok` sigue el
+    grounding real: aquí la ÚNICA tool que se llamó falló (el archivo no
+    existe), así que no hay ninguna ejecución exitosa que respalde la
+    respuesta — `ok=False`, igual que en `test_respuesta_no_json_...` de abajo.
+    Antes de A-1 este test exigía `ok=True`, que es justo el bug que A-1 cierra
+    (un fallo real reportado como éxito)."""
     seen = _fake_mel(monkeypatch, [
         json.dumps({"tool": {"tool_id": "filesystem", "action": "read_file",
                              "params": {"path": "~/no_existe_en_absoluto.txt"}}}),
@@ -265,21 +288,25 @@ async def test_el_fallo_de_una_tool_vuelve_al_modelo(monkeypatch):
         instruction="lee un archivo", context="", allowed_tools=["filesystem"],
         tool_manager=tool_manager, max_iters=3,
     )
-    assert res.ok
+    assert not res.ok
+    assert res.answer == "Ese archivo no existe."
     assert "FALLÓ" in seen[-1]
     assert any(c["ok"] is False for c in res.tool_calls)
 
 
 @pytest.mark.anyio
-async def test_respuesta_no_json_en_la_ultima_vuelta_se_acepta(monkeypatch):
-    """Degradación: si el modelo contesta en prosa justo al final, mejor eso que
-    perder su respuesta."""
+async def test_respuesta_no_json_ultima_vuelta_se_conserva_pero_sin_exito(monkeypatch):
+    """[Auditoría v0.9.5, A-1] La prosa del final se CONSERVA (mejor eso que
+    nada) pero sin ninguna tool ejecutada ya no puede ser un éxito: el nodo
+    falla con ese texto como explicación."""
     _fake_mel(monkeypatch, ["Esto es una respuesta en prosa, sin JSON."])
     res = await toolloop.run(
         instruction="x", context="", allowed_tools=["filesystem"],
         tool_manager=tool_manager, max_iters=1,
     )
-    assert res.ok and "prosa" in res.answer
+    assert not res.ok
+    assert "prosa" in res.answer
+    assert "sin fundamento" in (res.error or "")
 
 
 # ---------------------------------------------------------------------------
@@ -289,7 +316,13 @@ async def test_respuesta_no_json_en_la_ultima_vuelta_se_acepta(monkeypatch):
 async def test_nullruntime_usa_el_bucle_cuando_el_nodo_tiene_tools(monkeypatch):
     from app.tie.runtime import AgentTask, NullRuntime
 
-    _fake_mel(monkeypatch, ['{"answer": "hecho con herramientas"}'])
+    # [A-1] Un answer sin tools ya no cuela: el flujo de éxito exige al menos
+    # una ejecución real. Se le da una lectura inocua (file_exists) primero.
+    _fake_mel(monkeypatch, [
+        json.dumps({"tool": {"tool_id": "filesystem", "action": "file_exists",
+                             "params": {"path": "no_existe_seguro_12345.txt"}}}),
+        '{"answer": "hecho con herramientas"}',
+    ])
     task = AgentTask(id="t1", instruction="haz algo", tools=["filesystem"])
     res = await NullRuntime().execute_task(task, memory=None, tools=tool_manager,
                                            approval_gate=None)

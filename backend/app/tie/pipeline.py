@@ -251,6 +251,7 @@ async def submit_mission(
     parent_id: Optional[str] = None,
     allowed_tools: Optional[list[str]] = None,
     repo_path: Optional[str] = None,
+    intent: Optional[Intent] = None,
 ) -> Mission:
     """Entrada PROGRAMÁTICA (AE `AgentTaskAction`, WPMS, Orquestador) — ya sabe
     que es una misión, así que NO hay camino corto: siempre planifica y ejecuta.
@@ -266,7 +267,15 @@ async def submit_mission(
     del agente sería ampliarle los permisos en silencio."""
     mission = new_mission(goal=goal, source=source, channel=channel, project_id=project_id,
                           run_id=run_id, parent_id=parent_id)
-    intent = await intents.classify(goal, channel=channel)
+    # [S2, C-1] `intent` opcional (mismo patrón que handle_stream): quien ya
+    # clasificó no paga una segunda llamada NI una segunda reescritura. Si se
+    # clasifica aquí, `classify` estampa raw_text=goal, así que el planner
+    # trabajará sobre el goal LITERAL que nos pasaron — el texto del encargo ya
+    # no muta entre el decomposer y el plan.
+    if intent is None:
+        intent = await intents.classify(goal, channel=channel)
+    if not intent.raw_text:
+        intent.raw_text = goal
     intent.requires_planning = True  # una misión explícita nunca es "charla"
     trace_id = tracer.record_start(mission, channel=channel)
     tracer.record_intent(trace_id, intent)
@@ -304,7 +313,7 @@ async def submit_mission(
         allowed_tools=allowed_tools,
     )
 
-    context = await _context_for(intent, goal)
+    context = await _context_for(intent, goal, project_id=project_id)
     await _complex_path(goal, intent, mission, trace_id, context,
                         force_model=force_model, authority=authority)
     return mission
@@ -359,10 +368,25 @@ async def _complex_path(
     reenvía → el MEL lo trata como override).
     `authority` (R4): frontera de la misión cuando viene de un agente; el planner
     recorta el plan a sus tools y la graba en el grafo."""
+    # [S2, C-1] EL FIX DE FIDELIDAD: se planifica sobre el TEXTO ORIGINAL del
+    # usuario (`raw_text`), no sobre el goal reescrito por el clasificador.
+    # `text` es el original en los caminos de handle; raw_text lo cubre además
+    # en cualquier caller futuro que solo pase el intent.
     graph = await planner.plan(
-        intent.goal or text, intent, context=context, mission_id=mission.id, trace_id=trace_id,
+        intent.raw_text or text, intent, context=context, mission_id=mission.id, trace_id=trace_id,
         authority=authority,
     )
+    if isinstance(graph, planner.PlanRejection):
+        # [S2, B-1] El objetivo excede las capacidades reales: se le dice AL
+        # USUARIO, claro y a la primera — nunca una misión fantasma que finge.
+        mission.outcome = (
+            f"No puedo hacer esto de forma completa con mis capacidades actuales: "
+            f"{graph.reason}"
+        )
+        mission.state = "done"   # es una RESPUESTA (honesta), no un fallo del sistema
+        tracer.record_end(trace_id, outcome=mission.outcome)
+        tracer.emit_completed(mission, ok=True, nodes=0)
+        return
     if graph is None:
         # El planner no logró un grafo válido ni tras el reintento → degradar al
         # camino corto (regla 11-B: nunca romper; el usuario recibe algo).
@@ -454,13 +478,16 @@ async def _prefetch_context(text: str) -> str:
         return ""
 
 
-async def _context_for(intent: Intent, fallback_query: str) -> str:
+async def _context_for(intent: Intent, fallback_query: str,
+                       project_id: Optional[int] = None) -> str:
     if not intent.requires_memory and not intent.memory_types:
         return ""
     try:
         return await enricher.enrich(
             intent.context_query or intent.goal or fallback_query,
             memory_types=intent.memory_types or None,
+            # [S2-extra, C-1b] Aislamiento de proyecto en el contexto del plan.
+            project_id=project_id,
         )
     except Exception:
         return ""

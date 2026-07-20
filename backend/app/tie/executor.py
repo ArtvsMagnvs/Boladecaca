@@ -36,6 +36,11 @@ _TERMINAL = {NodeState.DONE, NodeState.FAILED, NodeState.SKIPPED, NodeState.CANC
 _CANCELLED: set[str] = set()
 _NODE_TASKS: dict[str, asyncio.Task] = {}
 
+# [S3, F-1] Tareas de limpieza de recursos en vuelo. Se retienen igual que
+# `events._inflight` (#10): un create_task sin referencia puede ser recolectado
+# por el GC antes de terminar y dejar el recurso sin liberar.
+_CLEANUP_TASKS: set = set()
+
 # action_type con el que el TIE pide permiso al ApprovalGate de V0.9.
 GATE_ACTION_TYPE = "tie_resume"
 # [R5] action_type del CHECKPOINT. Distinto a propósito: `tie_resume` autoriza a
@@ -172,7 +177,10 @@ async def _execute_node(node: TaskNode, graph: TaskGraph, mission: Mission, trac
     if node.context_query:
         from app.tie import enricher
 
-        context = await enricher.enrich(node.context_query, memory_types=node.memory_types)
+        # [S2-extra, C-1b] El contexto del nodo respeta la frontera de proyecto
+        # de la misión: memoria de OTROS proyectos jamás entra en este prompt.
+        context = await enricher.enrich(node.context_query, memory_types=node.memory_types,
+                                        project_id=mission.project_id)
 
     task = AgentTask(
         id=AgentTask.new_id(),
@@ -192,6 +200,9 @@ async def _execute_node(node: TaskNode, graph: TaskGraph, mission: Mission, trac
         # está corriendo con un gate resuelto, el usuario dijo que sí: el bucle
         # no tiene que volver a preguntar por cada acción sensible de dentro.
         actions_pre_approved=node.gate_id is not None,
+        # [S3, F-1] La misión dueña: el bucle aísla por ella los recursos con
+        # estado (sesión del navegador) frente a otras misiones concurrentes.
+        mission_id=mission.id,
     )
     runtime = get_runtime(node.runtime)
 
@@ -546,7 +557,25 @@ def _finalize(graph: TaskGraph, mission: Mission, trace_id: str) -> Mission:
     _checkpoint(trace_id, graph)
     if not waiting:
         tracer.set_state(trace_id, mission.state)
+        # [S3, F-1] La misión terminó de verdad (no está esperando al usuario):
+        # se liberan sus recursos con estado. Hoy la sesión del navegador; sin
+        # esto, cada misión que abriera el navegador dejaría un BrowserContext
+        # vivo hasta reiniciar el backend. Best-effort y en background: liberar
+        # recursos jamás debe cambiar el resultado de una misión ya cerrada.
+        _release_mission_resources(mission.id)
     return mission
+
+
+def _release_mission_resources(mission_id: str) -> None:
+    """Cierra los recursos con estado de una misión terminada (fail-soft)."""
+    try:
+        from app.tools import browser_tool
+
+        task = asyncio.create_task(browser_tool.close_session(mission_id))
+        _CLEANUP_TASKS.add(task)
+        task.add_done_callback(_CLEANUP_TASKS.discard)
+    except Exception as e:
+        logger.info(f"[executor] no se pudieron liberar recursos de {mission_id}: {e!r}")
 
 
 def _mission_from_meta(meta: dict, graph: TaskGraph) -> Mission:

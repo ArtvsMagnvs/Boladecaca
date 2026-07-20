@@ -38,7 +38,9 @@ Campos del JSON (todos obligatorios):
     create = crear algo (una tarea, un evento, un borrador de email, un documento).
     execute = ejecutar una acción o herramienta (enviar, mover ficheros, correr algo).
     automate = crear o gestionar una automatización/regla recurrente.
-- "goal": el objetivo en una frase imperativa y verificable (reformula el mensaje).
+- "goal": RESUMEN FIEL del encargo en una frase imperativa, para mostrar en la interfaz.
+    NO añadas información que no esté en el mensaje. NO interpretes ni amplíes.
+    El sistema planifica sobre el mensaje ORIGINAL del usuario, no sobre tu resumen.
 - "domain": lista de dominios afectados, subconjunto de ["email","calendar","project","task","memory","system","web","file","general"].
 - "confidence": número 0..1, tu confianza en esta clasificación.
 - "requires_planning": true si hace falta un plan de varios pasos (no una sola acción).
@@ -199,6 +201,11 @@ async def classify(text: str, *, channel: Optional[str] = None) -> Intent:
             return Intent.conversational_fallback(goal=text)
 
         intent = _coerce_intent(data, goal_fallback=text)
+        # [S2, C-1] El texto ORIGINAL viaja SIEMPRE en el intent, intacto. El
+        # planner planifica sobre esto; `goal` (reescrito por el LLM) queda
+        # como resumen para UI/trazas. Se estampa AQUÍ, no en _coerce_intent,
+        # para que ningún JSON del modelo pueda pisarlo.
+        intent.raw_text = text
 
         # Umbral de confianza (doc 11 B.1): por debajo, se trata como charla — pero
         # se conservan los campos detectados en `raw` para la traza.

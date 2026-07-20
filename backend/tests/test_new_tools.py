@@ -330,8 +330,9 @@ async def _close_browser_after():
     if browser_tool._playwright:
         await browser_tool._playwright.stop()
         browser_tool._playwright = None
-    browser_tool._pages.clear()
-    browser_tool._current_tab = None
+    # [S3, F-1] El estado global `_pages`/`_current_tab` se sustituyo por
+    # sesiones por mision (`_sessions`): limpiarlas equivale a lo de antes.
+    browser_tool._sessions.clear()
 
 
 @pytest.mark.anyio

@@ -91,6 +91,26 @@ CATALOG: list[PermissionDef] = [
         description="Manejar tu ordenador directamente (clics, teclado).",
         group="Sistema", risk="high", available=True,
     ),
+    # [Auditoría v0.9.5, D-1] Los gates del TIE eran "kinds fantasma": tie.plan,
+    # tie.node y tie.checkpoint no existían en este catálogo, así que el perfil
+    # "Autónomo" con TODO activado seguía preguntando por cada plan y cada
+    # entregable (los 5-6 permisos del fallo D). Entran al catálogo como
+    # capacidades de MISIÓN gobernables — la regla de oro de A3b se mantiene:
+    # pre-autorizado nunca es silencioso, el gate se auto-resuelve CON rastro.
+    PermissionDef(
+        id="tie.plan_approval", label="Ejecutar planes sin confirmación",
+        description="Ejecutar los planes de una misión (incluidos sus pasos sensibles) "
+                    "sin pedirte el visto bueno previo. Cada acción sigue gobernada "
+                    "por su propio permiso de esta lista.",
+        group="Misiones", risk="high",
+    ),
+    PermissionDef(
+        id="tie.checkpoint", label="Continuar tras cada entregable",
+        description="Seguir con la misión después de cada entregable sin preguntarte "
+                    "«¿sigo con el resto?». Los entregables quedan igualmente visibles "
+                    "en la vista de Misiones.",
+        group="Misiones", risk="low",
+    ),
 ]
 
 _BY_ID: dict[str, PermissionDef] = {p.id: p for p in CATALOG}
@@ -186,6 +206,34 @@ def permission_for_tool_action(tool_id: str, action: str) -> Optional[str]:
     if not tool_id:
         return None
     return _ACTION_PERMISSION.get(f"{tool_id}.{action}") or _TOOL_PERMISSION.get(tool_id)
+
+
+# ---------------------------------------------------------------------------
+# Kinds de gate → permiso del catálogo (Auditoría v0.9.5, D-1)
+# ---------------------------------------------------------------------------
+# La segunda mitad del fix del 2026-07-19: aquel mapa tradujo las ACCIONES DE
+# TOOL (`tool.<id>.<action>`), pero los gates del propio TIE quedaron fuera.
+# Este mapa los cubre. `tie.node` cae bajo el paraguas de `tie.plan_approval`
+# a propósito: un gate de nodo ES un paso de un plan — quien autoriza ejecutar
+# planes autoriza sus pasos (misma decisión de diseño que T4a: aprobar el plan
+# autoriza sus nodos sensibles).
+_GATE_KIND_PERMISSION: dict[str, str] = {
+    "tie.plan": "tie.plan_approval",
+    "tie.node": "tie.plan_approval",
+    "tie.checkpoint": "tie.checkpoint",
+}
+
+
+def is_kind_pre_authorized(kind: str) -> bool:
+    """La consulta ÚNICA que hace `ApprovalGate.request_approval` (approval.py).
+    Resuelve en orden: (1) el kind ES un permiso del catálogo (p. ej.
+    `email.send`, el caso de A3b); (2) el kind es un gate del TIE con
+    traducción declarada. Fail-closed en todo lo demás — un kind nuevo sin
+    entrada aquí pregunta SIEMPRE, que es el default seguro."""
+    if is_pre_authorized(kind):
+        return True
+    traducido = _GATE_KIND_PERMISSION.get(kind)
+    return bool(traducido) and is_pre_authorized(traducido)
 
 
 def is_tool_action_pre_authorized(tool_id: str, action: str) -> bool:

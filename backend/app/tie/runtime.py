@@ -55,6 +55,11 @@ class AgentTask:
     # conversacion, y ahi debe ser None — mezclar el historial de un chat en una
     # tarea automatica seria contaminar su contexto.
     session_id: Optional[str] = None
+    # [S3, F-1] Id de la MISIÓN dueña de esta tarea. Lo usa el bucle para aislar
+    # los recursos con estado entre misiones concurrentes — hoy la sesión del
+    # navegador (pestañas y cookies propias por misión); cualquier tool con
+    # estado futura se engancha aquí sin cambiar el contrato.
+    mission_id: Optional[str] = None
 
     @staticmethod
     def new_id() -> str:
@@ -143,6 +148,22 @@ def _model_override_from_hint(model_hint: Optional[str]) -> Optional[str]:
     return None
 
 
+# [S2, B-1] Tools cuyo trabajo típico es CONSTRUIR (múltiples escrituras
+# encadenadas): esos nodos reciben el presupuesto ampliado de iteraciones.
+# Las de solo-consulta (email, calendar, search, memory, process…) se quedan
+# con el presupuesto base — más vueltas ahí solo alarga un atasco.
+_WRITE_TOOLS = {"filesystem", "shell", "powershell", "git", "browser", "desktop", "aithera", "download"}
+
+
+def _iters_for(node_tools: list) -> int:
+    """Presupuesto de iteraciones del bucle según las tools del nodo (doc 25 §S2)."""
+    from app.core.config import settings
+
+    if any(t in _WRITE_TOOLS for t in (node_tools or [])):
+        return settings.TIE_TOOL_MAX_ITERS_WRITE
+    return settings.TIE_TOOL_MAX_ITERS
+
+
 class NullRuntime(AgentRuntime):
     """Capabilities `{"chat","tool_use_basic"}`. `execute_task` delega el chat en
     `chat_service.answer()` (el pipeline único, V0.85 M4 — reusa memoria del MOS
@@ -181,7 +202,7 @@ class NullRuntime(AgentRuntime):
                 context=task.context or "",
                 allowed_tools=list(task.tools),
                 tool_manager=tools,
-                max_iters=settings.TIE_TOOL_MAX_ITERS,
+                max_iters=_iters_for(task.tools),
                 # El gate inyectado por el executor: una acción sensible que el
                 # planner no anticipó se le PREGUNTA al usuario, no se deniega.
                 approval_gate=approval_gate,
@@ -197,6 +218,8 @@ class NullRuntime(AgentRuntime):
                 # entero o su gate de nodo), el bucle NO vuelve a preguntar por
                 # cada acción sensible de dentro.
                 pre_approved=task.actions_pre_approved,
+                # [S3, F-1] Aísla los recursos con estado (navegador) por misión.
+                session_key=task.mission_id,
             )
             dur = int((time.monotonic() - t0) * 1000)
             # `ok=False` con motivo → nodo FALLIDO. Es deliberado: preferimos que

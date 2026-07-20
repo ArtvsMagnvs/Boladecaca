@@ -175,7 +175,7 @@ async def test_enricher_devuelve_contexto_y_cachea(monkeypatch):
     enricher.clear_cache()
     calls = {"i": 0}
 
-    async def _ctx(query, max_tokens=1500, memory_types=None):
+    async def _ctx(query, max_tokens=1500, memory_types=None, project_id=None):
         calls["i"] += 1
         return "contexto real del MOS"
 

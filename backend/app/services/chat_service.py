@@ -182,7 +182,7 @@ def _profile_block() -> str:
     return "\n".join(f"- {h['value']}" for h in hechos)
 
 
-async def _mos_context_block(query: str) -> str:
+async def _mos_context_block(query: str, project_id=None) -> str:
     """Memoria del MOS con atribucion de fuente. memory_router.context() ya
     cubre conversaciones (mem_conversational, alias de la coleccion legacy) +
     lo ingestado por M2/M3 (emails, agenda, resumenes diarios) — sin duplicar
@@ -192,7 +192,8 @@ async def _mos_context_block(query: str) -> str:
         return ""
     try:
         return await asyncio.wait_for(
-            memory_router.context(query, max_tokens=CONTEXT_MAX_TOKENS),
+            # [S2-extra, C-1b] aislamiento de proyecto tambien en el chat.
+            memory_router.context(query, max_tokens=CONTEXT_MAX_TOKENS, project_id=project_id),
             timeout=CONTEXT_TIMEOUT_S,
         )
     except asyncio.TimeoutError:
@@ -221,7 +222,8 @@ def _capabilities_block() -> str:
         return ""
 
 
-async def build_system_prompt(user_message: str, *, history: Optional[list] = None) -> str:
+async def build_system_prompt(user_message: str, *, history: Optional[list] = None,
+                              project_id: Optional[int] = None) -> str:
     """[V0.85 M4] Sustituye a chat.py::_build_system_prompt (ahora async: el
     contexto del MOS es una llamada async con presupuesto de latencia).
 
@@ -238,7 +240,7 @@ async def build_system_prompt(user_message: str, *, history: Optional[list] = No
     consulta = _memory_query(user_message, history or [])
     prefs = _preferences_block(consulta)
     profile = _profile_block()
-    mos_ctx = await _mos_context_block(consulta)
+    mos_ctx = await _mos_context_block(consulta, project_id=project_id)
     parts = [base]
     if profile:
         parts.append(f"Lo que sabes del usuario:\n{profile}")
@@ -290,7 +292,7 @@ async def answer(
     from app.mel import Capability, ExecutionRequest, complete as mel_complete
 
     history = recent_turns(session_id)
-    system_prompt = await build_system_prompt(message, history=history)
+    system_prompt = await build_system_prompt(message, history=history, project_id=project_id)
 
     memory_manager.store_conversation("user", message, metadata={"channel": channel})
 

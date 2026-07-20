@@ -12,7 +12,8 @@
 from __future__ import annotations
 
 import uuid
-from typing import Optional
+from dataclasses import dataclass
+from typing import Optional, Union
 
 from app.ai.reasoning_filter import strip_reasoning
 from app.core.logging_config import get_system_logger
@@ -24,16 +25,45 @@ from app.tie.intents import _extract_json
 
 logger = get_system_logger("tie.planner")
 
-# Regla de tamaño (doc 14 §3.2): 2-3 nodos por defecto; >5 para una query simple
-# es un bug del planner, no una feature. Se pide en el prompt y se avisa si excede.
-_MAX_REASONABLE_NODES = 6
+# [S2, B-1] Techo de tamaño FLEXIBLE (decisión del usuario en el plan de
+# corrección, doc 25 §S2): el techo duro de 4-6 nodos era un cuello de botella
+# artificial — una misión de tamaño "proyecto" no cabe en 4 nodos y el planner
+# acababa prometiendo lo imposible o degradando a nada. Ahora: 2-5 típico,
+# hasta 8 si el objetivo lo necesita de verdad; >8 sigue siendo un plan mal
+# hecho (reintento con feedback, como siempre).
+_MAX_REASONABLE_NODES = 8
+
+
+@dataclass
+class PlanRejection:
+    """[S2, B-1] El planner declara HONESTAMENTE que el objetivo excede las
+    capacidades reales del sistema (herramientas/acciones disponibles), con el
+    motivo. El caller lo convierte en una respuesta clara al usuario — NUNCA en
+    una misión fantasma que finge poder y entrega nada. Distinto de None (que
+    significa "no logré un plan válido" y degrada a camino corto)."""
+    reason: str
+
 
 _SYSTEM_PROMPT = """Eres el planificador de Aithera. Recibes un OBJETIVO del usuario y su
 contexto, y devuelves SOLO un objeto JSON con un plan como grafo de tareas (sin texto
 extra, sin markdown).
 
-El plan debe tener entre 2 y 3 nodos (máximo 4 si es realmente necesario). Cada nodo
-es un paso VERIFICABLE. Formato:
+REGLA DE ORO — FIDELIDAD AL OBJETIVO: el plan trata EXACTAMENTE del OBJETIVO tal
+como está escrito. El CONTEXTO (memoria de Aithera) es SOLO REFERENCIA de fondo:
+puede ayudarte a concretar CÓMO ejecutar el objetivo, pero NUNCA lo cambia, lo
+amplía ni lo sustituye. Si el contexto sugiere temas, proyectos o ideas distintas
+de lo pedido, IGNÓRALAS. Planificar otra cosa distinta de lo pedido es el peor
+error posible de este sistema.
+
+HONESTIDAD SOBRE CAPACIDADES: dispones del catálogo REAL de herramientas de abajo,
+con sus acciones. Si el objetivo requiere capacidades que NO están en el catálogo
+(programas concretos que no se pueden ejecutar, hardware, servicios sin
+herramienta), NO inventes un plan que fingirá funcionar: devuelve en su lugar
+{"cannot": "explicación breve y útil de qué falta y qué SÍ podrías hacer"}.
+Decir "no puedo" a tiempo es correcto; prometer y no entregar, no.
+
+El plan típico tiene entre 2 y 5 nodos (hasta 8 solo si el objetivo realmente lo
+necesita). Cada nodo es un paso VERIFICABLE. Formato:
 {
   "nodes": [
     {
@@ -53,8 +83,11 @@ Reglas:
 - "id" único por nodo (n1, n2, n3...).
 - "depends_on": lista de ids de nodos que deben completarse ANTES (define el orden).
   El grafo debe ser acíclico (un nodo no puede depender de sí mismo ni formar ciclos).
-- "tools": SOLO herramientas de esta lista disponible: {tools}. Si un paso no usa
-  herramientas, deja la lista vacía. NUNCA inventes herramientas.
+- "tools": SOLO herramientas del CATÁLOGO REAL de abajo (usa el tool_id). Si un paso
+  no usa herramientas, deja la lista vacía. NUNCA inventes herramientas.
+
+CATÁLOGO REAL (tool_id — qué hace — acciones disponibles):
+{tools}
   IMPORTANTE: las herramientas que pongas aquí SE VAN A USAR DE VERDAD — el paso
   las ejecutará contra el sistema real del usuario. Si un paso necesita un dato
   del sistema (archivos, emails, agenda, procesos, web...), DEBES darle la
@@ -79,15 +112,35 @@ Reglas:
 
 
 def _tools_available() -> list[str]:
-    """El catálogo que ve el planner. Incluye las tools INTERNAS (operar la
-    propia Aithera): el Orquestador puede hacerlo por definición, no es un
-    permiso que nadie le conceda (ver `BaseTool.internal`)."""
+    """Los tool_ids disponibles (para el recorte determinista de autoridad).
+    Incluye las tools INTERNAS (operar la propia Aithera): el Orquestador puede
+    hacerlo por definición, no es un permiso que nadie le conceda."""
     try:
         from app.tools import tool_manager
 
         return sorted(t["tool_id"] for t in tool_manager.list_tools(include_internal=True))
     except Exception:
         return []
+
+
+def _tools_catalog_text(allowed: Optional[set] = None) -> str:
+    """[S2, B-1] El catálogo REAL que ve el planner: tool_id + descripción breve
+    + ids de acciones. Antes solo veía NOMBRES de tools y prometía pasos que la
+    ejecución no podía cumplir (shell sin godot, browser sin instalar programas…).
+    Acotado a una línea por tool para no inflar el prompt (~20 líneas)."""
+    try:
+        from app.tools import tool_manager
+
+        lines = []
+        for t in tool_manager.list_tools(include_internal=True):
+            if allowed is not None and t["tool_id"] not in allowed:
+                continue
+            desc = (t.get("description") or "").split(".")[0][:110]
+            actions = ", ".join(a.get("id", "") for a in t.get("actions", []))
+            lines.append(f'- {t["tool_id"]} — {desc} — acciones: {actions}')
+        return "\n".join(lines) or "(sin herramientas disponibles)"
+    except Exception:
+        return "(catálogo no disponible)"
 
 
 def _internal_tools() -> set:
@@ -135,24 +188,29 @@ def _parse_nodes(data: dict) -> list[TaskNode]:
 
 async def _generate_graph(goal: str, context: str, mission_id: str,
                           feedback: Optional[str] = None,
-                          authority: Optional[Authority] = None) -> tuple[Optional[TaskGraph], str, Optional[str]]:
+                          authority: Optional[Authority] = None,
+                          ) -> tuple[Union[TaskGraph, PlanRejection, None], str, Optional[str]]:
     """Una pasada del planner: pide el grafo, lo parsea, lo construye y valida.
-    Devuelve (graph|None, motivo, model_used). `feedback` (del intento previo) se
-    añade al prompt para que el LLM corrija."""
+    Devuelve (graph|PlanRejection|None, motivo, model_used). `feedback` (del
+    intento previo) se añade al prompt para que el LLM corrija."""
     tools = _tools_available()
     # [R4] Si la misión tiene frontera (viene de un agente), el modelo solo ve
     # SUS herramientas. Esto es calidad del plan, no seguridad: la seguridad es
     # el recorte determinista de más abajo, que no depende de que el LLM haga caso.
+    permitidas: Optional[set] = None
     if authority is not None and authority.allowed_tools is not None:
         # Las internas NO se recortan: no son capacidades que el agente tenga o
         # deje de tener, son de Aithera. Lo que sí las acota es la frontera de
         # PROYECTO (R4), que se comprueba en cada llamada.
         permitidas = set(authority.allowed_tools) | _internal_tools()
         tools = [t for t in tools if t in permitidas]
-    system = _SYSTEM_PROMPT.replace("{tools}", str(tools))
-    user = f"OBJETIVO: {goal}"
+    # [S2, B-1] El planner ve el catálogo REAL (acciones incluidas), no solo nombres.
+    system = _SYSTEM_PROMPT.replace("{tools}", _tools_catalog_text(permitidas))
+    # [S2, C-1] Etiquetado anti-contaminación: el OBJETIVO es la petición
+    # literal; el CONTEXTO va explícitamente marcado como solo-referencia.
+    user = f"OBJETIVO (la petición del usuario, tal cual — la ÚNICA fuente del plan):\n{goal}"
     if context:
-        user += f"\n\nCONTEXTO (memoria de Aithera):\n{context}"
+        user += f"\n\nCONTEXTO (memoria de Aithera — SOLO REFERENCIA, nunca cambia el objetivo):\n{context}"
     if feedback:
         user += f"\n\nEl plan anterior fue INVÁLIDO por: {feedback}\nCorrígelo y devuelve SOLO el JSON válido."
 
@@ -166,13 +224,18 @@ async def _generate_graph(goal: str, context: str, mission_id: str,
     if not data:
         return None, "la respuesta no contenía un JSON parseable", model_used
 
+    # [S2, B-1] Rechazo honesto: el objetivo excede las capacidades reales.
+    if isinstance(data.get("cannot"), str) and data["cannot"].strip():
+        return PlanRejection(reason=data["cannot"].strip()), "rechazo honesto", model_used
+
     try:
         nodes = _parse_nodes(data)
     except ValueError as e:
         return None, str(e), model_used
 
     if len(nodes) > _MAX_REASONABLE_NODES:
-        return None, f"demasiados nodos ({len(nodes)}); un plan debe tener 2-3 (máx 4)", model_used
+        return None, (f"demasiados nodos ({len(nodes)}); un plan típico tiene 2-5 "
+                      f"(máx {_MAX_REASONABLE_NODES})"), model_used
 
     # [R4] EL RECORTE DE SEGURIDAD. Determinista, por código, nunca confiado al
     # LLM: aunque el prompt ya le enseñó solo sus tools, un modelo puede pedir
@@ -201,10 +264,15 @@ async def plan(
     mission_id: Optional[str] = None,
     trace_id: Optional[str] = None,
     authority: Optional[Authority] = None,
-) -> Optional[TaskGraph]:
-    """Planifica un objetivo complejo → TaskGraph validado, o None si no se pudo
-    (el caller degrada a camino corto). 1 reintento con feedback ante grafo
-    inválido (doc 14 §3.4.1). Registra el plan en Decision API + tracer (best-effort).
+) -> Union[TaskGraph, PlanRejection, None]:
+    """Planifica un objetivo complejo → TaskGraph validado; PlanRejection si el
+    objetivo excede las capacidades reales (el caller responde ESO al usuario);
+    None si no se logró un plan válido (el caller degrada a camino corto).
+    1 reintento con feedback ante grafo inválido (doc 14 §3.4.1). Registra el
+    plan en Decision API + tracer (best-effort).
+
+    `goal` [S2, C-1] debe ser el TEXTO ORIGINAL del usuario (`intent.raw_text`),
+    no el goal reescrito por el clasificador.
 
     `authority` (R4) acota la misión: el plan solo puede usar las herramientas
     del agente, y la frontera queda grabada en el propio grafo para que
@@ -213,11 +281,17 @@ async def plan(
     mission_id = mission_id or uuid.uuid4().hex
 
     g, reason, model_used = await _generate_graph(goal, context, mission_id, authority=authority)
+    if isinstance(g, PlanRejection):
+        logger.info(f"[planner] rechazo honesto: {g.reason[:150]}")
+        return g
     if g is None:
         logger.info(f"[planner] grafo inválido, 1 reintento. Motivo: {reason}")
         g, reason, model_used = await _generate_graph(goal, context, mission_id, feedback=reason,
                                                       authority=authority)
 
+    if isinstance(g, PlanRejection):
+        logger.info(f"[planner] rechazo honesto (2.ª pasada): {g.reason[:150]}")
+        return g
     if g is None:
         logger.info(f"[planner] plan no válido tras reintento — se degradará a camino corto. Motivo: {reason}")
         return None

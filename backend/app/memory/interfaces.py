@@ -131,11 +131,20 @@ class IMemoryStore(ABC):
         query: str,
         max_tokens: int = 1500,
         memory_types: Optional[list[MemoryType]] = None,
+        project_id: Optional[int] = None,
     ) -> str:
         """Bloque de contexto listo para inyectar en un prompt, con ATRIBUCION
         de fuente por línea ('[email de X · martes] ...'). Es LA llamada que
         harán chat (V0.85 M4), briefing (V0.9) y Context Enricher (V1.0).
-        Presupuesto de tokens duro: nunca excede `max_tokens` (aprox.)."""
+        Presupuesto de tokens duro: nunca excede `max_tokens` (aprox.).
+
+        `project_id` [S2-extra, C-1b — AISLAMIENTO DE PROYECTO, doc 25]:
+        extensión append-only del contrato congelado (param con default, mismo
+        criterio que `TaskNode.gate_id` en T3). Con project_id, todo item cuya
+        metadata lleve un `project_id` DISTINTO queda EXCLUIDO del contexto —
+        determinista, por código, nunca confiado al LLM. La memoria de un
+        proyecto jamás se cuela en las misiones de otro. Items SIN project_id
+        en metadata = conocimiento general: siempre visibles."""
 
 
 # ---------------------------------------------------------------------------

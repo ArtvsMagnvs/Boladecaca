@@ -115,6 +115,17 @@ class Intent:
     # — trazabilidad —
     raw: dict = field(default_factory=dict)  # respuesta cruda del clasificador (debug/trace)
 
+    # — fidelidad del objetivo (Auditoría v0.9.5, C-1; doc 25 S2) —
+    # El TEXTO ORIGINAL del usuario, tal cual llegó, sin pasar por ningún LLM.
+    # EL BUG QUE CIERRA: `goal` lo REESCRIBE el clasificador (un modelo barato),
+    # y era lo único que llegaba al planner — el texto real del usuario se
+    # perdía en la primera etapa del pipeline, y una misión podía mutar en otra
+    # ("videojuego del Rey León en Godot" → "estrategia de MMORPG"). Desde S2:
+    #   · `raw_text` es LA fuente del planner (el objetivo que se planifica);
+    #   · `goal` queda como resumen para UI/trazas/gates — nunca para planificar.
+    # Campo append-only (default "") — la firma congelada de Intent no cambia.
+    raw_text: str = ""
+
     @property
     def is_short_path(self) -> bool:
         """El camino corto (NullRuntime → respuesta directa, sin grafo ni planner):
@@ -143,7 +154,7 @@ class Intent:
         (fallo del LLM, JSON inválido, confianza < 0.55), se trata como charla.
         Nunca romper; siempre responder algo."""
         return cls(type=IntentType.CONVERSATIONAL, goal=goal, confidence=0.0,
-                   model_capability="chat")
+                   model_capability="chat", raw_text=goal)
 
 
 # ---------------------------------------------------------------------------

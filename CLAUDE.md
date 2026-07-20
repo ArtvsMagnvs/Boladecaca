@@ -2228,8 +2228,98 @@ que nadie lo notara, y hacerlos eager habría roto el presupuesto de arranque.
 
 ---
 
+## 22. Bloque CORRECCIÓN POST-AUDITORÍA (pre-1.0, en curso)
+
+Auditoría de comité (doc 24) sobre 4 fallos reales de producción → plan de
+corrección en 4 sesiones (doc 25). **S1 EJECUTADA (2026-07-20, Fable 5)**:
+- **A-1** `tie/toolloop.py`: grounding — `ok=True` exige ≥1 tool ejecutada con
+  éxito; answer sin tools se rechaza con feedback o se acepta como FALLO
+  honesto (nunca éxito inventado).
+- **A-2** `automation/approval.py` + toolloop: `ApprovalGate.expire()` nuevo —
+  el timeout de espera EXPIRA la aprobación (claim atómico, evento
+  `approval.expired`); cero aprobaciones cadáver en la UI.
+- **D-1** `automation/permissions.py`: catálogo 9→11 permisos
+  (`tie.plan_approval` high, `tie.checkpoint` low, grupo "Misiones") +
+  `_GATE_KIND_PERMISSION` + `is_kind_pre_authorized()` — el perfil Autónomo
+  ya cubre los gates del TIE. Frontend sin tocar (grupos dinámicos).
+- **#9** `app/desktop.py` → tombstone (borrado final: `git rm`).
+- **#10** `core/events.py`: set `_inflight` retiene tasks de handlers (GC).
+- Tests: `test_audit_s1_fixes.py` (10 nuevos) + 4 existentes actualizados a
+  los contratos nuevos + `test_permissions.py` (9→11).
+- **Pendiente S1**: correr suite completa en Windows + verificación en vivo.
+**S2 EJECUTADA (2026-07-20, Fable 5)**:
+- **C-1** fidelidad del goal: `Intent.raw_text` (append-only, estampado por
+  `classify()` tras el parseo — el LLM no puede pisarlo); `_complex_path`
+  planifica sobre el texto ORIGINAL, el goal reescrito queda solo para UI;
+  prompts del clasificador ("resumen fiel, no añadas") y del planner (REGLA
+  DE ORO de fidelidad + OBJETIVO "única fuente del plan" + contexto "SOLO
+  REFERENCIA") reescritos; `submit_mission(intent=…)` opcional. El conductor
+  sigue clasificando por objetivo A PROPÓSITO (intent per-objetivo más
+  preciso; el daño era solo la reescritura, que raw_text elimina — doc 25).
+- **B-1** capacidad honesta: `_tools_catalog_text()` (el planner ve acciones
+  reales, no solo nombres); **`PlanRejection`** — `{"cannot": …}` del modelo →
+  respuesta honesta al usuario sin ejecutar nada (≠ None que degrada);
+  `_MAX_REASONABLE_NODES` 6→8; `TIE_TOOL_MAX_ITERS_WRITE=12` +
+  `runtime._iters_for()` (presupuesto ampliado para nodos de construcción).
+- Tests: `test_audit_s2_fixes.py` (14: 10 de C-1/B-1 + 4 de C-1b). Cero rotos.
+**S2-extra EJECUTADA (2026-07-20, Fable 5)** — petición del usuario (trabaja en
+varios proyectos, la memoria de uno no puede colarse en otro):
+- **C-1b** aislamiento determinista de proyecto: `context()` (interfaces/router/
+  local_store) gana `project_id` (append-only) — items con `project_id` distinto
+  se excluyen, los sin etiqueta (general) entran; filtro en Python, no Chroma.
+  Lectura: enricher (con project_id en caché) ← executor/`mission.project_id`,
+  `_context_for`, `chat_service`. Escritura: el toolloop etiqueta con
+  `authority.project_id` toda `memory.save_memory` en misión de proyecto.
+- **Fix entorno**: `pyproject.toml` raíz era de CrewAI (resto ajeno) y sus
+  addopts rompían `pytest` — era EL error del usuario; sustituido por config
+  mínima de Aithera.
+- **Verificado en el sandbox contra el CÓDIGO REAL** (deps ligeras instaladas,
+  pesadas evitadas por imports lazy): A-1 grounding (toolloop.run real), A-2
+  (ApprovalGate real+SQLite), C-1b (LocalMemoryStore.context real), D-1
+  (permissions real), C-1/B-1/#10 (contracts/planner/events reales) + 17/17
+  lógica pura. **Pendiente en Windows**: suite completa + verificación en vivo.
+**S3 EJECUTADA (2026-07-20, Fable 5)**:
+- **A-3** `tools/browser_tool.py`: `_dismiss_consent()` (10 selectores de CMPs
+  mayoritarios, best-effort, 1.2s×3 máx) se ejecuta tras cada `goto` ANTES de
+  reportar éxito — llegar al muro de cookies no es llegar a la página;
+  `_page_state()` devuelve `{tab_id,url,title,text_excerpt,consent_dismissed}`
+  en `open_url`/`new_tab`/`google_search` (el modelo sabe dónde aterrizó sin
+  otra llamada).
+- **F-1** sesión de navegador POR MISIÓN: el estado global
+  `_pages`/`_current_tab` (condición de carrera real con `ORCH_MAX_CONCURRENT=3`)
+  se sustituye por `_sessions: {mission_id: _Session}` con BrowserContext
+  propio; `AgentTask.mission_id` (append-only) → `toolloop.run(session_key=…)`
+  inyecta `params["_session"]` solo para `browser` (lo pone el código, no el
+  modelo); `close_session()` + `executor._release_mission_resources()` liberan
+  el contexto al terminar la misión (`_CLEANUP_TASKS` retiene las tasks).
+- Tests: `test_audit_s3_browser.py` (10, sin red, dobles de Page/Context);
+  fixture de `test_new_tools.py` actualizada al modelo de sesiones.
+- Verificado contra el código real (browser_tool + toolloop reales). **Vivo con
+  Chromium pendiente**: "abre youtube.com" → title/text_excerpt del contenido.
+**S4 EJECUTADA (2026-07-20, Fable 5)** — `tests/test_product_contracts.py`
+NUEVO (13 tests): la capa que faltaba, la que valida COMPORTAMIENTO en las
+costuras entre módulos (los 4 fallos de producción pasaron los 751 tests de
+módulo). UN solo fake (frontera del LLM); ToolManager escribiendo en disco
+real, ApprovalGate y permisos reales, sin red, limpieza total por test. Los 8
+contratos: "si digo que lo he hecho, lo he hecho" · "lo que pido es lo que se
+planifica" · "si te doy permiso de antemano, no me preguntas" · "una aprobación
+inútil no se queda ahí" · "si te pido un archivo, el archivo existe" · "si solo
+hice parte, te digo qué parte" · "si te digo que pares, paras" · "nunca te
+quedas sin respuesta". **Hallazgo descubierto al escribirlos**: sin el permiso
+`filesystem.write` concedido una misión de archivos NO escribe nada (correcto,
+pero no estaba cubierto ni documentado — explica en parte el fallo B). **Regla
+de mantenimiento**: todo bug de producción entra aquí como test que falla ANTES
+de arreglarse. Verificado contra código real (contratos 1/4/5/7; el kill-switch
+cortó un nodo de 30s en 0,04s sin escribir nada).
+**BLOQUE DE CORRECCIÓN COMPLETO** — los 8 hallazgos bloqueantes tratados.
+Pendiente en Windows: suite completa + verificación en vivo de los 3 escenarios
+de aceptación (doc 24 §5) + decisión Playwright/Chromium en el instalador.
+
+---
+
 *Última actualización: 2026-07-20 — **V1.0 bloque ORQUESTRATOR (R1-R7) CERRADO,
-bump `0.9.2` → `0.9.5`, tag `v0.9.5`** (ver §21). Suite backend: **751 passed**.
+bump `0.9.2` → `0.9.5`, tag `v0.9.5`** (ver §21) + **bloque CORRECCIÓN S1
+ejecutada** (ver §22). Suite backend: **751 passed** (pre-S1; re-verificar).
 Bloques cerrados: V0.2 → V0.7.3 → V0.8 → V0.85 (MOS) → V0.87 (WPMS) → V0.9
 (Automation Engine) → V1.0 TIE v1 (T1-T5) → V1.0 MEL v1 (E1-E2b) → V1.0 Tools →
 **V1.0 Orquestrator (R1-R7)**. Siguiente y último para `1.0.0`: **MVP-beta**

@@ -51,17 +51,23 @@ async def enrich(
     memory_types: Optional[list[str]] = None,
     budget_ms: Optional[int] = None,
     max_tokens: int = 1500,
+    project_id: Optional[int] = None,
 ) -> str:
     """Bloque de contexto del MOS para `query`, con atribución de fuente, dentro
     del presupuesto de latencia. Devuelve "" si no hay memoria, si se agota el
     presupuesto, o ante cualquier error — el caller (planner/pipeline) sigue sin
-    contexto en vez de esperar o romper."""
+    contexto en vez de esperar o romper.
+
+    `project_id` [S2-extra, C-1b — aislamiento de proyecto]: en una misión
+    ligada a un proyecto, la memoria etiquetada con OTRO proyecto queda excluida
+    del contexto de forma determinista (el filtro vive en el store del MOS).
+    Trabajar en el videojuego A jamás trae recuerdos del videojuego B."""
     query = (query or "").strip()
     if not query:
         return ""
 
     types_key = tuple(sorted(memory_types)) if memory_types else ()
-    key = (query, types_key, max_tokens)
+    key = (query, types_key, max_tokens, project_id)
     now = time.monotonic()
 
     cached = _cache.get(key)
@@ -74,7 +80,8 @@ async def enrich(
 
         mts = _map_memory_types(memory_types)
         ctx = await asyncio.wait_for(
-            memory_router.context(query, max_tokens=max_tokens, memory_types=mts),
+            memory_router.context(query, max_tokens=max_tokens, memory_types=mts,
+                                  project_id=project_id),
             timeout=budget_s,
         )
         ctx = ctx or ""

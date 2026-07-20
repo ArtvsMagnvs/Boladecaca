@@ -101,17 +101,21 @@ class MemoryRouter:
         query: str,
         max_tokens: int = 1500,
         memory_types: Optional[list[MemoryType]] = None,
+        project_id: Optional[int] = None,
     ) -> str:
         # En V0.85 todos los tipos viven en el store por defecto -> una llamada.
         # (Multi-store: la construccion del bloque con atribucion vive en el
         # store; cuando existan varios, se compondra a nivel de router — V1.x.)
+        # `project_id` [S2-extra, C-1b]: aislamiento de proyecto, ver interfaces.py.
         types = list(memory_types) if memory_types else list(ACTIVE_TYPES)
         stores = {id(self._store_for(mt)): self._store_for(mt) for mt in types}
         if len(stores) == 1:
             store = next(iter(stores.values()))
-            return await store.context(query, max_tokens=max_tokens, memory_types=types)
+            return await store.context(query, max_tokens=max_tokens, memory_types=types,
+                                       project_id=project_id)
         # Fallback multi-store (no ocurre en V0.85): el store por defecto.
-        return await self._default.context(query, max_tokens=max_tokens, memory_types=types)
+        return await self._default.context(query, max_tokens=max_tokens, memory_types=types,
+                                           project_id=project_id)
 
 
 # Singleton global — mismo patron que ai_manager / memory_manager.

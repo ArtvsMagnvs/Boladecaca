@@ -65,6 +65,11 @@ class Settings:
     # (elegir→ejecutar→observar). 5 basta para encadenar varias herramientas sin
     # que un modelo que se atasca queme tokens indefinidamente.
     TIE_TOOL_MAX_ITERS = int(os.getenv("TIE_TOOL_MAX_ITERS", "5"))
+    # [S2, B-1] Presupuesto AMPLIADO para nodos con herramientas de ESCRITURA
+    # (filesystem/shell/git/…): crear un proyecto con varios archivos no cabe en
+    # 5 vueltas — era parte del techo estructural del fallo B. La selección la
+    # hace el runtime según las tools del nodo (ver runtime.py::_iters_for).
+    TIE_TOOL_MAX_ITERS_WRITE = int(os.getenv("TIE_TOOL_MAX_ITERS_WRITE", "12"))
     # Timeout por llamada a herramienta dentro del bucle (segundos). El
     # ToolManager lo acota además a su propio máximo duro.
     TIE_TOOL_TIMEOUT_S = int(os.getenv("TIE_TOOL_TIMEOUT_S", "60"))
