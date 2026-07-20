@@ -3,9 +3,11 @@
 # Flujo: canal -> adapter.to_envelope() -> gateway.dispatch() -> handler
 #        -> OutboundMessage -> adapter.deliver() -> canal
 #
-# El handler por defecto es el pipeline de chat (AIManager + memoria), el
-# mismo que usa Electron via /api/chat. En V1.0 el handler pasara a ser el
-# Orchestrator SIN tocar ni un adapter: esa es la gracia del envelope.
+# El handler se inyecta con `set_handler()` y HOY (V1.0, tras R2) es el
+# Orquestador: `main.py` hace `gateway.set_handler(orchestrator.handle)` en el
+# lifespan. El cambio no toco ni un adapter — esa es la gracia del envelope.
+# `chat_message_handler` (abajo) sigue siendo el handler por defecto y el
+# camino legacy que queda activo con TIE_ENABLED=false (kill-switch real).
 
 import time
 from typing import Awaitable, Callable, Dict, Optional, Union

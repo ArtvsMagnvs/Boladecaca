@@ -30,7 +30,7 @@ from __future__ import annotations
 import asyncio
 import json
 from dataclasses import dataclass, field
-from typing import Any, Optional
+from typing import Optional
 
 from app.core.logging_config import get_system_logger
 from app.tie.authority import Authority

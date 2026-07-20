@@ -31,6 +31,37 @@ from .stores.skill_store import LocalSkillStore, skill_store
 from .vault import write_daily_summary as vault_write_daily_summary
 from .vault import write_decision as vault_write_decision
 
+
+# --- Jobs de fondo (V0.85 M2/M3, V0.9 A2a, R6.5c) ---
+#
+# [R7] Se exponen aquí para que NADIE tenga que importar `app.memory.ingestion`,
+# `.summarizer`, `.lifecycle` ni `.profile` directamente: eran 12 imports en
+# `main.py`, `endpoints/memory.py`, `automation/actions.py` y `chat_service.py`
+# atravesando la frontera del módulo (doc 16 §4.1).
+#
+# PEREZOSOS a propósito (PEP 562), y esto NO es un capricho: los 4 arrastran
+# dependencias caras (ChromaDB, sentence-transformers, el WPMS) y sus callers ya
+# los importaban DENTRO de la función justamente para no pagarlo en el arranque
+# — hay un test con presupuesto de 2 s sobre `import app.main` que salta si esto
+# se hace eager. Con `__getattr__`, `from app.memory import profile` dentro de
+# una función sigue siendo tan diferido como antes, pero ya respeta la frontera.
+_LAZY_SUBMODULES = ("ingestion", "summarizer", "lifecycle", "profile")
+
+
+def __getattr__(name: str):
+    if name in _LAZY_SUBMODULES:
+        import importlib
+
+        modulo = importlib.import_module(f"{__name__}.{name}")
+        globals()[name] = modulo      # se cachea: el segundo acceso es gratis
+        return modulo
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
+def __dir__():
+    return sorted(list(globals()) + list(_LAZY_SUBMODULES))
+
+
 __all__ = [
     # legacy
     "MemoryManager",
@@ -52,4 +83,9 @@ __all__ = [
     # vault
     "vault_write_daily_summary",
     "vault_write_decision",
+    # jobs de fondo (perezosos)
+    "ingestion",
+    "summarizer",
+    "lifecycle",
+    "profile",
 ]

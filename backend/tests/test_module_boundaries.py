@@ -25,6 +25,15 @@ FORBIDDEN_MODULES = (
     ("app.memory.router", MEMORY_DIR),
     ("app.memory.interfaces", MEMORY_DIR),
     ("app.memory.vault", MEMORY_DIR),
+    # [R7] Los jobs de fondo del MOS. Estaban FUERA de esta lista y se
+    # importaban directamente desde main.py, endpoints/memory.py,
+    # automation/actions.py y chat_service.py — 12 imports cruzando la frontera
+    # sin que nadie lo notara. Ahora se exponen en el barrel (perezosos, para no
+    # penalizar el arranque) y esta entrada impide que vuelva a pasar.
+    ("app.memory.ingestion", MEMORY_DIR),
+    ("app.memory.summarizer", MEMORY_DIR),
+    ("app.memory.lifecycle", MEMORY_DIR),
+    ("app.memory.profile", MEMORY_DIR),
     ("app.workspace.models", WORKSPACE_DIR),
     ("app.workspace.service", WORKSPACE_DIR),
     ("app.workspace.progress", WORKSPACE_DIR),
@@ -69,6 +78,7 @@ FORBIDDEN_MODULES = (
     ("app.mel.models", APP_DIR / "mel"),
     ("app.mel.research", APP_DIR / "mel"),
     ("app.mel.overrides", APP_DIR / "mel"),
+    ("app.mel.repetition", APP_DIR / "mel"),   # [R7] era el único del MEL sin vigilar
     # V1.0 (R2): fronteras del Orquestador. La dependencia va en UN SOLO
     # sentido (orquestador -> TIE); el test de abajo vigila que no haya ciclo.
     ("app.orchestrator.contracts", APP_DIR / "orchestrator"),
@@ -108,7 +118,10 @@ def test_orchestrator_public_api_completa():
 
     esperado = {
         "Objective", "OrchestrationRun",
-        "handle", "submit", "recent_runs", "get_run", "cancel_run",
+        # `handle_stream` es la entrada que usa /api/chat/stream — es decir, la
+        # interfaz principal del usuario. Estaba en `__all__` pero NO se exigía
+        # aquí: [R7] la firma más crítica del barrel se quedaba sin blindar.
+        "handle", "handle_stream", "submit", "recent_runs", "get_run", "cancel_run",
     }
     assert esperado <= set(orch.__all__)
     for nombre in esperado:

@@ -73,11 +73,12 @@ async def _daily_briefing_text() -> str:
     trae el bloque `workspace` desde V0.87 W4) — sin llamadas nuevas a Gmail/LLM."""
     from datetime import datetime
 
-    from app.memory.summarizer import build_deterministic_summary, gather_day_data, get_cached_summary
+    from app.memory import summarizer
 
     target = datetime.utcnow().date()
-    data = gather_day_data(target)
-    summary = await get_cached_summary(target) or build_deterministic_summary(data)
+    data = summarizer.gather_day_data(target)
+    summary = (await summarizer.get_cached_summary(target)
+               or summarizer.build_deterministic_summary(data))
 
     lines = [f"📋 Briefing de hoy ({data['date']})", summary]
     ws = data.get("workspace") or {}

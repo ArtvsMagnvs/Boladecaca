@@ -20,7 +20,6 @@ from __future__ import annotations
 
 import asyncio
 import time
-from typing import Optional
 
 from app.core.logging_config import get_system_logger
 from app.orchestrator import store

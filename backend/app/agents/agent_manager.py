@@ -9,10 +9,16 @@
 # - Permitir cancelar tareas en curso (status='cancelled').
 # - Traducir entre Agent (SQLAlchemy) y AgentResponse (Pydantic).
 #
-# Importante: el AgentManager NO decide QUE herramientas usar. Esa decision
-# la toma la IA (en V0.5 sera un placeholder; en V0.6 vendra un agente LLM
-# que devuelva una lista de tool_calls). Aqui solo EJECUTAMOS lo que la IA
-# decidio, con todas las validaciones.
+# Importante: el AgentManager NO decide QUE herramientas usar ni COMO hacer la
+# tarea. Desde R4 (doc 23) delega la ejecucion real en el TIE
+# (`tie.submit_mission`) pasandole la whitelist de tools del agente y su
+# proyecto: el agente hereda las 14 tools, el planner, el bucle de tool-use y el
+# MEL sin logica propia. Lo que este modulo aporta es la FRONTERA — un agente
+# nunca puede tocar mas de lo que tiene asignado.
+#
+# [Historico] Hasta R4 esto era el placeholder de V0.5: ignoraba la tarea del
+# usuario y ejecutaba acciones de demo fijas (list_dir/list_scripts/git status)
+# segun las tools asignadas. Ya no queda nada de eso.
 
 import asyncio
 import json

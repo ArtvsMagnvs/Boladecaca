@@ -171,9 +171,9 @@ def _profile_block() -> str:
     usuario" no se busca, se LEE entero (acotado por `MAX_FACTS_PER_RUN`,
     unas pocas decenas como mucho — barato, sin LLM, sin ranking)."""
     try:
-        from app.memory.profile import list_facts
+        from app.memory import profile
 
-        hechos = list_facts()
+        hechos = profile.list_facts()
     except Exception as e:
         print(f"[chat_service] list_facts error: {e}")
         return ""

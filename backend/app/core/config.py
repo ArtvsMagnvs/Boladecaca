@@ -8,10 +8,10 @@ load_dotenv()
 class Settings:
     # App settings
     APP_NAME = "Aithera"
-    # V1.0 T5 (cierre del bloque TIE, doc 21) - bump sincronizado con main.py y
-    # frontend/package.json. Tag v0.9.2 (por decision del usuario 2026-07-16, el
-    # cierre de V1.0 COMPLETO -tras MEL + MVP-beta- sera v1.0.0).
-    VERSION = "0.9.2"
+    # V1.0 R7 (cierre del bloque ORQUESTRATOR, doc 23) - bump sincronizado con
+    # main.py y frontend/package.json. Tag v0.9.5. El cierre de V1.0 COMPLETO
+    # (tras el MVP-beta) sera v1.0.0.
+    VERSION = "0.9.5"
     DEBUG = os.getenv("DEBUG", "false").lower() == "true"
 
     # API settings
@@ -51,8 +51,10 @@ class Settings:
     # vacíos, el router cae al modelo del proveedor activo del AIManager. Cuando
     # exista el MEL (E1, plan aparte), estos settings los gestionan sus políticas
     # y `router.py` pasa a delegar en `mel.complete(capability=...)`.
-    TIE_FAST_MODEL = os.getenv("TIE_FAST_MODEL", "")   # intent/clasificación (barato)
-    TIE_SMART_MODEL = os.getenv("TIE_SMART_MODEL", "")  # planner (potente)
+    # [R7] TIE_FAST_MODEL/TIE_SMART_MODEL retirados: eran los hints de T2, previos
+    # al MEL. Desde E2 quien elige modelo es el MEL (política activa + override de
+    # tarea + pin de proyecto, configurable en Ajustes → Inteligencia). Dejarlos
+    # habría sido un segundo mando que ya no movía nada.
     # Presupuesto de latencia DURO del contexto del MOS (ms). Si el enricher lo
     # excede, contexto vacío — el TIE nunca espera (mismo patrón que chat_service M4).
     TIE_CONTEXT_BUDGET_MS = int(os.getenv("TIE_CONTEXT_BUDGET_MS", "300"))

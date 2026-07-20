@@ -76,7 +76,7 @@ def get_stats():
 async def get_briefing(date: Optional[str] = Query(None, description="YYYY-MM-DD; default hoy")):
     from datetime import date as _date, datetime as _datetime
 
-    from app.memory.summarizer import build_deterministic_summary, gather_day_data, get_cached_summary
+    from app.memory import summarizer
 
     if date:
         try:
@@ -91,14 +91,14 @@ async def get_briefing(date: Optional[str] = Query(None, description="YYYY-MM-DD
     # directamente desde un `async def` CONGELA el event loop entero mientras
     # dura — y el Hub la pide al montar y cada 30s. Su coste crece con los datos
     # (`_urgent_pending` no esta acotado por dia), asi que iba a empeorar sola.
-    data = await asyncio.to_thread(gather_day_data, target)
-    cached = await get_cached_summary(target)
+    data = await asyncio.to_thread(summarizer.gather_day_data, target)
+    cached = await summarizer.get_cached_summary(target)
     if cached:
         summary, summary_source = cached, "cached"
     else:
         # Sin resumen nocturno todavia para esta fecha: determinista al vuelo
         # (cero LLM en el critical path de un GET — presupuesto de latencia).
-        summary, summary_source = build_deterministic_summary(data), "live_deterministic"
+        summary, summary_source = summarizer.build_deterministic_summary(data), "live_deterministic"
 
     return {**data, "summary": summary, "summary_source": summary_source}
 
@@ -229,14 +229,14 @@ def ingest_status():
     from datetime import datetime, timedelta
 
     from app.core.config import settings
-    from app.memory.ingestion import JOB_CALENDAR, JOB_EMAIL, last_run
+    from app.memory import ingestion
 
     jobs = {}
     for job_name, interval_min in (
-        (JOB_EMAIL, settings.MEMORY_INGEST_INTERVAL_MIN),
-        (JOB_CALENDAR, settings.MEMORY_INGEST_CALENDAR_INTERVAL_MIN),
+        (ingestion.JOB_EMAIL, settings.MEMORY_INGEST_INTERVAL_MIN),
+        (ingestion.JOB_CALENDAR, settings.MEMORY_INGEST_CALENDAR_INTERVAL_MIN),
     ):
-        run = last_run(job_name)
+        run = ingestion.last_run(job_name)
         next_run_at = None
         if run is not None and run.finished_at is not None:
             next_run_at = (run.finished_at + timedelta(minutes=interval_min)).isoformat()
@@ -251,13 +251,13 @@ def ingest_status():
 @router.post("/ingest/run")
 async def ingest_run(job: Literal["email", "calendar", "all"] = Query("all")):
     """Fuerza una pasada de ingesta (para probar sin esperar al intervalo)."""
-    from app.memory.ingestion import ingest_calendar, ingest_email
+    from app.memory import ingestion
 
     results = []
     if job in ("email", "all"):
-        results.append(await ingest_email())
+        results.append(await ingestion.ingest_email())
     if job in ("calendar", "all"):
-        results.append(await ingest_calendar())
+        results.append(await ingestion.ingest_calendar())
     return {"results": results}
 
 
@@ -270,9 +270,9 @@ async def ingest_run(job: Literal["email", "calendar", "all"] = Query("all")):
 @router.get("/profile")
 def get_profile():
     """Todos los hechos guardados sobre el usuario, para Ajustes."""
-    from app.memory.profile import list_facts
+    from app.memory import profile
 
-    items = list_facts()
+    items = profile.list_facts()
     return {"items": items, "count": len(items)}
 
 
@@ -280,9 +280,9 @@ def get_profile():
 async def delete_profile_fact(key: str):
     """Borra un hecho por su key. Reversible: si vuelve a aparecer en el chat,
     se re-extrae la próxima noche."""
-    from app.memory.profile import delete_fact
+    from app.memory import profile
 
-    ok = await delete_fact(key)
+    ok = await profile.delete_fact(key)
     if not ok:
         raise HTTPException(status_code=404, detail=f"hecho no encontrado: {key}")
     return None
@@ -292,9 +292,9 @@ async def delete_profile_fact(key: str):
 async def run_profile_distill():
     """Fuerza una pasada del destilado nocturno (para probar sin esperar a las
     03:45). Mismo patrón que POST /ingest/run."""
-    from app.memory.profile import distill
+    from app.memory import profile
 
-    return await distill()
+    return await profile.distill()
 
 
 # ----------------------------------------------------------------------

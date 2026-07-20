@@ -10,7 +10,6 @@
 # conseguido Y se explica lo que no — jamás se finge éxito total.
 from __future__ import annotations
 
-from typing import Optional
 
 from app.ai.reasoning_filter import strip_reasoning
 from app.core.logging_config import get_system_logger

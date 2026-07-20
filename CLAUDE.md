@@ -2185,15 +2185,55 @@ Registro/arranque en el `lifespan` de `main.py` (`gateway.register(...)` +
 
 ---
 
-*Última actualización: 2026-07-18 — V1.0 Capacitación de tools (auditoría en vivo
-de las 6 existentes + adjuntos en el Email Assistant + 8 tools nuevas: process,
-secrets, memory, model, download, search, browser, desktop → 14 tools/91 acciones;
-`browser.use`/`computer.use` activados en Permisos). Sin bump (sigue `0.9.2`).
-Suite backend: 539 passed. Bloques cerrados hasta ahora: V0.2 → V0.7.3 → V0.8 →
-V0.85 (MOS) → V0.87 (WPMS) → V0.9 (Automation Engine) → V1.0 TIE v1 (T1-T5) →
-V1.0 MEL v1 (E1-E2b) → V1.0 Tools. Siguiente: **integración Orchestrator**
-(sustituir el placeholder de V0.5 en `agent_manager._run_execution` por
-delegación real al TIE) → MVP-beta (→ cierre `1.0.0`).*
+## 21. Bloque ORQUESTRATOR (V1.0, cerrado en `0.9.5`)
+
+Plan de sesiones: `PLAN_MAESTRO_2026/23_ORQUESTRATOR_PLAN_SESIONES.md` (R1-R7).
+**La capa POR ENCIMA del TIE**, no un renombrado: decide QUÉ MISIONES hay;
+el TIE decide los pasos DENTRO de una misión; el MEL decide el modelo.
+
+**El problema que resuelve** (doc 23 §0): antes, «revisa mis emails **y además**
+apunta esta idea» acababa en UNA misión con pasos secuenciales — el planner
+colapsaba encargos heterogéneos y el segundo se perdía o esperaba al primero.
+
+| Sprint | Qué añadió |
+|---|---|
+| **R1** | `tie/toolloop.py` — el bucle elegir→ejecutar→observar. **Δ2**: el TIE NUNCA había ejecutado una tool (el nodo solo llevaba una whitelist y nadie escribía `metadata.tool_call`): decía haber listado archivos y se los inventaba. Era un fallo de honestidad, no de funcionalidad |
+| **R2** | `app/orchestrator/` — `decomposer` (1 mensaje → N objetivos con dependencias), `conductor` (concurrencia + semáforo + aislamiento + anidamiento), `consolidator`, `store`. Migración 24 (`orchestration_runs`) |
+| **R3** | `tools/aithera_tool.py` — Aithera se opera a sí misma (proyectos/tareas/agentes/reglas/cron). **Adaptadores**, nunca reimplementan lógica de negocio. `internal=True`: no es asignable a un agente, es del Orquestador |
+| **R4** | `tie/authority.py` — frontera de autoridad por misión. `agent_manager._run_execution` deja de ser el placeholder de V0.5 y delega en el TIE con la whitelist del agente; `AgentTaskAction` del AE también |
+| **R5** | Checkpoints verificables (reusando el ApprovalGate) + `core/notify.py` (aviso por el canal preferido) + cron desde el chat que sobrevive al reinicio |
+| **R6** | `tie/capabilities_map.py` — el chat sabe qué puede hacer Aithera, generado DESDE el código (no una lista a mano que envejece). Navegación fluida: `search` → `browser` |
+| **R6.5a** | `ExecutionRequest.messages` + los 12 proveedores (OpenAI-compat / Anthropic / Gemini / Ollama / Claude Code, 4 formatos incompatibles). Solo la tubería: el chat responde igual que antes |
+| **R6.5b** | Continuidad real: `chat_messages.session_id` (migración 25) + ventana de turnos con presupuesto + la consulta al MOS deja de ser el mensaje suelto |
+| **R6.5c** | `memory/profile.py` — hechos estables del usuario destilados en el job nocturno, visibles y borrables en Ajustes |
+| **R7** | Cierre: E2E con la cadena real, rendimiento medido, auditoría, bump `0.9.5` |
+
+**Números de R7** (medidos, no prometidos):
+- **Overhead del Orquestador en el camino de 1 objetivo: 0,0017 ms** (presupuesto
+  50 ms). La regla de no-regresión de doc 23 §0 —el ~80% de los mensajes no paga
+  ni una llamada extra al LLM ni latencia— era una promesa escrita; ahora está
+  medida y con test que la vigila.
+- Concurrencia real verificada contra Postgres: pico de 2 misiones simultáneas,
+  `ORCH_MAX_CONCURRENT` respetado, dependencias sin paralelizar.
+
+**Limpieza de R7** (deuda del propio bloque, saldada): se retiró el subárbol
+muerto de `tie/router.py` (`fast`/`smart`/`choose`/`active_model` + los settings
+`TIE_FAST_MODEL`/`TIE_SMART_MODEL`) — desde E2 la elección de modelo la hace el
+MEL y aquello era un segundo mando desconectado; 5 imports sin usar; 3 cabeceras
+que describían un pasado ya sustituido. Los jobs del MOS (`ingestion`,
+`summarizer`, `lifecycle`, `profile`) pasan a exponerse en el barrel de
+`app.memory` de forma PEREZOSA (PEP 562) y quedan vigilados por
+`test_module_boundaries.py`: eran 12 imports cruzando la frontera del módulo sin
+que nadie lo notara, y hacerlos eager habría roto el presupuesto de arranque.
+
+---
+
+*Última actualización: 2026-07-20 — **V1.0 bloque ORQUESTRATOR (R1-R7) CERRADO,
+bump `0.9.2` → `0.9.5`, tag `v0.9.5`** (ver §21). Suite backend: **751 passed**.
+Bloques cerrados: V0.2 → V0.7.3 → V0.8 → V0.85 (MOS) → V0.87 (WPMS) → V0.9
+(Automation Engine) → V1.0 TIE v1 (T1-T5) → V1.0 MEL v1 (E1-E2b) → V1.0 Tools →
+**V1.0 Orquestrator (R1-R7)**. Siguiente y último para `1.0.0`: **MVP-beta**
+(instalador NSIS, auto-start del backend, onboarding).*
 *Construido desde el estado real del repositorio (código + Alembic + docs de fase).*
 *Sustituye a la versión V0.2 anterior, que declaraba un estado obsoleto.*
 

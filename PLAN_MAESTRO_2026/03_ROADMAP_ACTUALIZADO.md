@@ -167,11 +167,18 @@ Arquitectura de 4 capas (Triggers/Conditions/Actions/Learner) con MVP funcional:
 
 ## 5. V1.0 — **TIE v1** (Orchestrator) + **MVP BETA distribuible** (docs 14 + 11-B)
 
-> ✅ **TIE v1 (T1-T5) CERRADO — 2026-07-17, tag `v0.9.2`** (plan de sesiones
-> detallado: doc 21). Lo que sigue en esta sección describe TODO V1.0
-> (incluido MEL + MVP-beta), que quedan como planes APARTE — decisión de
-> versión del usuario (2026-07-16): el TIE cierra un bloque en `0.9.2`; MEL +
-> integración Orchestrator + MVP-beta cierran V1.0 completo en `1.0.0`.
+> ✅ **TIE v1 (T1-T5) CERRADO — 2026-07-17, tag `v0.9.2`** (plan: doc 21).
+> ✅ **MEL v1 (E1-E2b) CERRADO** (plan: doc 22), sin bump.
+> ✅ **ORQUESTRATOR (R1-R7) CERRADO — 2026-07-20, tag `v0.9.5`** (plan: doc 23).
+>
+> El Orquestador NO era un renombrado del TIE sino la capa POR ENCIMA: decide
+> QUÉ MISIONES hay (descomposición, concurrencia, anidamiento, consolidación),
+> mientras el TIE decide los pasos dentro de una misión y el MEL el modelo. En
+> R1 se cerró además el hueco más grave del TIE (Δ2): NUNCA había ejecutado una
+> tool — decía haber hecho cosas que se inventaba.
+>
+> **Queda UN bloque para `1.0.0`: el MVP-beta** (instalador NSIS, auto-start del
+> backend, onboarding). Todo lo demás de V1.0 está cerrado.
 
 El cerebro: los 6 componentes de 11-B (Intent Classifier barato-siempre → Context
 Enricher con pre-fetch/caché → Task Planner potente-solo-si-hace-falta → Executor

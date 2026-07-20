@@ -194,31 +194,31 @@ async def lifespan(app: FastAPI):
     # /api/memory/ingest/run siguen llamando a las funciones de trabajo directamente.
     try:
         from app.automation import scheduler_service
-        from app.memory.ingestion import ingest_email, ingest_calendar
-        from app.memory.summarizer import run_summarizer
-        from app.memory.profile import distill as distill_profile
-        from app.memory.lifecycle import lifecycle_manager
+        # [R7] Del barrel (perezoso), no de los submódulos: la frontera del
+        # módulo la vigila `test_module_boundaries.py`. Sigue siendo un import
+        # diferido dentro del lifespan, así que el arranque no lo paga.
+        from app.memory import ingestion, lifecycle, profile, summarizer
 
         scheduler_service.start()
         # Ingesta (M2): intervalos configurables + jitter + primer disparo retrasado
         # (no competir con el arranque, como el jitter inicial de los _loop de V0.85).
         scheduler_service.add_interval_job(
-            ingest_email, minutes=settings.MEMORY_INGEST_INTERVAL_MIN,
+            ingestion.ingest_email, minutes=settings.MEMORY_INGEST_INTERVAL_MIN,
             id="mos_ingest_email", jitter=30, first_run_delay_s=40,
         )
         scheduler_service.add_interval_job(
-            ingest_calendar, minutes=settings.MEMORY_INGEST_CALENDAR_INTERVAL_MIN,
+            ingestion.ingest_calendar, minutes=settings.MEMORY_INGEST_CALENDAR_INTERVAL_MIN,
             id="mos_ingest_calendar", jitter=30, first_run_delay_s=60,
         )
         # Resumen nocturno (M3): 03:30 local.
-        scheduler_service.add_cron_job(run_summarizer, hour=3, minute=30, id="mos_summarizer")
+        scheduler_service.add_cron_job(summarizer.run_summarizer, hour=3, minute=30, id="mos_summarizer")
         # [R6.5c] Destilado del perfil: 03:45 local, tras el resumen y antes del
         # lifecycle — trabajo propio (checkpoint por mensaje de chat, no por
         # día), por eso es un job aparte y no una llamada dentro del summarizer.
-        scheduler_service.add_cron_job(distill_profile, hour=3, minute=45, id="mos_profile_distill")
+        scheduler_service.add_cron_job(profile.distill, hour=3, minute=45, id="mos_profile_distill")
         # Lifecycle (A2a): tras el summarizer, hora local configurable (default 04:00).
         scheduler_service.add_cron_job(
-            lifecycle_manager.run, hour=settings.MEMORY_LIFECYCLE_HOUR, minute=0, id="mos_lifecycle"
+            lifecycle.lifecycle_manager.run, hour=settings.MEMORY_LIFECYCLE_HOUR, minute=0, id="mos_lifecycle"
         )
         # [Fix bug real 2026-07-17] Limpieza de misiones del TIE (estado operativo
         # en orchestrator_traces, no memoria — mismo espiritu que mos_lifecycle
@@ -386,8 +386,8 @@ app = FastAPI(
     title="Aithera API",
     description="Sistema Operativo de IA - Backend API",
     # V1.0 T5 (cierre del bloque TIE, doc 21) - bump sincronizado con root(),
-    # core/config.py y frontend/package.json. Tag v0.9.2.
-    version="0.9.2",
+    # core/config.py y frontend/package.json. Tag v0.9.5.
+    version="0.9.5",
     lifespan=lifespan
 )
 
@@ -451,10 +451,10 @@ app.include_router(mel_endpoints.router, prefix="/api")
 @app.get("/")
 def root():
     """V1.0 T5 (cierre del bloque TIE - bump sincronizado con FastAPI
-    app.version y core/config.py). Tag v0.9.2."""
+    app.version y core/config.py). Tag v0.9.5."""
     return {
         "name": "Aithera",
-        "version": "0.9.2",
+        "version": "0.9.5",
         "status": "running"
     }
 
