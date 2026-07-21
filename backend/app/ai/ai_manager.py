@@ -413,6 +413,9 @@ class AIManager:
                 "is_configured": is_configured,
                 "requires_key": info.get("requires_key", True),
                 "available_models": info.get("models", []),
+                # [2026-07-21] Nombres comerciales para la UI (id -> etiqueta).
+                "model_labels": info.get("model_labels", {}),
+                "description": info.get("description"),
             })
         return result
 

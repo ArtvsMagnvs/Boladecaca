@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import time
 from dataclasses import dataclass, field
 from typing import Optional
 
@@ -302,14 +303,31 @@ async def run(
     tool_calls: list[dict] = []
     by_pair = {(e["tool_id"], e["action"]): e for e in catalog}
 
+    # [Opt latencia 2026-07-21] EL bucle domina la latencia (1 llamada/acción).
+    # Se fuerza un modelo RÁPIDO: un modelo fijado (TIE_TOOL_MODEL) tiene máxima
+    # prioridad; si no, la política TIE_TOOL_POLICY (default "economy",
+    # local-primero). Nunca el modelo de calidad del usuario, que puede ser
+    # opus/gpt y tardar 15s POR PASO. `model_override` (el usuario dijo "usa X
+    # para esto") sigue mandando sobre todo.
+    from app.core.config import settings as _settings
+    _tool_model = model_override or (_settings.TIE_TOOL_MODEL or None)
+    _tool_policy = None if _tool_model else _settings.TIE_TOOL_POLICY
+
     for iteration in range(1, max_iters + 1):
+        # [Opt latencia · profiling] tiempo de la decisión del modelo por paso —
+        # así se ve en el log del backend cuánto tarda CADA acción de la misión.
+        _t_iter = asyncio.get_event_loop().time()
         res = await mel_complete(ExecutionRequest(
             capability=Capability.AGENTIC,
             prompt="\n\n".join(transcript),
             system_prompt=_SYSTEM_PROMPT,
-            model_override=model_override,
+            model_override=_tool_model,
+            policy_override=_tool_policy,
             context_tags={"project_id": project_id} if project_id else {},
         ))
+        _ms = int((asyncio.get_event_loop().time() - _t_iter) * 1000)
+        logger.info(f"[tie-perfil] toolloop paso {iteration}: modelo {_ms}ms"
+                    f" (served_by={getattr(res, 'served_by', '?')})")
         if not res.ok:
             return ToolLoopResult(ok=False, tool_calls=tool_calls, iterations=iteration,
                                   error=f"el modelo no respondió: {res.error}")
@@ -432,6 +450,7 @@ async def run(
                 continue
             transcript.append(f"PERMISO CONCEDIDO para {tool_id}.{action}.")
 
+        _tool_t0 = time.monotonic()
         result = await tool_manager.execute(
             tool_id=tool_id,
             action=action,
@@ -441,6 +460,19 @@ async def run(
         )
         tool_calls.append({"tool_id": tool_id, "action": action,
                            "ok": bool(result.get("success")), "error": result.get("error")})
+        # [2026-07-21, doc 31] Telemetría: cada tool ejecutada, con duración y
+        # resultado (el error truncado, nunca el contenido). Best-effort.
+        try:
+            import app.telemetry as _telemetry
+
+            _telemetry.record(
+                "tool_call", name=f"{tool_id}.{action}",
+                duration_ms=int((time.monotonic() - _tool_t0) * 1000),
+                ok=bool(result.get("success")),
+                detail={"error": str(result.get("error"))[:200]} if result.get("error") else None,
+            )
+        except Exception:
+            pass
 
         if result.get("success"):
             payload = json.dumps(result.get("result"), ensure_ascii=False, default=str)

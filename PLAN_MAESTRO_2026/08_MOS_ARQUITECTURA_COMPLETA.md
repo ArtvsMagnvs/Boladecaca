@@ -32,6 +32,7 @@ directo desde Orchestrator/chat/Hermes: todo pasa por el nivel lógico.
 ```
 CAPA 1  PRIVATE MEMORY        V0.85   local, aislada por construcción
 CAPA 2  PROJECT MEMORY        V1.2+   por-proyecto, permisos granulares (stub antes)
+                                      → DISEÑO MAESTRO COMPLETO: doc 29_PROJECT_MEMORY_V12.md
 CAPA 3  SKILLS                 ├─ LOCAL: Local Skill Library (V1.1, doc 09) — sin red
                                └─ GLOBAL: Global Skill Network (V2.0+) — extensión opcional
 CAPA 4  INTELIGENCIA           ├─ LOCAL: Local Learning Loop (V1.0 básico, doc 09) — sin red
@@ -108,6 +109,17 @@ miles de instancias resuelven lo mismo distinto → comparar estadísticamente �
 proponer skill/mejora → Guardians → publicar con provenance. **El CIE propone,
 nunca decide.** Su equivalente local (LLL, doc 09) usa los mismos algoritmos
 acotados a una instancia — el CIE es el LLL a escala de red.
+
+> **[Δ 2026-07-20] DISEÑO MAESTRO COMPLETO**: los RFC-003/004/005 quedan
+> desarrollados por entero en **`27_GSE_CIE_MEMORIA_COLECTIVA_V2.md`** — con
+> investigación del estado del arte (memoria colaborativa, destilación federada,
+> CRDTs, envenenamiento de memoria por IA), las dos innovaciones propias
+> (consenso por **prueba-de-utilidad** y **CRDT semántico** por evidencia
+> dominante), el "Sueño Colectivo" del CIE, la infraestructura recomendada
+> (federada híbrida con Nexus content-addressed), la defensa de seguridad en 5
+> capas, la conexión con todos los componentes de Aithera y el plan de ~17
+> sesiones por modelo/esfuerzo. Este doc 08 sigue siendo la reserva
+> arquitectónica; el 27 es el desarrollo.
 
 ## RFC-006 — Intercambiabilidad tecnológica (requisito del usuario #2)
 

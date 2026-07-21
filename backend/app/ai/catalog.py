@@ -39,46 +39,98 @@ PROVIDER_CATALOG: Dict[str, Dict[str, Any]] = {
     # V1.0: Claude via el CLI de Claude Code que el usuario ya tiene logueado.
     # NO requiere API key — la suscripcion Pro/Max no expone una utilizable, pero
     # el CLI si esta autenticado. Ver app/ai/providers/claude_code_provider.py.
+    # [2026-07-21] `model_labels`: el VALOR sigue siendo el alias que entiende el
+    # CLI (`fable`/`opus`/...), pero la UI muestra el nombre comercial real
+    # ("Fable 5", "Opus 4.8"...) — petición del usuario: "haiku,sonnet,opus"
+    # a secas no dice qué modelo es de verdad.
     "claude_code": {
-        "label": "Claude Code (CLI local)",
+        "label": "Claude Code CLI",
+        "description": "Plan Pro/Max: sin API key — usa Claude Code desde tu terminal",
         "requires_key": False,
         "default_model": "sonnet",
-        "models": ["sonnet", "opus", "haiku", "fable"],
+        "models": ["fable", "opus", "sonnet", "haiku"],
+        "model_labels": {
+            "fable": "Fable 5 (el más capaz)",
+            "opus": "Opus 4.8",
+            "sonnet": "Sonnet 5",
+            "haiku": "Haiku 4.5 (rápido)",
+        },
         "supports_auto_detect": False,
     },
+    # [2026-07-21] Catálogo RE-VERIFICADO con búsqueda web (julio 2026):
+    # OpenAI: familia GPT-5.6 (Sol/Terra/Luna, GA 9-jul-2026, ids exactos del
+    # changelog oficial developers.openai.com) + 5.5 (abril) + 5.4/5.4-mini
+    # (marzo). Los gpt-5.1/5.2 anteriores quedaron obsoletos.
     "openai": {
         "label": "OpenAI",
         "requires_key": True,
-        "default_model": "gpt-5.1",
-        "models": ["gpt-5.1", "gpt-5.2", "gpt-5"],
+        "default_model": "gpt-5.6-terra",
+        "models": ["gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna",
+                   "gpt-5.5", "gpt-5.4", "gpt-5.4-mini"],
+        "model_labels": {
+            "gpt-5.6-sol": "GPT-5.6 Sol (el más capaz)",
+            "gpt-5.6-terra": "GPT-5.6 Terra (equilibrado)",
+            "gpt-5.6-luna": "GPT-5.6 Luna (rápido)",
+            "gpt-5.5": "GPT-5.5",
+            "gpt-5.4": "GPT-5.4",
+            "gpt-5.4-mini": "GPT-5.4 mini",
+        },
         "supports_auto_detect": False,
     },
+    # Anthropic API: Fable 5 / Opus 4.8 / Sonnet 5 / Haiku 4.5 (jul-2026).
     "anthropic": {
         "label": "Anthropic",
         "requires_key": True,
-        "default_model": "claude-sonnet-4-6",
-        "models": ["claude-sonnet-4-6", "claude-opus-4-8"],
+        "default_model": "claude-sonnet-5",
+        "models": ["claude-fable-5", "claude-opus-4-8", "claude-sonnet-5", "claude-haiku-4-5"],
+        "model_labels": {
+            "claude-fable-5": "Fable 5 (el más capaz)",
+            "claude-opus-4-8": "Opus 4.8",
+            "claude-sonnet-5": "Sonnet 5",
+            "claude-haiku-4-5": "Haiku 4.5 (rápido)",
+        },
         "supports_auto_detect": False,
     },
+    # Gemini: 3.5 Flash es el GA actual (detrás de gemini-flash-latest);
+    # 3.5 Pro aún no es público (jul-2026).
     "gemini": {
         "label": "Google Gemini",
         "requires_key": True,
-        "default_model": "gemini-3.1-pro-preview",
-        "models": ["gemini-3.1-pro-preview", "gemini-3.5-flash"],
+        "default_model": "gemini-3.5-flash",
+        "models": ["gemini-3.5-flash", "gemini-flash-latest", "gemini-3.1-pro-preview"],
+        "model_labels": {
+            "gemini-3.5-flash": "Gemini 3.5 Flash (actual)",
+            "gemini-flash-latest": "Gemini Flash (siempre el último)",
+            "gemini-3.1-pro-preview": "Gemini 3.1 Pro (anterior)",
+        },
         "supports_auto_detect": False,
     },
+    # MiniMax M3 (lanzado 1-jun-2026, verificado en minimax.io): M3 y
+    # M3-highspeed, junto a la familia M2.7 anterior.
     "minimax": {
         "label": "MiniMax",
         "requires_key": True,
         "default_model": "MiniMax-M2.7-highspeed",
-        "models": ["MiniMax-M2.7", "MiniMax-M2.7-highspeed", "MiniMax-M2.5", "MiniMax-M2.1"],
+        "models": ["MiniMax-M3", "MiniMax-M3-highspeed", "MiniMax-M2.7", "MiniMax-M2.7-highspeed"],
+        "model_labels": {
+            "MiniMax-M3": "MiniMax M3 (el más potente)",
+            "MiniMax-M3-highspeed": "MiniMax M3 highspeed",
+            "MiniMax-M2.7": "MiniMax M2.7",
+            "MiniMax-M2.7-highspeed": "MiniMax M2.7 highspeed (rápido)",
+        },
         "supports_auto_detect": False,
     },
+    # DeepSeek V4 (verificado api-docs.deepseek.com): flash y pro; los alias
+    # deepseek-chat/reasoner mueren el 24-jul-2026 — no se ofrecen.
     "deepseek": {
         "label": "DeepSeek",
         "requires_key": True,
         "default_model": "deepseek-v4-flash",
         "models": ["deepseek-v4-flash", "deepseek-v4-pro"],
+        "model_labels": {
+            "deepseek-v4-flash": "DeepSeek V4 Flash (rápido)",
+            "deepseek-v4-pro": "DeepSeek V4 Pro (razonador)",
+        },
         "supports_auto_detect": False,
     },
     "openrouter": {
@@ -88,38 +140,62 @@ PROVIDER_CATALOG: Dict[str, Dict[str, Any]] = {
         "models": [],  # cualquier modelo disponible en OpenRouter; campo libre
         "supports_auto_detect": False,
     },
+    # Grok 4.5 es el flagship desde el 8-jul-2026 (docs.x.ai); build-0.1 para código.
     "grok": {
         "label": "Grok (xAI)",
         "requires_key": True,
-        "default_model": "grok-4.3",
-        "models": ["grok-4.3"],
+        "default_model": "grok-4.5",
+        "models": ["grok-4.5", "grok-4.3", "grok-build-0.1"],
+        "model_labels": {
+            "grok-4.5": "Grok 4.5 (flagship)",
+            "grok-4.3": "Grok 4.3",
+            "grok-build-0.1": "Grok Build 0.1 (código)",
+        },
         "supports_auto_detect": False,
     },
     # --- V1.0: proveedores anadidos a peticion del usuario (2026-07-18) ---
     # Los tres exponen Chat Completions con contrato OpenAI, asi que heredan de
     # OpenAICompatibleProvider sin logica propia.
+    # Kimi K3 (16-jul-2026, platform.kimi.ai): flagship k3; k2.7-code para
+    # código; k2.6/k2.5 como tier económico. La serie k2 vieja está retirada.
     "kimi": {
         "label": "Kimi (Moonshot)",
         "requires_key": True,
         "default_model": "kimi-k3",
-        "models": ["kimi-k3", "kimi-k2.6"],
+        "models": ["kimi-k3", "kimi-k2.7-code", "kimi-k2.6", "kimi-k2.5"],
+        "model_labels": {
+            "kimi-k3": "Kimi K3 (flagship)",
+            "kimi-k2.7-code": "Kimi K2.7 Code (código)",
+            "kimi-k2.6": "Kimi K2.6 (económico)",
+            "kimi-k2.5": "Kimi K2.5 (económico)",
+        },
         "supports_auto_detect": False,
     },
+    # GLM-5.2 (13-jun-2026, Z.ai): el actual; 5.1 anterior.
     "glm": {
         "label": "GLM (Z.ai)",
         "requires_key": True,
         "default_model": "glm-5.2",
         "models": ["glm-5.2", "glm-5.2-max", "glm-5.1"],
+        "model_labels": {
+            "glm-5.2": "GLM-5.2 (actual)",
+            "glm-5.1": "GLM-5.1 (anterior)",
+        },
         "supports_auto_detect": False,
     },
-    # Qwen POR API (de pago). Distinto de los Qwen LOCALES que corren en Ollama:
-    # una misma familia puede estar en los dos sitios, por eso la pantalla
-    # Inteligencia marca "(local)" en los que corren en el PC del usuario.
+    # Qwen POR API (de pago). Distinto de los Qwen LOCALES que corren en Ollama.
+    # Flagship actual: Qwen3.7-Max (mayo-2026, API-only); 3.8-Max aún en preview.
     "qwen": {
         "label": "Qwen (API)",
         "requires_key": True,
-        "default_model": "qwen-max",
-        "models": ["qwen-max", "qwen4.7-max", "qwen-plus", "qwen-turbo"],
+        "default_model": "qwen3.7-max",
+        "models": ["qwen3.7-max", "qwen-max", "qwen-plus", "qwen-turbo"],
+        "model_labels": {
+            "qwen3.7-max": "Qwen3.7-Max (flagship)",
+            "qwen-max": "Qwen Max",
+            "qwen-plus": "Qwen Plus",
+            "qwen-turbo": "Qwen Turbo (rápido)",
+        },
         "supports_auto_detect": False,
     },
 }

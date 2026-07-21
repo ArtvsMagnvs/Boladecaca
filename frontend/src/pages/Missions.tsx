@@ -10,6 +10,8 @@
 // el estado real vive en disco (checkpoint por transición, T3), así que
 // preguntar es barato y siempre da la verdad.
 import { useCallback, useEffect, useRef, useState } from "react";
+import { usePolling } from "@/hooks/usePolling";
+import { useConfirm } from "@/components/ConfirmDialog";
 
 import { api, type Mission, type MissionDetail, type NodeState, type TaskNode } from "@/lib/api";
 import { MiniMarkdown } from "@/lib/miniMarkdown";
@@ -59,6 +61,7 @@ function isLive(state: string) {
 }
 
 export default function Missions() {
+  const [confirm, confirmDialog] = useConfirm();
   const [missions, setMissions] = useState<Mission[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
   const [detail, setDetail] = useState<MissionDetail | null>(null);
@@ -105,13 +108,11 @@ export default function Missions() {
     load();
   }, [load]);
 
-  // Sondeo solo si hay algo vivo (en curso o esperándote).
-  useEffect(() => {
-    const anyLive = missions.some((m) => isLive(m.state)) || (detail && isLive(detail.state));
-    if (!anyLive) return;
-    const t = setInterval(load, 2000);
-    return () => clearInterval(t);
-  }, [missions, detail, load]);
+  // Sondeo solo si hay algo vivo (en curso o esperándote) Y la ventana visible
+  // [P1]: seguir sondeando cada 2s una misión mientras la app está minimizada
+  // es carga inútil; al volver a primer plano refresca solo.
+  const anyLive = missions.some((m) => isLive(m.state)) || (!!detail && isLive(detail.state));
+  usePolling(load, 2000, anyLive);
 
   useEffect(() => {
     if (!selected) return;
@@ -155,6 +156,7 @@ export default function Missions() {
 
   return (
     <div className="h-full flex flex-col gap-4">
+      {confirmDialog}
       <div>
         <h1 className="text-lg font-semibold text-ink">Misiones</h1>
         <p className="text-xs text-ink-faint mt-0.5">
@@ -197,9 +199,13 @@ export default function Missions() {
               >
                 {!isLive(m.state) && (
                   <button
-                    onClick={(e) => {
+                    onClick={async (e) => {
                       e.stopPropagation();
-                      if (!confirm("¿Borrar esta misión? No se puede deshacer.")) return;
+                      if (!(await confirm({
+                        title: "Borrar esta misión",
+                        message: "No se puede deshacer.",
+                        confirmLabel: "Borrar",
+                      }))) return;
                       act(async () => {
                         await api.deleteMission(m.trace_id);
                         // El ref se asigna en RENDER, y `load()` corre justo

@@ -183,7 +183,10 @@ export const PALETTES: Record<"doc13" | "warm", Palette> = {
   warm: PALETTE_WARM,
 };
 
-/** Paleta por defecto de S1 (ver ARCHITECTURE.md §10). Cambiable con setPalette. */
+/** Paleta por defecto de S1 (ver ARCHITECTURE.md §10). Cambiable con setPalette.
+ *  [2026-07-21] El AVCS NO cambia con el tema claro/oscuro de la UI: es la
+ *  identidad visual de Aithera, la misma en cualquier tema (decisión del
+ *  usuario — se probó una paleta "tinta" para claro y se descartó). */
 export const DEFAULT_PALETTE: Palette = PALETTE_WARM;
 
 // ---------------------------------------------------------------------------

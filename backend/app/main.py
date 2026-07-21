@@ -20,6 +20,8 @@ from app.api.endpoints import automation
 # V1.0 (TIE v1, T4): router de misiones del Task Intelligence Engine. El import
 # registra ademas el modelo OrchestratorTrace antes del create_all del lifespan.
 from app.api.endpoints import tie as tie_endpoints
+# [2026-07-21, doc 31] Observabilidad de Misiones (timeline + reporte agregado).
+from app.api.endpoints import telemetry as telemetry_endpoints
 # V1.0 (R2, Orquestador): runs de orquestacion (un mensaje con varios encargos ->
 # varias misiones). El import registra ademas app.orchestrator.models
 # (orchestration_runs) antes del create_all.
@@ -234,6 +236,16 @@ async def lifespan(app: FastAPI):
             scheduler_service.add_cron_job(
                 _purge_old_missions, hour=4, minute=30, id="tie_mission_cleanup"
             )
+            # [2026-07-21, doc 31] La telemetría de misiones comparte retención
+            # con las trazas del TIE (mismo ciclo de vida de los datos).
+            def _purge_old_telemetry() -> None:
+                import app.telemetry as _telemetry
+
+                _telemetry.purge_old(settings.TIE_MISSION_RETENTION_DAYS)
+
+            scheduler_service.add_cron_job(
+                _purge_old_telemetry, hour=4, minute=35, id="telemetry_cleanup"
+            )
         log_info(
             "startup",
             "APScheduler iniciado — ingesta (email/cal), resumen nocturno 03:30, "
@@ -262,7 +274,13 @@ async def lifespan(app: FastAPI):
         scheduler_service.add_interval_job(
             mel.refresh_capability_reports,
             minutes=settings.MEL_RESEARCH_REFRESH_DAYS * 24 * 60,
-            id="mel_research_refresh", first_run_delay_s=90,
+            # [Opt latencia 2026-07-21] 90s tras arrancar era JUSTO la ventana en
+            # que el usuario suele lanzar su primera misión → el auto-catálogo
+            # (varias investigaciones seguidas) le competía el proveedor y todo
+            # iba lento. Se retrasa a 15 min: para entonces el usuario ya no está
+            # en el arranque, y de todos modos ahora investiga con modelo barato
+            # (economy). El refresco de fondo no tiene prisa (es cada 14 días).
+            id="mel_research_refresh", first_run_delay_s=900,
         )
         active = next((p["name"] for p in mel.policies() if p.get("is_active")), "?")
         log_info(
@@ -446,6 +464,8 @@ app.include_router(tie_endpoints.router, prefix="/api")
 app.include_router(orchestrator_endpoints.router, prefix="/api")
 # V1.0 (MEL v1, E1b): informe de capacidades auto-investigado.
 app.include_router(mel_endpoints.router, prefix="/api")
+# [2026-07-21, doc 31]: telemetría de misiones (timeline + reportes).
+app.include_router(telemetry_endpoints.router, prefix="/api")
 
 
 @app.get("/")

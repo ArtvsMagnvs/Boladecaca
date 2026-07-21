@@ -67,17 +67,42 @@ def db_session():
 
 @pytest.fixture(autouse=True)
 def _clean_email_tables():
-    """Limpia las tablas del dominio email entre tests (BD temporal)."""
+    """Limpia las tablas del dominio email entre tests (BD temporal).
+
+    [Opt v0.9.5, D-#10] `CalendarEvent` SALE de esta limpieza autouse: era un
+    acoplamiento cross-domain (graphify audit §16.10) — una fixture de EMAIL no
+    debe gobernar el ciclo de vida de una tabla de CALENDAR en TODA la suite,
+    porque un test de calendario que dependa de un evento sembrado se lo
+    encontraría borrado. Los pocos tests de email que crean CalendarEvent para
+    probar la detección de conflictos de reuniones lo limpian con la fixture
+    dedicada `_clean_calendar_events` (abajo), pidiéndola explícitamente."""
     yield
-    from app.db.models import EmailActivityLog, MeetingProposal, EmailAutoReplyRule, EmailTriage, CalendarEvent
+    from app.db.models import EmailActivityLog, MeetingProposal, EmailAutoReplyRule, EmailTriage
     session = SessionLocal()
     try:
-        for model in (EmailActivityLog, MeetingProposal, EmailAutoReplyRule, EmailTriage, CalendarEvent):
+        for model in (EmailActivityLog, MeetingProposal, EmailAutoReplyRule, EmailTriage):
             try:
                 session.query(model).delete()
             except Exception:
                 session.rollback()
         session.commit()
+    finally:
+        session.close()
+
+
+@pytest.fixture
+def _clean_calendar_events():
+    """Limpia CalendarEvent — la piden EXPLÍCITAMENTE los tests que lo crean
+    (email meeting-detection, calendario). Sustituye al borrado cross-domain que
+    antes hacía `_clean_email_tables` para toda la suite (D-#10)."""
+    yield
+    from app.db.models import CalendarEvent
+    session = SessionLocal()
+    try:
+        session.query(CalendarEvent).delete()
+        session.commit()
+    except Exception:
+        session.rollback()
     finally:
         session.close()
 

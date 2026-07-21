@@ -1,6 +1,6 @@
 # Database Schemas - Pydantic models
 from datetime import datetime
-from typing import Optional, List
+from typing import Dict, Optional, List
 from pydantic import BaseModel, field_validator
 
 
@@ -400,6 +400,11 @@ class AIProviderConfigResponse(BaseModel):
     is_configured: bool = False
     requires_key: bool = True
     available_models: List[str] = []
+    # [2026-07-21] Sin estos campos aquí, FastAPI los RECORTA de la respuesta
+    # (response_model filtra): nombres comerciales por modelo + línea
+    # aclaratoria del proveedor (ej. cómo funciona Claude Code CLI).
+    model_labels: Dict[str, str] = {}
+    description: Optional[str] = None
 
 
 class AITestConnectionResponse(BaseModel):

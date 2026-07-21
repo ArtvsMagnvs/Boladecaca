@@ -232,6 +232,18 @@ async def build_system_prompt(user_message: str, *, history: Optional[list] = No
     construir una consulta de memoria que tenga de qué agarrarse
     (ver `_memory_query`)."""
     base = DEFAULT_SYSTEM_PROMPT
+    # [V2] La PERSONALIDAD se compone SOBRE el prompt base, nunca lo sustituye:
+    # el tono es configurable, pero la identidad, el formato de texto plano y la
+    # honestidad no lo son (ver app/ai/personalities.py). Best-effort: si algo
+    # falla al leerla, Aithera habla con su base de siempre.
+    try:
+        from app.ai import personalities
+
+        tono = personalities.active_prompt()
+        if tono:
+            base = f"{base}\n\n{tono}"
+    except Exception as e:
+        print(f"[chat_service] no se pudo aplicar la personalidad (uso la base): {e}")
     caps = _capabilities_block()
     if caps:
         base = f"{base}\n\n{caps}"

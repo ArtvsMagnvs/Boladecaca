@@ -27,7 +27,7 @@ from app.voice.espeak_voice import (
     ESPEAK_VOICES
 )
 from app.voice.whisper_stt import transcribe, get_status as stt_status
-from app.voice.text_clean import strip_emojis
+from app.voice.text_clean import clean_for_speech
 
 router = APIRouter(prefix="/voice", tags=["Voice"])
 
@@ -165,7 +165,10 @@ async def synthesize(request: SynthesizeRequest) -> Response:
     # El TTS no debe leer ni describir emoticonos (ej. decir "carita
     # sonriente" al llegar a un 😊). Se quitan SOLO para la voz; el texto que
     # ve el usuario en el chat no pasa por aqui y conserva los emoticonos.
-    text = strip_emojis(request.text)
+    # [V1] Limpieza COMPLETA para voz: markdown + emojis + URLs. Antes solo
+    # quitaba emojis, asi que la voz leia "asterisco asterisco" en las
+    # negritas y pronunciaba guiones de lista y barras de tabla.
+    text = clean_for_speech(request.text)
     if not text:
         raise HTTPException(
             status_code=422,
@@ -281,7 +284,10 @@ async def synthesize_base64(request: SynthesizeRequest) -> JSONResponse:
         raise HTTPException(status_code=400, detail="Text cannot be empty")
 
     # El TTS no debe leer ni describir emoticonos (ver text_clean.py).
-    text = strip_emojis(request.text)
+    # [V1] Limpieza COMPLETA para voz: markdown + emojis + URLs. Antes solo
+    # quitaba emojis, asi que la voz leia "asterisco asterisco" en las
+    # negritas y pronunciaba guiones de lista y barras de tabla.
+    text = clean_for_speech(request.text)
     if not text:
         raise HTTPException(
             status_code=422,
@@ -420,6 +426,7 @@ def stt_status_endpoint() -> JSONResponse:
 async def transcribe_endpoint(
     audio: UploadFile = File(...),
     language: str = "es",
+    fast: bool = False,
 ) -> JSONResponse:
     """
     Transcribe a short audio clip (typicamente 3-15s del micro del Hub).
@@ -457,9 +464,19 @@ async def transcribe_endpoint(
                 f.write(chunk)
 
         # Transcribe. Esto lazy-loads el modelo la primera vez (5-10s);
-        # las siguientes son <2s para clips de 5s.
+        # las siguientes son <2s para clips de 5s. `fast` (O1): modo
+        # conversación — modelo rápido + beam voraz, para fluidez en tiempo real.
         try:
-            result = transcribe(tmp_path, language=language)
+            import time as _time
+            _t0 = _time.perf_counter()
+            result = transcribe(tmp_path, language=language, fast=fast)
+            # [VZ5 profiling] Cuánto tardó el STT de verdad, en el log del
+            # backend: la mitad servidor del perfil que el frontend imprime en
+            # consola ([voz-perfil]). Juntos dicen qué etapa domina.
+            _ms = int((_time.perf_counter() - _t0) * 1000)
+            result["stt_ms"] = _ms
+            print(f"[voz-perfil] STT {'fast' if fast else 'preciso'}: {_ms}ms "
+                  f"para {result.get('duration', '?')}s de audio")
         except RuntimeError as e:
             # faster-whisper no instalado o modelo no cargable
             raise HTTPException(
@@ -577,16 +594,58 @@ def elevenlabs_delete_config():
 # gratis). Se añaden junto a ElevenLabs y eSpeak; no sustituyen a ninguno.
 # ----------------------------------------------------------------------
 
+# [2026-07-21] Instalación de Kokoro con SEGUIMIENTO REAL. El endpoint anterior
+# lanzaba `pip install` con Popen + DEVNULL: si pip fallaba (p.ej. una versión
+# de Python no soportada por la librería), el usuario no se enteraba jamás —
+# el botón habría sido un agujero negro. Ahora un hilo captura la salida y
+# /kokoro/status informa de "instalando…", del éxito, o del ERROR REAL.
+_KOKORO_INSTALL: dict = {"status": "idle", "detail": None}  # idle|installing|done|failed
+
+
+def _kokoro_install_worker() -> None:
+    import subprocess
+    import sys
+
+    try:
+        r = subprocess.run(
+            [sys.executable, "-m", "pip", "install", "kokoro",
+             "--disable-pip-version-check"],
+            capture_output=True, text=True, timeout=1800,
+        )
+        if r.returncode == 0:
+            _KOKORO_INSTALL.update(status="done", detail=None)
+        else:
+            tail = (r.stderr or r.stdout or "").strip()[-400:]
+            _KOKORO_INSTALL.update(
+                status="failed",
+                detail=tail or f"pip terminó con código {r.returncode}",
+            )
+    except Exception as e:
+        _KOKORO_INSTALL.update(status="failed", detail=f"{type(e).__name__}: {e}")
+
+
 @router.get("/kokoro/status")
 def kokoro_status() -> JSONResponse:
-    """¿Está la librería Kokoro instalada (in-process, sin Docker)?"""
+    """¿Está la librería Kokoro instalada (in-process, sin Docker)? Incluye el
+    estado de una instalación en curso lanzada desde la UI."""
     available = kokoro_client.is_available()
+    inst = _KOKORO_INSTALL["status"]
+    if available:
+        msg = "Kokoro instalado (voz local offline)."
+    elif inst == "installing":
+        msg = "Instalando Kokoro… (pip; tarda unos minutos)"
+    elif inst == "done":
+        msg = ("Instalación terminada. Vuelve a seleccionar Kokoro; si no "
+               "aparece, reinicia el backend.")
+    elif inst == "failed":
+        msg = f"La instalación falló: {_KOKORO_INSTALL['detail']}"
+    else:
+        msg = ("Kokoro no está instalado. Pulsa 'Instalar Kokoro' (descarga "
+               "por pip; el modelo ~330 MB baja al primer uso).")
     return JSONResponse(content={
         "available": available,
-        "message": (
-            "Kokoro instalado (voz local offline)." if available
-            else "Kokoro no instalado. Pulsa 'Instalar Kokoro' o: pip install kokoro"
-        ),
+        "install_status": inst,
+        "message": msg,
     })
 
 
@@ -598,28 +657,22 @@ def kokoro_voices() -> JSONResponse:
 
 @router.post("/kokoro/install")
 def kokoro_install() -> JSONResponse:
-    """Instala la librería `kokoro` con pip (in-process, sin Docker). Descarga
-    en segundo plano; puede tardar. El modelo (~330MB) se baja al primer uso."""
-    import subprocess
-    import sys
+    """Lanza la instalación de la librería `kokoro` (pip, en un hilo con la
+    salida capturada). Idempotente: si ya está instalada o instalándose, lo
+    dice en vez de duplicar el proceso. El progreso se consulta en /status."""
+    import threading
 
     if kokoro_client.is_available():
-        return JSONResponse(content={"installed": True, "message": "Kokoro ya está instalado."})
-    try:
-        subprocess.Popen(
-            [sys.executable, "-m", "pip", "install", "kokoro",
-             "--disable-pip-version-check"],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
-        return JSONResponse(content={
-            "installed": False,
-            "message": "Instalando Kokoro (pip) en segundo plano. Tarda unos "
-                       "minutos; cuando termine, reinicia el backend y ya podrás "
-                       "seleccionarlo. El modelo se descarga al primer uso.",
-        })
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"No se pudo lanzar la instalación: {e}")
+        return JSONResponse(content={"started": False, "message": "Kokoro ya está instalado."})
+    if _KOKORO_INSTALL["status"] == "installing":
+        return JSONResponse(content={"started": False, "message": "Ya hay una instalación en curso."})
+    _KOKORO_INSTALL.update(status="installing", detail=None)
+    threading.Thread(target=_kokoro_install_worker, daemon=True).start()
+    return JSONResponse(content={
+        "started": True,
+        "message": "Instalando Kokoro en segundo plano (unos minutos). El "
+                   "estado se actualiza solo en esta pantalla.",
+    })
 
 
 @router.get("/edgetts/status")
@@ -639,3 +692,142 @@ def edgetts_status() -> JSONResponse:
 def edgetts_voices() -> JSONResponse:
     """Lista curada de voces EdgeTTS (español + inglés)."""
     return JSONResponse(content={"voices": EDGE_VOICES})
+
+
+# ======================================================================
+# V3 — VOZ POR DEFECTO GARANTIZADA (2026-07-20)
+# ======================================================================
+# EL BUG QUE CIERRA (reportado por el usuario): Aithera no respondía por voz
+# hasta ir al Centro de Voz y elegir una manualmente. Una app de voz que arranca
+# MUDA está rota: el usuario no sabe que tiene que ir a configurar nada.
+#
+# Ahora el arranque SIEMPRE resuelve una voz: la guardada por el usuario, o la
+# mejor por defecto del idioma. EdgeTTS es el proveedor de defecto porque es el
+# único gratis, sin API key y sin descargar modelos — el único que se puede
+# garantizar en una instalación limpia.
+
+_VOICE_KEY = "tts_selected_voice"
+_PROVIDER_KEY = "tts_active_provider"
+_LANG_KEY = "app_language"
+
+# Mejor voz por defecto por idioma (EdgeTTS, neuronales, gratis). Cubre los 4
+# idiomas de instalación (ES/EN/FR/PT).
+_DEFAULT_VOICE_BY_LANG = {
+    "es": "es-ES-ElviraNeural",
+    "en": "en-US-AriaNeural",
+    "fr": "fr-FR-DeniseNeural",
+    "pt": "pt-BR-FranciscaNeural",
+}
+_FALLBACK_LANG = "es"
+
+
+class VoiceDefaults(BaseModel):
+    provider: str
+    voice_id: str
+    language: str
+    was_assigned: bool     # True = no había ninguna elegida y se ha asignado ahora
+
+
+def _cfg_get(key: str) -> Optional[str]:
+    from app.db.database import SessionLocal
+    from app.db.models import Config
+    db = SessionLocal()
+    try:
+        row = db.query(Config).filter(Config.key == key).first()
+        return row.value if row else None
+    finally:
+        db.close()
+
+
+def _cfg_set(key: str, value: str) -> None:
+    from app.db.database import SessionLocal
+    from app.db.models import Config
+    db = SessionLocal()
+    try:
+        row = db.query(Config).filter(Config.key == key).first()
+        if row:
+            row.value = value
+        else:
+            db.add(Config(key=key, value=value))
+        db.commit()
+    finally:
+        db.close()
+
+
+@router.get("/defaults", response_model=VoiceDefaults)
+def voice_defaults() -> VoiceDefaults:
+    """La voz que Aithera debe usar AHORA. Si el usuario no ha elegido ninguna,
+    asigna (y persiste) la mejor del idioma configurado — nunca devuelve vacío.
+
+    Lo llama el frontend al arrancar: así el chat habla desde el primer mensaje,
+    sin pasar por el Centro de Voz."""
+    lang = (_cfg_get(_LANG_KEY) or _FALLBACK_LANG).split("-")[0].lower()
+    if lang not in _DEFAULT_VOICE_BY_LANG:
+        lang = _FALLBACK_LANG
+
+    voice = _cfg_get(_VOICE_KEY)
+    provider = _cfg_get(_PROVIDER_KEY)
+    assigned = False
+
+    if not voice:
+        voice = _DEFAULT_VOICE_BY_LANG[lang]
+        provider = provider or "edgetts"
+        _cfg_set(_VOICE_KEY, voice)
+        _cfg_set(_PROVIDER_KEY, provider)
+        assigned = True
+    elif not provider:
+        provider = "edgetts"
+        _cfg_set(_PROVIDER_KEY, provider)
+        assigned = True
+
+    return VoiceDefaults(provider=provider or "edgetts", voice_id=voice,
+                         language=lang, was_assigned=assigned)
+
+
+# ======================================================================
+# V2 — PERSONALIDADES (2026-07-20)
+# ======================================================================
+# Viven en `app/ai/personalities.py` (es tono de CHAT, no de voz); se exponen
+# bajo /voice porque es donde el usuario las configura.
+
+class PersonalitySelect(BaseModel):
+    personality_id: str
+
+
+class PersonalityCustomIn(BaseModel):
+    description: str          # lo que escribe el usuario, en bruto
+    activate: bool = True
+
+
+@router.get("/personalities")
+def list_personalities() -> JSONResponse:
+    """Catálogo + personalidad activa + prompt personalizado (si lo hay)."""
+    from app.ai import personalities
+    return JSONResponse(content=personalities.catalog_payload())
+
+
+@router.post("/personalities/select")
+def select_personality(payload: PersonalitySelect) -> JSONResponse:
+    from app.ai import personalities
+    try:
+        personalities.set_active(payload.personality_id)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return JSONResponse(content=personalities.catalog_payload())
+
+
+@router.post("/personalities/custom")
+async def create_custom_personality(payload: PersonalityCustomIn) -> JSONResponse:
+    """Convierte la descripción EN BRUTO del usuario en un bloque de tono bien
+    construido (lo mejora una IA potente) y lo guarda. Devuelve el prompt final
+    para que el usuario lo vea y pueda ajustarlo."""
+    from app.ai import personalities
+    try:
+        mejorado = await personalities.improve_prompt(payload.description)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    personalities.save_custom(mejorado, activate=payload.activate)
+    return JSONResponse(content={
+        "prompt": mejorado,
+        **personalities.catalog_payload(),
+    })

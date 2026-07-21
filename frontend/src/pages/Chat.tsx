@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback, memo } from "react";
 import { Link } from "react-router-dom";
 import { api, type Approval } from "@/lib/api";
 import { useAppStore } from "@/store/useAppStore";
@@ -6,6 +6,38 @@ import { useChatStore } from "@/store/useChatStore";
 import MicButton from "@/components/voice/MicButton";
 import { attachVoiceAudio } from "@/avcs";
 import { MiniMarkdown } from "@/lib/miniMarkdown";
+import { usePolling } from "@/hooks/usePolling";
+
+// [O1] Trocea la respuesta en fragmentos hablables para el TTS por frases. La
+// clave del turn-taking fluido: agrupa por frases (. ! ? … saltos de línea)
+// pero fusiona las muy cortas para no fragmentar en exceso (síntesis de "Sí."
+// suelta cuesta más overhead que valor). Máx ~180 chars por fragmento para que
+// la primera frase suene rápido pero no se parta una idea larga a la mitad.
+function splitIntoSpeechChunks(text: string): string[] {
+  const clean = text.replace(/\s+/g, " ").trim();
+  if (!clean) return [];
+  const sentences = clean.match(/[^.!?…\n]+[.!?…]*\s*/g) || [clean];
+  const out: string[] = [];
+  let buf = "";
+  for (const s of sentences) {
+    const piece = s.trim();
+    if (!piece) continue;
+    if (buf && (buf.length + piece.length > 180)) {
+      out.push(buf.trim());
+      buf = piece;
+    } else {
+      buf = buf ? `${buf} ${piece}` : piece;
+      // Corta ya si el buffer tiene una frase completa de tamaño razonable:
+      // así la PRIMERA suena cuanto antes.
+      if (buf.length >= 60 && /[.!?…]$/.test(piece)) {
+        out.push(buf.trim());
+        buf = "";
+      }
+    }
+  }
+  if (buf.trim()) out.push(buf.trim());
+  return out.length ? out : [clean];
+}
 
 export default function Chat() {
   // [Fix bug real 2026-07-17] La conversación vive en useChatStore (singleton
@@ -47,6 +79,17 @@ export default function Chat() {
   const providerRef = useRef<string>("edgetts");
   const selectedVoiceRef = useRef<string>("es-ES-ElviraNeural");
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  // [V1 barge-in] Token de cancelación de la locución en curso, texto ya dicho
+  // en voz alta, y contexto pendiente de la última interrupción (se le pasa al
+  // modelo en el siguiente turno para que reformule sin repetirse).
+  const speakTokenRef = useRef<{ cancelled: boolean } | null>(null);
+  const spokenSoFarRef = useRef<string>("");
+  const interruptedCtxRef = useRef<string | null>(null);
+  // [VZ5] Profiling del pipeline de voz: marcas de tiempo de cada etapa del
+  // turno actual (fin de escucha → STT → primer token del LLM → primer audio).
+  // Se vuelca a consola al final de cada turno de voz — es lo que permite ver
+  // en QUÉ etapa se pierde el tiempo en ESTA máquina en vez de suponerlo.
+  const voiceProfileRef = useRef<Record<string, number>>({});
 
   // AVCS S3 (Chat limpio, doc 13 §13.5): TTS on/off. Ref porque speak() se
   // llama desde bucles async (conversationLoop) que deben leer el valor
@@ -62,61 +105,161 @@ export default function Chat() {
     }
   }, []);
 
+  // [V3] Voz GARANTIZADA al arrancar. Antes se leía la Config a pelo: si el
+  // usuario nunca había pasado por el Centro de Voz no había voz guardada y
+  // Aithera respondía MUDA en el chat (bug real reportado). `/voice/defaults`
+  // devuelve siempre una voz —la elegida por el usuario, o la mejor del idioma
+  // configurado, que además persiste— así que el chat habla desde el primer
+  // mensaje sin que nadie configure nada.
   useEffect(() => {
     api
-      .getConfig()
-      .then((rows) => {
-        const prov = rows.find((r) => r.key === "tts_active_provider")?.value;
-        if (prov) providerRef.current = prov;
-        const voice = rows.find((r) => r.key === "tts_selected_voice")?.value;
-        if (voice) selectedVoiceRef.current = voice;
+      .getVoiceDefaults()
+      .then((d) => {
+        providerRef.current = d.provider;
+        selectedVoiceRef.current = d.voice_id;
       })
-      .catch(() => {});
+      .catch(() => {
+        // Sin backend, los defaults de los refs (EdgeTTS + Elvira) ya sirven.
+      });
   }, []);
 
-  // Reproduce `text` con la voz seleccionada. Si ElevenLabs falla (p.ej. 402
-  // del plan gratuito por uso via API/VPN), reintenta con eSpeak para que
-  // Aithera responda igualmente en voz.
+  // [O1] Síntesis con fallback a eSpeak, devuelve el data-URL del audio.
+  const synthChunk = useCallback(async (chunk: string): Promise<string | null> => {
+    const voiceId = selectedVoiceRef.current;
+    const provRaw = providerRef.current;
+    // ElevenLabs va por el camino por defecto (sin provider); el resto explícito.
+    const provider =
+      provRaw === "elevenlabs" ? undefined : (provRaw as "edgetts" | "kokoro" | "espeak");
+    try {
+      return (await api.synthesizeVoiceBase64(chunk, voiceId, provider)).audio;
+    } catch (e) {
+      try {
+        return (await api.synthesizeVoiceBase64(chunk, voiceId, "espeak")).audio;
+      } catch (e2) {
+        console.error("TTS falló (proveedor activo y eSpeak):", e, e2);
+        return null;
+      }
+    }
+  }, []);
+
+  // [V1 barge-in] `onpause` resuelve igual que `onended`: cuando el usuario
+  // interrumpe, `stopSpeaking()` pausa el audio y el bucle de frases debe
+  // salir YA, no quedarse esperando un `ended` que nunca llegará.
+  const playUrl = useCallback((dataUrl: string) =>
+    new Promise<void>((resolve) => {
+      let done = false;
+      const finish = () => { if (!done) { done = true; resolve(); } };
+      try { audioRef.current?.pause(); } catch { /* noop */ }
+      const audio = new Audio(dataUrl);
+      audioRef.current = audio;
+      attachVoiceAudio(audio); // AVCS S2: ritmo Comunicación late con esta voz
+      setCoreState("speaking");
+      audio.onended = finish;
+      audio.onerror = finish;
+      audio.onpause = finish;
+      audio.play().catch(finish);
+    }), [setCoreState]);
+
+  // [VZ1] STREAMING LLM→TTS — la voz arranca mientras el modelo AÚN ESCRIBE.
+  //
+  // Antes (O1) el TTS troceaba por frases pero solo cuando la respuesta estaba
+  // COMPLETA: se pagaba el tiempo entero de generación del LLM en silencio.
+  // `beginSpeechStream()` devuelve una cola viva: `feed(chunk)` recibe los
+  // tokens del stream del chat según llegan, extrae frases completas (con el
+  // MISMO agrupador splitIntoSpeechChunks) y las encola; cada frase lanza su
+  // síntesis DE INMEDIATO (prefetch natural) y la reproducción va en orden.
+  // `finish()` vacía lo que quede y resuelve cuando la voz termina de verdad.
+  //
+  // El barge-in vive aquí (token + spokenSoFar): interrumpir cancela la cola
+  // entera y deja registrado hasta dónde llegó a oírse.
+  type SpeechStream = {
+    feed: (chunk: string) => void;
+    finish: () => Promise<void>;
+    hasSpokenAnything: () => boolean;
+  };
+
+  const beginSpeechStream = useCallback((): SpeechStream => {
+    const token = { cancelled: false };
+    speakTokenRef.current = token;
+    spokenSoFarRef.current = "";
+    let buffer = "";
+    let tail: Promise<void> = Promise.resolve();
+    let anything = false;
+    // [VZ5 profiling] primera vez que suena audio de esta locución.
+    let firstAudioAt = 0;
+
+    const enqueue = (sentence: string) => {
+      if (token.cancelled || !ttsEnabledRef.current) return;
+      anything = true;
+      const urlPromise = synthChunk(sentence);      // la síntesis arranca YA
+      tail = tail.then(async () => {
+        if (token.cancelled || !ttsEnabledRef.current) return;
+        const url = await urlPromise;
+        if (token.cancelled || !url) return;
+        if (!firstAudioAt) {
+          firstAudioAt = performance.now();
+          voiceProfileRef.current.tts_first_audio = firstAudioAt;
+        }
+        await playUrl(url);
+        if (!token.cancelled) {
+          spokenSoFarRef.current += (spokenSoFarRef.current ? " " : "") + sentence;
+        }
+      });
+    };
+
+    return {
+      feed: (chunk: string) => {
+        if (token.cancelled || !ttsEnabledRef.current || !chunk) return;
+        buffer += chunk;
+        // Extrae las frases COMPLETAS y deja la última (posiblemente a medias)
+        // en el buffer. Reusa el agrupador de O1: mismas reglas de tamaño.
+        const parts = splitIntoSpeechChunks(buffer);
+        if (parts.length > 1) {
+          for (const p of parts.slice(0, -1)) enqueue(p);
+          buffer = parts[parts.length - 1];
+        }
+      },
+      finish: async () => {
+        const rest = buffer.trim();
+        buffer = "";
+        if (rest) enqueue(rest);
+        try {
+          await tail;
+        } finally {
+          if (speakTokenRef.current === token) speakTokenRef.current = null;
+          setCoreState("idle");
+        }
+      },
+      hasSpokenAnything: () => anything,
+    };
+  }, [synthChunk, playUrl, setCoreState]);
+
+  // Reproduce `text` completo (respuesta ya terminada). Envuelve el mismo
+  // stream de habla: un solo camino de código para hablar, con barge-in.
   const speak = useCallback(
     async (text: string) => {
       if (!ttsEnabledRef.current) return; // AVCS S3: TTS silenciado — solo texto
       const clean = text.trim();
       if (!clean) return;
-      const voiceId = selectedVoiceRef.current;
-      const play = (dataUrl: string) =>
-        new Promise<void>((resolve) => {
-          try {
-            audioRef.current?.pause();
-          } catch {
-            /* noop */
-          }
-          const audio = new Audio(dataUrl);
-          audioRef.current = audio;
-          attachVoiceAudio(audio); // AVCS S2: ritmo Comunicación late con esta voz
-          setCoreState("speaking");
-          audio.onended = () => { setCoreState("idle"); resolve(); };
-          audio.onerror = () => { setCoreState("idle"); resolve(); };
-          audio.play().catch(() => { setCoreState("idle"); resolve(); });
-        });
-      const provRaw = providerRef.current;
-      // ElevenLabs va por el camino por defecto (sin provider); el resto explícito.
-      const provider =
-        provRaw === "elevenlabs" ? undefined : (provRaw as "edgetts" | "kokoro" | "espeak");
-      try {
-        const r = await api.synthesizeVoiceBase64(clean, voiceId, provider);
-        await play(r.audio);
-      } catch (e) {
-        // Si el proveedor activo falla, último recurso: eSpeak offline.
-        try {
-          const r = await api.synthesizeVoiceBase64(clean, voiceId, "espeak");
-          await play(r.audio);
-        } catch (e2) {
-          console.error("TTS falló (proveedor activo y eSpeak):", e, e2);
-        }
-      }
+      const stream = beginSpeechStream();
+      stream.feed(clean);
+      await stream.finish();
     },
-    [setCoreState],
+    [beginSpeechStream],
   );
+
+  // [V1 barge-in] Corta la voz AHORA. La usan la interrupción por voz (modo
+  // conversación) y el botón del micro: si Aithera está hablando y el usuario
+  // arranca, Aithera se calla — como haría una persona.
+  const stopSpeaking = useCallback(() => {
+    if (speakTokenRef.current) speakTokenRef.current.cancelled = true;
+    try { audioRef.current?.pause(); } catch { /* noop */ }
+    audioRef.current = null;
+    setCoreState("idle");
+  }, [setCoreState]);
+
+  /** ¿Está Aithera hablando ahora mismo? */
+  const isSpeaking = () => speakTokenRef.current !== null && !speakTokenRef.current.cancelled;
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -155,7 +298,15 @@ export default function Chat() {
   // usuario cambia de pestaña mientras esto sigue en vuelo, la respuesta
   // continúa escribiendo en la sesión donde se originó, nunca en la que esté
   // activa en pantalla en ese momento.
-  const sendMessage = useCallback(async (text: string): Promise<string | null> => {
+  // `opts.prefix` [V1 barge-in]: contexto que se le envía al modelo pero NO se
+  // muestra en el chat. Lo usa la interrupción por voz para decirle "te han
+  // cortado mientras decías X" sin ensuciar la conversación del usuario.
+  // `opts.speech` [VZ1]: cola de habla viva — cada token del stream se le pasa
+  // según llega, así la voz arranca mientras el modelo AÚN escribe.
+  const sendMessage = useCallback(async (
+    text: string,
+    opts?: { prefix?: string; speech?: { feed: (c: string) => void } },
+  ): Promise<string | null> => {
     const chat = useChatStore.getState();
     const sid = chat.activeSessionId;
     const session = chat.sessions.find((s) => s.id === sid);
@@ -184,8 +335,18 @@ export default function Chat() {
 
     try {
       await api.streamChat(
-        userMessage,
-        (chunk) => useChatStore.getState().appendStreamingText(sid, chunk),
+        // El chat muestra `userMessage`; al modelo le llega además el contexto
+        // de interrupción cuando lo hay (nunca visible para el usuario).
+        opts?.prefix ? `${opts.prefix}\n\n${userMessage}` : userMessage,
+        (chunk) => {
+          // [VZ5] primer token del LLM = fin del "pensando" percibido.
+          if (!voiceProfileRef.current.llm_first_token) {
+            voiceProfileRef.current.llm_first_token = performance.now();
+          }
+          useChatStore.getState().appendStreamingText(sid, chunk);
+          // [VZ1] la voz consume el stream EN VIVO, no la respuesta terminada.
+          opts?.speech?.feed(chunk);
+        },
         {
           // [V1.0 T4b] El TIE avisa de lo que está haciendo antes de tener
           // respuesta ("analizando" → "planificando"): feedback inmediato en vez
@@ -245,9 +406,29 @@ _(parado por ti)_` : "_(parado por ti)_",
 
   // V0.83: al transcribir por micro, se envía y se responde EN VOZ.
   const handleTranscript = useCallback(async (text: string) => {
-    const reply = await sendMessage(text);
-    if (reply) await speak(reply);
-  }, [sendMessage, speak]);
+    // [V1 barge-in] Si el usuario pulsó el micro MIENTRAS Aithera hablaba,
+    // `stopSpeaking` ya la calló (onStartRecording) y aquí se le pasa al modelo
+    // hasta dónde llegó a oírse, para que no repita lo ya dicho.
+    let prefix: string | undefined;
+    const dicho = spokenSoFarRef.current.trim();
+    if (interruptedCtxRef.current) {
+      prefix = interruptedCtxRef.current;
+      interruptedCtxRef.current = null;
+    } else if (dicho && speakTokenRef.current?.cancelled) {
+      prefix =
+        `[Contexto interno: el usuario te ha INTERRUMPIDO mientras hablabas. ` +
+        `Solo llegó a oír: "${dicho.slice(-400)}". No repitas lo que ya dijiste; ` +
+        `atiende directamente a lo que te dice ahora, teniéndolo en cuenta.]`;
+      spokenSoFarRef.current = "";
+    }
+    // [VZ1] También desde el botón del micro: la voz consume el stream en vivo.
+    // (El STT ya ocurrió dentro de MicButton; aquí t0 = texto listo.)
+    voiceProfileRef.current = { t0: performance.now(), stt_done: performance.now() };
+    const speech = beginSpeechStream();
+    await sendMessage(text, { prefix, speech });
+    await speech.finish();
+    _logVoiceProfile();
+  }, [sendMessage, beginSpeechStream]);
 
   // ── V0.83: Modo Conversación (escucha continua) ─────────────────────────
   // Bucle: escuchar (con detección de silencio) → transcribir → responder en
@@ -277,7 +458,10 @@ _(parado por ti)_` : "_(parado por ti)_",
       const buf = new Uint8Array(analyser.fftSize);
 
       const SILENCE = 0.012;      // umbral RMS de silencio
-      const SILENCE_MS = 1200;    // corta tras este silencio (habiendo hablado)
+      // [O1] 700ms (antes 1200): turn-taking más ágil, como Alexa/GPT voz. El
+      // usuario no espera un segundo y pico tras callarse para que Aithera
+      // arranque. 700ms es suficiente para no cortar entre frases naturales.
+      const SILENCE_MS = 700;     // corta tras este silencio (habiendo hablado)
       const MAX_MS = 15000;       // tope duro por intervención
 
       let stopped = false;
@@ -329,6 +513,63 @@ _(parado por ti)_` : "_(parado por ti)_",
     });
   }, []);
 
+  // [V1 barge-in] Escucha el micro MIENTRAS Aithera habla. Si detecta voz
+  // sostenida del usuario (~250ms por encima del umbral), corta la locución.
+  // `echoCancellation` es lo que impide que Aithera se interrumpa a sí misma al
+  // oírse por los altavoces; el umbral es más alto que el del silencio normal
+  // por el mismo motivo (defensa en profundidad frente al eco residual).
+  const watchForBargeIn = useCallback(async (): Promise<boolean> => {
+    let stream: MediaStream;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({
+        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+      });
+    } catch {
+      return false;   // sin micro no hay barge-in; la voz sigue normal
+    }
+    const ac = new AudioContext();
+    const analyser = ac.createAnalyser();
+    analyser.fftSize = 512;
+    ac.createMediaStreamSource(stream).connect(analyser);
+    const buf = new Uint8Array(analyser.fftSize);
+
+    const BARGE_RMS = 0.06;     // bastante por encima del eco residual
+    const BARGE_MS = 250;       // voz sostenida, no un golpe de mesa
+
+    return new Promise<boolean>((resolve) => {
+      let speakingSince = 0;
+      let finished = false;
+      const cleanup = (result: boolean) => {
+        if (finished) return;
+        finished = true;
+        stream.getTracks().forEach((t) => t.stop());
+        ac.close().catch(() => {});
+        resolve(result);
+      };
+      const tick = () => {
+        if (finished) return;
+        // Si ya terminó de hablar (o se salió del modo conversación), fuera.
+        if (!speakTokenRef.current || speakTokenRef.current.cancelled || !conversationRef.current) {
+          cleanup(false);
+          return;
+        }
+        analyser.getByteTimeDomainData(buf);
+        let sum = 0;
+        for (let i = 0; i < buf.length; i++) { const v = (buf[i] - 128) / 128; sum += v * v; }
+        const rms = Math.sqrt(sum / buf.length);
+        const now = performance.now();
+        if (rms > BARGE_RMS) {
+          if (!speakingSince) speakingSince = now;
+          else if (now - speakingSince > BARGE_MS) { cleanup(true); return; }
+        } else {
+          speakingSince = 0;
+        }
+        requestAnimationFrame(tick);
+      };
+      requestAnimationFrame(tick);
+    });
+  }, []);
+
   const conversationLoop = useCallback(async () => {
     while (conversationRef.current) {
       setCoreState("listening");
@@ -338,17 +579,66 @@ _(parado por ti)_` : "_(parado por ti)_",
       let text = "";
       try {
         setCoreState("thinking");
-        const r = await api.transcribeVoice(blob, "es");
+        // [VZ5] t0 del turno: el instante en que terminaste de hablar.
+        voiceProfileRef.current = { t0: performance.now() };
+        // [O1] Modo conversación: STT rápido (modelo base + beam voraz) para
+        // que Aithera responda con fluidez, no tras varios segundos.
+        const r = await api.transcribeVoice(blob, "es", true);
+        voiceProfileRef.current.stt_done = performance.now();
         text = (r.text || "").trim();
       } catch { text = ""; }
       if (!conversationRef.current) break;
       if (!text) continue;
-      const reply = await sendMessage(text);
-      if (!conversationRef.current) break;
-      if (reply) await speak(reply);   // espera a que termine de hablar
+
+      // Si el turno anterior se cortó, el modelo recibe ese contexto (oculto
+      // para el usuario) y reformula sin repetir lo que ya se oyó.
+      const prefix = interruptedCtxRef.current || undefined;
+      interruptedCtxRef.current = null;
+
+      // [VZ1] La cola de habla se abre ANTES de enviar: cada token del stream
+      // alimenta la voz según llega — Aithera empieza a hablar mientras el
+      // modelo aún está escribiendo, no cuando termina.
+      const speech = beginSpeechStream();
+      // [V1] Vigilar el micro desde ya: se puede interrumpir desde la 1.ª frase.
+      const watcher = watchForBargeIn();
+
+      const replyPromise = sendMessage(text, { prefix, speech });
+      const speakingDone = replyPromise.then(async () => {
+        await speech.finish();
+        _logVoiceProfile();
+        return false as const;
+      });
+
+      const interrupted = await Promise.race([watcher, speakingDone]);
+      if (interrupted) {
+        const dicho = spokenSoFarRef.current.trim();
+        stopSpeaking();
+        interruptedCtxRef.current =
+          `[Contexto interno: el usuario te ha INTERRUMPIDO mientras hablabas. ` +
+          `Solo llegó a oír: "${dicho.slice(-400)}". No repitas lo que ya dijiste; ` +
+          `atiende directamente a lo que te dice ahora, teniéndolo en cuenta.]`;
+      }
+      await speakingDone.catch(() => {});   // la cola queda siempre cerrada
+      await replyPromise.catch(() => {});
     }
     setCoreState("idle");
-  }, [listenOnce, sendMessage, speak, setCoreState]);
+  }, [listenOnce, sendMessage, beginSpeechStream, setCoreState, watchForBargeIn, stopSpeaking]);
+
+  // [VZ5] Vuelca el perfil del turno de voz a consola, legible de un vistazo.
+  // Todas las cifras en ms desde el fin de la escucha (t0). Es la herramienta
+  // para saber qué etapa domina en ESTA máquina: stt, el modelo o el tts.
+  const _logVoiceProfile = () => {
+    const p = voiceProfileRef.current;
+    if (!p.t0) return;
+    const rel = (k: string) => (p[k] ? Math.round(p[k] - p.t0) : null);
+    const parts = [
+      `stt=${rel("stt_done") ?? "—"}ms`,
+      `llm_1er_token=${rel("llm_first_token") ?? "—"}ms`,
+      `voz_suena=${rel("tts_first_audio") ?? "—"}ms`,
+    ];
+    console.info(`[voz-perfil] ${parts.join("  ")}  (t0 = fin de tu frase)`);
+    voiceProfileRef.current = {};
+  };
 
   // FIX: antes este toggle pasaba una funcion updater a setConversation con
   // efectos secundarios dentro (arrancar conversationLoop, pausar audio...).
@@ -415,7 +705,7 @@ _(parado por ti)_` : "_(parado por ti)_",
                   onClick={(e) => { e.stopPropagation(); closeSession(s.id); }}
                   title="Cerrar pestaña"
                   aria-label="Cerrar pestaña"
-                  className="shrink-0 w-3.5 h-3.5 flex items-center justify-center rounded hover:bg-white/10 hover:text-signal-error"
+                  className="shrink-0 w-3.5 h-3.5 flex items-center justify-center rounded hover:bg-ink/10 hover:text-signal-error"
                 >
                   ×
                 </button>
@@ -435,25 +725,7 @@ _(parado por ti)_` : "_(parado por ti)_",
         {/* Historial compacto */}
         <div className="flex-1 min-h-0 overflow-y-auto px-3 py-3 flex flex-col gap-2">
           {messages.map((msg, i) => (
-            <div key={i} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
-              <div className={`max-w-[85%] px-3 py-2 rounded-xl text-xs leading-relaxed ${
-                msg.role === "user"
-                  ? "bg-accent/20 text-ink border border-accent/30"
-                  : "bg-base-700/50 text-ink"
-              }`}>
-                {msg.role === "assistant" ? <MiniMarkdown text={msg.content} /> : msg.content}
-                {/* [V1.0 T4b] La respuesta vino de una misión de varios pasos:
-                    enlace para ver el plan, su estado, o aprobarlo. */}
-                {msg.missionId && (
-                  <Link
-                    to="/missions"
-                    className="block mt-2 text-[10px] text-accent hover:underline"
-                  >
-                    Ver el plan y sus pasos →
-                  </Link>
-                )}
-              </div>
-            </div>
+            <ChatBubble key={i} role={msg.role} content={msg.content} missionId={msg.missionId} />
           ))}
           {sending && (
             <div className="flex justify-start">
@@ -529,7 +801,12 @@ _(parado por ti)_` : "_(parado por ti)_",
                 durante "Modo Conversación" — antes se podian usar los dos a
                 la vez, abriendo dos capturas de microfono concurrentes que
                 transcribian y enviaban la misma intervencion por separado. */}
-            <MicButton onTranscript={handleTranscript} language="es" disabled={conversation} />
+            <MicButton
+              onTranscript={handleTranscript}
+              language="es"
+              disabled={conversation}
+              onStartRecording={stopSpeaking}
+            />
             {/* V0.83: Modo Conversación (escucha continua). Verde = activo. */}
             <button
               type="button"
@@ -600,28 +877,51 @@ _(parado por ti)_` : "_(parado por ti)_",
  * exactamente cuando aparecía la aprobación. Si Aithera te está esperando,
  * tienes que verlo, haya o no una respuesta en curso.
  */
+// [P3] Burbuja MEMOIZADA: durante el streaming, cada token re-renderiza la
+// página entera y, sin esto, se re-parseaba el MiniMarkdown de TODOS los
+// mensajes anteriores en cada chunk — coste que crece con la conversación.
+// Con memo, un mensaje ya escrito no vuelve a parsearse jamás.
+const ChatBubble = memo(function ChatBubble({ role, content, missionId }: {
+  role: string;
+  content: string;
+  missionId?: string;
+}) {
+  return (
+    <div className={`flex ${role === "user" ? "justify-end" : "justify-start"}`}>
+      <div className={`max-w-[85%] px-3 py-2 rounded-xl text-xs leading-relaxed ${
+        role === "user"
+          ? "bg-accent/20 text-ink border border-accent/30"
+          : "bg-base-700/50 text-ink"
+      }`}>
+        {role === "assistant" ? <MiniMarkdown text={content} /> : content}
+        {/* [V1.0 T4b] La respuesta vino de una misión de varios pasos:
+            enlace para ver el plan, su estado, o aprobarlo. */}
+        {missionId && (
+          <Link
+            to="/missions"
+            className="block mt-2 text-[10px] text-accent hover:underline"
+          >
+            Ver el plan y sus pasos →
+          </Link>
+        )}
+      </div>
+    </div>
+  );
+});
+
 function PendingApprovals() {
   const [pending, setPending] = useState<Approval[]>([]);
   const [busy, setBusy] = useState<string | null>(null);
   const appendMessage = useChatStore((s) => s.appendMessage);
 
-  useEffect(() => {
-    let cancelled = false;
-    const load = async () => {
-      try {
-        const list = await api.getApprovals();
-        if (!cancelled) setPending(list.filter((a) => a.status === "pending"));
-      } catch {
-        /* silencioso: esto es un extra, nunca puede romper el chat */
-      }
-    };
-    void load();
-    const id = window.setInterval(load, 2000);
-    return () => {
-      cancelled = true;
-      window.clearInterval(id);
-    };
-  }, []);
+  // [P1] Poll visibility-aware: 2s es el sondeo más agresivo de la app y no
+  // tiene sentido pagarlo con la ventana minimizada.
+  usePolling(() => {
+    api
+      .getApprovals()
+      .then((list) => setPending(list.filter((a) => a.status === "pending")))
+      .catch(() => { /* silencioso: esto es un extra, nunca puede romper el chat */ });
+  }, 2000);
 
   const resolve = async (gateId: string, approved: boolean) => {
     setBusy(gateId);

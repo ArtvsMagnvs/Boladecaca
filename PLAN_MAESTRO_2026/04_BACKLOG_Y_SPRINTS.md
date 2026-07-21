@@ -89,6 +89,11 @@ Los sprints de cada fase están definidos en sus docs de diseño; este es el ín
 | V1.6+ | AVCS MVP2 (UI viva + vida procedural + memoria visual) | 13 §20 |
 | Flotantes vigentes | B20 auto-start (→ absorbido por O5) · B21 ✅ hecho (reasoning filter) · A2 httpx persistente · A5 split processing · limpieza scripts debug | 12 |
 
+**[2026-07-20] Post-V1.0**: el backlog V1.1-V1.6 queda SUSTITUIDO por el plan
+ejecutivo del **doc 27** (dependencias reordenadas: Learner V1.1, MCP+TIEv2 V1.2,
+Hermes V1.3, Red V1.4, AVCS MVP1 V1.5, MVP2 V1.6; 35 sesiones con modelo+esfuerzo
+y tests de producto por fase).
+
 Regla de oro del plan: **nada amenaza la fecha de V1.0** — si una fase crece, se
 recorta su alcance, no se aplaza la siguiente.
 

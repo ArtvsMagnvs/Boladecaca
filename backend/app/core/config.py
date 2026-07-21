@@ -73,6 +73,18 @@ class Settings:
     # Timeout por llamada a herramienta dentro del bucle (segundos). El
     # ToolManager lo acota además a su propio máximo duro.
     TIE_TOOL_TIMEOUT_S = int(os.getenv("TIE_TOOL_TIMEOUT_S", "60"))
+    # [Opt latencia 2026-07-21] Política del bucle de tool-use. El bucle se
+    # ejecuta UNA VEZ POR ACCIÓN, así que su modelo domina la latencia de una
+    # misión. Con la política de calidad del usuario (p.ej. custom→claude/opus)
+    # cada paso tardaba 13-18s (medido en los logs del usuario). "economy"
+    # (local-primero, rápido y gratis) recorta cada paso a ~1-3s. La elección
+    # de herramienta es una decisión estructurada, no necesita el modelo más
+    # potente. Si el modelo local resultara flojo para el navegador, pon aquí
+    # otra política o fija un modelo con TIE_TOOL_MODEL.
+    TIE_TOOL_POLICY = os.getenv("TIE_TOOL_POLICY", "economy")
+    # Fija un modelo EXACTO para el bucle (ej. "claude_code:haiku"). Vacío = usar
+    # TIE_TOOL_POLICY. Máxima prioridad si se define.
+    TIE_TOOL_MODEL = os.getenv("TIE_TOOL_MODEL", "").strip()
     # Cuánto espera el bucle a que el usuario conteste una petición de permiso
     # para una acción sensible. Si no contesta a tiempo, el paso sigue SIN esa
     # acción y lo dice — la aprobación NO se cancela: queda pendiente en la UI.

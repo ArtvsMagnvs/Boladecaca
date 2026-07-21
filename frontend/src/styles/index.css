@@ -15,11 +15,71 @@
   --duration-slow: 450ms;
 }
 
+/* ── Tema OSCURO (por defecto) ─────────────────────────────────────────
+   Los colores viven aquí como variables RGB (space-separated) que
+   tailwind.config.js consume con rgb(var(--x) / <alpha>). Cambiar de tema
+   = cambiar estas variables; los componentes (bg-base-950…) no se tocan. */
+:root, .dark {
+  --c-base-950: 10 10 15;
+  --c-base-900: 16 18 26;
+  --c-base-800: 23 26 36;
+  --c-base-700: 34 38 50;
+  --c-base-600: 46 51 64;
+  --c-accent: 94 168 255;
+  --c-accent-soft: 124 156 255;
+  --c-accent-glow: 143 217 255;
+  --c-ink: 232 234 240;
+  --c-ink-dim: 154 161 178;
+  --c-ink-faint: 92 97 117;
+  --c-signal-ok: 95 217 164;
+  --c-signal-warn: 232 185 94;
+  --c-signal-error: 224 113 110;
+  /* Superficie de cristal + borde, dependientes del tema */
+  --glass-bg: 23 26 36;
+  --glass-alpha: 0.6;
+  --glass-border: 94 168 255;
+  --glass-border-alpha: 0.35;
+  /* Sombra de tarjetas: en oscuro la jerarquía la dan los bordes, no sombras */
+  --panel-shadow: none;
+}
+
+/* ── Tema CLARO ────────────────────────────────────────────────────────
+   [2026-07-21, 2ª pasada tras feedback] NADA es blanco — regla del usuario:
+   "lo mínimo es gris muy claro". Escala completa de grises: lienzo gris
+   claro-medio, TARJETAS en gris muy claro (nunca blanco), borde neutro
+   visible y sombra suave doble. La diferencia tarjeta/fondo la dan los ~14
+   puntos de luminancia + borde + sombra, no el blanco. Cómodo para jornadas
+   largas (sin deslumbrar). NOTA: el AVCS no cambia con el tema — es la
+   identidad de Aithera, idéntico en claro y oscuro. */
+.light {
+  --c-base-950: 224 227 233;   /* lienzo: gris claro-medio */
+  --c-base-900: 238 240 245;   /* tarjetas: gris muy claro, NUNCA blanco */
+  --c-base-800: 231 234 240;   /* superficie secundaria / modales */
+  --c-base-700: 215 219 228;   /* botones neutros y bordes suaves */
+  --c-base-600: 192 198 210;   /* bordes marcados / hover / scrollbar */
+  --c-accent: 29 100 210;
+  --c-accent-soft: 76 118 220;
+  --c-accent-glow: 88 148 226;
+  --c-ink: 26 30 40;
+  --c-ink-dim: 84 92 108;
+  --c-ink-faint: 130 137 152;
+  --c-signal-ok: 17 138 92;
+  --c-signal-warn: 158 112 16;
+  --c-signal-error: 196 55 51;
+  /* Tarjeta gris muy claro casi opaca sobre lienzo gris + borde NEUTRO (el
+     borde azul de acento del tema oscuro resulta chillón sobre fondo claro). */
+  --glass-bg: 238 240 245;
+  --glass-alpha: 0.92;
+  --glass-border: 96 106 128;
+  --glass-border-alpha: 0.25;
+  --panel-shadow: 0 1px 2px rgb(20 26 40 / 0.07), 0 4px 16px rgb(20 26 40 / 0.09);
+}
+
 html, body, #root {
   height: 100%;
   margin: 0;
-  background-color: theme("colors.base.950");
-  color: theme("colors.ink.DEFAULT");
+  background-color: rgb(var(--c-base-950));
+  color: rgb(var(--c-ink));
 }
 
 * {
@@ -38,10 +98,29 @@ body {
    bordes"). Usa el mismo accent (#5EA8FF) que el resto del sistema, solo
    mas opaco que un simple tinte. */
 .glass-surface {
-  background: rgba(23, 26, 36, 0.6);
+  background: rgb(var(--glass-bg) / var(--glass-alpha));
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
-  border: 1px solid rgba(94, 168, 255, 0.35);
+  border: 1px solid rgb(var(--glass-border) / var(--glass-border-alpha));
+  /* En claro: sombra suave (diferencia tarjeta/fondo); en oscuro: none. */
+  box-shadow: var(--panel-shadow);
+}
+
+/* Panel de modal (Modal.tsx): borde/sombra dependientes del tema, en vez del
+   azul hardcodeado que en claro resultaba chillón. */
+.modal-panel {
+  border: 1px solid rgb(var(--glass-border) / var(--glass-border-alpha));
+  box-shadow: var(--panel-shadow), 0 24px 60px rgb(0 0 0 / 0.28);
+}
+
+/* Modal (Opt v0.9.5, O2): aparición suave del backdrop + panel */
+@keyframes modal-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes modal-pop {
+  from { opacity: 0; transform: translateY(8px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
 }
 
 /* Anillos de estado del nucleo IA */
@@ -60,22 +139,22 @@ body {
    ring en color accent. */
 .form-input {
   width: 100%;
-  background: rgba(13, 15, 22, 0.6);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgb(var(--c-base-900) / 0.6);
+  border: 1px solid rgb(var(--c-ink) / 0.12);
   border-radius: 0.5rem;
   padding: 0.5rem 0.75rem;
   font-size: 0.875rem;
-  color: theme("colors.ink.DEFAULT");
+  color: rgb(var(--c-ink));
   outline: none;
   transition: border-color var(--duration-fast) var(--ease-smooth),
               box-shadow var(--duration-fast) var(--ease-smooth);
 }
 .form-input::placeholder {
-  color: theme("colors.ink.faint");
+  color: rgb(var(--c-ink-faint));
 }
 .form-input:focus {
-  border-color: theme("colors.accent.DEFAULT");
-  box-shadow: 0 0 0 1px theme("colors.accent.DEFAULT");
+  border-color: rgb(var(--c-accent));
+  box-shadow: 0 0 0 1px rgb(var(--c-accent));
 }
 .form-input:disabled {
   opacity: 0.5;
@@ -83,8 +162,8 @@ body {
 }
 select.form-input {
   appearance: none;
-  background-image: linear-gradient(45deg, transparent 50%, theme("colors.ink.faint") 50%),
-                    linear-gradient(135deg, theme("colors.ink.faint") 50%, transparent 50%);
+  background-image: linear-gradient(45deg, transparent 50%, rgb(var(--c-ink-faint)) 50%),
+                    linear-gradient(135deg, rgb(var(--c-ink-faint)) 50%, transparent 50%);
   background-position: calc(100% - 14px) 50%, calc(100% - 8px) 50%;
   background-size: 6px 6px, 6px 6px;
   background-repeat: no-repeat;
@@ -140,8 +219,8 @@ input[type="range"]::-webkit-slider-thumb {
   height: 14px;
   width: 14px;
   border-radius: 50%;
-  background: theme("colors.accent.DEFAULT");
-  border: 2px solid theme("colors.base.900");
+  background: rgb(var(--c-accent));
+  border: 2px solid rgb(var(--c-base-900));
   cursor: pointer;
   box-shadow: 0 0 6px rgba(94, 168, 255, 0.4);
 }
@@ -149,8 +228,8 @@ input[type="range"]::-moz-range-thumb {
   height: 14px;
   width: 14px;
   border-radius: 50%;
-  background: theme("colors.accent.DEFAULT");
-  border: 2px solid theme("colors.base.900");
+  background: rgb(var(--c-accent));
+  border: 2px solid rgb(var(--c-base-900));
   cursor: pointer;
 }
 
@@ -160,7 +239,7 @@ input[type="range"]::-moz-range-thumb {
   height: 8px;
 }
 ::-webkit-scrollbar-thumb {
-  background: theme("colors.base.600");
+  background: rgb(var(--c-base-600));
   border-radius: 8px;
 }
 ::-webkit-scrollbar-track {
@@ -202,6 +281,15 @@ input[type="range"]::-moz-range-thumb {
 .avcs-panel-breathe {
   animation: panel-breathe 7s ease-in-out infinite;
 }
+/* En claro, la respiración del borde va en tinta oscura (el blanco translúcido
+   del keyframe original es invisible sobre fondo claro). */
+@keyframes panel-breathe-light {
+  0%, 100% { border-color: rgba(30, 38, 58, 0.08); box-shadow: 0 0 0 rgba(29, 100, 210, 0); }
+  50% { border-color: rgba(30, 38, 58, 0.16); box-shadow: 0 0 18px rgba(29, 100, 210, 0.06); }
+}
+.light .avcs-panel-breathe {
+  animation-name: panel-breathe-light;
+}
 @media (prefers-reduced-motion: reduce) {
   .avcs-panel-breathe {
     animation: none;
@@ -214,14 +302,14 @@ input[type="range"]::-moz-range-thumb {
    grosor del anillo (mask-composite: exclude "vacía" el centro) que gira
    sin parar — el efecto de "cometa" recorriendo el círculo. */
 .agent-ring-active {
-  border-color: theme("colors.accent.DEFAULT");
+  border-color: rgb(var(--c-accent));
 }
 .agent-ring-glow {
   position: absolute;
   inset: -2px;
   border-radius: 9999px;
   padding: 2px;
-  background: conic-gradient(from 0deg, transparent 0%, transparent 75%, theme("colors.accent.glow") 90%, theme("colors.accent.DEFAULT") 100%);
+  background: conic-gradient(from 0deg, transparent 0%, transparent 75%, rgb(var(--c-accent-glow)) 90%, rgb(var(--c-accent)) 100%);
   -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
   -webkit-mask-composite: xor;
   mask-composite: exclude;
@@ -244,8 +332,8 @@ input[type="range"]::-moz-range-thumb {
   height: 6px;
   margin-left: -3px;
   border-radius: 9999px;
-  background: theme("colors.accent.glow");
-  box-shadow: 0 0 7px 2px theme("colors.accent.glow"), 0 0 3px theme("colors.accent.DEFAULT");
+  background: rgb(var(--c-accent-glow));
+  box-shadow: 0 0 7px 2px rgb(var(--c-accent-glow)), 0 0 3px rgb(var(--c-accent));
 }
 @keyframes agent-ring-orbit {
   to { transform: rotate(360deg); }

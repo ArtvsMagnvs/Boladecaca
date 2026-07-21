@@ -149,7 +149,7 @@ def test_digest_fecha_invalida_400(client):
 # reuniones (solo CalendarAvailability + Google Calendar).
 # ----------------------------------------------------------------------
 
-def test_evento_local_cuenta_como_ocupado(client, db_session):
+def test_evento_local_cuenta_como_ocupado(client, db_session, _clean_calendar_events):
     from datetime import datetime, timedelta
     from app.db.models import CalendarEvent
     from app.services.email_service import (
@@ -188,7 +188,7 @@ def test_evento_local_cuenta_como_ocupado(client, db_session):
     ) is False
 
 
-def test_evento_all_day_bloquea_todo_el_dia(client, db_session):
+def test_evento_all_day_bloquea_todo_el_dia(client, db_session, _clean_calendar_events):
     from datetime import datetime
     from app.db.models import CalendarEvent
     from app.services.email_service import local_events_for_date, detect_calendar_conflicts
@@ -204,7 +204,7 @@ def test_evento_all_day_bloquea_todo_el_dia(client, db_session):
     ) is True
 
 
-def test_evento_local_sin_end_date_asume_1h(client, db_session):
+def test_evento_local_sin_end_date_asume_1h(client, db_session, _clean_calendar_events):
     from datetime import datetime
     from app.db.models import CalendarEvent
     from app.services.email_service import local_events_for_date

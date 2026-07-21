@@ -40,8 +40,16 @@ def seeded_day(db_session):
     db_session.add(ev)
     db_session.commit()
     db_session.refresh(ev)
+    event_id = ev.id
 
-    yield {"event_id": ev.id}
+    yield {"event_id": event_id}
+
+    # [Opt v0.9.5, D-#10] Limpia SU CalendarEvent. Antes lo hacía por efecto
+    # colateral la fixture autouse de email (`_clean_email_tables`), que borraba
+    # CalendarEvent de toda la suite — acoplamiento cross-domain ya retirado.
+    from app.db.models import CalendarEvent as _CE
+    db_session.query(_CE).filter(_CE.id == event_id).delete()
+    db_session.commit()
 
 
 @pytest.fixture(autouse=True)

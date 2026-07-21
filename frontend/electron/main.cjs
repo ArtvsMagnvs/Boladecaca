@@ -34,10 +34,15 @@ function isHarmlessDevtoolsMessage(text) {
 
 function createWindow() {
   const win = new BrowserWindow({
+    // [2026-07-21] `show: false` + `maximize()` al estar listo = Aithera SIEMPRE
+    // abre MAXIMIZADA (ocupa la pantalla dentro de la ventana de Windows, sin
+    // quitar la barra de tareas). El tamaño de abajo es el que tendría si la
+    // restauras. Evita el parpadeo de abrir pequeña y crecer.
     width: 1280,
     height: 820,
     minWidth: 1024,
     minHeight: 700,
+    show: false,
     backgroundColor: "#0A0A0F",
     autoHideMenuBar: true,
     webPreferences: {
@@ -45,6 +50,25 @@ function createWindow() {
       contextIsolation: true,
       nodeIntegration: false,
     },
+  });
+
+  win.once("ready-to-show", () => {
+    win.maximize();
+    win.show();
+  });
+
+  // [2026-07-21] F11 = PANTALLA COMPLETA TOTAL (oculta la barra de Windows),
+  // toggle. Esc también sale del fullscreen (comportamiento esperado). El
+  // maximizado normal (arriba) es lo de siempre; el fullscreen es el modo
+  // inmersivo opcional.
+  win.webContents.on("before-input-event", (event, input) => {
+    if (input.type === "keyDown" && input.key === "F11") {
+      win.setFullScreen(!win.isFullScreen());
+      event.preventDefault();
+    } else if (input.type === "keyDown" && input.key === "Escape" && win.isFullScreen()) {
+      win.setFullScreen(false);
+      event.preventDefault();
+    }
   });
 
   // V0.7.1 (FIX): Filtrar mensajes de consola conocidos de Chromium DevTools

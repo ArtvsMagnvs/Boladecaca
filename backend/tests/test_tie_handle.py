@@ -222,9 +222,15 @@ async def test_plan_aprobado_ejecuta_sin_volver_a_preguntar(monkeypatch):
     trace_id = gate.action_payload["trace_id"]
 
     await approval_gate.resolve(gate.id, approved=True, note="adelante")
-    await asyncio.sleep(0.05)   # reanudación en background
-
-    final = tracer.load_graph(trace_id)
+    # Reanudación en background: se sondea en vez de un sleep fijo — con la
+    # telemetría (doc 31) añadiendo E/S a cada transición, un sleep de 50ms
+    # fijo se volvió flaky (pasaba ~2 de cada 3 veces).
+    final = None
+    for _ in range(20):
+        await asyncio.sleep(0.05)
+        final = tracer.load_graph(trace_id)
+        if final.nodes["n2"].state in (NodeState.DONE, NodeState.FAILED):
+            break
     assert final.nodes["n1"].state == NodeState.DONE
     assert final.nodes["n2"].state == NodeState.DONE
     assert rt.calls == ["redactar", "enviar email"]

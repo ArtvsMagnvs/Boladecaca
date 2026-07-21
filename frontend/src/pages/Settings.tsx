@@ -4,10 +4,37 @@
 // V0.6 (Fase 3 Memory System): nueva seccion "Memoria" con stats, gestion
 // de preferencias del usuario y borrado del historial de ChromaDB.
 import { useState, useEffect } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 import { api, type AIProviderEntry, type ContextItem, type ProfileFact, type MemoryStats, type TelegramStatus, type SearchStatus, type SearchProviderStatus, type ElevenLabsCfgStatus, type PermissionCatalog, type MelPolicy, type MelModel, type MelOverride, type LocalModelCatalog } from "@/lib/api";
 import { useAppStore } from "@/store/useAppStore";
 import type { QualityTier } from "@/avcs";
 import { Toggle } from "@/components/Toggle";
+import Modal from "@/components/Modal";
+import { usePolling } from "@/hooks/usePolling";
+import { useThemeStore } from "@/store/useThemeStore";
+// [2026-07-21] TODO el antiguo Centro de Voz vive ahora aquí (pestaña Voz).
+import VoicePanel from "@/components/voice/VoicePanel";
+import { shortRef } from "@/lib/modelNames";
+
+// [O2] Pestañas del panel de Ajustes. Agrupan las secciones en dominios para
+// que el usuario encuentre cada cosa de un vistazo, en vez de un scroll
+// interminable a pantalla completa.
+// [2026-07-21, reorganización pedida por el usuario]:
+// - "Voz" absorbe TODO el antiguo Centro de Voz (voces, proveedor TTS,
+//   personalidad, volumen) — nada de config dispersa fuera de Ajustes.
+// - "HUB Visual" (nueva): Apariencia (tema claro/oscuro) + Presencia visual
+//   (partículas del AVCS) — antes repartidas entre Sistema y Voz.
+// - "Sistema" gana el panel informativo del escáner de hardware (CPU/GPU/RAM).
+const SETTINGS_TABS = [
+  { id: "ia", label: "IA y Modelos" },
+  { id: "permisos", label: "Permisos" },
+  { id: "voz", label: "Voz" },
+  { id: "hub", label: "HUB Visual" },
+  { id: "conexiones", label: "Conexiones" },
+  { id: "memoria", label: "Memoria" },
+  { id: "sistema", label: "Sistema" },
+] as const;
+type SettingsTab = (typeof SETTINGS_TABS)[number]["id"];
 
 /**
  * AVCS S3 (doc 13 §16 PerformanceManager v0): selector manual de tier de
@@ -17,37 +44,142 @@ import { Toggle } from "@/components/Toggle";
  * recargar — la escalera dinámica sigue pudiendo degradar/subir por encima
  * de este punto de partida.
  */
-const TIER_INFO: Record<Exclude<QualityTier, "Q4">, { label: string; hint: string }> = {
-  Q1: { label: "Q1 — Brasa", hint: "equipos modestos, máxima fluidez" },
-  Q2: { label: "Q2 — Llama", hint: "equilibrado" },
-  Q3: { label: "Q3 — Aurora", hint: "escritorio moderno (recomendado)" },
+// [2026-07-21] Las 4 opciones de partículas del núcleo visual (AVCS), con su
+// significado real. Q4 es el máximo (antes oculto).
+const TIER_INFO: Record<QualityTier, { label: string; particles: string; hint: string }> = {
+  Q1: { label: "Mínimo", particles: "Pocas partículas", hint: "Equipos modestos o sin GPU dedicada — máxima fluidez" },
+  Q2: { label: "Medio", particles: "Partículas moderadas", hint: "Equilibrado; va bien en la mayoría de equipos" },
+  Q3: { label: "Alto", particles: "Muchas partículas", hint: "Fluido con GPU dedicada" },
+  Q4: { label: "Máximo", particles: "El máximo de partículas", hint: "Solo con GPU dedicada potente" },
 };
+
+const TIER_ORDER: QualityTier[] = ["Q1", "Q2", "Q3", "Q4"];
 
 function AvcsPerformanceSettings() {
   const avcsTier = useAppStore((s) => s.avcsTier);
   const setAvcsTier = useAppStore((s) => s.setAvcsTier);
+  // [2026-07-21] Recomendación por hardware: marca el nivel óptimo para ESTE PC
+  // y avisa en los que podrían ir justos. Fail-soft: sin dato, no avisa.
+  const [recTier, setRecTier] = useState<QualityTier | null>(null);
+  const [hwWhy, setHwWhy] = useState<string>("");
+
+  useEffect(() => {
+    api.getHardwareRecommendation()
+      .then((r) => { setRecTier(r.avcs.recommended_tier as QualityTier); setHwWhy(r.avcs.why); })
+      .catch(() => { /* sin scanner: sin recomendación, todo sigue funcionando */ });
+  }, []);
+
+  const recIdx = recTier ? TIER_ORDER.indexOf(recTier) : -1;
 
   return (
     <div className="flex flex-col gap-2">
-      {(Object.keys(TIER_INFO) as Array<keyof typeof TIER_INFO>).map((t) => (
-        <button
-          key={t}
-          type="button"
-          onClick={() => setAvcsTier(t)}
-          className={`text-left px-3 py-2 rounded-lg border text-xs transition-colors ${
-            avcsTier === t
-              ? "bg-accent/15 text-accent border-accent/30"
-              : "bg-base-700 text-ink-dim border-base-600 hover:bg-base-600"
-          }`}
-        >
-          <span className="font-medium">{TIER_INFO[t].label}</span>
-          <span className="ml-2 opacity-70">{TIER_INFO[t].hint}</span>
-        </button>
-      ))}
-      <p className="text-[10px] text-ink-faint mt-1">
-        Aithera baja de nivel sola si el equipo no aguanta el ritmo, y sube de
-        nuevo en cuanto puede — esto solo fija el punto de partida.
+      <p className="text-xs text-ink-dim mb-1">
+        Cuántas partículas mueve el núcleo visual de Aithera. Más partículas =
+        más espectacular pero pide más GPU. Elige según tu equipo.
       </p>
+      {TIER_ORDER.map((t) => {
+        const active = avcsTier === t;
+        const isRec = recTier === t;
+        const tooHigh = recIdx >= 0 && TIER_ORDER.indexOf(t) > recIdx;
+        return (
+          <button
+            key={t}
+            type="button"
+            onClick={() => setAvcsTier(t)}
+            className={`text-left px-3 py-2 rounded-lg border text-xs transition-colors ${
+              active ? "bg-accent/15 text-accent border-accent/30"
+                     : "bg-base-700 text-ink-dim border-base-600 hover:bg-base-600"
+            }`}
+          >
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="font-medium">{TIER_INFO[t].label}</span>
+              <span className="opacity-70">· {TIER_INFO[t].particles}</span>
+              {isRec && (
+                <span className="text-[10px] px-1.5 py-0.5 rounded bg-signal-ok/15 text-signal-ok">
+                  recomendado para tu PC
+                </span>
+              )}
+              {tooHigh && (
+                <span className="text-[10px] px-1.5 py-0.5 rounded bg-signal-warn/15 text-signal-warn">
+                  puede ir justo en tu equipo
+                </span>
+              )}
+            </div>
+            <p className="opacity-60 mt-0.5">{TIER_INFO[t].hint}</p>
+          </button>
+        );
+      })}
+      {hwWhy && <p className="text-[10px] text-ink-faint mt-1">Detectado: {hwWhy}</p>}
+      <p className="text-[10px] text-ink-faint">
+        Aithera baja de nivel sola si el equipo no aguanta el ritmo, y sube de
+        nuevo en cuanto puede — esto fija el punto de partida.
+      </p>
+    </div>
+  );
+}
+
+/**
+ * [2026-07-21] Panel INFORMATIVO del escáner de hardware (Ajustes → Sistema):
+ * qué CPU/GPU/RAM ha detectado Aithera y qué recomienda con ello (modelo local
+ * y nivel del núcleo visual). Solo lectura — los cambios se hacen en sus
+ * secciones (IA y Modelos / HUB Visual).
+ */
+function SystemScanPanel() {
+  const [data, setData] = useState<Awaited<ReturnType<typeof api.getHardwareRecommendation>> | null>(null);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    api.getHardwareRecommendation().then(setData).catch(() => setFailed(true));
+  }, []);
+
+  if (failed) return <p className="text-xs text-ink-faint">No se pudo escanear el equipo.</p>;
+  if (!data) return <p className="text-xs text-ink-faint">Escaneando tu equipo…</p>;
+
+  const hw = data.hardware;
+  const rows: { label: string; value: string }[] = [
+    {
+      label: "CPU",
+      value: hw.cpu.name
+        ? `${hw.cpu.name}${hw.cpu.cores ? ` · ${hw.cpu.cores} núcleos` : ""}`
+        : hw.cpu.cores ? `${hw.cpu.cores} núcleos / ${hw.cpu.threads ?? "?"} hilos` : "—",
+    },
+    {
+      label: "GPU",
+      value: hw.gpu.present
+        ? `${hw.gpu.name ?? "GPU dedicada"}${hw.gpu.vram_gb ? ` · ${hw.gpu.vram_gb} GB VRAM` : ""}`
+        : "Sin GPU dedicada detectada",
+    },
+    { label: "RAM", value: hw.ram_gb ? `${hw.ram_gb} GB` : "—" },
+    {
+      label: "Memoria útil para modelos",
+      value: hw.usable_model_gb
+        ? `~${hw.usable_model_gb} GB (${hw.gpu.present ? "VRAM de la GPU" : "RAM del sistema"})`
+        : "—",
+    },
+  ];
+
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+        {rows.map((r) => (
+          <div key={r.label} className="bg-base-900/40 rounded-lg p-2.5">
+            <p className="text-[10px] text-ink-faint uppercase tracking-wider">{r.label}</p>
+            <p className="text-xs text-ink mt-0.5">{r.value}</p>
+          </div>
+        ))}
+      </div>
+      <div className="text-[11px] text-ink-dim mt-1 space-y-1">
+        {data.ollama.optimal && (
+          <p>
+            • Modelo local recomendado: <b className="text-ink">{data.ollama.optimal.label}</b>{" "}
+            ({data.ollama.optimal.size_gb} GB) — se instala en <b>IA y Modelos</b>.
+          </p>
+        )}
+        <p>
+          • Núcleo visual recomendado: <b className="text-ink">{data.avcs.recommended_tier}</b> — se
+          ajusta en <b>HUB Visual</b>.
+        </p>
+      </div>
     </div>
   );
 }
@@ -662,6 +794,24 @@ const MEL_CAPS_ORDER = ["chat", "classify", "extract", "summarize", "draft", "re
 const MEL_POLICY_ORDER = ["economy", "quality", "offline", "custom"];
 const MEL_EDITABLE = new Set(["economy", "quality", "custom"]);
 
+// [2026-07-21] Nombres ABREVIADOS compartidos por toda la app (Inteligencia,
+// badges, Sidebar, Hub): lib/modelNames.ts — "MiniMax · M3-highspeed",
+// "Claude CLI · Opus 4.8", sin repetir la marca en el modelo.
+
+/** [2026-07-21] Mapa "provider:model" → capacidades donde es el PRIMARIO de la
+ *  política ACTIVA — la fuente de verdad de los badges de tipo de tarea en las
+ *  tarjetas de proveedores (vinculado a Inteligencia, no al legacy is_active). */
+function primaryBadges(policies: MelPolicy[] | null): Record<string, string[]> {
+  const active = policies?.find((p) => p.is_active);
+  const map: Record<string, string[]> = {};
+  if (!active) return map;
+  for (const cap of MEL_CAPS_ORDER) {
+    const chain = active.compiled[cap] || [];
+    if (chain.length) (map[chain[0]] ??= []).push(MEL_CAP_LABEL[cap] ?? cap);
+  }
+  return map;
+}
+
 /**
  * V1.0 (Modelos locales especializados): instalar con 1 clic los modelos que
  * corren en el PC del usuario, agrupados por su especialidad. El MEL reparte
@@ -679,6 +829,17 @@ function LocalModelsSettings() {
   const [catalog, setCatalog] = useState<LocalModelCatalog | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // [2026-07-21] Familias PLEGADAS por defecto (petición del usuario: ver todas
+  // las familias sin que cada una despliegue sus 2-3 variantes). Se auto-abre
+  // la que tenga una descarga en curso, para que el progreso nunca quede oculto.
+  const [expandedFams, setExpandedFams] = useState<Set<string>>(new Set());
+  const toggleFam = (family: string) =>
+    setExpandedFams((prev) => {
+      const next = new Set(prev);
+      if (next.has(family)) next.delete(family);
+      else next.add(family);
+      return next;
+    });
 
   const load = async () => {
     try {
@@ -689,14 +850,12 @@ function LocalModelsSettings() {
   };
   useEffect(() => { load(); }, []);
 
-  // Mientras haya una descarga viva, refresca solo (el progreso vive en el backend).
+  // Mientras haya una descarga viva, refresca solo (el progreso vive en el
+  // backend). [P1] Pausado con la ventana oculta — la descarga sigue igual en
+  // el backend; solo se deja de preguntar por ella.
   const hasActiveJob = (catalog?.families ?? []).some((f) =>
     f.models.some((m) => m.job?.status === "downloading"));
-  useEffect(() => {
-    if (!hasActiveJob) return;
-    const id = setInterval(load, 1500);
-    return () => clearInterval(id);
-  }, [hasActiveJob]);
+  usePolling(load, 1500, hasActiveJob);
 
   const install = async (tag: string) => {
     setBusy(tag); setError(null);
@@ -707,12 +866,8 @@ function LocalModelsSettings() {
   const cancel = async (tag: string) => {
     try { await api.cancelLocalInstall(tag); await load(); } catch { /* ya terminó */ }
   };
-  const toggle = async (tag: string, enabled: boolean) => {
-    setBusy(tag);
-    try { await api.setLocalModelEnabled(tag, enabled); await load(); }
-    catch (e) { setError(e instanceof Error ? e.message : "No se pudo cambiar el estado."); }
-    finally { setBusy(null); }
-  };
+  // [2026-07-21] La ACTIVACIÓN se movió a Proveedores de IA → En tu equipo
+  // (LocalProviderModels); aquí solo descarga, cancelación y eliminación.
   const remove = async (tag: string, label: string) => {
     if (!confirm(`¿Eliminar "${label}"? Se liberará el espacio en disco.`)) return;
     setBusy(tag);
@@ -744,14 +899,42 @@ function LocalModelsSettings() {
         </div>
       )}
 
-      {catalog.families.filter((f) => !f.is_runtime).map((fam) => (
+      {catalog.families.filter((f) => !f.is_runtime).map((fam) => {
+        const installedCount = fam.models.filter((m) => m.installed).length;
+        const downloadingFam = fam.models.some((m) => m.job?.status === "downloading");
+        const open = expandedFams.has(fam.family) || downloadingFam;
+        return (
         <div key={fam.family} className="rounded-xl border border-base-700 bg-base-800/40 p-3">
-          <div className="flex items-center gap-2">
+          {/* Cabecera clicable: pliega/despliega la familia */}
+          <button
+            type="button"
+            onClick={() => toggleFam(fam.family)}
+            className="w-full flex items-center gap-2 text-left"
+            aria-expanded={open}
+          >
             <span>{CATEGORY_ICON[fam.category] ?? "•"}</span>
             <span className="text-sm font-medium text-ink">{fam.label}</span>
-          </div>
+            <span className="text-[10px] text-ink-faint">{fam.models.length} variantes</span>
+            {installedCount > 0 && (
+              <span className="text-[10px] px-1.5 py-0.5 rounded bg-signal-ok/15 text-signal-ok">
+                {installedCount} instalado{installedCount > 1 ? "s" : ""}
+              </span>
+            )}
+            {downloadingFam && (
+              <span className="text-[10px] px-1.5 py-0.5 rounded bg-accent/15 text-accent">descargando…</span>
+            )}
+            {/* [2026-07-21] Chevron GRANDE (petición del usuario: el "›"
+                minúsculo no se veía como desplegable). SVG 22px con trazo
+                grueso, rota 90° al abrir. */}
+            <span className={`ml-auto text-ink-dim transition-transform duration-150 ${open ? "rotate-90" : ""}`}>
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="9 5 16 12 9 19" />
+              </svg>
+            </span>
+          </button>
           <p className="text-[11px] text-ink-faint mt-0.5 mb-2">{fam.description}</p>
 
+          {open && (
           <div className="space-y-2">
             {fam.models.map((m) => {
               const job = m.job;
@@ -791,22 +974,19 @@ function LocalModelsSettings() {
                           Cancelar
                         </button>
                       )}
+                      {/* [2026-07-21] Aquí solo DESCARGA y ELIMINACIÓN — la
+                          activación vive en Proveedores de IA → En tu equipo.
+                          "Eliminar" borra el modelo de Ollama de verdad
+                          (DELETE /api/delete): libera los GB del disco. */}
                       {m.installed && (
-                        <>
-                          <Toggle
-                            checked={m.enabled}
-                            onChange={(v) => toggle(m.tag, v)}
-                            disabled={busy === m.tag}
-                          />
-                          <button
-                            onClick={() => remove(m.tag, m.label)}
-                            disabled={busy === m.tag}
-                            className="text-[11px] px-2 py-1 rounded-lg text-signal-error hover:bg-signal-error/10 disabled:opacity-50"
-                            title="Eliminar del disco"
-                          >
-                            ×
-                          </button>
-                        </>
+                        <button
+                          onClick={() => remove(m.tag, m.label)}
+                          disabled={busy === m.tag}
+                          className="text-[11px] px-2.5 py-1 rounded-lg bg-signal-error/10 text-signal-error border border-signal-error/30 hover:bg-signal-error/20 disabled:opacity-50"
+                          title="Borra el modelo del disco (libera el espacio)"
+                        >
+                          {busy === m.tag ? "Eliminando…" : "Eliminar"}
+                        </button>
                       )}
                     </div>
                   </div>
@@ -833,8 +1013,92 @@ function LocalModelsSettings() {
               );
             })}
           </div>
+          )}
         </div>
-      ))}
+        );
+      })}
+    </div>
+  );
+}
+
+/**
+ * [2026-07-21] "En tu equipo — modelos locales" (Proveedores de IA): un card
+ * por MODELO INSTALADO (Qwen3 8B, Llama 3 8B…), cada uno con su interruptor de
+ * activación — que escribe en `LocalModel.enabled`, exactamente lo que el MEL
+ * lee para decidir qué locales participan en el enrutado. Sin botón
+ * "Configurar": un modelo local jamás necesita API key. La DESCARGA vive en
+ * "Modelos locales — descarga e instalación"; aquí solo se activa/desactiva.
+ */
+function LocalProviderModels({ badges }: { badges: Record<string, string[]> }) {
+  const [catalog, setCatalog] = useState<LocalModelCatalog | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = async () => {
+    try { setCatalog(await api.getLocalCatalog()); }
+    catch (e) { setError(e instanceof Error ? e.message : "No se pudo cargar."); }
+  };
+  useEffect(() => { load(); }, []);
+
+  const toggle = async (tag: string, enabled: boolean) => {
+    setBusy(tag); setError(null);
+    try { await api.setLocalModelEnabled(tag, enabled); await load(); }
+    catch (e) { setError(e instanceof Error ? e.message : "No se pudo cambiar el estado."); }
+    finally { setBusy(null); }
+  };
+
+  if (!catalog) return <p className="text-xs text-ink-faint">Cargando…</p>;
+
+  const installed = catalog.families
+    .filter((f) => !f.is_runtime)
+    .flatMap((f) => f.models.filter((m) => m.installed).map((m) => ({ ...m, family_label: f.label })));
+
+  return (
+    <div className="space-y-2">
+      {error && (
+        <div className="text-xs text-signal-error bg-signal-error/10 border border-signal-error/30 rounded-lg px-3 py-2">
+          {error}
+        </div>
+      )}
+      {!catalog.runtime_ok && (
+        <p className="text-xs text-signal-warn">Ollama no responde — los modelos locales no pueden usarse ahora.</p>
+      )}
+      {installed.length === 0 ? (
+        <p className="text-xs text-ink-faint">
+          No hay modelos locales instalados todavía. Instálalos arriba, en
+          "Modelos locales — descarga e instalación".
+        </p>
+      ) : (
+        installed.map((m) => {
+          const modelBadges = badges[`ollama:${m.tag}`] || [];
+          return (
+            <div key={m.tag} className="rounded-xl border border-base-700/60 bg-base-900/40 p-3 flex items-center justify-between gap-3">
+              <div className="min-w-0 flex items-center gap-2 flex-wrap">
+                <span className="text-sm font-medium text-ink">{m.label}</span>
+                <span className="text-[10px] text-ink-faint">{m.size_gb} GB</span>
+                {m.enabled && (
+                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-signal-ok/15 text-signal-ok">Activo</span>
+                )}
+                {modelBadges.map((c) => (
+                  <span
+                    key={c}
+                    className="text-[10px] px-1.5 py-0.5 rounded bg-accent/15 text-accent"
+                    title={`${c}: este modelo es el primario en la política activa (Inteligencia)`}
+                  >
+                    {c}
+                  </span>
+                ))}
+              </div>
+              <Toggle
+                checked={m.enabled}
+                onChange={(v) => toggle(m.tag, v)}
+                disabled={busy === m.tag || !catalog.runtime_ok}
+                label={`Usar ${m.label} en el enrutado`}
+              />
+            </div>
+          );
+        })
+      )}
     </div>
   );
 }
@@ -847,18 +1111,36 @@ function IntelligenceSettings() {
   const [editing, setEditing] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // [2026-07-21] Fallos EN VIVO por proveedor (breakers del MEL): los modelos
+  // de un proveedor caído se marcan en rojo con su motivo.
+  const [downDetail, setDownDetail] = useState<Record<string, string>>({});
 
   const load = async () => {
     try {
-      const [pols, mods, ovs] = await Promise.all([
+      const [pols, mods, ovs, health] = await Promise.all([
         api.getMelPolicies(), api.getMelModels(), api.getMelOverrides(),
+        api.getMelHealthSummary().catch(() => null),
       ]);
       setPolicies(pols);
       setModels(mods);
       setOverrides(ovs);
+      setDownDetail(health?.down_detail ?? {});
     } catch (e) {
       setError(e instanceof Error ? e.message : "No se pudieron cargar las políticas.");
     }
+  };
+  // El proveedor de un model_key, y si está fallando ahora mismo.
+  const providerOf = (key: string) => key.split(":")[0];
+  const failing = (key: string): string | null => downDetail[providerOf(key)] ?? null;
+  const FAIL_REASON: Record<string, string> = {
+    transient: "sin conexión o el servicio no responde",
+    unknown: "fallos repetidos recientes",
+  };
+  // [2026-07-21] ¿Es apto este modelo para esta capacidad? (unfit del backend:
+  // p.ej. Claude CLI no sirve para Chat/Clasificar — fallo real de producción).
+  const fitFor = (key: string, cap: string): boolean => {
+    const m = models.find((x) => x.key === key);
+    return !(m?.unfit ?? []).includes(cap);
   };
 
   const deleteOverride = async (id: number) => {
@@ -883,6 +1165,15 @@ function IntelligenceSettings() {
     finally { setBusy(false); }
   };
 
+  // [2026-07-21] Edita un RESPALDO concreto (posiciones 1-3; la 4ª solo local).
+  const setSlot = async (name: string, cap: string, position: number, modelKey: string) => {
+    if (!modelKey) return;
+    setBusy(true); setError(null);
+    try { await api.setMelPolicySlot(name, cap, position, modelKey); await load(); }
+    catch (e) { setError(e instanceof Error ? e.message : "No se pudo cambiar el respaldo."); }
+    finally { setBusy(false); }
+  };
+
   const restore = async (name: string) => {
     setBusy(true); setError(null);
     try { await api.restoreMelPolicy(name); await load(); }
@@ -892,28 +1183,12 @@ function IntelligenceSettings() {
 
   if (!policies) return <p className="text-xs text-ink-faint">Cargando…</p>;
 
-  // Etiqueta legible de un model_key: el label del proveedor si lo conocemos.
-  // Etiqueta legible de un model_key. Marca "(local)" porque una misma familia
-  // (Qwen, DeepSeek…) puede estar a la vez en el PC y por API de pago, y el
-  // usuario necesita distinguirlas de un vistazo.
-  const modelLabel = (key: string) => {
-    const m = models.find((x) => x.key === key);
-    if (!m) return key.split(":")[0];
-    return `${m.label}${m.is_local ? " (local)" : ""} · ${m.model}`;
-  };
+  // [2026-07-21] Etiqueta ABREVIADA de un model_key ("Claude CLI · Opus 4.8",
+  // "Local · qwen3:8b") — los nombres completos hacían las cadenas ilegibles.
+  const modelLabel = (key: string) => shortRef(key);
 
-  // Modelos agrupados por proveedor para el selector en cascada. El nombre del
-  // grupo ya lleva "(local)", así que las opciones solo muestran el modelo.
-  const groupedModels = (() => {
-    const groups = new Map<string, MelModel[]>();
-    for (const m of models) {
-      const groupLabel = `${m.label}${m.is_local ? " (local)" : ""}`;
-      const list = groups.get(groupLabel);
-      if (list) list.push(m);
-      else groups.set(groupLabel, [m]);
-    }
-    return Array.from(groups.entries());
-  })();
+  // Solo modelos LOCALES: opciones válidas del último eslabón (4ª posición).
+  const localModels = models.filter((m) => m.is_local);
 
   return (
     <div className="space-y-3">
@@ -924,6 +1199,20 @@ function IntelligenceSettings() {
       {error && (
         <div className="text-xs text-signal-error bg-signal-error/10 border border-signal-error/30 rounded-lg px-3 py-2">
           {error}
+        </div>
+      )}
+      {/* [2026-07-21] Panel simple e informativo de FALLOS: qué proveedores
+          están fallando ahora mismo y por qué. Los modelos afectados se ven
+          además en rojo dentro de cada cadena. */}
+      {Object.keys(downDetail).length > 0 && (
+        <div className="text-xs bg-signal-error/10 border border-signal-error/30 rounded-lg px-3 py-2">
+          <p className="font-medium text-signal-error mb-0.5">⚠ Modelos con problemas ahora mismo</p>
+          {Object.entries(downDetail).map(([prov, reason]) => (
+            <p key={prov} className="text-signal-error/90">
+              • {shortRef(prov)} — {FAIL_REASON[reason] ?? reason}. Sus tareas caen al siguiente
+              respaldo de la cadena automáticamente.
+            </p>
+          ))}
         </div>
       )}
       {policies
@@ -993,40 +1282,83 @@ function IntelligenceSettings() {
                     <div key={cap} className="flex items-center justify-between gap-2 text-[11px] py-1 border-b border-base-700/40">
                       <span className="text-ink-dim shrink-0 w-24">{MEL_CAP_LABEL[cap] ?? cap}</span>
                       {isEditing ? (
-                        <div className="flex items-center gap-2 flex-1 justify-end">
-                          <select
-                            value={chain[0] ?? ""}
-                            disabled={busy}
-                            onChange={(e) => setPrimary(p.name, cap, e.target.value || null)}
-                            className="bg-base-900 border border-base-600 rounded px-2 py-1 text-ink text-[11px] max-w-[60%]"
-                          >
-                            <option value="">Automático</option>
-                            {/* Agrupado por PROVEEDOR y luego modelo: una misma
-                                familia (p.ej. Qwen) puede estar en local y por
-                                API, así que el grupo marca cuál es cuál. */}
-                            {groupedModels.map(([groupLabel, items]) => (
-                              <optgroup key={groupLabel} label={groupLabel}>
-                                {items.map((m) => (
-                                  <option key={m.key} value={m.key}>{m.model}</option>
+                        // [2026-07-21] Las 4 posiciones editables: 1º principal,
+                        // 2º-3º respaldos, 4º ÚLTIMO RECURSO (solo modelos
+                        // locales — se asume que todo lo demás o la conexión
+                        // ha fallado). Petición directa del usuario.
+                        <div className="flex items-center gap-1 flex-1 justify-end flex-wrap">
+                          {[0, 1, 2, 3].map((pos) => {
+                            const isLast = pos === 3;
+                            // Solo modelos APTOS para esta capacidad (unfit fuera).
+                            const opts = (isLast ? localModels : models)
+                              .filter((m) => !(m.unfit ?? []).includes(cap));
+                            const value = chain[pos] ?? "";
+                            return (
+                              <select
+                                key={pos}
+                                value={value}
+                                disabled={busy || (isLast && localModels.length === 0)}
+                                onChange={(e) =>
+                                  pos === 0
+                                    ? setPrimary(p.name, cap, e.target.value || null)
+                                    : setSlot(p.name, cap, pos, e.target.value)
+                                }
+                                className="bg-base-900 border border-base-600 rounded px-1.5 py-1 text-ink text-[10px] max-w-[130px]"
+                                title={pos === 0 ? "Principal" : isLast ? "Último recurso (solo modelos locales)" : `Respaldo ${pos}`}
+                              >
+                                {pos === 0 && <option value="">Auto</option>}
+                                {pos !== 0 && !value && <option value="">—</option>}
+                                {pos !== 0 && value && !opts.some((m) => m.key === value) && (
+                                  <option value={value}>
+                                    {fitFor(value, cap) ? shortRef(value) : `⛔ ${shortRef(value)} (no apto — cámbialo)`}
+                                  </option>
+                                )}
+                                {opts.map((m) => (
+                                  <option key={m.key} value={m.key}>
+                                    {failing(m.key) ? `⚠ ${shortRef(m.key)} (fallando)` : shortRef(m.key)}
+                                  </option>
                                 ))}
-                              </optgroup>
-                            ))}
-                          </select>
+                              </select>
+                            );
+                          })}
                         </div>
                       ) : (
                         <span className="text-ink-faint truncate ml-2 text-right">
-                          {chain.length ? modelLabel(chain[0]) : "— (sin modelo)"}
-                          {chain.length > 1 && <span className="opacity-50"> → {chain.slice(1).map(modelLabel).join(" → ")}</span>}
+                          {chain.length === 0 && "— (sin modelo)"}
+                          {chain.map((k, i) => (
+                            <span key={`${k}-${i}`} className={i > 0 ? "opacity-60" : undefined}>
+                              {i > 0 && " → "}
+                              <span
+                                className={
+                                  failing(k) ? "text-signal-error font-medium"
+                                  : !fitFor(k, cap) ? "text-signal-warn line-through"
+                                  : undefined
+                                }
+                                title={
+                                  failing(k) ? `Fallando ahora: ${FAIL_REASON[failing(k)!] ?? failing(k)}`
+                                  : !fitFor(k, cap) ? "No apto para esta tarea — en ejecución se salta automáticamente"
+                                  : undefined
+                                }
+                              >
+                                {failing(k) && "⚠ "}
+                                {!fitFor(k, cap) && "⛔ "}
+                                {modelLabel(k)}
+                              </span>
+                            </span>
+                          ))}
                         </span>
                       )}
                     </div>
                   );
                 })}
                 {isEditing && (
-                  <p className="text-[10px] text-ink-faint pt-1">
-                    "Automático" deja que Aithera elija según el catálogo. Los respaldos (→) se
-                    añaden solos para que nunca te quedes sin respuesta si un modelo falla.
-                  </p>
+                  // [2026-07-21] Destacado (petición del usuario: no se veía y
+                  // es importante): cuerpo mayor + negritas + marco propio.
+                  <div className="text-xs text-ink bg-accent/10 border border-accent/30 rounded-lg px-3 py-2 mt-1.5 leading-relaxed">
+                    <b>1º</b> el principal (<b>"Auto"</b> = según catálogo) · <b>2º-3º</b> respaldos
+                    si el anterior falla · <b>4º último recurso, solo modelos locales</b> (se
+                    asume que todo lo demás — o la conexión — ha fallado).
+                  </div>
                 )}
               </div>
             )}
@@ -1353,6 +1685,17 @@ function ElevenLabsSettings() {
           >
             {saving ? "Guardando..." : "Guardar"}
           </button>
+          {/* [2026-07-21] "Crear Voz" → web de ElevenLabs para clonar/diseñar
+              una voz propia. Abre en el navegador del sistema. */}
+          <a
+            href="https://elevenlabs.io/app/voice-lab"
+            target="_blank"
+            rel="noreferrer noopener"
+            className="text-xs px-3 py-1.5 rounded-lg bg-base-700 text-ink-dim border border-base-600 hover:bg-base-600 hover:text-ink inline-flex items-center gap-1"
+            title="Crea o clona tu propia voz en ElevenLabs (se abre en el navegador)"
+          >
+            + Crear Voz ↗
+          </a>
           {status?.configured && status.source === "config" && (
             <button
               onClick={remove}
@@ -1362,6 +1705,10 @@ function ElevenLabsSettings() {
             </button>
           )}
         </div>
+        <p className="text-[10px] text-ink-faint">
+          ¿Quieres una voz única? "Crear Voz" te lleva a ElevenLabs para diseñar
+          o clonar una; luego aparecerá en el Centro de Voz.
+        </p>
       </div>
 
       {msg && (
@@ -1406,6 +1753,10 @@ interface EditState {
   testing: boolean;
   saving: boolean;
   testResult: string | null;
+  // [2026-07-21] Para ofrecer el desplegable de modelos también en el modal
+  // de "Configurar" (con nombres comerciales), no solo en la tarjeta.
+  available_models: string[];
+  model_labels: Record<string, string>;
 }
 
 export default function Settings() {
@@ -1425,6 +1776,20 @@ export default function Settings() {
   const [newCtxCategory, setNewCtxCategory] = useState("preference");
   const [memMessage, setMemMessage] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
   const { backendConnected } = useAppStore();
+  const chatPrimaryDown = useAppStore((s) => s.chatPrimaryDown);
+  const navigate = useNavigate();
+  const location = useLocation();
+  // [2026-07-21] Pestaña inicial navegable desde fuera (p.ej. el banner de
+  // "trabajando en local" enlaza directo a IA y Modelos → Inteligencia).
+  const initialTab = (location.state as { tab?: SettingsTab } | null)?.tab;
+  const [tab, setTab] = useState<SettingsTab>(
+    initialTab && SETTINGS_TABS.some((t) => t.id === initialTab) ? initialTab : "ia",
+  );
+  const theme = useThemeStore((s) => s.theme);
+  const setTheme = useThemeStore((s) => s.setTheme);
+  // [2026-07-21] Política activa del MEL: alimenta el Estado del Sistema y los
+  // badges de tipo de tarea de cada proveedor (vinculado a Inteligencia).
+  const [melPolicies, setMelPolicies] = useState<MelPolicy[] | null>(null);
 
   useEffect(() => {
     loadData();
@@ -1434,16 +1799,19 @@ export default function Settings() {
   const loadData = async () => {
     setLoading(true);
     try {
-      const [providersData, statusData, enabledMap] = await Promise.all([
+      const [providersData, statusData, enabledMap, pols] = await Promise.all([
         api.getConfiguredProviders(),
         api.getAIStatus(),
         // V1.0: qué proveedores participan en el enrutado del MEL. Los que no
         // aparecen en el mapa están activos (apagar es explícito).
         api.getProvidersEnabled().catch(() => ({} as Record<string, boolean>)),
+        // [2026-07-21] Política activa → Estado del Sistema + badges de tarea.
+        api.getMelPolicies().catch(() => null),
       ]);
       setProviders(providersData);
       setAiStatus(statusData);
       setProvidersEnabled(enabledMap);
+      setMelPolicies(pols);
     } catch (e) {
       console.error("Error cargando configuración:", e);
     } finally {
@@ -1562,6 +1930,33 @@ export default function Settings() {
     }
   };
 
+  // [2026-07-21] Claude Code CLI: botón "Activar" de 1 clic — comprueba que el
+  // CLI responde y, si va, lo deja configurado y participando en el enrutado.
+  // Sin modal de API key (no usa ninguna: va con la sesión Pro/Max del terminal).
+  const [ccBusy, setCcBusy] = useState(false);
+  const [ccMsg, setCcMsg] = useState<string | null>(null);
+  const activateClaudeCode = async (p: AIProviderEntry) => {
+    setCcBusy(true);
+    setCcMsg(null);
+    try {
+      const t = await api.testProvider("claude_code", { model: p.model || undefined });
+      if (!t.healthy) {
+        setCcMsg("✗ El CLI de Claude Code no responde. Instálalo y haz login una vez desde tu terminal (comando `claude`), y vuelve a pulsar Activar.");
+      } else {
+        await api.addOrUpdateProvider({ provider: "claude_code", model: p.model || "sonnet" });
+        await api.setProviderEnabled("claude_code", true);
+        // Persistencia real: la config y el interruptor viven en la BD — queda
+        // activado ENTRE SESIONES, como cualquier otro proveedor.
+        setCcMsg("✓ Claude Code activado y guardado — persiste entre sesiones; Aithera lo usará cuando lo necesite.");
+        await loadData();
+      }
+    } catch (e) {
+      setCcMsg(`✗ ${e instanceof Error ? e.message : "No se pudo activar."}`);
+    } finally {
+      setCcBusy(false);
+    }
+  };
+
   const openEdit = (p: AIProviderEntry) => {
     setEditState({
       provider: p.provider,
@@ -1570,6 +1965,8 @@ export default function Settings() {
       testing: false,
       saving: false,
       testResult: null,
+      available_models: p.available_models || [],
+      model_labels: p.model_labels || {},
     });
   };
 
@@ -1607,13 +2004,45 @@ export default function Settings() {
   };
 
   return (
-    <div className="h-full flex flex-col gap-4">
-      <div className="flex items-center justify-between">
+    // fixedHeight: el panel de Ajustes NO cambia de tamaño al saltar entre
+    // pestañas cortas y largas (petición del usuario, 2026-07-21).
+    <Modal open onClose={() => navigate(-1)} label="Configuración" fixedHeight>
+      {/* Cabecera del panel */}
+      <div className="flex items-center justify-between px-5 py-4 border-b border-base-700/60 shrink-0">
         <div>
-          <h1 className="text-lg font-semibold text-ink">Configuración</h1>
-          <p className="text-xs text-ink-faint mt-0.5">Proveedores de IA y configuración del sistema</p>
+          <h1 className="text-base font-semibold text-ink">Configuración</h1>
+          <p className="text-[11px] text-ink-faint mt-0.5">Proveedores de IA, voz, memoria y sistema</p>
         </div>
+        <button
+          onClick={() => navigate(-1)}
+          className="w-8 h-8 flex items-center justify-center rounded-lg text-ink-dim hover:bg-base-700 hover:text-ink transition-colors"
+          aria-label="Cerrar"
+        >
+          ✕
+        </button>
       </div>
+
+      {/* Cuerpo: tab-rail + contenido */}
+      <div className="flex flex-1 min-h-0">
+        {/* Rail de pestañas */}
+        <nav className="w-44 shrink-0 border-r border-base-700/60 p-2 overflow-y-auto">
+          {SETTINGS_TABS.map((t) => (
+            <button
+              key={t.id}
+              onClick={() => setTab(t.id)}
+              className={`w-full text-left text-sm px-3 py-2 rounded-lg mb-0.5 transition-colors ${
+                tab === t.id
+                  ? "bg-accent/15 text-accent font-medium"
+                  : "text-ink-dim hover:bg-base-800 hover:text-ink"
+              }`}
+            >
+              {t.label}
+            </button>
+          ))}
+        </nav>
+
+        {/* Contenido con scroll propio */}
+        <div className="flex-1 overflow-y-auto p-5">
 
       {/* Modal edición de proveedor */}
       {editState && (
@@ -1634,13 +2063,44 @@ export default function Settings() {
 
             <div className="flex flex-col gap-1">
               <label className="text-xs text-ink-dim">Modelo</label>
-              <input
-                type="text"
-                value={editState.model}
-                onChange={e => setEditState(prev => prev ? { ...prev, model: e.target.value } : prev)}
-                placeholder="ej. MiniMax-M2.7"
-                className="bg-base-700 border border-base-600 rounded-lg px-3 py-2 text-sm text-ink placeholder:text-ink-faint focus:outline-none focus:border-accent/50"
-              />
+              {/* [2026-07-21] Desplegable con los modelos principales (nombres
+                  comerciales) cuando el catálogo los conoce; "Otro…" mantiene
+                  el campo libre por si el proveedor cambia su catálogo. */}
+              {editState.available_models.length > 0 ? (
+                <>
+                  <select
+                    value={editState.available_models.includes(editState.model) ? editState.model : "__other__"}
+                    onChange={e => {
+                      const v = e.target.value;
+                      if (v !== "__other__") setEditState(prev => prev ? { ...prev, model: v } : prev);
+                      else setEditState(prev => prev ? { ...prev, model: "" } : prev);
+                    }}
+                    className="bg-base-700 border border-base-600 rounded-lg px-3 py-2 text-sm text-ink focus:outline-none focus:border-accent/50"
+                  >
+                    {editState.available_models.map(m => (
+                      <option key={m} value={m}>{editState.model_labels[m] || m}</option>
+                    ))}
+                    <option value="__other__">Otro (escribir a mano)…</option>
+                  </select>
+                  {!editState.available_models.includes(editState.model) && (
+                    <input
+                      type="text"
+                      value={editState.model}
+                      onChange={e => setEditState(prev => prev ? { ...prev, model: e.target.value } : prev)}
+                      placeholder="id exacto del modelo"
+                      className="mt-1 bg-base-700 border border-base-600 rounded-lg px-3 py-2 text-sm text-ink placeholder:text-ink-faint focus:outline-none focus:border-accent/50"
+                    />
+                  )}
+                </>
+              ) : (
+                <input
+                  type="text"
+                  value={editState.model}
+                  onChange={e => setEditState(prev => prev ? { ...prev, model: e.target.value } : prev)}
+                  placeholder="ej. MiniMax-M2.7"
+                  className="bg-base-700 border border-base-600 rounded-lg px-3 py-2 text-sm text-ink placeholder:text-ink-faint focus:outline-none focus:border-accent/50"
+                />
+              )}
             </div>
 
             {editState.testResult && (
@@ -1672,30 +2132,57 @@ export default function Settings() {
         </div>
       )}
 
-      {/* Contenido con scroll — todo lo que no es cabecera/modal vive aquí,
-          para que "Estado"/"Permisos" no le roben altura fija al resto
-          (bug real: antes vivían fuera de este contenedor y, al crecer
-          Permisos en A3b, dejaban el área scrolleable con 0px de alto). */}
-      <div className="flex-1 overflow-y-auto">
+      {/* ═══ Pestaña IA y Modelos ═══ */}
+      {tab === "ia" && (
         <div className="flex flex-col gap-4">
-          {/* Estado de IA */}
+          {/* Estado de IA — [2026-07-21] VINCULADO a Inteligencia: muestra la
+              política ACTIVA y quién lleva el chat según ella, no el proveedor
+              "activo" legado (que podía contradecir a la política, bug real). */}
           <div className="glass-surface rounded-2xl p-4">
             <h3 className="text-sm font-medium text-ink mb-3">Estado del Sistema de IA</h3>
-            <div className="flex items-center gap-4">
-              <div className={`w-3 h-3 rounded-full ${aiStatus?.healthy ? "bg-signal-ok" : "bg-signal-error"}`} />
-              <div>
-                <p className="text-sm text-ink">
-                  {aiStatus?.healthy ? "Conectado" : "Desconectado"}
-                  {aiStatus?.provider && ` — ${aiStatus.provider}`}
-                  {aiStatus?.model && ` / ${aiStatus.model}`}
-                </p>
-              </div>
-            </div>
+            {(() => {
+              const active = melPolicies?.find((p) => p.is_active);
+              const chatChain = active?.compiled?.chat || [];
+              // [2026-07-21] El punto refleja al MEL, no al proveedor legacy:
+              // con política activa, rojo SOLO si el primario del chat está
+              // fallando de verdad (breaker abierto) — antes el punto rojo
+              // venía del health-check del proveedor legado (minimax), que ya
+              // no decide nada cuando la política manda (bug real reportado).
+              const dotOk = active ? !chatPrimaryDown : !!aiStatus?.healthy;
+              return (
+                <div className="flex items-center gap-4">
+                  <div className={`w-3 h-3 rounded-full ${dotOk ? "bg-signal-ok" : "bg-signal-error"}`} />
+                  <div className="min-w-0">
+                    {active ? (
+                      <p className="text-sm text-ink">
+                        Política <b>{MEL_POLICY_META[active.name]?.label ?? active.name}</b>
+                        {chatChain.length > 0 && <> — Chat: <b>{shortRef(chatChain[0])}</b></>}
+                      </p>
+                    ) : (
+                      <p className="text-sm text-ink">
+                        {aiStatus?.healthy ? "Conectado" : "Desconectado"}
+                        {aiStatus?.provider && ` — ${aiStatus.provider}`}
+                        {aiStatus?.model && ` / ${aiStatus.model}`}
+                      </p>
+                    )}
+                    <p className="text-[10px] text-ink-faint mt-0.5">
+                      Se cambia en <b>Inteligencia</b> (abajo). Cada tarea usa su propio modelo.
+                    </p>
+                  </div>
+                </div>
+              );
+            })()}
           </div>
 
-          {/* V1.0: Modelos locales especializados (instalación 1 clic) */}
+          {/* V1.0: Modelos locales especializados (instalación 1 clic).
+              [2026-07-21] Título explícito: aquí se DESCARGA/INSTALA; la
+              selección de qué modelos usa Aithera vive en Proveedores de IA. */}
           <div className="glass-surface rounded-2xl p-4">
-            <h3 className="text-sm font-medium text-ink mb-3">Modelos locales</h3>
+            <h3 className="text-sm font-medium text-ink mb-1">Modelos locales — descarga e instalación</h3>
+            <p className="text-[11px] text-ink-faint mb-3">
+              Aquí solo se descargan e instalan en tu PC. Para elegir cuáles usa
+              Aithera, ve abajo a <b>Proveedores de IA → En tu equipo</b>.
+            </p>
             <LocalModelsSettings />
           </div>
 
@@ -1706,17 +2193,56 @@ export default function Settings() {
             <div>
               <h3 className="text-sm font-medium text-ink mb-1">Proveedores de IA</h3>
               <p className="text-xs text-ink-dim mb-3">
-                Puedes tener varios proveedores activos a la vez: Aithera reparte cada tarea
-                entre todos según su fuerza. El modelo del chat se elige en <b>Inteligencia</b>.
+                Aquí se elige qué modelos usa Aithera. Puedes tener varios activos a la vez:
+                reparte cada tarea entre todos según su fuerza. El modelo de cada tarea se
+                elige en <b>Inteligencia</b>.
               </p>
-              {providers.map(p => {
+
+              {/* ═ Marco: EN TU EQUIPO — [2026-07-21] un card por MODELO local
+                  instalado (con su toggle de activación real, LocalModel.enabled
+                  → enrutado del MEL). Sin "Configurar": un modelo local jamás
+                  necesita API key. La descarga vive arriba; aquí se ACTIVA. */}
+              <div className="glass-surface rounded-2xl p-4 mb-4">
+                <h3 className="text-sm font-medium text-ink mb-0.5">En tu equipo — modelos locales</h3>
+                <p className="text-[11px] text-ink-faint mb-3">
+                  Corren en tu PC vía Ollama, sin coste por uso ni API key. Se instalan
+                  arriba; aquí se activan para que Aithera los use.
+                </p>
+                <LocalProviderModels badges={primaryBadges(melPolicies)} />
+              </div>
+
+              {/* ═ Marco: EN LA NUBE — ordenados por estado (activados → conectados
+                  → sin conectar), para no buscar abajo lo que ya usas. */}
+              <div className="glass-surface rounded-2xl p-4 mb-4">
+                <h3 className="text-sm font-medium text-ink mb-0.5">En la nube — API key o suscripción</h3>
+                <p className="text-[11px] text-ink-faint mb-3">
+                  Servicios externos, cada uno con su clave. Claude Code CLI usa tu sesión
+                  del terminal (sin key).
+                </p>
+              {providers
+                .filter((pp) => pp.provider !== "ollama")
+                .slice()
+                .sort((a, b) => {
+                  const rank = (x: AIProviderEntry) => {
+                    const en = providersEnabled[x.provider] !== false;
+                    if (x.is_configured && en) return 0;   // activados arriba del todo
+                    if (x.is_configured) return 1;         // conectados (en pausa)
+                    return 2;                              // sin conectar
+                  };
+                  return rank(a) - rank(b);
+                })
+                .map(p => {
                 // Sin entrada en el mapa = participa (apagar es explícito).
                 const enabled = providersEnabled[p.provider] !== false;
                 const models = p.available_models || [];
+                // [2026-07-21] Badges de TIPO DE TAREA: capacidades donde este
+                // proveedor es el primario de la política ACTIVA (Inteligencia).
+                const taskBadges = Object.entries(primaryBadges(melPolicies))
+                  .filter(([k]) => k.startsWith(`${p.provider}:`));
                 return (
-                <div key={p.provider} className="glass-surface rounded-xl p-4 mb-3">
+                <div key={p.provider} className="rounded-xl border border-base-700/60 bg-base-900/40 p-4 mb-3">
                   <div className="flex items-center justify-between mb-1 gap-2">
-                    <div className="flex items-center gap-2 min-w-0">
+                    <div className="flex items-center gap-2 min-w-0 flex-wrap">
                       <span className="font-medium text-ink text-sm">{p.label}</span>
                       {p.is_configured && enabled && (
                         <span className="text-xs px-2 py-0.5 rounded bg-signal-ok/15 text-signal-ok">Activo</span>
@@ -1724,16 +2250,37 @@ export default function Settings() {
                       {p.is_configured && !enabled && (
                         <span className="text-xs px-2 py-0.5 rounded bg-base-700 text-ink-dim">En pausa</span>
                       )}
-                      {p.is_active && (
-                        <span className="text-xs px-2 py-0.5 rounded bg-accent/15 text-accent" title="Proveedor del chat directo (legacy)">
-                          Chat
-                        </span>
+                      {/* Badges de tarea VINCULADOS a Inteligencia (política
+                          activa) — sustituyen al viejo "Chat" legacy que podía
+                          contradecirla (bug real reportado). */}
+                      {taskBadges.map(([key, caps]) =>
+                        caps.map((c) => (
+                          <span
+                            key={`${key}-${c}`}
+                            className="text-[10px] px-1.5 py-0.5 rounded bg-accent/15 text-accent"
+                            title={`${c}: ${shortRef(key)} (política activa)`}
+                          >
+                            {c}
+                          </span>
+                        )),
                       )}
                     </div>
                     <div className="flex items-center gap-2 shrink-0">
-                      <button onClick={() => openEdit(p)} className="text-xs px-2 py-1 rounded bg-base-700 text-ink-dim border border-base-600 hover:bg-base-600">
-                        {p.has_api_key ? "Editar" : "Configurar"}
-                      </button>
+                      {/* [2026-07-21] Claude Code CLI: sin modal de API key —
+                          un solo botón "Activar" lo configura automáticamente. */}
+                      {p.provider === "claude_code" ? (
+                        <button
+                          onClick={() => activateClaudeCode(p)}
+                          disabled={ccBusy}
+                          className="text-xs px-2.5 py-1 rounded bg-accent/15 text-accent border border-accent/30 hover:bg-accent/25 disabled:opacity-50"
+                        >
+                          {ccBusy ? "Comprobando…" : "Activar"}
+                        </button>
+                      ) : (
+                        <button onClick={() => openEdit(p)} className="text-xs px-2 py-1 rounded bg-base-700 text-ink-dim border border-base-600 hover:bg-base-600">
+                          {p.has_api_key ? "Editar" : "Configurar"}
+                        </button>
+                      )}
                       {p.is_configured && (
                         <Toggle
                           checked={enabled}
@@ -1743,11 +2290,35 @@ export default function Settings() {
                       )}
                     </div>
                   </div>
+                  {/* Línea aclaratoria del proveedor (ej. cómo funciona
+                      Claude Code CLI), si el catálogo la trae. */}
+                  {p.description && (
+                    <p className="text-[10px] text-ink-faint mb-1">{p.description}</p>
+                  )}
 
                   {/* Selector de modelo: una API key da acceso a varios modelos.
                       El elegido aquí es el PRIMARIO del proveedor; el MEL puede
-                      usar el resto por capacidad si le convienen. */}
-                  {p.is_configured && models.length > 0 ? (
+                      usar el resto por capacidad si le convienen.
+                      [2026-07-21] Claude Code CLI NO lleva selector: sus 4
+                      modelos se asignan por tarea en Inteligencia (petición
+                      del usuario). El resto: nombres comerciales, y chips
+                      informativos si aún no está conectado. */}
+                  {p.provider === "claude_code" ? (
+                    <div className="text-[11px] text-ink-dim mt-2 space-y-1">
+                      <p>
+                        Haiku 4.5, Sonnet 5, Opus 4.8 y Fable 5{" "}
+                        <span className="text-ink-faint">(Fable solo con suscripción MAX)</span>{" "}
+                        — asigna los diferentes modelos de Claude a cada tipo de tarea en{" "}
+                        <b>Inteligencia</b> para economizar su uso.
+                      </p>
+                      <p className="text-signal-warn">
+                        ⚠ No apto para <b>Chat</b>, <b>Clasificar</b> ni el bucle de
+                        herramientas de misiones: el CLI arranca un proceso por llamada
+                        (lento, sin streaming). Ideal para Programar, Razonar, Redactar
+                        y Analizar en segundo plano — Inteligencia ya lo impide donde no aplica.
+                      </p>
+                    </div>
+                  ) : p.is_configured && models.length > 0 ? (
                     <div className="flex items-center gap-2 mt-2">
                       <span className="text-[11px] text-ink-dim shrink-0">Modelo</span>
                       <select
@@ -1756,10 +2327,21 @@ export default function Settings() {
                         className="bg-base-900 border border-base-600 rounded px-2 py-1 text-ink text-[11px] flex-1 min-w-0"
                       >
                         {!models.includes(p.model || "") && p.model && (
-                          <option value={p.model}>{p.model}</option>
+                          <option value={p.model}>{p.model_labels?.[p.model] || p.model}</option>
                         )}
-                        {models.map(m => <option key={m} value={m}>{m}</option>)}
+                        {models.map(m => (
+                          <option key={m} value={m}>{p.model_labels?.[m] || m}</option>
+                        ))}
                       </select>
+                    </div>
+                  ) : models.length > 0 ? (
+                    <div className="flex items-center gap-1.5 mt-2 flex-wrap">
+                      <span className="text-[10px] text-ink-faint">Modelos:</span>
+                      {models.map((m) => (
+                        <span key={m} className="text-[10px] px-1.5 py-0.5 rounded bg-base-700/60 text-ink-dim">
+                          {p.model_labels?.[m] || m}
+                        </span>
+                      ))}
                     </div>
                   ) : (
                     <p className="text-xs text-ink-faint mt-1">{p.model || "—"}</p>
@@ -1771,81 +2353,162 @@ export default function Settings() {
                   {!p.has_api_key && p.requires_key && (
                     <p className="text-xs text-signal-warn mt-1">Sin API key — pulsa "Configurar"</p>
                   )}
+                  {p.provider === "claude_code" && ccMsg && (
+                    <p className={`text-xs mt-1 ${ccMsg.startsWith("✓") ? "text-signal-ok" : "text-signal-error"}`}>{ccMsg}</p>
+                  )}
                 </div>
                 );
               })}
+              </div>
             </div>
 
             {/* V1.0 (MEL E2): Inteligencia — qué modelo ejecuta cada tarea */}
             <div className="glass-surface rounded-2xl p-4">
-              <h3 className="text-sm font-medium text-ink mb-3">Inteligencia</h3>
+              <h3 className="text-sm font-medium text-ink mb-3">Inteligencia (MEL: Model Execution Layer)</h3>
               <IntelligenceSettings />
             </div>
+          </div>
+        )}
+        </div>
+      )}
 
-            {/* V0.9 (Automation Engine A3b): Permisos & Autonomía */}
-            <div className="glass-surface rounded-2xl p-4">
-              <h3 className="text-sm font-medium text-ink mb-3">Permisos</h3>
-              <PermissionsSettings />
+      {/* ═══ Pestaña Permisos ═══ */}
+      {tab === "permisos" && (
+        <div className="glass-surface rounded-2xl p-4">
+          <h3 className="text-sm font-medium text-ink mb-3">Permisos y Autonomía</h3>
+          <PermissionsSettings />
+        </div>
+      )}
+
+      {/* ═══ Pestaña Voz ═══
+          [2026-07-21] TODA la configuración de voz vive aquí: voces y proveedor
+          TTS (el antiguo Centro de Voz completo) + la API key de ElevenLabs.
+          La Presencia visual se movió a su propia pestaña "HUB Visual". */}
+      {tab === "voz" && (
+        <div className="flex flex-col gap-4">
+          <div className="glass-surface rounded-2xl p-4">
+            <h3 className="text-sm font-medium text-ink mb-3">Voces</h3>
+            <VoicePanel />
+          </div>
+
+          <div className="glass-surface rounded-2xl p-4">
+            <h3 className="text-sm font-medium text-ink mb-3">ElevenLabs (voces profesionales)</h3>
+            <p className="text-xs text-ink-dim mb-3">
+              API key para las voces profesionales de Aithera. Se guarda cifrada.
+              Sin key, la voz usa EdgeTTS (gratis). Las voces se eligen arriba.
+            </p>
+            <ElevenLabsSettings />
+          </div>
+        </div>
+      )}
+
+      {/* ═══ Pestaña HUB Visual ═══
+          [2026-07-21] Todo lo que gobierna CÓMO SE VE Aithera: tema claro/
+          oscuro (antes en Sistema) + partículas del núcleo (antes en Voz). */}
+      {tab === "hub" && (
+        <div className="flex flex-col gap-4">
+          <div className="glass-surface rounded-2xl p-4">
+            <h3 className="text-sm font-medium text-ink mb-1">Apariencia</h3>
+            <p className="text-xs text-ink-dim mb-3">
+              Elige cómo se ve Aithera. El cambio es inmediato y se recuerda.
+            </p>
+            <div className="grid grid-cols-2 gap-2 max-w-sm">
+              {([
+                { id: "dark", label: "Oscuro", hint: "Por defecto, descansa la vista" },
+                { id: "light", label: "Claro", hint: "Grises suaves, cómodo de día" },
+              ] as const).map((opt) => {
+                const active = theme === opt.id;
+                return (
+                  <button
+                    key={opt.id}
+                    onClick={() => setTheme(opt.id)}
+                    className={`text-left p-3 rounded-xl border transition-colors ${
+                      active ? "border-accent/50 bg-accent/10" : "border-base-700 hover:border-base-600"
+                    }`}
+                  >
+                    <p className={`text-sm font-medium ${active ? "text-accent" : "text-ink"}`}>
+                      {opt.label}
+                    </p>
+                    <p className="text-[11px] text-ink-faint mt-0.5">{opt.hint}</p>
+                  </button>
+                );
+              })}
             </div>
+          </div>
 
-            <div className="glass-surface rounded-2xl p-4">
-              <h3 className="text-sm font-medium text-ink mb-3">Configuración local</h3>
-              <div className="text-xs text-ink-dim space-y-2">
-                <p>• Backend: http://localhost:8000 {backendConnected ? "✓" : "✗"}</p>
-                <p>• Frontend: http://localhost:5173</p>
-                <p>• Base de datos: %APPDATA%/Aithera/aithera.db</p>
-              </div>
+          {/* AVCS S3: rendimiento de la presencia visual (PerformanceManager v0) */}
+          <div className="glass-surface rounded-2xl p-4">
+            <h3 className="text-sm font-medium text-ink mb-1">Presencia visual (núcleo de partículas)</h3>
+            <AvcsPerformanceSettings />
+          </div>
+        </div>
+      )}
+
+      {/* ═══ Pestaña Conexiones ═══ */}
+      {tab === "conexiones" && (
+        <div className="flex flex-col gap-4">
+          {/* V0.7 (Fase 4): seccion Google (OAuth) */}
+          <div className="glass-surface rounded-2xl p-4">
+            <h3 className="text-sm font-medium text-ink mb-3">
+              Google (Gmail + Calendar)
+            </h3>
+            <p className="text-[10px] text-ink-faint mb-3">
+              Configura las credenciales OAuth para conectar Aithera con
+              Google. Las reglas de auto-respuesta funcionan SIN OAuth, solo
+              la lectura/envio de emails reales lo requiere.
+            </p>
+            <EmailGoogleStatus />
+          </div>
+
+          {/* V1.0/1.1 (Tools): seccion Busqueda web (Search Tool) */}
+          <div className="glass-surface rounded-2xl p-4">
+            <h3 className="text-sm font-medium text-ink mb-3">Búsqueda web</h3>
+            <SearchSettings />
+          </div>
+
+          {/* V0.8 (Fase 5 Clientes): seccion Telegram */}
+          <div className="glass-surface rounded-2xl p-4">
+            <h3 className="text-sm font-medium text-ink mb-3">
+              Telegram (bot)
+            </h3>
+            <p className="text-xs text-ink-dim mb-3">
+              Chatea con Aithera desde Telegram. El token se guarda cifrado y solo
+              los chat_id que autorices pueden usar el bot.
+            </p>
+            <TelegramSettings />
+          </div>
+        </div>
+      )}
+
+      {/* ═══ Pestaña Sistema ═══
+          [2026-07-21] La Apariencia se movió a "HUB Visual". Aquí entra el
+          panel INFORMATIVO del escáner de hardware. */}
+      {tab === "sistema" && (
+        <div className="flex flex-col gap-4">
+          <div className="glass-surface rounded-2xl p-4">
+            <h3 className="text-sm font-medium text-ink mb-1">Tu equipo (escáner de sistema)</h3>
+            <p className="text-xs text-ink-dim mb-3">
+              Lo que Aithera ha detectado de tu PC. Solo informativo: los ajustes
+              que dependen de esto viven en IA y Modelos y en HUB Visual.
+            </p>
+            <SystemScanPanel />
+          </div>
+
+          <div className="glass-surface rounded-2xl p-4">
+            <h3 className="text-sm font-medium text-ink mb-3">Configuración local</h3>
+            <div className="text-xs text-ink-dim space-y-2">
+              <p>• Backend: http://localhost:8000 {backendConnected ? "✓" : "✗"}</p>
+              <p>• Frontend: http://localhost:5173</p>
+              <p>• Base de datos: %APPDATA%/Aithera/aithera.db</p>
+              <p className="text-ink-faint pt-1">Pantalla completa total: <b>F11</b>.</p>
             </div>
+          </div>
+        </div>
+      )}
 
-            {/* AVCS S3: rendimiento de la presencia visual (PerformanceManager v0) */}
-            <div className="glass-surface rounded-2xl p-4">
-              <h3 className="text-sm font-medium text-ink mb-3">Presencia visual</h3>
-              <AvcsPerformanceSettings />
-            </div>
-
-            {/* V0.7 (Fase 4): seccion Google (OAuth) */}
-            <div className="glass-surface rounded-2xl p-4">
-              <h3 className="text-sm font-medium text-ink mb-3">
-                Google (Gmail + Calendar)
-              </h3>
-              <p className="text-[10px] text-ink-faint mb-3">
-                Configura las credenciales OAuth para conectar Aithera con
-                Google. Las reglas de auto-respuesta funcionan SIN OAuth, solo
-                la lectura/envio de emails reales lo requiere.
-              </p>
-              <EmailGoogleStatus />
-            </div>
-
-            {/* V0.83: seccion ElevenLabs (API key para voces profesionales) */}
-            <div className="glass-surface rounded-2xl p-4">
-              <h3 className="text-sm font-medium text-ink mb-3">
-                ElevenLabs (voz)
-              </h3>
-              <p className="text-xs text-ink-dim mb-3">
-                API key para las voces profesionales de Aithera. Se guarda cifrada. Sin
-                key, la voz usa eSpeak (offline).
-              </p>
-              <ElevenLabsSettings />
-            </div>
-
-            {/* V1.0/1.1 (Tools): seccion Busqueda web (Search Tool) */}
-            <div className="glass-surface rounded-2xl p-4">
-              <h3 className="text-sm font-medium text-ink mb-3">Búsqueda web</h3>
-              <SearchSettings />
-            </div>
-
-            {/* V0.8 (Fase 5 Clientes): seccion Telegram */}
-            <div className="glass-surface rounded-2xl p-4">
-              <h3 className="text-sm font-medium text-ink mb-3">
-                Telegram (bot)
-              </h3>
-              <p className="text-xs text-ink-dim mb-3">
-                Chatea con Aithera desde Telegram. El token se guarda cifrado y solo
-                los chat_id que autorices pueden usar el bot.
-              </p>
-              <TelegramSettings />
-            </div>
-
+      {/* ═══ Pestaña Memoria ═══ */}
+      {tab === "memoria" && (
+        <div className="flex flex-col gap-4">
             {/* V0.6 (Fase 3 Memory System): seccion Memoria (ChromaDB) */}
             <div className="glass-surface rounded-2xl p-4">
               <div className="flex items-center justify-between mb-3">
@@ -2008,6 +2671,6 @@ export default function Settings() {
         )}
         </div>
       </div>
-    </div>
+    </Modal>
   );
 }

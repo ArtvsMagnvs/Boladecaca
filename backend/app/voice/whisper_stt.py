@@ -35,6 +35,12 @@ from typing import Any
 # con WHISPER_MODEL: "base" (142MB, mas rapido/menos preciso) o "medium"
 # (1.5GB, aun mas preciso pero lento en CPU).
 _DEFAULT_MODEL = os.getenv("WHISPER_MODEL", "small")
+# [Opt v0.9.5, O1] Modelo RÁPIDO para la conversación por voz en tiempo real.
+# "base" (142MB) decodifica ~2-3x más rápido que "small" en CPU y para clips
+# cortos y limpios de una conversación la diferencia de precisión es mínima —
+# el objetivo aquí es fluidez tipo Alexa/GPT, no transcribir un dictado largo.
+# El botón de transcripción manual del Hub sigue usando el modelo preciso.
+_FAST_MODEL = os.getenv("WHISPER_MODEL_FAST", "base")
 _DEFAULT_LANG = os.getenv("WHISPER_LANGUAGE", "es")
 # Device por defecto CPU. Antes se usaba "auto", que en equipos con GPU NVIDIA
 # intenta CUDA y falla si faltan las libs (cublas64_12.dll / cudnn) — que es lo
@@ -45,6 +51,10 @@ _DEVICE = os.getenv("WHISPER_DEVICE", "cpu")
 
 _model: Any = None
 _model_size: str = _DEFAULT_MODEL
+# [O1] Segundo singleton para el modelo rápido de conversación. Se carga solo
+# si de verdad se usa el modo fast (import perezoso, igual que el preciso), así
+# que quien nunca hable por voz no paga su memoria (~150MB).
+_fast_model: Any = None
 _load_error: str | None = None
 # Distingue los dos modos de fallo, que necesitan acciones DISTINTAS:
 #   _lib_missing=True  -> falta `pip install faster-whisper`
@@ -96,6 +106,32 @@ def get_model() -> Any:
     return _model
 
 
+def _load_fast_model() -> Any:
+    """Carga el modelo rápido de conversación (mismo patrón que _load_model).
+    Si el modelo rápido coincide con el preciso, reutiliza esa instancia en vez
+    de cargar dos copias del mismo peso en memoria."""
+    global _fast_model
+    if _FAST_MODEL == _model_size:
+        _fast_model = get_model()
+        return _fast_model
+    try:
+        from faster_whisper import WhisperModel
+    except ImportError:
+        return get_model()      # sin lib el error real lo da get_model()
+    try:
+        _fast_model = WhisperModel(_FAST_MODEL, device=_DEVICE, compute_type="int8")
+        return _fast_model
+    except Exception:
+        # Si el modelo rápido no carga, degradar al preciso antes que romper la voz.
+        return get_model()
+
+
+def get_fast_model() -> Any:
+    if _fast_model is None:
+        return _load_fast_model()
+    return _fast_model
+
+
 def is_available() -> bool:
     """Dice si faster-whisper esta instalado y el modelo se ha podido cargar."""
     if _model is not None:
@@ -137,6 +173,7 @@ def transcribe(
     language: str | None = None,
     beam_size: int = 5,
     vad_filter: bool = True,
+    fast: bool = False,
 ) -> dict:
     """
     Transcribe an audio file with the loaded model.
@@ -159,7 +196,15 @@ def transcribe(
         duration: duracion del audio en segundos (info de Whisper)
         segments: lista de {start, end, text}
     """
-    model = get_model()
+    # [O1] En modo conversación (fast) se usa el modelo rápido + beam_size=1:
+    # la búsqueda voraz decodifica ~3-5x más rápido que beam=5, con una pérdida
+    # de precisión despreciable en clips cortos — es EL cambio que hace que la
+    # conversación por voz responda con fluidez en vez de tardar segundos.
+    if fast:
+        model = get_fast_model()
+        beam_size = 1
+    else:
+        model = get_model()
     if model is None:
         if _lib_missing:
             raise RuntimeError(
@@ -177,12 +222,17 @@ def transcribe(
         )
 
     lang = language or _DEFAULT_LANG
+    # [O1] En modo fast se recorta el VAD (250ms vs 500ms de silencio mínimo) y
+    # se desactiva `condition_on_previous_text` (que en clips independientes de
+    # una conversación solo añade latencia sin ganar nada) para reducir aún más
+    # el tiempo hasta el primer token.
     segments_iter, info = model.transcribe(
         audio_path,
         language=lang,
         beam_size=beam_size,
         vad_filter=vad_filter,
-        vad_parameters={"min_silence_duration_ms": 500},
+        vad_parameters={"min_silence_duration_ms": 250 if fast else 500},
+        condition_on_previous_text=not fast,
     )
     # IMPORTANTE: segments es un generador. Materializamos ahora porque
     # el audio_path se borra despues de que la funcion retorna.

@@ -143,6 +143,29 @@ class Intent:
             return True
         return False
 
+    @property
+    def is_direct_action(self) -> bool:
+        """[Opt latencia 2026-07-20] Camino de ACCIÓN DIRECTA: una tarea mecánica
+        de un solo encargo que necesita herramientas pero NO planificación
+        multi-paso. Ej.: "abre YouTube y pon X", "crea una carpeta y un archivo".
+
+        Estas NO necesitan el planner (2 llamadas al modelo LENTO + un grafo de
+        varios nodos, cada uno con su propio bucle): un ÚNICO bucle de tool-use
+        (elegir→ejecutar→observar) las resuelve enteras de corrido —abre, mira,
+        actúa, responde— con el modelo RÁPIDO de AGENTIC. Colapsa ~8 llamadas
+        (muchas lentas) en 3-4 rápidas.
+
+        Condición: es create/execute, necesita herramientas o browser/computer,
+        el clasificador NO marcó `requires_planning` (él ya juzga si hace falta
+        plan), y NO es multi-objetivo (esos van al Orquestador/planner). Si el
+        clasificador se equivoca y sí hacía falta plan, el bucle degrada honesto
+        (A-1) y el usuario reintenta — nunca una misión a medias silenciosa."""
+        if self.requires_planning or self.objectives:
+            return False
+        if self.type not in (IntentType.EXECUTE, IntentType.CREATE):
+            return False
+        return bool(self.requires_tools or self.requires_browser or self.requires_computer)
+
     def to_dict(self) -> dict:
         d = asdict(self)
         d["type"] = self.type.value

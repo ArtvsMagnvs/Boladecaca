@@ -77,3 +77,19 @@ backend/graphify-out/
 ~$*.docx
 ~$*.xlsx
 ~$*.pptx
+test-lab/
+
+# --- [2026-07-21] Orden del repo: nada de esto va al repositorio ---
+# Scratch de depuración (scripts sueltos de una sesión, logs de prueba)
+scratch/
+backend/scratch/
+# Datos de runtime que se colaron en el árbol (ChromaDB del backend)
+backend/Aithera/
+# Proyectos AJENOS que viven dentro de la carpeta (recolocar fuera cuando se pueda)
+TripoSR/
+otsaas/
+# Restos de CrewAI archivados (borrables; se conservan por si acaso)
+archive/crewai-ajeno/
+# Salidas generadas de graphify
+graphify-out/
+backend/graphify-out/

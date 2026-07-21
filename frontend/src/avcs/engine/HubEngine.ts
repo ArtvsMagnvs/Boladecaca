@@ -35,6 +35,11 @@ export class HubEngine {
   private onRenderConfigChange: ((c: RenderConfig) => void) | null = null;
   private renderConfig: RenderConfig;
   private lastEffectiveTier: QualityTier;
+  // [2026-07-21] Paleta VIGENTE: mount/reinit la releen de aquí — antes
+  // hardcodeaban DEFAULT_PALETTE y un cambio de tier revertía cualquier
+  // setPalette() previo (bug latente). NOTA: el AVCS NO cambia con el tema
+  // claro/oscuro de la UI — es la identidad de Aithera (decisión del usuario).
+  private palette: Palette = DEFAULT_PALETTE;
 
   constructor(opts: HubEngineOptions) {
     this.scene = opts.scene;
@@ -57,7 +62,7 @@ export class HubEngine {
     this.particles.init();
     const obj = this.particles.object3D;
     if (obj) this.scene.add(obj);
-    this.particles.setPalette(DEFAULT_PALETTE);
+    this.particles.setPalette(this.palette);
     // arrancar en el ritmo del estado actual
     const cs = this.getCoreState();
     this.rhythm.setCoreState(cs);
@@ -127,7 +132,7 @@ export class HubEngine {
     this.particles.setTier(tier);
     const nobj = this.particles.object3D;
     if (nobj) this.scene.add(nobj);
-    this.particles.setPalette(DEFAULT_PALETTE);
+    this.particles.setPalette(this.palette);
     this.rhythm.setMaxWaves(TIERS[tier].maxWaves);
   }
 
@@ -153,6 +158,7 @@ export class HubEngine {
   }
 
   setPalette(p: Palette): void {
+    this.palette = p;
     this.particles.setPalette(p);
   }
 

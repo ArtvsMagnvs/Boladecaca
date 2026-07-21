@@ -1,6 +1,8 @@
 import { NavLink } from "react-router-dom";
-import { useEffect, type ReactNode } from "react";
+import { type ReactNode } from "react";
 import { useAppStore } from "@/store/useAppStore";
+import { usePolling } from "@/hooks/usePolling";
+import { shortRef } from "@/lib/modelNames";
 
 interface NavItem {
   to: string;
@@ -95,18 +97,8 @@ const NAV_ITEMS: NavItem[] = [
       </svg>
     ),
   },
-  {
-    to: "/voice",
-    label: "Voz",
-    icon: (
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
-        <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
-        <line x1="12" y1="19" x2="12" y2="23" />
-        <line x1="8" y1="23" x2="16" y2="23" />
-      </svg>
-    ),
-  },
+  // [2026-07-21] "Voz" se retira del sidebar: TODA la configuración de voz
+  // vive ahora en Configuración → Voz (VoicePanel). /voice redirige allí.
 ];
 
 const navLinkClasses = (isActive: boolean) =>
@@ -118,17 +110,13 @@ const navLinkClasses = (isActive: boolean) =>
   ].join(" ");
 
 export function Sidebar() {
-  const { backendConnected, aiStatus, refreshBackendStatus, refreshAIStatus } = useAppStore();
+  const { backendConnected, aiStatus, chatPrimary, chatPrimaryDown, refreshBackendStatus, refreshAIStatus } = useAppStore();
 
-  useEffect(() => {
+  // [P1] Poll de estado visibility-aware: no sondear con la ventana oculta.
+  usePolling(() => {
     refreshBackendStatus();
     refreshAIStatus();
-    const interval = setInterval(() => {
-      refreshBackendStatus();
-      refreshAIStatus();
-    }, 30000);
-    return () => clearInterval(interval);
-  }, [refreshBackendStatus, refreshAIStatus]);
+  }, 30000);
 
   return (
     <aside className="w-60 h-full flex flex-col bg-base-900 border-r border-base-700/50 px-3 py-5">
@@ -180,12 +168,20 @@ export function Sidebar() {
             <span className={`h-1.5 w-1.5 rounded-full ${backendConnected ? "bg-signal-ok" : "bg-signal-warn"}`} />
             {backendConnected ? "Conectado" : "Conectando..."}
           </div>
-          {aiStatus?.provider && (
+          {/* [2026-07-21] El modelo que muestra la app es el del CHAT según la
+              política ACTIVA (Inteligencia) — no el proveedor legacy, que
+              podía contradecirla (bug real: decía MiniMax con Haiku activo). */}
+          {chatPrimary ? (
+            <div className={chatPrimaryDown ? "text-signal-warn" : "text-ink-faint/70"}>
+              {shortRef(chatPrimary)}
+              {chatPrimaryDown && " ⚠ fallando"}
+            </div>
+          ) : aiStatus?.provider ? (
             <div className="text-ink-faint/70">
               {aiStatus.provider}
               {aiStatus.model && ` · ${aiStatus.model}`}
             </div>
-          )}
+          ) : null}
         </div>
       </div>
     </aside>

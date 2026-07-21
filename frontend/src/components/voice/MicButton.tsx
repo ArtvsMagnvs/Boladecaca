@@ -36,6 +36,12 @@ interface MicButtonProps {
   title?: string;
   /** Deshabilita el boton (ej. mientras "Modo Conversación" ya usa el micro). */
   disabled?: boolean;
+  /**
+   * [V1 barge-in] Se llama al EMPEZAR a grabar. Lo usa el chat para callar a
+   * Aithera si estaba hablando: pulsar el micro es interrumpirla, igual que
+   * ponerse a hablar en modo conversación.
+   */
+  onStartRecording?: () => void;
 }
 
 export default function MicButton({
@@ -45,6 +51,7 @@ export default function MicButton({
   className = "",
   title,
   disabled = false,
+  onStartRecording,
 }: MicButtonProps) {
   const [recording, setRecording] = useState(false);
   const [transcribing, setTranscribing] = useState(false);
@@ -97,6 +104,10 @@ export default function MicButton({
 
   const start = useCallback(async () => {
     setError(null);
+    // [V1 barge-in] Pulsar el micro mientras Aithera habla la INTERRUMPE: es
+    // lo que espera cualquiera al ver que la otra parte sigue hablando y tú
+    // quieres decir algo.
+    onStartRecording?.();
     // Reset defensivo por si quedo algo a medias.
     if (recorderRef.current) {
       try {
@@ -173,7 +184,7 @@ export default function MicButton({
       setRecording(false);
       setCoreState("idle");
     }
-  }, [language, pulseError, setCoreState]);
+  }, [language, pulseError, setCoreState, onStartRecording]);
 
   const stop = useCallback(() => {
     if (recorderRef.current && recorderRef.current.state !== "inactive") {

@@ -264,6 +264,23 @@ def _record_async(req: ExecutionRequest, ref: Optional[ModelRef], *, ok: bool,
     """Escribe una fila en `mel_executions`. Nunca bloquea ni rompe: si hay un
     event loop corriendo, lo hace en una task; si no (contexto sync/tests), lo
     escribe inline y traga errores."""
+    # [2026-07-21, doc 31] Telemetría punta a punta: CADA llamada LLM del MEL
+    # (complete Y stream pasan por aquí) queda en `mission_events` con su
+    # capacidad, modelo, latencia y resultado — ligada a la misión en curso
+    # vía contextvar. Best-effort: telemetry.record jamás lanza.
+    try:
+        import app.telemetry as _telemetry
+
+        _telemetry.record(
+            "llm_call", name=req.capability.value,
+            provider=ref.provider if ref else None,
+            model=ref.model if ref else None,
+            duration_ms=latency_ms, ok=ok,
+            detail={"attempts": attempts, "fallback_reason": fallback_reason} if (attempts > 1 or fallback_reason) else None,
+        )
+    except Exception:
+        pass
+
     async def _store() -> None:
         from app.db.database import SessionLocal
         from app.mel.models import MelExecution

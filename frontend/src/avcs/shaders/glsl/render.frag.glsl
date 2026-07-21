@@ -1,6 +1,11 @@
 // Fragment de RENDER: glow radial + color por ROL (doc 13 §7.1 + feedback).
 // Blending aditivo (glow por acumulación). Núcleo = Ámbar; pétalos = oro cálido;
 // sub-líneas = oro; bandas/anillos = teal (con nodos oro); starfield = teal→blanco.
+//
+// [2026-07-21] NOTA DE IDENTIDAD (decisión del usuario): el AVCS NO cambia con
+// el tema claro/oscuro de la UI. Es la identidad visual de Aithera — se
+// mantiene 100% el original en cualquier tema. (Se probó una variante "tinta"
+// para tema claro y se descartó explícitamente.)
 
 uniform vec3 uHeart; // Ámbar (núcleo)
 uniform vec3 uAura;  // oro cálido (aura/pétalos)

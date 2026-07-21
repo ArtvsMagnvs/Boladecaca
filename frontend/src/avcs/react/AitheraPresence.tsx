@@ -16,6 +16,10 @@ import { isPresenceVisible, useAvcsTier } from "./useAvcsRoute";
 import { CONTENT_HALF_HEIGHT, CONTENT_HALF_WIDTH, FIT_MARGIN, TIERS } from "../constants";
 import type { CoreStateId, QualityTier } from "../types";
 
+// [2026-07-21] El AVCS NO reacciona al tema claro/oscuro de la UI: es la
+// identidad visual de Aithera y se mantiene 100% igual en cualquier tema
+// (decisión explícita del usuario).
+
 interface RunnerProps {
   visible: boolean;
   tier: QualityTier;
@@ -111,9 +115,23 @@ export function AitheraPresence({ className }: AitheraPresenceProps) {
   const location = useLocation();
   const tier = useAvcsTier();
   const visible = isPresenceVisible(location.pathname);
+  // EL ESCENARIO DEL NÚCLEO (2026-07-21): el AVCS se ve EXACTAMENTE igual en
+  // cualquier tema — sus partículas pintan con luz ADITIVA, así que exigen el
+  // MISMO fondo oscuro debajo. Sin esto, en tema claro el fondo gris claro se
+  // transparenta tras el canvas y el núcleo aparece "con un velo blanco" (no
+  // hay ninguna capa encima: es el fondo de la página). Este div pinta el
+  // lienzo oscuro de siempre en el HUB (donde el núcleo es protagonista); en
+  // tema oscuro es pixel-idéntico a como era. CERO cambios en engine/shaders —
+  // es solo el color del telón de fondo.
+  const stage = location.pathname === "/";
 
   return (
-    <div className={className}>
+    <div
+      className={className}
+      style={stage
+        ? { backgroundColor: "#0a0a0f", transition: "background-color 400ms ease" }
+        : { transition: "background-color 400ms ease" }}
+    >
       <Canvas
         camera={{ position: [0, 0, 8.5], fov: 45 }}
         dpr={[1, TIERS[tier].dpr]}

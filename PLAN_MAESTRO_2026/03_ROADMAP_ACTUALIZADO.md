@@ -10,7 +10,8 @@
 > · **11** Automation+Orchestrator · **12** Auditoría/optimización · **13** AVCS
 > (sistema visual) · **14** TIE/Cognitive Runtime · **15** Learning System ·
 > **16** Principios Modulares · **17** Event Bus/Observabilidad · **18** WPMS/Workspace · **19** MEL/Model Execution Layer ·
-> **21** plan de sesiones del TIE (T1-T5, CERRADO) · **22** plan de sesiones del MEL (E1-E2b).
+> **21** plan de sesiones del TIE (T1-T5, CERRADO) · **22** plan de sesiones del MEL (E1-E2b)
+> · **27** plan V1.0→V1.6 (dependencias + sesiones + modelos + tests — MANDA sobre las secciones 6-10).
 >
 > **La estrella polar**: V1.0 es un **MVP bien hecho — completamente autónomo y
 > distribuible a usuarios BETA** — alcanzable en semanas, no meses. Todo lo que no
@@ -233,56 +234,53 @@ roadmap, 4.5-5 sesiones en vez de 2-3.
 
 Sprints O1-O5 + E1-E1b-E2-E2b (8.5-9.5 sesiones). Tag `v1.0.0-beta`.
 
-## 6. V1.1 — Hermes Runtime + **Learning System operativo** (docs 10 + 15)
+## 6. V1.1 — **Learner operativo** + AVCS Génesis (plan de sesiones: doc 27 §5)
 
-Sprint H0 de **investigación GO/NO-GO** (API real, licencia, huella) → HermesRuntime
-+ 4 adapters (Memory/Skill/Tool/Context Provider): Hermes piensa, todo lo aprendido
-vive en el MOS, toda tool pasa por whitelist+gate. LSL completa (tabla `skills` +
-`skill_events`) + LLL completo (análisis 2-5) + **Mission Learning** (doc 15 §4:
-reflexión post-misión → decisiones/pins/skills candidatas) + escalera de confianza
-completa (doc 15 §3) + panel "lo que Aithera ha aprendido" con undo. Working Memory
-(Letta) como detalle interno del runtime. **Contingencia definida** si NO-GO
-(wrapper de proceso / runtime nativo / otro OSS) — V1.0 ya es producto completo
-sin él. Cierre: Hermes ejecuta una tarea usando memoria de Aithera sin escribir un
-solo archivo propio; 0 menciones a "Hermes" en la UI. (4-5 sesiones + H0.)
+**[Δ 2026-07-20, reordenación por dependencias — doc 27 §1]**: el Learner SUBE a
+V1.1 (es el nodo con más dependientes: MEL Learning, AutomationLearner, Skill
+Evolution, reflexión, y la LSL que Hermes necesita) y Hermes BAJA a V1.3. "TIE
+v3" queda DISUELTO: reflexión continua → Learner (aquí), routing predictivo →
+MEL Learning (V1.2), multi-runtime → V1.5.
 
-## 7. V1.2 — MCP Interop + **TIE v2** + Skill Evolution
+- **Backend (L1-L4)**: LSL completa (tabla `skills`+`skill_events` con linaje) +
+  escalera de confianza + Mission Learning (`mission.completed` → model_stats,
+  decisiones, skills DRAFT) + LLL análisis 2-5 + panel "Lo que Aithera ha
+  aprendido" con Aceptar/Editar/Rechazar/Undo.
+- **Frontend (AV1-AV2)**: **AVCS Génesis** (doc 13 Fase 0 — estaba sin construir):
+  ParticleEngine GPGPU + semilla + ondas + 3 ritmos + Modo Presencia + Chat
+  limpio + sin clipping. Pista paralela: no compite con el backend.
+- 6 sesiones (Fable ×2: contratos L1, motor AV1). Tag `v1.1.0`.
 
-- **MCP server**: ToolManager expuesto (whitelist + gates intactos). **MCP client**:
-  `MCPToolProxy` — tools externas con las mismas validaciones; Hermes las ve vía
-  `AitheraToolProvider` sin cambios.
-- **[Δ 2026-07-15] GitHub vía MCP client**: `Project.github_url` (V0.87 WPMS
-  W2e, `frontend/.../ProjectPopup.tsx`) ya existe como campo — hoy solo
-  guarda el enlace, sin llamar a ninguna API. Aquí es donde se conecta de
-  verdad: crear repo (el botón stub "Crear repositorio" pasa a hacer la
-  llamada real), leer issues/PRs, y el TIE v2 pudiendo abrir/enlazar PRs
-  desde una misión. Cero migración nueva — el dato ya está.
-- **TIE v2** (doc 14 §5): olas paralelas con semáforo, retry + replan de subárbol
-  (los nodos DONE son inmutables), presupuestos de coste DUROS por misión (medidos
-  desde V1.0), Mission Manager persistente (tabla `missions` + panel en el Hub +
-  misiones del AE vía `MissionAction`), Model Router alimentado por
-  `model_stats`/`tool_stats` del Learner. **Mission evals**: suite de misiones
-  canónicas de regresión pre-release (doc 15 §9).
-- **MEL v2** (doc 19 §9): Learning Engine (job nocturno sobre `mel_executions` +
-  `model_stats` compartida con el Learner: prior bayesiano, decaimiento temporal,
-  evidencia mínima, cambio acotado) + Recommendation Engine (propuestas HITL con
-  evidencia, misma escalera de confianza) + **Custom builder drag&drop** +
-  pantallas Actividad/Recomendaciones + reconfiguración automática por eventos +
-  presupuestos de coste. La fila "Model Router alimentado por model_stats" de TIE
-  v2 se cumple A TRAVÉS del MEL (una sola pieza aprende a elegir modelo).
-- **Skill Evolution** (doc 15 §6): merge/split/specialize con linaje + dedup
-  conceptual y detección de contradicciones del Knowledge Evolution (doc 15 §7).
-- Automation: PatternTrigger/MemoryTrigger (alimentados por el LLL) +
-  AutomationLearner (reglas sugeridas con HITL — doc 15 §8).
-- MOS: Project Memory (Capa 2) activa; candidatos Qdrant/KuzuDB/Graphiti/Cognee
-  entran AQUÍ como muy pronto, uno por vez, con el protocolo de migración RFC-006.
+## 7. V1.2 — MCP Interop + **TIE v2** + **MEL Learning** (doc 27 §6)
 
-## 8. Post-V1.0 paralelo — Cliente Web + PWA + PIN de red
+- **MCP client** (Fable: superficie de seguridad): `MCPToolProxy` con whitelist +
+  gates + permiso `mcp.use`; **MCP server**: ToolManager expuesto (stdio), tools
+  `internal=True` jamás. Prepara el terreno de Hermes.
+- **TIE v2**: olas paralelas (semáforo), retry/replan de subárbol (nodos DONE
+  inmutables), presupuestos DUROS por misión, Mission Manager persistente +
+  `MissionAction` del AE + **mission evals** (suite canónica pre-release).
+- **MEL Learning + Recommendation Engines** (doc 19 §9.2-9.3, ahora con
+  `model_stats` poblada por el Learner) + **Skill Evolution** + AutomationLearner.
+- 6 sesiones (Fable ×2: C1 MCP client, T1 executor). Tag `v1.2.0`.
 
-Mismo build React servido por FastAPI en `/app`, PIN/token para orígenes
-no-localhost, rate limiting (slowapi), PWA. No bloquea V1.1/V1.2.
+## 8. V1.3 — Hermes Runtime (GO/NO-GO) (doc 27 §7)
 
-## 9. V1.5 — **AVCS MVP1 "Lenguaje completo"** + Hub avanzado (13 §20)
+Investigación 2026-07-20: **viable de forma GRADUAL** — `hermes-agent` es paquete
+Python (v0.14+), con memory providers ENCHUFABLES (v2026.4.3) que encajan con los
+adapters del doc 10, y LLM configurable por endpoint custom → **todas sus
+llamadas pasarán por el MEL** (shim OpenAI-compatible local). Nunca integración
+"de golpe": H0 verifica en real (providers, interceptación de tools, huella,
+offline) → GO: H1-H4 incremental con las garantías de la auditoría (grounding,
+gates) aplicadas a Hermes · NO-GO: plan B (doc 10 §6) en 2 sesiones. 5 sesiones
+(Fable ×2: H0, H1+shim MEL). Tag `v1.3.0`.
+
+## 8b. V1.4 — Red (Web+PWA+PIN) + voz data-driven + pulido (doc 27 §8)
+
+Cliente Web servido en `/app` + PIN/token + rate limiting (Fable: superficie de
+red) + PWA + decisiones de voz VZ2-VZ4 CON los datos del profiling VZ5 + UX
+remanentes (U1-U3). 4 sesiones. Tag `v1.4.0`.
+
+## 9. V1.5 — **AVCS MVP1 "Lenguaje completo"** + Hub avanzado + multi-instancia (13 §20, 27 §9)
 
 La actualización mayor del Hub (importante, no definitiva): los **7 ritmos
 biológicos completos** sobre campos de fuerza componibles; raíces y ramas maduras;
@@ -350,10 +348,13 @@ tipado. Sincronización LSL↔GSN siempre con confirmación explícita (09 §3).
 | V0.87 | **WPMS** (Workspace) | 2-3 | proyectos/milestones/tareas vara-Linear, progreso automático, enganche MOS/TIE |
 | V0.9 | Automation + Gates | 4-5 | briefing matinal automático, reglas, aprobaciones |
 | V1.0 | **TIE v1** (Orchestrator) + **MVP BETA** | 5-6 | **instalable y autónomo para beta testers**; planes como grafo, camino corto, kill-switch |
-| V1.1 | Hermes Runtime + **Learning System** | 4-5 (+H0) | agente que aprende; LSL completa; Mission Learning; panel "lo aprendido" |
-| V1.2 | MCP + **TIE v2** + Skill Evolution | 4-5 | interop total, olas paralelas+replan, misiones persistentes, Project Memory, mission evals |
-| V1.5 | **AVCS MVP1** + Hub avanzado + **TIE v3** | 5-7 | los 7 ritmos, UI rediseñada; reflexión continua y routing predictivo |
-| V1.6+ | **AVCS MVP2** (UI viva, vida, memoria visual) | 6-8 | el Hub como organismo |
+| V1.0 cierre | **MVP-beta** (instalador+onboarding+verificación) | 4 | doble clic y funciona; tag `v1.0.0` (doc 27 §4) |
+| V1.1 | **Learner** + AVCS Génesis | 6 | Aithera aprende (LSL, Mission Learning, panel con undo); presencia visual viva |
+| V1.2 | MCP + **TIE v2** + MEL Learning + Skill Evolution | 6 | interop total; olas+replan+presupuestos; el MEL aprende; evals |
+| V1.3 | Hermes Runtime (H0 GO/NO-GO → H1-H4) | 5 | runtime que crece, con memoria/tools/LLM 100% de Aithera |
+| V1.4 | Web+PWA+PIN + voz data-driven | 4 | Aithera desde el navegador/móvil; voz fluida medida |
+| V1.5 | **AVCS MVP1** + Hub avanzado + multi-instancia | 5 | los 7 ritmos, UI rediseñada (TIE v3 disuelto: ver doc 27 §1) |
+| V1.6 | **AVCS MVP2** + Project Memory C2 + puerta GSN/CIE | 5 | el Hub como organismo; contratos de red revisados |
 | V2.0+ | Red (GSN/CIE/Guardians) | — | inteligencia colectiva opcional |
 
 **Total hasta V1.0 beta: ~16-20 sesiones.** Regla de siempre: si una fase crece, se

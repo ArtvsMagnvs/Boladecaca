@@ -97,8 +97,17 @@ class CircuitBreaker:
         st = self._state.setdefault(provider, {"fails": [], "open_until": 0.0})
         st["fails"] = [t for t in st["fails"] if now - t < self.WINDOW_S]
         st["fails"].append(now)
+        st["last_reason"] = reason   # [2026-07-21] para el panel de fallos de la UI
         if len(st["fails"]) >= self.FAILS_TO_OPEN:
             st["open_until"] = now + self.OPEN_S
+
+    def open_reason(self, provider: str) -> str | None:
+        """[2026-07-21] Motivo del último fallo si el breaker está ABIERTO ahora
+        (None si está cerrado/sano). Alimenta los avisos de Inteligencia."""
+        st = self._state.get(provider)
+        if not st or time.monotonic() >= st.get("open_until", 0.0):
+            return None
+        return st.get("last_reason") or "unknown"
 
     def reset(self) -> None:
         self._state.clear()

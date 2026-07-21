@@ -46,12 +46,34 @@ def record_start(mission: Mission, *, channel: Optional[str] = None) -> str:
         db.rollback()
     finally:
         db.close()
+    # [2026-07-21, doc 31] Telemetría punta a punta: el tracer es el punto ÚNICO
+    # por el que pasan TODAS las rutas (handle, handle_stream, submit_mission,
+    # acción directa) — aquí se fija el contexto de misión (contextvar) que
+    # heredan los hooks del MEL y del toolloop, y se registra el arranque.
+    try:
+        import app.telemetry as _telemetry
+
+        _telemetry.set_mission(mission.id, trace_id)
+        _telemetry.record("mission_start", name=mission.source,
+                          detail={"channel": channel or mission.channel})
+    except Exception:
+        pass
     return trace_id
 
 
 def record_intent(trace_id: str, intent: Intent, *, model_used: Optional[str] = None) -> None:
     """Guarda la intención clasificada (qué quería el usuario + qué necesita)."""
     _update(trace_id, intent=intent.to_dict(), model_used=model_used)
+    try:
+        import app.telemetry as _telemetry
+
+        _telemetry.record("intent", name=intent.type, trace_id=trace_id, ok=True,
+                          detail={"short_path": intent.is_short_path,
+                                  "direct_action": getattr(intent, "is_direct_action", False),
+                                  "requires_tools": intent.requires_tools,
+                                  "requires_planning": intent.requires_planning})
+    except Exception:
+        pass
 
 
 def record_plan(trace_id: str, graph: TaskGraph, *, decision_id: Optional[str] = None,
@@ -60,6 +82,15 @@ def record_plan(trace_id: str, graph: TaskGraph, *, decision_id: Optional[str] =
     por transición reescribe `plan` en cada cambio de estado de nodo."""
     _update(trace_id, plan=graph.to_dict(), decision_id=decision_id,
             context_query_id=context_query_id, state="running")
+    try:
+        import app.telemetry as _telemetry
+
+        _telemetry.record("plan", trace_id=trace_id, ok=True,
+                          detail={"nodes": len(graph.nodes),
+                                  "sensitive": sum(1 for n in graph.nodes.values()
+                                                   if getattr(n, "approval_required", False))})
+    except Exception:
+        pass
 
 
 def update_graph(trace_id: str, graph: TaskGraph) -> None:
@@ -71,6 +102,24 @@ def record_end(trace_id: str, *, outcome: str, state: str = "done",
                result: Optional[str] = None) -> None:
     """Cierra la traza con el resultado. `state` ∈ done|failed|cancelled."""
     _update(trace_id, outcome=outcome, result=result, state=state)
+    try:
+        import app.telemetry as _telemetry
+
+        # Duración total real: desde created_at de la traza hasta ahora.
+        duration_ms = None
+        try:
+            meta = get_meta(trace_id)
+            created = meta.get("created_at") if meta else None
+            if created:
+                from datetime import datetime as _dt
+                start = _dt.fromisoformat(created) if isinstance(created, str) else created
+                duration_ms = int((_dt.utcnow() - start).total_seconds() * 1000)
+        except Exception:
+            pass
+        _telemetry.record("mission_end", name=state, trace_id=trace_id,
+                          ok=(state == "done"), duration_ms=duration_ms)
+    except Exception:
+        pass
 
 
 # ---------------------------------------------------------------------------
@@ -157,7 +206,9 @@ def get_meta(trace_id: str) -> Optional[dict]:
         if row is None:
             return None
         return {"id": row.id, "mission_id": row.mission_id, "channel": row.channel,
-                "state": row.state}
+                "state": row.state,
+                # [2026-07-21] para que la telemetría calcule la duración total
+                "created_at": row.created_at.isoformat() if row.created_at else None}
     finally:
         db.close()
 

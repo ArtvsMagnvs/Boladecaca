@@ -8,6 +8,7 @@
 // A3b ("Permisos & Autonomia", doc 20) — no se adelanta aqui.
 import { useCallback, useEffect, useState } from "react";
 import { api, type Approval, type AutomationExecution, type AutomationRule } from "@/lib/api";
+import { usePolling } from "@/hooks/usePolling";
 
 const TRIGGER_LABELS: Record<string, string> = {
   schedule: "Programada",
@@ -98,13 +99,11 @@ export default function Automation() {
   }, [selectedRuleId, loadExecutions]);
 
   // Sondeo ligero de aprobaciones pendientes — el Hub tampoco recibe push
-  // (doc 20 A1: el gate notifica por el canal de origen, no aquí).
-  useEffect(() => {
-    const id = window.setInterval(() => {
-      api.getApprovals().then(setApprovals).catch(() => {});
-    }, 15000);
-    return () => window.clearInterval(id);
-  }, []);
+  // (doc 20 A1: el gate notifica por el canal de origen, no aquí). [P1] pausado
+  // cuando la ventana no está visible.
+  usePolling(() => {
+    api.getApprovals().then(setApprovals).catch(() => {});
+  }, 15000);
 
   const toggleRule = async (rule: AutomationRule) => {
     setBusyRuleId(rule.id);

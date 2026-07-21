@@ -1,0 +1,141 @@
+AITHERA
+Sistema Operativo de Inteligencia Artificial
+ACTUALIZACIÓN V0.2
+Instrucciones para Claude Code · Corrección de Bugs · Configuración MiniMax
+Versión
+0.2.0
+Fecha
+25 de junio de 2026
+Proveedor IA
+MiniMax-M2.7-highspeed
+Dirigido a
+Claude Code (implementación)
+1. INSTRUCCIONES PARA CLAUDE CODE — MiniMax API
+ATENCIÓN — Esta sección contiene la API key real de MiniMax y las instrucciones exactas para que Claude Code la configure. Ejecuta los pasos en orden.
+Datos de configuración
+Proveedor
+MiniMax
+Modelo objetivo
+MiniMax-M2.7-highspeed
+Endpoint API
+https://api.minimax.io/v1/chat/completions
+API Key
+sk-cp--sUhQnGSRs1E87N0fYHhcSBLf2HBNbCc8okAp_QabniiF4H9PqIL2oqJkvAcQR9iudLkGueIu7XutfL7347tEpiLPevl31YO6w4nJgpC3R11JatwQwKL9OU
+Paso 1 — Crear archivo backend/.env
+Claude Code debe crear el archivo backend/.env (si no existe) con el siguiente contenido exacto:
+Archivo: backend/.env
+AI_PROVIDER=minimax
+MINIMAX_API_KEY=sk-cp--sUhQnGSRs1E87N0fYHhcSBLf2HBNbCc8okAp_QabniiF4H9PqIL2oqJkvAcQR9iudLkGueIu7XutfL7347tEpiLPevl31YO6w4nJgpC3R11JatwQwKL9OU
+MINIMAX_MODEL=MiniMax-M2.7-highspeed
+ELEVENLABS_API_KEY=your_elevenlabs_key_here
+Paso 2 — Hardcode en minimax_provider.py (método alternativo y más robusto)
+Además del .env, Claude Code debe abrir el archivo backend/app/ai/providers/minimax_provider.py y hacer dos cambios:
+Cambio 2a — Establecer la API key hardcodeada
+Archivo: backend/app/ai/providers/minimax_provider.py
+Buscar esta línea:
+MINIMAX_HARDCODED_KEY: str = ""   # <- pon tu key aquí si lo prefieres inline
+Reemplazar por:
+MINIMAX_HARDCODED_KEY: str = "sk-cp--sUhQnGSRs1E87N0fYHhcSBLf2HBNbCc8okAp_QabniiF4H9PqIL2oqJkvAcQR9iudLkGueIu7XutfL7347tEpiLPevl31YO6w4nJgpC3R11JatwQwKL9OU"
+Cambio 2b — Establecer MiniMax-M2.7-highspeed como modelo por defecto
+En la misma clase MinimaxProvider, buscar:
+default_model_name = "MiniMax-M2.7"
+Reemplazar por:
+default_model_name = "MiniMax-M2.7-highspeed"
+Paso 3 — Actualizar el catálogo de modelos
+Claude Code debe abrir backend/app/ai/catalog.py y actualizar el modelo por defecto de MiniMax:
+Archivo: backend/app/ai/catalog.py — buscar el bloque de minimax:
+"minimax": {
+    "label": "MiniMax",
+    "requires_key": True,
+    "default_model": "MiniMax-M2.7",   # <-- cambiar esto
+Cambiar a:
+    "default_model": "MiniMax-M2.7-highspeed",
+Paso 4 — Actualizar el bootstrap en ai_manager.py
+Claude Code debe abrir backend/app/ai/ai_manager.py y buscar la línea del bootstrap de Minimax:
+Archivo: backend/app/ai/ai_manager.py — función _bootstrap_from_env:
+seeds.append(("minimax", os.getenv("MINIMAX_MODEL", "MiniMax-M2.7"), minimax_key, None))
+Cambiar a:
+seeds.append(("minimax", os.getenv("MINIMAX_MODEL", "MiniMax-M2.7-highspeed"), minimax_key, None))
+Paso 5 — Verificación
+Después de aplicar los pasos anteriores, Claude Code debe verificar que el sistema funciona:
+Arrancar el backend: cd backend && python -m uvicorn app.main:app --reload
+Comprobar endpoint de estado: GET http://localhost:8000/api/ai/status → debe devolver healthy: true y provider: minimax
+Probar conexión: POST http://localhost:8000/api/ai/configured/minimax/test → debe devolver healthy: true
+Hacer un chat de prueba: POST http://localhost:8000/api/chat/stream con {"message": "Hola"} → debe devolver texto en streaming
+NOTA DE SEGURIDAD: La API key de MiniMax está incluida en este documento para que Claude Code pueda configurarla automáticamente. No compartas este documento ni subas backend/.env o minimax_provider.py con la key a ningún repositorio público. El archivo .env ya está en el .gitignore.
+2. ERRORES PENDIENTES PARA CLAUDE CODE
+Los siguientes problemas fueron detectados en la auditoría pero NO están corregidos todavía. Claude Code debe aplicarlos después de la configuración de MiniMax.
+Pendiente #1 — AgentResponse schema incompleto
+Severidad: MEDIA. El schema AgentResponse en backend/app/db/schemas.py solo devuelve id, name, system_prompt y created_at, pero el modelo de base de datos Agent tiene también agent_type, description e is_active. La pantalla de Agentes no puede mostrar ni editar estos campos.
+Acción requerida en backend/app/db/schemas.py:
+Buscar la clase AgentResponse y añadir los campos faltantes:
+class AgentResponse(BaseModel):
+    id: int
+    name: str
+    agent_type: Optional[str] = None    # AÑADIR
+    description: Optional[str] = None   # AÑADIR
+    system_prompt: Optional[str] = None
+    is_active: bool = True               # AÑADIR
+    created_at: Optional[datetime] = None
+    class Config:
+        from_attributes = True
+También actualizar AgentCreate para aceptar los mismos campos:
+class AgentCreate(BaseModel):
+    name: str
+    agent_type: Optional[str] = None    # AÑADIR
+    description: Optional[str] = None   # AÑADIR
+    system_prompt: Optional[str] = None
+    is_active: bool = True               # AÑADIR
+Pendiente #2 — Voice status: mismatch entre backend y frontend
+Severidad: MEDIA. El endpoint GET /api/voice/status devuelve un objeto anidado {elevenlabs: {...}, espeak: {...}} pero api.ts declara que devuelve {configured: boolean, voices_count: number, message: string}. La pantalla de VoiceCenter puede fallar al leer el estado.
+Acción requerida en frontend/src/lib/api.ts:
+Buscar la interfaz de getVoiceStatus y actualizar el tipo de retorno:
+async getVoiceStatus(): Promise<{
+  elevenlabs: { configured: boolean; voices_count: number; message: string };
+  espeak: { available: boolean; voices_count: number; message: string };
+  fallback: string;
+  recommended: string;
+}>
+Pendiente #3 — .gitignore no incluye backend/.env
+Severidad: ALTA (seguridad). El archivo backend/.env con la API key de MiniMax no debe subirse a ningún repositorio. Claude Code debe verificar que .gitignore en la raíz del proyecto incluye la línea:
+backend/.env
+.env
+Si no están, añadirlas al archivo .gitignore existente.
+Pendiente #4 — Eliminar aithera.db huérfana del repositorio
+Severidad: BAJA. Existe el archivo backend/aithera.db en el repositorio que NO es la base de datos activa (la real está en %APPDATA%/Aithera/aithera.db). Claude Code debe eliminar este archivo con git rm --cached backend/aithera.db y añadir *.db al .gitignore para evitar confusión futura.
+3. CAMBIOS YA APLICADOS EN V0.2
+Los siguientes cambios fueron aplicados directamente en el código durante la sesión de auditoría. Claude Code NO necesita volver a aplicarlos (ya están en los archivos).
+Archivo
+Cambio
+Descripción
+frontend/src/pages/Chat.tsx
+APLICADO
+Bug closure: useRef para acumular texto del stream. Chat ya funciona.
+backend/app/api/endpoints/chat.py
+APLICADO
+ChatResponse: model_used→model, tokens_used→tokens.
+backend/app/db/schemas.py
+APLICADO
+Calendar schemas alineados con DB y frontend (start_date, end_date, all_day, color).
+backend/app/ai/providers/minimax_provider.py
+APLICADO
+Añadida constante MINIMAX_HARDCODED_KEY y override del __init__ para resolución automática de key.
+backend/app/ai/ai_manager.py
+APLICADO
+Bootstrap lee MINIMAX/DEEPSEEK/GROK/GEMINI_API_KEY del .env.
+frontend/src/pages/Settings.tsx
+APLICADO
+Formulario modal completo para configurar API keys directamente desde la UI.
+backend/app/db/database.py
+APLICADO
+declarative_base: ext.declarative→orm (SQLAlchemy 2.0).
+backend/app/core/config.py
+APLICADO
+VERSION→0.2.0, añadidas MINIMAX_* settings, modelos actualizados.
+backend/app/main.py
+APLICADO
+Versión API actualizada a 0.2.0.
+backend/.env.example
+APLICADO
+Plantilla completa con todos los proveedores y MiniMax como prioridad.
+IMPORTANTE: Los cambios del Paso 1 y Paso 2 de la Sección 1 (API key y modelo MiniMax-M2.7-highspeed) todavía NO están aplicados — son los únicos pendientes de la parte de MiniMax.

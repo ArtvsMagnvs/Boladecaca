@@ -226,10 +226,13 @@ _GATE_KIND_PERMISSION: dict[str, str] = {
 
 def is_kind_pre_authorized(kind: str) -> bool:
     """La consulta ÚNICA que hace `ApprovalGate.request_approval` (approval.py).
-    Resuelve en orden: (1) el kind ES un permiso del catálogo (p. ej.
+    Resuelve en orden: (0) modo Autónomo total → SÍ a todo (100% autónomo,
+    a prueba de kinds futuros); (1) el kind ES un permiso del catálogo (p. ej.
     `email.send`, el caso de A3b); (2) el kind es un gate del TIE con
     traducción declarada. Fail-closed en todo lo demás — un kind nuevo sin
-    entrada aquí pregunta SIEMPRE, que es el default seguro."""
+    entrada aquí pregunta SIEMPRE, que es el default seguro (salvo en full)."""
+    if autonomy_is_full():
+        return True                      # 100% autónomo: cualquier gate, presente o futuro
     if is_pre_authorized(kind):
         return True
     traducido = _GATE_KIND_PERMISSION.get(kind)
@@ -246,12 +249,39 @@ def is_tool_action_pre_authorized(tool_id: str, action: str) -> bool:
 # ---------------------------------------------------------------------------
 # API pública del módulo (namespace-módulo, patrón workspace_service/decision_service)
 # ---------------------------------------------------------------------------
+def autonomy_is_full() -> bool:
+    """¿El usuario tiene el modo AUTÓNOMO TOTAL activo? (perfil `full`).
+
+    [Fix definitivo 2026-07-20] EL MODO AUTÓNOMO ES 100% AUTÓNOMO. Antes el
+    perfil `full` enumeraba permisos individuales (`PROFILES["full"]`), así que
+    si un permiso nuevo aparecía DESPUÉS de que el usuario activara full (p.ej.
+    `tie.plan_approval`/`browser.use` añadidos en S1), su config persistida NO
+    lo tenía activado y el gate correspondiente seguía preguntando — justo el
+    bug del navegador reportado. Ahora `full` significa, por definición, "no me
+    preguntes NADA, para NINGUNA tarea, presente o futura". Se lee del perfil
+    activo, no de la enumeración de toggles, así que es a prueba de gates y
+    permisos que aún no existen. La regla de oro de A3b se mantiene: auto-
+    aprobado NO es silencioso — el `ApprovalGate` deja rastro en `approvals`."""
+    from app.db.database import SessionLocal
+
+    db = SessionLocal()
+    try:
+        return (_config_get(db, _PROFILE_KEY) or DEFAULT_PROFILE) == "full"
+    finally:
+        db.close()
+
+
 def is_pre_authorized(permission_id: str) -> bool:
     """Fail-CLOSED: un id que no existe en el catálogo, o sin fila en Config
     todavía, NUNCA se trata como pre-autorizado — el gate pregunta, que es el
     comportamiento seguro por defecto. Es la función que consulta
     `ApprovalGate.request_approval` (approval.py, sin import a nivel de
-    módulo — evita el ciclo approval<->permissions)."""
+    módulo — evita el ciclo approval<->permissions).
+
+    EXCEPCIÓN [Fix 2026-07-20]: en modo Autónomo total (`full`), cualquier
+    capacidad se considera pre-autorizada — 100% autónomo por definición."""
+    if autonomy_is_full():
+        return True
     perm = _BY_ID.get(permission_id)
     if perm is None or not perm.available:
         return False

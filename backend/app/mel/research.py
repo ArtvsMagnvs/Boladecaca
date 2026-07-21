@@ -133,6 +133,13 @@ async def investigate(provider: str, model: str, *, force: bool = False) -> bool
         system_prompt=_SYSTEM_PROMPT,
         constraints=Constraints(timeout_s=30.0),
         exclude=exclude,
+        # [Opt latencia 2026-07-21] Investigar las capacidades de un modelo es una
+        # tarea de FONDO — no debe pelearse con las peticiones EN VIVO del usuario
+        # por el proveedor de calidad (que las estaba serializando y las hacía
+        # tardar). Con "economy" (local-primero) el auto-catálogo usa un modelo
+        # barato/local para investigar, dejando el proveedor caro libre para el
+        # chat/las misiones del usuario.
+        policy_override="economy",
     )
     res = await mel_complete(req)
     if not res.ok:

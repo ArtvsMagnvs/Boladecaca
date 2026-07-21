@@ -207,6 +207,67 @@ def _close_if_orphan(trace_id: str) -> None:
         logger.info(f"[tie] no se pudo cerrar la traza abortada {trace_id[:8]}: {e!r}")
 
 
+# [Opt latencia 2026-07-20] Herramientas del camino de acción directa. Una tarea
+# de navegador casi siempre necesita BUSCAR la URL (search) y ABRIRLA (browser);
+# una de escritorio, la tool desktop. Se unen a las que el clasificador detectó.
+_BROWSER_DIRECT_TOOLS = ("search", "browser")
+_COMPUTER_DIRECT_TOOLS = ("desktop",)
+
+
+def _direct_action_tools(intent: Intent) -> list[str]:
+    tools = list(intent.requires_tools or [])
+    if intent.requires_browser:
+        for t in _BROWSER_DIRECT_TOOLS:
+            if t not in tools:
+                tools.append(t)
+    if intent.requires_computer:
+        for t in _COMPUTER_DIRECT_TOOLS:
+            if t not in tools:
+                tools.append(t)
+    return tools
+
+
+async def _direct_action_path(
+    text: str, intent: Intent, mission: Mission, trace_id: str,
+    *, force_model: Optional[str] = None, channel: Optional[str] = None,
+) -> str:
+    """[Opt latencia] Un ÚNICO bucle de tool-use resuelve una tarea mecánica
+    entera —abrir, observar, actuar, responder— sin planner ni grafo multi-nodo.
+    Con el modelo RÁPIDO de AGENTIC. Escribe mission.outcome. El bucle sigue
+    pidiendo permiso por acción sensible si el usuario NO está en Autónomo (el
+    ApprovalGate lo gobierna), así que no se salta ningún control."""
+    from app.automation import approval_gate
+    from app.memory import memory_router
+    from app.tools import tool_manager
+
+    t0 = __import__("time").monotonic()
+    tools = _direct_action_tools(intent)
+    runtime = get_runtime("null")
+    task = AgentTask(
+        id=AgentTask.new_id(),
+        instruction=intent.raw_text or text,     # el texto ORIGINAL (fidelidad, S2)
+        channel=channel or mission.channel,
+        tools=tools,
+        model_hint=force_model,
+        mission_id=mission.id,                   # sesión de navegador por misión (F-1)
+        project_id=mission.project_id,
+    )
+    result = await runtime.execute_task(
+        task, memory=memory_router, tools=tool_manager, approval_gate=approval_gate,
+    )
+    out = result.output or ("Hecho." if result.success else (result.error or "No pude completarlo."))
+    mission.outcome = out[:2000]
+    mission.state = "done" if result.success else "failed"
+    tracer.record_end(trace_id, outcome=mission.outcome, state=mission.state)
+    if result.success:
+        tracer.emit_completed(mission, ok=True, nodes=1)
+    else:
+        tracer.emit_failed(mission)
+    dur = int((__import__("time").monotonic() - t0) * 1000)
+    logger.info(f"[tie-perfil] acción directa: {dur}ms, tools={tools}, ok={result.success}")
+    return out
+
+
 async def _stream_body(text, intent, mission, trace_id, channel, prefetched,
                        memory_router, tool_manager, approval_gate, force_model,
                        session_id=None):
@@ -227,6 +288,23 @@ async def _stream_body(text, intent, mission, trace_id, channel, prefetched,
                 yield ("text", chunk.payload)
         tracer.record_end(trace_id, outcome=acc[:2000])
         tracer.emit_completed(mission, ok=bool(acc), nodes=0)
+        return
+
+    # --- [Opt latencia] camino de ACCIÓN DIRECTA: tarea mecánica de un solo
+    # encargo (abrir YouTube y poner música, crear carpeta+archivo). Sin planner
+    # ni grafo: un bucle de tool-use rápido la resuelve de corrido. Colapsa ~8
+    # llamadas (muchas lentas) en 3-4 rápidas. NO se emite ("mission",…) porque
+    # no hay plan que revisar — es una acción, no una misión de varios pasos. ---
+    if intent.is_direct_action:
+        yield ("status", "ejecutando")
+        try:
+            out = await _direct_action_path(text, intent, mission, trace_id,
+                                            force_model=force_model, channel=channel)
+        except Exception as e:
+            logger.error(f"[tie] acción directa falló: {type(e).__name__}: {e}")
+            out = "He tenido un problema procesando eso."
+            mission.outcome = out
+        yield ("text", mission.outcome or out)
         return
 
     # --- camino complejo ---
@@ -351,6 +429,12 @@ async def _run_pipeline(
         tracer.record_end(trace_id, outcome=out[:2000])
         tracer.emit_completed(mission, ok=True, nodes=0)
         return out
+
+    # [Opt latencia] Acción directa: tarea mecánica de un solo encargo → un bucle
+    # de tool-use rápido, sin planner (mismo criterio que el camino de streaming).
+    if intent.is_direct_action:
+        return await _direct_action_path(text, intent, mission, trace_id,
+                                         force_model=force_model, channel=channel)
 
     # [4] Complejo: contexto afinado por el intent (si pidió tipos concretos) y a planificar.
     context = prefetched if not intent.memory_types else await _context_for(intent, text)

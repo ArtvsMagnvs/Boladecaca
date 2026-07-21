@@ -15,7 +15,7 @@ from typing import Optional
 
 from app.core.logging_config import get_system_logger
 from app.mel.capabilities import is_smart
-from app.mel.catalog import cost_of
+from app.mel.catalog import cost_of, unfit_for
 # [E1b, doc 19 §5.4.3] el compilador usa el score EFECTIVO (catálogo curado
 # desplazado por el auto-catálogo investigado), no el catálogo puro — research.py
 # hace de wrapper de catalog.score_of() y no importa policies.py (sin ciclo).
@@ -57,6 +57,9 @@ def _compile_policy(name: PolicyName, available: list[ModelRef]) -> dict[str, li
             pool = [r for r in available if r.is_local]
         else:
             pool = list(available)
+        # [2026-07-21] Fuera los NO APTOS para esta capacidad (p.ej. Claude CLI
+        # jamás compila en chat/classify/agentic — fallo real de producción).
+        pool = [r for r in pool if cap not in unfit_for(r.provider)]
 
         if not pool:
             compiled[cap.value] = []   # Offline sin local → degradada en esta capacidad
@@ -101,7 +104,9 @@ def _compile_custom(available: list[ModelRef]) -> dict[str, list[str]]:
 def _order_for(name: str, available: list[ModelRef], cap: Capability) -> list[ModelRef]:
     """El orden de candidatos que usa una política concreta para una capacidad —
     lo comparte la compilación automática y la edición manual (para que los
-    respaldos de un modelo elegido a mano sigan el mismo criterio de esa política)."""
+    respaldos de un modelo elegido a mano sigan el mismo criterio de esa política).
+    [2026-07-21] Excluye los NO APTOS para la capacidad (unfit_for)."""
+    available = [r for r in available if cap not in unfit_for(r.provider)]
     if name == PolicyName.OFFLINE.value:
         return _order_quality([r for r in available if r.is_local], cap)
     if name == PolicyName.ECONOMY.value:
@@ -188,7 +193,11 @@ class PolicyStore:
             row = db.query(MelPolicy).filter(MelPolicy.name == name).first()
             if row and row.compiled:
                 keys = row.compiled.get(capability.value, [])
-                chain = [by_key[k] for k in keys if k in by_key]
+                # [2026-07-21] Filtro RETROACTIVO de no-aptos: una política
+                # editada ANTES de existir la regla (p.ej. Claude CLI en chat)
+                # se sanea aquí, en ejecución, sin tocar lo persistido.
+                chain = [by_key[k] for k in keys
+                         if k in by_key and capability not in unfit_for(by_key[k].provider)]
                 if chain:
                     return chain
         except Exception as e:
@@ -219,7 +228,11 @@ class PolicyStore:
             row = db.query(MelPolicy).filter(MelPolicy.is_active.is_(True)).first()
             if row and row.compiled:
                 keys = row.compiled.get(capability.value, [])
-                chain = [by_key[k] for k in keys if k in by_key]
+                # [2026-07-21] Mismo filtro retroactivo de no-aptos que en
+                # chain_for_named — la EJECUCIÓN jamás usa un modelo no apto
+                # para la capacidad, sin importar qué diga la política guardada.
+                chain = [by_key[k] for k in keys
+                         if k in by_key and capability not in unfit_for(by_key[k].provider)]
                 if chain:
                     return chain
         except Exception as e:
@@ -289,6 +302,9 @@ class PolicyStore:
             cap = Capability(capability_value)
         except ValueError:
             return False
+        # [2026-07-21] Un modelo NO APTO para la capacidad no puede elegirse.
+        if model_key is not None and cap in unfit_for(by_key[model_key].provider):
+            return False
 
         db = SessionLocal()
         try:
@@ -315,6 +331,81 @@ class PolicyStore:
             return True
         except Exception as e:
             logger.error(f"[policies] set_primary falló: {type(e).__name__}: {e}")
+            db.rollback()
+            return False
+        finally:
+            db.close()
+
+    def set_slot(self, name: str, capability_value: str, position: int,
+                 model_key: str, available: list[ModelRef]) -> bool:
+        """[2026-07-21, petición del usuario] Edita UNA posición concreta de la
+        cadena (0=primario, 1-2=respaldos, 3=último recurso). REGLA DEL ÚLTIMO
+        ESLABÓN: la posición final (_MAX_CHAIN-1) solo admite modelos LOCALES —
+        es la red de seguridad cuando todo lo demás (o la conexión) falla.
+        Tras colocar el modelo: se deduplica (si ya estaba en otra posición se
+        quita de allí), se rellena hasta _MAX_CHAIN con el orden propio de la
+        política, y se garantiza que la cadena termina en un local si existe
+        alguno (mismo criterio que el compilador). Marca la política editada."""
+        from app.db.database import SessionLocal
+        from app.mel.models import MelPolicy
+
+        by_key = {r.key: r for r in available}
+        if model_key not in by_key:
+            return False
+        try:
+            cap = Capability(capability_value)
+        except ValueError:
+            return False
+        if not (0 <= position < _MAX_CHAIN):
+            return False
+        if position == _MAX_CHAIN - 1 and not by_key[model_key].is_local:
+            return False   # el último eslabón es SIEMPRE local
+        # [2026-07-21] Ni siquiera como respaldo: no-apto es no-apto.
+        if cap in unfit_for(by_key[model_key].provider):
+            return False
+
+        db = SessionLocal()
+        try:
+            row = db.query(MelPolicy).filter(MelPolicy.name == name).first()
+            if row is None:
+                return False
+            compiled = dict(row.compiled or {})
+            chain = [k for k in compiled.get(capability_value, []) if k in by_key]
+            # Coloca (reemplaza la posición; si la cadena es más corta, al final).
+            if position < len(chain):
+                chain[position] = model_key
+                edited_at = position
+            else:
+                chain.append(model_key)
+                edited_at = len(chain) - 1
+            # Dedupe conservando LA POSICIÓN EDITADA como la válida.
+            out: list[str] = []
+            for i, k in enumerate(chain):
+                if k == model_key and i != edited_at:
+                    continue
+                if k in out:
+                    continue
+                out.append(k)
+            # Relleno con el orden propio de la política.
+            fill = [r.key for r in _order_for(name, available, cap) if r.key not in out]
+            while len(out) < _MAX_CHAIN and fill:
+                out.append(fill.pop(0))
+            # Red de seguridad: terminar en local si existe alguno y no hay ya.
+            best_local = next((r for r in _order_quality(available, cap) if r.is_local), None)
+            if best_local and not any(by_key[k].is_local for k in out):
+                if len(out) >= _MAX_CHAIN:
+                    out[-1] = best_local.key
+                else:
+                    out.append(best_local.key)
+            compiled[capability_value] = out[:_MAX_CHAIN]
+            row.compiled = compiled
+            row.pristine = False
+            row.version = (row.version or 1) + 1
+            row.updated_at = datetime.utcnow()
+            db.commit()
+            return True
+        except Exception as e:
+            logger.error(f"[policies] set_slot falló: {type(e).__name__}: {e}")
             db.rollback()
             return False
         finally:

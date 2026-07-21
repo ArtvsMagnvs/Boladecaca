@@ -428,6 +428,10 @@ export interface AIProviderEntry {
   is_configured: boolean;
   requires_key: boolean;
   available_models: string[];
+  /** [2026-07-21] Nombre comercial por id de modelo (ej. "fable" → "Fable 5"). */
+  model_labels?: Record<string, string>;
+  /** [2026-07-21] Línea aclaratoria bajo el nombre (ej. cómo funciona Claude Code CLI). */
+  description?: string | null;
 }
 
 export interface AITestConnectionResult {
@@ -451,6 +455,19 @@ export interface SearchProviderStatus {
 export interface SearchStatus {
   brave: SearchProviderStatus;
   serpapi: SearchProviderStatus;
+}
+
+// [V2] Personalidad conversacional de Aithera (tono, no identidad).
+export interface PersonalityDef {
+  id: string;
+  name: string;
+  description: string;
+  prompt: string;
+}
+export interface PersonalityCatalog {
+  active: string;
+  custom_prompt: string;
+  personalities: PersonalityDef[];
 }
 
 export interface ElevenLabsCfgStatus {
@@ -677,6 +694,8 @@ export interface MelModel {
   model: string;
   is_local: boolean;
   label: string;      // "MiniMax", "Ollama (Local)", ...
+  /** [2026-07-21] Capacidades para las que NO es apto (ej. Claude CLI en chat). */
+  unfit?: string[];
 }
 
 // Un pin de modelo por proyecto (override explícito persistente, E2b).
@@ -1286,7 +1305,50 @@ export const api = {
   getEdgeStatus: () =>
     request<{ available: boolean; message: string }>("/voice/edgetts/status"),
   getKokoroStatus: () =>
-    request<{ available: boolean; message: string }>("/voice/kokoro/status"),
+    request<{ available: boolean; install_status?: "idle" | "installing" | "done" | "failed"; message: string }>(
+      "/voice/kokoro/status",
+    ),
+  // [2026-07-21] Instalación de Kokoro desde la UI (pip con seguimiento real).
+  installKokoro: () =>
+    request<{ started: boolean; message: string }>("/voice/kokoro/install", { method: "POST" }),
+
+  // [2026-07-21] Escaneo de hardware + recomendación auto de modelo Ollama y
+  // nivel de partículas del AVCS para ESTE PC.
+  getHardwareRecommendation: () =>
+    request<{
+      hardware: { ram_gb: number | null; cpu: { name: string | null; cores: number | null; threads: number | null };
+                  gpu: { present: boolean; name: string | null; vram_gb: number | null };
+                  usable_model_gb: number | null };
+      ollama: {
+        known_hardware: boolean; note: string | null;
+        optimal: { tag: string; label: string; size_gb: number; tier: string | null; why: string } | null;
+        lower: { tag: string; label: string; size_gb: number; why: string } | null;
+        higher: { tag: string; label: string; size_gb: number; why: string } | null;
+      };
+      avcs: { recommended_tier: string; why: string; warn_above: string | null;
+              tiers: Record<string, { label: string; particles: string; hint: string }> };
+    }>("/local-models/hardware"),
+
+  // [V3] La voz que Aithera debe usar AHORA. Si el usuario no eligió ninguna,
+  // el backend asigna y persiste la mejor del idioma — nunca devuelve vacío.
+  getVoiceDefaults: () =>
+    request<{ provider: string; voice_id: string; language: string; was_assigned: boolean }>(
+      "/voice/defaults",
+    ),
+
+  // [V2] Personalidades conversacionales.
+  getPersonalities: () =>
+    request<PersonalityCatalog>("/voice/personalities"),
+  selectPersonality: (personality_id: string) =>
+    request<PersonalityCatalog>("/voice/personalities/select", {
+      method: "POST",
+      body: JSON.stringify({ personality_id }),
+    }),
+  createCustomPersonality: (description: string, activate = true) =>
+    request<PersonalityCatalog & { prompt: string }>("/voice/personalities/custom", {
+      method: "POST",
+      body: JSON.stringify({ description, activate }),
+    }),
 
   async synthesizeVoiceBase64(
     text: string,
@@ -1339,7 +1401,7 @@ export const api = {
 
   // V0.83 (Paso 4): STT local. Envia el blob de audio del MediaRecorder
   // como multipart/form-data. Devuelve { text, language, duration, segments }.
-  async transcribeVoice(audioBlob: Blob, language = "es"): Promise<{
+  async transcribeVoice(audioBlob: Blob, language = "es", fast = false): Promise<{
     text: string;
     language: string;
     language_probability: number;
@@ -1350,7 +1412,9 @@ export const api = {
     // El filename ("rec.webm") importa: el backend usa os.path.splitext
     // para deducir el formato y faster-whisper lo decodifica via PyAV.
     fd.append("audio", audioBlob, "rec.webm");
-    const url = `${API_URL}/voice/transcribe?language=${encodeURIComponent(language)}`;
+    // [O1] `fast=true` (conversación por voz): modelo rápido + beam voraz en el
+    // backend → transcripción en tiempo real, no en varios segundos.
+    const url = `${API_URL}/voice/transcribe?language=${encodeURIComponent(language)}${fast ? "&fast=true" : ""}`;
     const response = await fetch(url, { method: "POST", body: fd });
     if (!response.ok) {
       const err = await response.json().catch(() => ({ detail: "HTTP error" }));
@@ -1415,6 +1479,19 @@ export const api = {
 
   // --- MEL: Inteligencia (V1.0 E2 / E2b) ---
   getMelPolicies: () => request<MelPolicy[]>("/mel/policies"),
+  // [2026-07-21] Edita una posición concreta de la cadena (0-3; la 4ª solo local).
+  setMelPolicySlot: (name: string, capability: string, position: number, modelKey: string) =>
+    request<{ ok: boolean }>(`/mel/policies/${name}/slot`, {
+      method: "PATCH",
+      body: JSON.stringify({ capability, position, model_key: modelKey }),
+    }),
+  // [2026-07-21] ¿Trabajando SOLO en local por caída de la nube? (banner naranja)
+  // + detalle por proveedor caído (motivo) para los avisos de Inteligencia.
+  getMelHealthSummary: () =>
+    request<{
+      local_only: boolean; cloud_providers: string[]; providers_down: string[];
+      down_detail?: Record<string, string>; has_local: boolean;
+    }>("/mel/health-summary"),
   setActiveMelPolicy: (name: string) =>
     request<{ active: string }>("/mel/policies/active", {
       method: "POST",

@@ -1,2 +1,0 @@
-﻿UnicodeEncodeError: 'charmap' codec can't encode characters in position 19-28: 
-character maps to <undefined>

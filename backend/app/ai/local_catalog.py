@@ -50,6 +50,27 @@ LOCAL_CATALOG: dict[str, dict[str, Any]] = {
         "install_url": "https://ollama.com/download",
         "models": [],
     },
+    # [2026-07-21] Familia Llama añadida (petición del usuario: "incluido llama").
+    # `llama3` es el default histórico de Aithera (proveedor Ollama) y muy
+    # probablemente ya está en el disco del usuario — ahora aparece en el
+    # catálogo con su chip "instalado" en vez de existir solo por fuera.
+    # Tags verificados de la librería oficial de Ollama.
+    "llama": {
+        "label": "Llama",
+        "category": "general",
+        "description": "La familia clásica de Meta. `llama3` es el modelo por defecto histórico de Aithera.",
+        "models": [
+            {"tag": "llama3.2:3b", "label": "Llama 3.2 3B", "size_gb": 2.0,
+             "tier": "ligero", "recommended": False,
+             "notes": "Muy ligero; para equipos con recursos mínimos."},
+            {"tag": "llama3", "label": "Llama 3 8B", "size_gb": 4.7,
+             "tier": "ligero", "recommended": True,
+             "notes": "El default histórico de Aithera; sólido en chat general."},
+            {"tag": "llama3.3:70b", "label": "Llama 3.3 70B", "size_gb": 43.0,
+             "tier": "potente", "recommended": False,
+             "notes": "Muy capaz, pero solo para equipos con muchísima memoria."},
+        ],
+    },
     "qwen": {
         "label": "Qwen",
         "category": "general",

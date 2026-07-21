@@ -66,7 +66,7 @@ function renderTable(lines: string[], key: string): ReactNode {
         <thead>
           <tr>
             {header.map((h, i) => (
-              <th key={i} className="text-left px-2 py-1 bg-white/5 font-medium border-b border-white/10 whitespace-nowrap">
+              <th key={i} className="text-left px-2 py-1 bg-ink/5 font-medium border-b border-ink/10 whitespace-nowrap">
                 {h}
               </th>
             ))}

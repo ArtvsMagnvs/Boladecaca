@@ -1481,27 +1481,24 @@ Aithera/
 │   └── requirements.txt
 │
 ├── AOS_Arquitectura_y_Roadmap.md   # Roadmap oficial (V0.3 → V1.0)
-├── Fase_1_Estabilizacion_Hub_V03.md
-├── Fase_1b_PostgreSQL_Migration_V04.md
-├── Fase_2_AgentManager_ExecutionEngine_V05.md
-├── Fase_2_AgentManager_ToolSystem_V04.md     # versión temprana duplicada
-├── Fase_3_Memory_ChromaDB_V05.md
-├── Fase_4_Email_Calendar_V06.md
-├── Fase_5_Clients_Telegram_Web_V08.md
-├── Fase_5_Telegram_V07.md                    # versión temprana
-├── Fase_6_Automation_V08.md
-├── Fase_7_WebApp_PWA_V09.md
-├── Fase_8_Orchestrator_V10.md
-├── Actualizacion_V0.2.txt + .docx
-├── Aithera_V1_Auditoria_y_Roadmap.docx       # auditoría previa
-├── GUIA-OAUTH-GOOGLE.md
-├── PLAN_HUB_VISUAL_Y_VOZ.md                  # decisión migración CustomTkinter → Electron
-├── Systems Schema.md                         # catálogo de endpoints y modelos
-├── "ideas guays"/ideas guays.docx            # ideas sueltas del usuario
+├── PRINCIPIOS_KARPATHY.md          # lectura obligatoria (§0)
+├── AGENTES_ESPECIALIZADOS.md
+├── PLAN_MAESTRO_2026/              # docs de diseño vigentes (01-31)
+├── docs/                           # [2026-07-21] guías y docs sueltos reubicados
+│   ├── GUIA-OAUTH-GOOGLE.md
+│   ├── PLAN_HUB_VISUAL_Y_VOZ.md    # decisión migración CustomTkinter → Electron
+│   ├── Systems Schema.md           # catálogo de endpoints y modelos
+│   └── IDEA.md · Documentación de Desarrollo.md
+├── archive/                        # histórico
+│   ├── fases/                      # [2026-07-21] TODOS los Fase_*.md/docx viejos
+│   └── crewai-ajeno/               # restos de CrewAI (gitignored, borrable)
+├── test-lab/                       # [doc 31] misiones de prueba (gitignored)
+├── scratch/ + backend/scratch/     # depuración suelta (gitignored)
+├── "ideas guays"/ideas guays.docx  # ideas sueltas del usuario
 ├── iniciar_frontend_react.bat
-├── .claude/settings.local.json               # config de Claude Code
+├── .claude/settings.local.json     # config de Claude Code
 ├── .trae/skills/aithera-context/SKILL.md     # skill de Trae IDE
-└── CLAUDE.md                                 # este archivo
+└── CLAUDE.md                       # este archivo
 ```
 
 ---
@@ -1524,7 +1521,7 @@ Cambios ya aplicados (ver `Actualizacion_V0.2.txt` sección 3):
 - Paneles izquierdo (proyectos + tareas + agentes) y derecho (calendario + chat reciente + email)
 - Barra de estado inferior con polling cada 30s
 - AICore 3D preservado sin tocar
-- Cierre de los 6 bugs P1–P6 documentados en `Fase_1_Estabilizacion_Hub_V03.md`
+- Cierre de los 6 bugs P1–P6 documentados en `archive/fases/Fase_1_Estabilizacion_Hub_V03.md`
 
 ### ✅ V0.4 — PostgreSQL + Alembic
 - Migración SQLite → PostgreSQL completada (ver `Fase_1b_PostgreSQL_Migration_V04.md`)
@@ -1939,7 +1936,7 @@ Pipeline:
 - `backend/app/integrations/google_auth.py` (9KB)
 - Flujo: Authorization Code + PKCE para desktop
 - Scopes: Gmail read/send + Calendar read/write
-- Documentación en `GUIA-OAUTH-GOOGLE.md`
+- Documentación en `docs/GUIA-OAUTH-GOOGLE.md`
 - Credenciales se guardan en BD vía `POST /api/email/auth/credentials`
 
 ### Telegram (V0.8, implementado)
@@ -2082,7 +2079,7 @@ npm run electron:build  # genera release/*.exe con electron-builder
 8. **[Graphify audit 2026-07-15] `AitheraApp` (god-object Tkinter legacy)** — el
    grafo de conocimiento detectó que existe un nodo `AitheraApp` con referencias
    a casi todos los módulos del backend. El proyecto migró de CustomTkinter a
-   Electron (ver `PLAN_HUB_VISUAL_Y_VOZ.md`) pero este código muerto sobrevivió.
+   Electron (ver `docs/PLAN_HUB_VISUAL_Y_VOZ.md`) pero este código muerto sobrevivió.
    **Localizar y eliminar antes de V1.0**. Buscar con: `grep -r "AitheraApp" backend/`.
 
 9. **[Graphify audit 2026-07-15] Tests de Telegram cruzan módulos** —
@@ -2317,7 +2314,261 @@ de aceptación (doc 24 §5) + decisión Playwright/Chromium en el instalador.
 
 ---
 
-*Última actualización: 2026-07-20 — **V1.0 bloque ORQUESTRATOR (R1-R7) CERRADO,
+## 23. Bloque OPTIMIZACIÓN (pre-1.0, en curso) — doc 26
+
+Plan maestro de optimización en `PLAN_MAESTRO_2026/26_PLAN_OPTIMIZACION_V095.md`.
+Primer sprint (O1-O3) EJECUTADO (2026-07-20, Fable 5):
+- **O1 — Latencia de voz** (conversación fluida tipo GPT/Alexa): STT modo `fast`
+  (`whisper_stt.py`: modelo `base` + `beam_size=1` + VAD 250ms +
+  `condition_on_previous_text=False`; endpoint `/transcribe?fast=true`; el chat
+  de voz lo usa). TTS **streaming por frases** (`Chat.tsx::speak` +
+  `splitIntoSpeechChunks`: sintetiza la 1.ª frase y empieza a sonar en ~0.5s,
+  prefetch de 1). Turn-taking 1200ms→**700ms**. Palanca futura V1.1: streaming
+  LLM→TTS + barge-in.
+- **O2 — Settings como modal** (`components/Modal.tsx` NEW + `Settings.tsx`):
+  de página-scroll a pantalla completa → modal centrado (`max-w-5xl`,
+  `max-h-88vh`) con tab-rail de 6 pestañas (IA y Modelos · Permisos · Voz ·
+  Conexiones · Memoria · Sistema). Esc/clic-fuera cierran, scroll de fondo
+  bloqueado, animación suave. **Cero funciones perdidas**. `tsc` limpio.
+- **O3 — Rendimiento/deuda**: polling visibility-aware (`hooks/usePolling.ts`
+  NEW + Hub/Missions/Automation: no sondean con la ventana oculta) + **lazy
+  routes** (`App.tsx`: `React.lazy`+`Suspense`, solo el Hub eager — arranque más
+  ligero) + banner `iniciar_app.bat` 0.3.0→0.9.5 + `AitheraApp` legacy confirmado
+  solo en el tombstone `desktop.py`.
+Segunda tanda (V1-V3, 2026-07-20, Fable 5) — investigada contra la **JWIKI
+`08_VOICE/`** (presupuesto TTFB < 2s, Whisper no es streaming):
+- **V1 — Voz natural**: `voice/text_clean.py` gana **`clean_for_speech()`**
+  (markdown, tablas, enlaces, código y emojis fuera del TTS) — antes la voz
+  decía "asterisco asterisco" y leía guiones de lista. **Barge-in completo**:
+  `stopSpeaking()` + `watchForBargeIn()` (escucha con `echoCancellation`
+  mientras habla; 250ms de voz sostenida corta la locución) + el botón del
+  micro también interrumpe; se registra lo REALMENTE dicho y el turno siguiente
+  lleva contexto OCULTO al modelo ("te interrumpieron, solo oyó X, no repitas")
+  vía `sendMessage(text, {prefix})`.
+- **V2 — Personalidades** (`app/ai/personalities.py` NEW): la personalidad
+  **compone sobre** el prompt base, NUNCA lo sustituye (una personalidad no
+  puede desactivar el texto plano ni la honestidad — reglas nacidas de la
+  auditoría). "Aithera" por defecto derivada de la filosofía real del proyecto
+  + 4 estándar (Profesional/Cercana/Concisa/Didáctica) + **la propia**: el
+  usuario la describe en bruto y `improve_prompt()` (MEL, REASON) la convierte
+  en un bloque de tono bien formado, con salvaguarda anti-mentira. Endpoints
+  `/api/voice/personalities`; UI `components/voice/PersonalityPicker.tsx`.
+- **V3 — Voz por defecto garantizada**: `GET /api/voice/defaults` resuelve
+  SIEMPRE una voz (la del usuario o la mejor del idioma; EdgeTTS por ser el
+  único gratis sin key) **y la persiste**. Cierra el bug de que Aithera
+  respondiera muda hasta ir al Centro de Voz a elegir a mano.
+Tercera tanda (VZ1/VZ5 + P1/P2/P3 + D-#10/#11 + U1, 2026-07-20, Fable 5):
+- **VZ1 — streaming LLM→TTS** (`Chat.tsx`): `beginSpeechStream()` — la voz
+  arranca mientras el modelo AÚN escribe; cada token alimenta una cola que
+  extrae frases y sintetiza al vuelo. Verificado: la 1.ª frase suena al ~37%
+  del texto en respuestas largas. El barge-in vive en la misma cola.
+- **VZ5 — profiling**: cada turno de voz imprime `[voz-perfil] stt/llm_1er_token/
+  voz_suena` en consola del navegador + STT en el log del backend. Herramienta
+  para medir qué etapa domina en la máquina del usuario (antes se optimizaba a
+  ciegas). **Siguiente**: hacer turnos reales y decidir VZ2/VZ3/VZ4 con datos.
+- **P1** `hooks/usePolling.ts` aplicado a TODAS las páginas (Chat/Settings/
+  Sidebar además de Hub/Missions/Automation): ningún poll corre con la ventana
+  oculta. **P3** `ChatBubble` memoizado (no re-parsea markdown de mensajes
+  viejos en cada token del streaming).
+- **D-#10** `CalendarEvent` sale del autouse de limpieza de email (cross-domain,
+  graphify §16.10); fixture dedicada `_clean_calendar_events`. **D-#11**
+  verificado: los edges EmailTool→Payloads eran falsos positivos de graphify.
+- **U1** `components/ConfirmDialog.tsx` (`useConfirm`): reemplaza `window.confirm()`
+  nativo por diálogo con la estética de la app; aplicado a Missions y Agents,
+  resto pendiente (mismo patrón por sitio).
+- **Pendiente de voz (doc 26 §VZ)**: VZ2 modelo `tiny`/GPU, VZ3 Silero VAD, VZ4
+  Realtime API — decidir con los datos del profiling. VZ1/VZ5 ya hechos.
+- **Pendiente (doc 26 §⏳)**: P4 arranque backend, U1 confirm() restantes
+  (Settings/EmailAssistant), U2/U3 (empty-states, focus-trap). P1/P2/P3 hechos.
+  P3 re-renders de Chat, P4 arranque backend, D-#9/#10/#11 (hygiene de tests),
+  U1-3 (Modal en otros diálogos, focus-trap), V1-2 (streaming LLM→TTS, barge-in).
+  Verificado por `tsc --noEmit` (exit 0) en todos los cambios de frontend +
+  `py_compile` en los de backend. **Pendiente en Windows**: suite completa +
+  vivo (medir fluidez de voz real, vistazo al modal de Settings).
+
+---
+
+## 24. Bloque LATENCIA DEL RUNTIME + AUTÓNOMO 100% (pre-1.0, 2026-07-20)
+
+Petición directa del usuario: las misiones (incluso mecánicas como "abre
+YouTube y pon X") tardaban muchísimo, y el modo Autónomo seguía pidiendo
+permiso para el navegador. Rastreado, diagnosticado y arreglado:
+
+**Diagnóstico de latencia** (rastreo del flujo Orchestrator→TIE→MEL→toolloop):
+una misión mecánica hacía ~8-9 llamadas al LLM secuenciales, **7 de ellas al
+modelo de razonamiento MÁS LENTO** — porque (a) el planner usa REASON, y
+(b) `Capability.AGENTIC` (el bucle de tool-use, **una llamada por cada acción**)
+heredaba de `reason`. Con MiniMax/DeepSeek (razonadores con `<think>`) eso son
+25-50s. Ese era el arranque lento Y la lentitud entre acciones.
+
+**Fixes** (sin tocar ningún timeout → no rompe misiones):
+- **AGENTIC → CLASSIFY** (`mel/catalog.py`): elegir la siguiente herramienta de
+  un catálogo es una tarea estructurada rápida, no razonamiento profundo. Ahora
+  cada acción usa el modelo rápido. Es el mayor recorte (aplica a TODO toolloop,
+  directo y complejo).
+- **Camino de ACCIÓN DIRECTA** (`tie/pipeline.py` + `Intent.is_direct_action`):
+  una tarea mecánica de un solo encargo (sin `requires_planning`, no
+  multi-objetivo) salta el planner y su grafo multi-nodo; un ÚNICO bucle de
+  tool-use la resuelve de corrido. "Abre YouTube y pon la canción" pasa de ~8-9
+  llamadas (7 lentas) a **3 rápidas, 0 al planner**. Verificado contra el
+  pipeline real.
+- **Clasificador afinado** (`tie/intents.py`): distingue "secuencia mecánica de
+  acciones" (requires_planning=false → directa/rápida) de "plan estructurado con
+  dependencias/entregables" (true → planner). Ante la duda mecánica, false.
+- **Profiling** (`toolloop.py` + `pipeline.py`): cada paso loguea
+  `[tie-perfil] toolloop paso N: modelo Xms` — para medir en la máquina real qué
+  domina.
+
+**Modo AUTÓNOMO 100% — fix definitivo** (`automation/permissions.py`): el bug
+era que el perfil `full` ENUMERABA permisos individuales; si el usuario lo
+activó antes de que existieran `tie.plan_approval`/`browser.use` (añadidos en
+S1), su config persistida no los tenía y el gate del plan (que incluye el
+navegador) seguía preguntando. Ahora `autonomy_is_full()` lee el PERFIL activo,
+y `is_pre_authorized`/`is_kind_pre_authorized` auto-aprueban CUALQUIER gate o
+permiso —presente o futuro— cuando el perfil es `full`. A prueba de kinds que
+aún no existen. La regla de oro A3b intacta: auto-aprobado deja rastro en
+`approvals` (no es silencioso). `manual` sigue fail-closed. Verificado contra el
+ApprovalGate real.
+
+Tests: `test_runtime_latency_autonomy.py` (8: autónomo total auto-aprueba
+cualquier gate incl. futuros, manual sigue preguntando, gate real sin pending,
+mecánicas→directa, complejas→planner, AGENTIC=CLASSIFY en los 12 proveedores).
+Verificado end-to-end: "abre YouTube y pon X" = 3 llamadas AGENTIC, 0 al planner.
+
+**2ª pasada de latencia (2026-07-21, con logs REALES del usuario)** — el
+profiling `[tie-perfil]` reveló la causa raíz que el análisis estático no vio:
+- **Cada paso del toolloop = 13-18s en `claude_code/opus`.** El cambio
+  AGENTIC→CLASSIFY no bastaba: la política activa del usuario ("custom") elige
+  el modelo de MÁXIMA CALIDAD por capacidad, que seguía siendo opus. Fix:
+  `TIE_TOOL_POLICY` (default **"economy"**, local-primero) — el toolloop se
+  enruta SIEMPRE por una política rápida, no la de calidad del usuario. Cada
+  paso baja de ~15s a ~1-3s. Escape hatch `TIE_TOOL_MODEL` (ej.
+  `claude_code:haiku`) si el modelo local resulta flojo para el navegador.
+- **El auto-catálogo del MEL (`mel.research`) competía DURANTE la misión**:
+  investigaba opus/sonnet/haiku/fable con el modelo de calidad, serializando el
+  proveedor. Fix: investiga con `policy_override="economy"` (barato) + su job de
+  arranque se retrasa de 90s a 900s (fuera de la ventana de primer uso).
+- **El muro de cookies REAPARECÍA al clicar** (YouTube lo reinyecta): `_click`/
+  `_type` ejecutan `_dismiss_consent` ANTES de interactuar; y `_dismiss_consent`
+  ahora escanea también los IFRAMES (Google/YouTube meten el consentimiento en
+  `consent.youtube.com` dentro de un iframe que `page.locator` no veía).
+- Tests: +1 (`test_toolloop_fuerza_politica_rapida_no_la_de_calidad`).
+**Pendiente en Windows**: relanzar backend, medir `[tie-perfil]` (debe bajar de
+15s/paso a 1-3s) + verificar YouTube en vivo (canción sin pausarse).
+
+---
+
+## 25. Bloque UX + MEL-UI + OBSERVABILIDAD (2026-07-21, Fable 5)
+
+Tres sesiones largas de peticiones directas del usuario. Sin bump (sigue `0.9.5`).
+
+**UX/tema (tanda 1 + 2 correcciones)**:
+- **Tema claro/oscuro**: colores como variables CSS por tema (`styles/index.css`
+  `:root,.dark` / `.light`; `tailwind.config.js` los consume con
+  `rgb(var(--x) / <alpha>)`) + `store/useThemeStore.ts` (persistido) + toggle en
+  Ajustes. 2ª pasada tras feedback: **NADA blanco en claro** — escala completa
+  de grises (lienzo 224, tarjetas 238, nunca 255) + borde neutro + sombra suave
+  (`--panel-shadow`); `Modal.tsx` usa `.modal-panel` temado.
+- **REGLA DE ORO (2 correcciones furiosas del usuario): el AVCS es la IDENTIDAD
+  de Aithera — NUNCA se adapta al tema.** Se probó una paleta "tinta" y se
+  revirtió al 100%. El "velo blanco" en claro era el fondo de la página
+  transparentándose tras el canvas (partículas aditivas sobre claro = lavadas):
+  arreglado con un ESCENARIO oscuro fijo `#0a0a0f` en el contenedor de
+  `AitheraPresence` cuando la ruta es el Hub — pixel-idéntico en ambos temas,
+  engine intacto. La etiqueta central del Hub usa tinta clara FIJA.
+- **Electron**: `show:false` + `maximize()` al abrir; F11 fullscreen total; Esc sale.
+- **Scanner de hardware** (`core/hardware.py` + `GET /api/local-models/hardware`):
+  CPU (nombre vía registro de Windows)/RAM/GPU-VRAM → recomienda modelo Ollama
+  (óptimo + inferior + superior-solo-si-sobra; umbrales GPU 0.80/0.65 vs RAM
+  0.55/0.40) y tier AVCS (Q1-Q4). Panel informativo en Ajustes → Sistema.
+- **Doc 30**: plan de las features mayores (onboarding+auto-config, i18n
+  ES/EN/FR/PT, OAuth fácil, Kokoro/Docker, AVCS-detrás-de-Workspace).
+
+**Ajustes reorganizado**: pestañas ia·permisos·voz·**hub (HUB Visual:
+Apariencia + Presencia visual)**·conexiones·memoria·sistema; **Voz absorbe TODO
+el Centro de Voz** (`components/voice/VoicePanel.tsx`; `pages/VoiceCenter.tsx` =
+tombstone re-export, ítem del sidebar retirado, `/voice` redirige); modal de
+TAMAÑO FIJO (`fixedHeight`); fila TTS fija (texto a 2 líneas, botones quietos);
+Kokoro: el endpoint de instalación pip existía a ciegas — ahora hilo con salida
+capturada + estados idle/installing/done/failed visibles + botón "Instalar
+Kokoro" con sondeo; voces EdgeTTS FR/PT + "Crear Voz"→ElevenLabs.
+
+**Modelos locales**: familias PLEGADAS con chevron SVG 22px; sección "Modelos
+locales — descarga e instalación" (la activación vive en Proveedores); botón
+"Eliminar" real (borra en Ollama, libera GB); **fix self-heal `/enable`** (bug
+real qwen3:14b: la fila `local_models` solo la creaba el instalador propio — si
+el modelo llegó a Ollama por otra vía, 404 "no instalado"; ahora el DISCO es la
+fuente de verdad y se da de alta al vuelo); familia **Llama** añadida al
+catálogo (llama3.2:3b / llama3 / llama3.3:70b).
+
+**Proveedores de IA**: dos grupos ENMARCADOS — "En tu equipo" (un card por
+modelo local INSTALADO con toggle → `LocalModel.enabled`, lo que el MEL lee; sin
+API key) y "En la nube" (ordenada: activados > conectados > sin conectar).
+**Claude Code CLI**: renombrado, descripción "Plan Pro/Max: sin API key…",
+botón **Activar** 1-clic (test CLI → persiste config+interruptor en BD entre
+sesiones, verificado con AIManager nuevo), sin selector de modelos (los 4 se
+asignan en Inteligencia). **Catálogo jul-2026 verificado con búsqueda web**:
+GPT-5.6 Sol/Terra/Luna + 5.5/5.4/5.4-mini (ids del changelog oficial), Claude
+fable-5/opus-4-8/sonnet-5/haiku-4-5, Gemini 3.5 Flash, MiniMax M3/M3-highspeed,
+DeepSeek v4, Grok 4.5/Build 0.1, Kimi K3, GLM-5.2, Qwen3.7-Max. `model_labels`
++ `description` por proveedor — **FIX: el schema Pydantic
+`AIProviderConfigResponse` RECORTABA los campos nuevos** (response_model filtra;
+añadidos al schema).
+
+**MEL-UI vinculado de verdad** (el bug reportado: Sidebar/Estado decían
+"minimax" con la política Personalizado en Claude): `useAppStore.chatPrimary` =
+primario de CHAT **EFECTIVO** de la política activa (salta no-aptos) →
+Sidebar, Hub (etiqueta central + barra) y "Estado del Sistema de IA" muestran
+LO MISMO; el punto rojo ya no viene del health legacy sino del breaker del chat
+primario. Badges de tarea por card desde la política ACTIVA (fuera el "Chat"
+legacy). **Fallos visibles**: `CircuitBreaker.last_reason` + `open_reason()` →
+`health_summary().down_detail` → panel "⚠ Modelos con problemas" + modelos en
+rojo en cadenas y selects. **Inteligencia**: título "(MEL: Model Execution
+Layer)", 4 POSICIONES editables por capacidad (`PolicyStore.set_slot`, PATCH
+`/mel/policies/{name}/slot`; la 4ª SOLO locales — rechazado en backend),
+nombres cortos compartidos (`lib/modelNames.ts`: "Claude CLI · Opus 4.8",
+"MiniMax · M3-highspeed"), hint destacado en recuadro. **Banner naranja
+"trabajando solo en local"** (`GET /api/mel/health-summary`: local_only cuando
+TODA la nube configurada tiene breaker abierto y hay local; AppLayout con (?)
+y deep-link a Ajustes→IA vía `location.state.tab`). Fable 5 = el más capaz en
+el catálogo MEL (corregido; Quality lo elige primero).
+
+**Gating de capacidades UNFIT** (fallo real de producción, "caso Melendi": el
+chat por Claude CLI respondió con su identidad de terminal y latencias de
+minutos): `mel/catalog.py::UNFIT_CAPABILITIES` — `claude_code` ∉
+{chat, classify, agentic} en 3 capas: compilador excluye, **filtro RETROACTIVO
+en ejecución** (`active_chain`/`chain_for_named` sanean políticas ya editadas
+sin tocarlas), UI excluye/⛔ + aviso en la tarjeta. Verificado en vivo.
+
+**Telemetría de misiones punta a punta** (doc 31): `app/telemetry/`
+(disciplina modular) + tabla `mission_events` (**migración 26.ª
+`a7c8d9e0f1a2`, PENDIENTE de `alembic upgrade head` en el Postgres real**).
+Hooks quirúrgicos best-effort: `tie/tracer.py` (record_start fija contextvar +
+mission_start/intent/plan/mission_end con duración), `mel/executor._record_async`
+(CADA llamada LLM: capacidad/modelo/latencia/fallbacks), `tie/toolloop.py`
+(cada tool con duración y error), `tie/executor.py` (contexto al reanudar +
+node_end). API `GET /api/telemetry/missions/{id}` (timeline+resumen) y
+`/api/telemetry/report?hours=` (agregado). Purga diaria 04:35 (retención =
+TIE_MISSION_RETENTION_DAYS). **Test-lab**: `test-lab/` (gitignored) +
+`backend/scripts/mission_lab.py` (batería HTTP real: files/code/web/browser/
+memory/multi — desktop excluido) + `mission_report.py` (timeline legible +
+`--aggregate`). Ciclo de mejora en doc 31 §5.
+
+**Orden del repo (2026-07-21)**: raíz y backend/ SOLO esenciales. Movidos:
+`Fase_*` → `archive/fases/`; guías → `docs/`; restos CrewAI → 
+`archive/crewai-ajeno/` (gitignored, borrable); `_test_*.py`/logs de backend →
+`backend/scratch/` (gitignored). Gitignored además: `TripoSR/`, `otsaas/`
+(proyectos AJENOS dentro de la carpeta — recolocar fuera), `backend/Aithera/`
+(datos ChromaDB), `graphify-out/`. **Si algo de esto estaba trackeado, hace
+falta `git rm -r --cached`** — ver INSTRUCCIONES_CLAUDE_CODE.md.
+
+**Pendiente en Windows** (delegado a Claude Code vía
+`INSTRUCCIONES_CLAUDE_CODE.md`): `alembic upgrade head` (migración 26.ª),
+suite completa pytest, batería `mission_lab.py` + baseline, commit de todo.
+
+---
+
+*Última actualización: 2026-07-21 — **bloque UX + MEL-UI + OBSERVABILIDAD (§25)**; antes: 2026-07-20 — **V1.0 bloque ORQUESTRATOR (R1-R7) CERRADO,
 bump `0.9.2` → `0.9.5`, tag `v0.9.5`** (ver §21) + **bloque CORRECCIÓN S1
 ejecutada** (ver §22). Suite backend: **751 passed** (pre-S1; re-verificar).
 Bloques cerrados: V0.2 → V0.7.3 → V0.8 → V0.85 (MOS) → V0.87 (WPMS) → V0.9

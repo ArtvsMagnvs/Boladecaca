@@ -1,33 +1,39 @@
 /** @type {import('tailwindcss').Config} */
+// [Tema claro/oscuro 2026-07-21] Los colores se definen como variables CSS
+// (src/styles/index.css) en vez de hex fijos: así el MISMO nombre de color
+// (bg-base-950, text-ink…) resuelve a valores distintos según el tema activo
+// (.dark / .light en <html>), sin tocar ni una clase de los componentes. El
+// patrón `rgb(var(--x) / <alpha-value>)` conserva el soporte de opacidad de
+// Tailwind (bg-base-900/60 sigue funcionando).
+const v = (name) => `rgb(var(${name}) / <alpha-value>)`;
+
 export default {
   content: ["./index.html", "./src/**/*.{js,ts,jsx,tsx}"],
   darkMode: "class",
   theme: {
     extend: {
       colors: {
-        // Paleta Aithera (Fase Visual) - dark-first, acentos comedidos.
-        // Ver design system en src/styles/tokens.css para el detalle completo.
         base: {
-          950: "#0A0A0F",
-          900: "#10121A",
-          800: "#171A24",
-          700: "#222632",
-          600: "#2E3340",
+          950: v("--c-base-950"),
+          900: v("--c-base-900"),
+          800: v("--c-base-800"),
+          700: v("--c-base-700"),
+          600: v("--c-base-600"),
         },
         accent: {
-          DEFAULT: "#5EA8FF",
-          soft: "#7C9CFF",
-          glow: "#8FD9FF",
+          DEFAULT: v("--c-accent"),
+          soft: v("--c-accent-soft"),
+          glow: v("--c-accent-glow"),
         },
         ink: {
-          DEFAULT: "#E8EAF0",
-          dim: "#9AA1B2",
-          faint: "#5C6175",
+          DEFAULT: v("--c-ink"),
+          dim: v("--c-ink-dim"),
+          faint: v("--c-ink-faint"),
         },
         signal: {
-          ok: "#5FD9A4",
-          warn: "#E8B95E",
-          error: "#E0716E",
+          ok: v("--c-signal-ok"),
+          warn: v("--c-signal-warn"),
+          error: v("--c-signal-error"),
         },
       },
       fontFamily: {

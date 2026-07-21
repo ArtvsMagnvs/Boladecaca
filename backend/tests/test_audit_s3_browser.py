@@ -289,6 +289,7 @@ async def test_f1_el_toolloop_inyecta_la_sesion_de_la_mision(monkeypatch):
         system_prompt: str = ""
         model_override: Optional[str] = None
         context_tags: Optional[dict] = None
+        policy_override: Optional[str] = None
 
     @dataclass
     class _Res:

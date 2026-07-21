@@ -43,7 +43,14 @@ Campos del JSON (todos obligatorios):
     El sistema planifica sobre el mensaje ORIGINAL del usuario, no sobre tu resumen.
 - "domain": lista de dominios afectados, subconjunto de ["email","calendar","project","task","memory","system","web","file","general"].
 - "confidence": número 0..1, tu confianza en esta clasificación.
-- "requires_planning": true si hace falta un plan de varios pasos (no una sola acción).
+- "requires_planning": true SOLO si la tarea necesita un PLAN estructurado — pasos que
+    dependen unos de otros, entregables intermedios que el usuario debe revisar, o
+    coordinar varios dominios distintos (ej: "investiga los avances en IA, escribe un
+    informe y envíamelo por email"). Una SECUENCIA MECÁNICA de acciones con
+    herramientas NO necesita plan aunque tenga varios pasos: "abre YouTube y pon una
+    canción", "crea una carpeta y dentro un archivo con este texto", "búscame un vuelo
+    y ábrelo" son requires_planning=FALSE — se ejecutan de corrido con herramientas,
+    sin plan que revisar. Ante la duda en tareas mecánicas, requires_planning=false.
 - "requires_tools": lista de herramientas probables, subconjunto de ["filesystem","shell","git","powershell","email","calendar"].
 - "requires_browser": true si hace falta navegar por internet (buscar, rellenar formularios web).
 - "requires_computer": true si hace falta controlar el ordenador (clics, teclado en apps).

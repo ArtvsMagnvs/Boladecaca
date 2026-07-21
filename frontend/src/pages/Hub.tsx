@@ -27,6 +27,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { HubPanel } from "@/components/hub/HubPanel";
 import { api, type Project, type Task, type CalendarEvent } from "@/lib/api";
 import { useAppStore } from "@/store/useAppStore";
+import { shortRef } from "@/lib/modelNames";
 
 // V0.7 extra (Fase 4): tipos para el estado real de Email en el Hub
 interface EmailStatus {
@@ -70,7 +71,7 @@ const HUB_POLL_INTERVAL_MS = 30_000;
 
 export default function Hub() {
   const navigate = useNavigate();
-  const { backendConnected, aiStatus, coreState } = useAppStore();
+  const { backendConnected, aiStatus, chatPrimary, chatPrimaryDown, coreState } = useAppStore();
 
   // Datos crudos del backend (null = cargando, [] = ya cargado pero vacío)
   const [projects, setProjects] = useState<Project[] | null>(null);
@@ -221,15 +222,24 @@ export default function Hub() {
     };
   }, []);
 
-  // Carga inicial + polling cada 30s
+  // Carga inicial + polling cada 30s.
+  // [Opt v0.9.5, O3] El poll se pausa cuando la ventana NO está visible
+  // (minimizada, otra pestaña): sondear el backend cada 30s sin que nadie mire
+  // es carga inútil. Al volver a primer plano refresca de inmediato, así que el
+  // usuario nunca ve datos rancios.
   useEffect(() => {
     let cleanup: (() => void) | undefined;
-    loadHubData().then((c) => {
-      cleanup = c;
-    });
-    const interval = setInterval(loadHubData, HUB_POLL_INTERVAL_MS);
+    const refresh = () => {
+      if (document.hidden) return;
+      loadHubData().then((c) => { cleanup = c; });
+    };
+    refresh();
+    const interval = setInterval(refresh, HUB_POLL_INTERVAL_MS);
+    const onVisible = () => { if (!document.hidden) refresh(); };
+    document.addEventListener("visibilitychange", onVisible);
     return () => {
       clearInterval(interval);
+      document.removeEventListener("visibilitychange", onVisible);
       if (cleanup) cleanup();
     };
   }, [loadHubData]);
@@ -417,9 +427,17 @@ export default function Hub() {
             transition={{ duration: 0.25 }}
             className="text-center"
           >
-            <p className="text-sm font-medium text-ink">{coreStateLabel(coreState)}</p>
-            <p className="text-xs text-ink-faint mt-1">
-              {aiStatus?.fallback_active && aiStatus?.primary_provider
+            {/* [2026-07-21] Tinta FIJA clara (los valores del tema oscuro):
+                este texto flota directamente sobre el escenario oscuro del
+                núcleo, que es idéntico en ambos temas — con text-ink normal,
+                en tema claro sería tinta oscura sobre fondo oscuro. */}
+            <p className="text-sm font-medium text-[#E8EAF0]">{coreStateLabel(coreState)}</p>
+            <p className="text-xs text-[#9AA1B2] mt-1">
+              {/* [2026-07-21] El modelo mostrado es el del CHAT según la
+                  política ACTIVA (Inteligencia), no el proveedor legacy. */}
+              {chatPrimary
+                ? `${shortRef(chatPrimary)}${chatPrimaryDown ? " ⚠" : ""}`
+                : aiStatus?.fallback_active && aiStatus?.primary_provider
                 ? `Fallback: ${aiStatus.provider} (por ${aiStatus.primary_provider} no disponible)`
                 : aiStatus?.provider
                 ? `${aiStatus.provider} · ${aiStatus.model ?? "sin modelo"}`
@@ -655,46 +673,32 @@ export default function Hub() {
           pulse={!backendConnected}
           title={backendConnected ? "Backend conectado" : "Sin conexion con el backend"}
         />
+        {/* [2026-07-21] La barra muestra el modelo del CHAT según la política
+            ACTIVA (Inteligencia). El proveedor legacy queda solo de fallback
+            si el MEL aún no tiene políticas. */}
         <SystemIndicator
           label={
-            aiStatus?.fallback_active && aiStatus?.primary_provider
-              ? `IA: ${capitalize(aiStatus.provider ?? "")} (fallback de ${capitalize(aiStatus.primary_provider)})`
+            chatPrimary
+              ? `IA: ${shortRef(chatPrimary)}${chatPrimaryDown ? " ⚠" : " ✓"}`
               : aiStatus?.provider
-              ? `IA: ${capitalize(aiStatus.provider)}`
+              ? `IA: ${capitalize(aiStatus.provider)}${aiStatus.model ? ` · ${shortModelName(aiStatus.model)}` : ""}`
               : "IA: —"
           }
           color={
-            aiStatus?.fallback_active
-              ? "bg-signal-warn"
+            chatPrimary
+              ? (chatPrimaryDown ? "bg-signal-warn" : "bg-signal-ok")
               : aiStatus?.healthy
               ? "bg-signal-ok"
               : "bg-ink-faint"
           }
           title={
-            aiStatus?.fallback_active
-              ? `Sin conexion con ${aiStatus.primary_provider}; usando ${aiStatus.provider} como fallback`
+            chatPrimary
+              ? (chatPrimaryDown
+                  ? `${shortRef(chatPrimary)} está fallando ahora; los respaldos de la política responden`
+                  : `Chat: ${shortRef(chatPrimary)} (política activa de Inteligencia)`)
               : aiStatus
               ? `${aiStatus.provider} / ${aiStatus.model ?? ""}`
               : "Sin proveedor"
-          }
-        />
-        <SystemIndicator
-          label={
-            aiStatus?.model
-              ? `${shortModelName(aiStatus.model)} ${aiStatus.healthy ? "✓" : "✗"}`
-              : "Modelo: —"
-          }
-          color={
-            aiStatus?.fallback_active
-              ? "bg-signal-warn"
-              : aiStatus?.healthy
-              ? "bg-accent/60"
-              : "bg-signal-warn"
-          }
-          title={
-            aiStatus?.fallback_active
-              ? `Fallback activo: ${aiStatus.provider}`
-              : aiStatus?.model ?? "Sin modelo"
           }
         />
         <SystemIndicator

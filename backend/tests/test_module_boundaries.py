@@ -259,6 +259,9 @@ def test_mel_public_api_completa():
         # E2b — personalizacion de politicas + override explicito por proyecto
         "list_models", "set_policy_primary", "restore_policy",
         "set_project_override", "overrides_for", "list_overrides", "clear_override",
+        # [2026-07-21] edicion de respaldos por posicion + resumen de salud
+        # (banner "trabajando solo en local")
+        "set_policy_slot", "health_summary",
     }
     faltan = esperado - set(dir(mel))
     assert not faltan, f"app.mel no exporta: {sorted(faltan)}"

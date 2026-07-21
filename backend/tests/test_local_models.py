@@ -23,8 +23,9 @@ ORNITH_9B = "hf.co/deepreinforce-ai/Ornith-1.0-9B-GGUF:Q4_K_M"
 # ---------------------------------------------------------------------------
 # Catálogo
 # ---------------------------------------------------------------------------
-def test_catalogo_cubre_las_5_familias():
-    assert set(LOCAL_CATALOG) == {"ollama", "qwen", "ornith", "deepseek", "qwen_vision"}
+def test_catalogo_cubre_las_familias():
+    # [2026-07-21] +Llama al catálogo (llama3.2:3b/llama3/llama3.3:70b).
+    assert set(LOCAL_CATALOG) == {"ollama", "qwen", "ornith", "deepseek", "qwen_vision", "llama"}
     assert LOCAL_CATALOG["ollama"]["is_runtime"] is True
 
 

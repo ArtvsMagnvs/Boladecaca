@@ -67,6 +67,32 @@ def set_policy_primary(name: str, body: SetPrimaryBody):
     return {"ok": True}
 
 
+class SetSlotBody(BaseModel):
+    capability: str
+    position: int          # 0=primario · 1-2=respaldos · 3=último recurso (solo local)
+    model_key: str
+
+
+@router.patch("/policies/{name}/slot")
+def set_policy_slot(name: str, body: SetSlotBody):
+    """[2026-07-21] Edita una posición concreta de la cadena de una capacidad.
+    La posición final solo admite modelos LOCALES (red de seguridad offline)."""
+    if name not in _EDITABLE:
+        raise HTTPException(status_code=400, detail=f"Política no editable: {name}")
+    if not mel.set_policy_slot(name, body.capability, body.position, body.model_key):
+        raise HTTPException(
+            status_code=400,
+            detail="No se pudo aplicar (posición/modelo inválido; recuerda: la 4ª posición solo admite modelos locales).",
+        )
+    return {"ok": True}
+
+
+@router.get("/health-summary")
+def get_health_summary():
+    """[2026-07-21] ¿Trabajando SOLO en local por caída de la nube? — banner naranja."""
+    return mel.health_summary()
+
+
 @router.post("/policies/{name}/restore")
 def restore_policy(name: str):
     """[E2b] Devuelve una política a sus valores por defecto (botón Restaurar)."""

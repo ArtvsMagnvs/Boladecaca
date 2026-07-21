@@ -48,7 +48,7 @@ def test_stt_status_shape(client):
 def test_transcribe_503_si_stt_no_disponible(client, monkeypatch):
     import app.api.endpoints.voice as voice_ep
 
-    def _boom(path, language="es"):
+    def _boom(path, language="es", fast=False):
         raise RuntimeError("faster-whisper no esta instalado. Instala con ...")
 
     monkeypatch.setattr(voice_ep, "transcribe", _boom)
@@ -65,7 +65,7 @@ def test_transcribe_503_si_stt_no_disponible(client, monkeypatch):
 def test_transcribe_ok_con_mock(client, monkeypatch):
     import app.api.endpoints.voice as voice_ep
 
-    def _fake_transcribe(path, language="es"):
+    def _fake_transcribe(path, language="es", fast=False):
         assert language == "es"           # el endpoint fuerza es
         return {
             "text": "hola aithera",

@@ -1,19 +1,36 @@
 import { HashRouter, Routes, Route, Navigate } from "react-router-dom";
+import { lazy, Suspense } from "react";
 import { AppLayout } from "@/components/layout/AppLayout";
+// El Hub es la ruta raíz (lo primero que se ve): se carga de forma eager para
+// que el arranque no muestre un spinner. El resto van lazy (code-splitting) —
+// [Opt v0.9.5, P2] EmailAssistant (1600+ líneas), Settings (2000+) y las demás
+// no hacen falta hasta que el usuario navega a ellas, así que no deben pesar en
+// el JS del arranque. Con `base: "./"` en vite.config, los chunks dinámicos
+// cargan bien bajo el file:// de Electron.
 import Hub from "@/pages/Hub";
-import Chat from "@/pages/Chat";
+
+const Chat = lazy(() => import("@/pages/Chat"));
 // V0.87 (WPMS W2a): Workspace unifica Proyectos + Tareas. Las paginas viejas
 // (Projects.tsx/Tasks.tsx) se retiran; /projects y /tasks redirigen aqui.
-import Workspace from "@/pages/Workspace";
-import CalendarPage from "@/pages/Calendar";
-import Settings from "@/pages/Settings";
-import VoiceCenter from "@/pages/VoiceCenter";
-import Agents from "@/pages/Agents";
-import EmailAssistant from "@/pages/EmailAssistant";
+const Workspace = lazy(() => import("@/pages/Workspace"));
+const CalendarPage = lazy(() => import("@/pages/Calendar"));
+const Settings = lazy(() => import("@/pages/Settings"));
+const Agents = lazy(() => import("@/pages/Agents"));
+const EmailAssistant = lazy(() => import("@/pages/EmailAssistant"));
 // V0.9 (Automation Engine A3): reglas + historial + aprobaciones.
-import Automation from "@/pages/Automation";
+const Automation = lazy(() => import("@/pages/Automation"));
 // V1.0 (TIE v1, T4b): misiones — plan, pasos, aprobación y kill-switch.
-import Missions from "@/pages/Missions";
+const Missions = lazy(() => import("@/pages/Missions"));
+
+// Placeholder mientras carga un chunk de página (imperceptible en local, pero
+// evita un parpadeo en blanco). Discreto, en el lenguaje visual de la app.
+function RouteFallback() {
+  return (
+    <div className="h-full flex items-center justify-center text-ink-dim text-sm">
+      Cargando…
+    </div>
+  );
+}
 
 // HashRouter (no BrowserRouter): cuando Electron carga el build empaquetado
 // via file://, no hay servidor que resuelva rutas tipo /chat - el hash
@@ -25,18 +42,21 @@ export default function App() {
       <Routes>
         <Route element={<AppLayout />}>
           <Route path="/" element={<Hub />} />
-          <Route path="/chat" element={<Chat />} />
-          <Route path="/email" element={<EmailAssistant />} />
-          <Route path="/workspace" element={<Workspace />} />
+          <Route path="/chat" element={<Suspense fallback={<RouteFallback />}><Chat /></Suspense>} />
+          <Route path="/email" element={<Suspense fallback={<RouteFallback />}><EmailAssistant /></Suspense>} />
+          <Route path="/workspace" element={<Suspense fallback={<RouteFallback />}><Workspace /></Suspense>} />
           {/* V0.87: rutas viejas -> Workspace (sin romper enlaces existentes) */}
           <Route path="/projects" element={<Navigate to="/workspace" replace />} />
           <Route path="/tasks" element={<Navigate to="/workspace" replace />} />
-          <Route path="/calendar" element={<CalendarPage />} />
-          <Route path="/agents" element={<Agents />} />
-          <Route path="/automation" element={<Automation />} />
-          <Route path="/missions" element={<Missions />} />
-          <Route path="/voice" element={<VoiceCenter />} />
-          <Route path="/settings" element={<Settings />} />
+          <Route path="/calendar" element={<Suspense fallback={<RouteFallback />}><CalendarPage /></Suspense>} />
+          <Route path="/agents" element={<Suspense fallback={<RouteFallback />}><Agents /></Suspense>} />
+          <Route path="/automation" element={<Suspense fallback={<RouteFallback />}><Automation /></Suspense>} />
+          <Route path="/missions" element={<Suspense fallback={<RouteFallback />}><Missions /></Suspense>} />
+          {/* [2026-07-21] El Centro de Voz se fusionó en Configuración → Voz
+              (petición del usuario: nada de config dispersa). El enlace viejo
+              redirige, mismo patrón que /projects y /tasks. */}
+          <Route path="/voice" element={<Navigate to="/settings" replace />} />
+          <Route path="/settings" element={<Suspense fallback={<RouteFallback />}><Settings /></Suspense>} />
         </Route>
       </Routes>
     </HashRouter>

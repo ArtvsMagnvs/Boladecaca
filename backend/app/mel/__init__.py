@@ -76,11 +76,15 @@ def list_models() -> list[dict]:
     selectores de la personalización. `key` es el `provider:model` que usan las
     cadenas de política (petición del usuario, 2026-07-18)."""
     from app.ai.catalog import get_provider_info
+    from app.mel.catalog import unfit_for
     out = []
     for ref in _registry.list_available():
         label = get_provider_info(ref.provider).get("label", ref.provider)
         out.append({"key": ref.key, "provider": ref.provider, "model": ref.model,
-                    "is_local": ref.is_local, "label": label})
+                    "is_local": ref.is_local, "label": label,
+                    # [2026-07-21] capacidades para las que NO es apto (la UI
+                    # lo excluye/marca; p.ej. Claude CLI en chat/classify).
+                    "unfit": [c.value for c in unfit_for(ref.provider)]})
     return out
 
 
@@ -88,6 +92,38 @@ def set_policy_primary(name: str, capability: str, model_key: Optional[str]) -> 
     """Fija el modelo primario de una capacidad en una política (None = auto).
     Marca la política como editada. La usa Settings → Inteligencia."""
     return _policy_store.set_primary(name, capability, model_key, _registry.list_available())
+
+
+def set_policy_slot(name: str, capability: str, position: int, model_key: str) -> bool:
+    """[2026-07-21] Edita UNA posición de la cadena (0-3). La última posición
+    solo admite modelos locales (red de seguridad offline). Settings→Inteligencia."""
+    return _policy_store.set_slot(name, capability, position, model_key, _registry.list_available())
+
+
+def health_summary() -> dict:
+    """[2026-07-21] ¿Está Aithera trabajando EXCLUSIVAMENTE con modelos locales
+    porque la nube configurada está caída? Alimenta el banner naranja del
+    frontend. `local_only` = hay ≥1 proveedor de nube configurado, TODOS tienen
+    su circuit breaker abierto (fallos reales recientes), y hay local con el que
+    seguir trabajando. Elegir una política todo-local a propósito NO activa el
+    aviso (eso es una decisión, no una avería)."""
+    from app.mel.fallback import breakers
+
+    refs = _registry.list_available()
+    cloud = sorted({r.provider for r in refs if not r.is_local})
+    has_local = any(r.is_local for r in refs)
+    down = sorted([p for p in cloud if not breakers.is_closed(p)])
+    local_only = bool(cloud) and len(down) == len(cloud) and has_local
+    # [2026-07-21] Motivo por proveedor caído (para el panel de fallos de
+    # Inteligencia: "MiniMax fallando: red/timeout").
+    down_detail = {p: (breakers.open_reason(p) or "unknown") for p in down}
+    return {
+        "local_only": local_only,
+        "cloud_providers": cloud,
+        "providers_down": down,
+        "down_detail": down_detail,
+        "has_local": has_local,
+    }
 
 
 def restore_policy(name: str) -> bool:
@@ -159,4 +195,5 @@ __all__ = [
     "register_handlers", "capability_report", "refresh_capability_reports",
     "list_models", "set_policy_primary", "restore_policy",
     "set_project_override", "overrides_for", "list_overrides", "clear_override",
+    "set_policy_slot", "health_summary",
 ]

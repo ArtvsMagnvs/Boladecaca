@@ -11,14 +11,28 @@ from __future__ import annotations
 from typing import List, Optional
 
 # Lista curada de voces habituales (EdgeTTS tiene cientos; estas cubren ES/EN).
+# [2026-07-21] Voces por idioma de instalación (ES/EN/FR/PT). EdgeTTS tiene
+# cientos; estas cubren los 4 idiomas de Aithera con una voz ♀ y una ♂ cada uno.
+# `en-US-GuyNeural` es la voz que usa Mark-XL en inglés (la "guay"): ya la
+# teníamos, se marca como la de referencia en inglés.
 EDGE_VOICES: List[dict] = [
+    # — Español —
     {"id": "es-ES-ElviraNeural", "name": "Elvira (España ♀)", "lang": "es"},
     {"id": "es-ES-AlvaroNeural", "name": "Álvaro (España ♂)", "lang": "es"},
     {"id": "es-MX-DaliaNeural",  "name": "Dalia (México ♀)",  "lang": "es"},
     {"id": "es-MX-JorgeNeural",  "name": "Jorge (México ♂)",  "lang": "es"},
+    # — Inglés —
     {"id": "en-US-AriaNeural",   "name": "Aria (EN-US ♀)",    "lang": "en"},
     {"id": "en-US-GuyNeural",    "name": "Guy (EN-US ♂)",     "lang": "en"},
     {"id": "en-GB-SoniaNeural",  "name": "Sonia (EN-UK ♀)",   "lang": "en"},
+    # — Francés —
+    {"id": "fr-FR-DeniseNeural", "name": "Denise (France ♀)", "lang": "fr"},
+    {"id": "fr-FR-HenriNeural",  "name": "Henri (France ♂)",  "lang": "fr"},
+    {"id": "fr-CA-SylvieNeural", "name": "Sylvie (Canada ♀)", "lang": "fr"},
+    # — Portugués —
+    {"id": "pt-BR-FranciscaNeural", "name": "Francisca (Brasil ♀)", "lang": "pt"},
+    {"id": "pt-BR-AntonioNeural",   "name": "António (Brasil ♂)",   "lang": "pt"},
+    {"id": "pt-PT-RaquelNeural",    "name": "Raquel (Portugal ♀)",  "lang": "pt"},
 ]
 
 

@@ -16,6 +16,20 @@ from app.db.models import LocalModel
 router = APIRouter(prefix="/local-models", tags=["local-models"])
 
 
+@router.get("/hardware")
+async def hardware_recommendation():
+    """[2026-07-21] Escanea el PC (CPU/RAM/GPU) y recomienda AUTOMÁTICAMENTE el
+    modelo de Ollama óptimo (+ uno inferior seguro y uno superior solo si el
+    equipo lo aguanta) y el nivel de partículas del AVCS. Lo usa la config
+    inicial (auto) y Ajustes. Fail-soft: nunca rompe, degrada a lo que sabe."""
+    import asyncio
+
+    from app.core import hardware
+
+    # scan/nvidia-smi son bloqueantes → a un hilo, para no atascar el loop.
+    return await asyncio.to_thread(hardware.full_recommendation)
+
+
 @router.get("/catalog")
 async def get_catalog():
     """Catálogo completo + qué está instalado de verdad (cruzado con Ollama) +
@@ -99,14 +113,39 @@ class EnableBody(BaseModel):
 
 
 @router.post("/enable")
-def set_enabled(body: EnableBody):
+async def set_enabled(body: EnableBody):
     """Activa/desactiva un modelo YA instalado en el enrutado del MEL (sin
-    borrar los GB del disco)."""
+    borrar los GB del disco).
+
+    FIX (2026-07-21, bug real del usuario con qwen3:14b): la fila de
+    `local_models` solo la creaba el instalador de Aithera AL TERMINAR una
+    descarga. Si el modelo llegó a Ollama por cualquier otra vía (pull manual,
+    backend reiniciado a media descarga y Ollama reanudando solo, fallo del
+    alta), la UI decía "instalado" (verdad del disco vía `ollama list`) pero
+    este endpoint respondía 404 "modelo no instalado". El DISCO es la fuente
+    de verdad: si Ollama lo tiene, se da de alta aquí mismo (self-heal) en vez
+    de negar lo evidente. `async def` porque consulta a Ollama."""
+    from datetime import datetime
+
+    from app.ai.local_catalog import find_model
+
     db = SessionLocal()
     try:
         row = db.query(LocalModel).filter(LocalModel.model_tag == body.tag).first()
         if not row:
-            raise HTTPException(status_code=404, detail=f"modelo no instalado: {body.tag}")
+            installed = await local_installer.installed_tags()
+            if body.tag not in installed:
+                raise HTTPException(status_code=404, detail=f"modelo no instalado: {body.tag}")
+            meta = find_model(body.tag) or {}
+            row = LocalModel(
+                family=meta.get("family") or "otros",
+                model_tag=body.tag,
+                label=meta.get("label") or body.tag,
+                size_gb=meta.get("size_gb"),
+                enabled=body.enabled,
+                installed_at=datetime.utcnow(),
+            )
+            db.add(row)
         row.enabled = body.enabled
         db.commit()
         return {"tag": body.tag, "enabled": body.enabled}

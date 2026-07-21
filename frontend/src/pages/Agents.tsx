@@ -13,6 +13,7 @@ import { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { api, type Agent, type AgentExecution, type ToolInfo } from "@/lib/api";
 import { useAppStore } from "@/store/useAppStore";
+import { useConfirm } from "@/components/ConfirmDialog";
 
 type Status = "idle" | "saving" | "loading" | "error" | "executing";
 
@@ -41,6 +42,7 @@ const STATUS_LABEL: Record<string, string> = {
 };
 
 export default function Agents() {
+  const [confirm, confirmDialog] = useConfirm();
   // --- Estado global de la pagina ---
   const [agents, setAgents] = useState<Agent[] | null>(null);
   const [tools, setTools] = useState<ToolInfo[]>([]);
@@ -176,7 +178,11 @@ export default function Agents() {
 
   const deleteAgent = async () => {
     if (!selectedId) return;
-    if (!confirm(`Eliminar agente "${formName}"? Esto borra tambien su historial de ejecuciones.`)) return;
+    if (!(await confirm({
+      title: `Eliminar agente "${formName}"`,
+      message: "Esto borra también su historial de ejecuciones.",
+      confirmLabel: "Eliminar",
+    }))) return;
     try {
       await api.deleteAgent(selectedId);
       setSelectedId(null);
@@ -336,6 +342,8 @@ export default function Agents() {
   // ------------------------------------------------------------------
 
   return (
+    <>
+    {confirmDialog}
     <div
       className="h-full gap-4 p-2"
       style={{
@@ -649,6 +657,7 @@ export default function Agents() {
         )}
       </aside>
     </div>
+    </>
   );
 }
 

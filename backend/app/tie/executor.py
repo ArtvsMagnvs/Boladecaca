@@ -59,12 +59,23 @@ async def run(graph: TaskGraph, mission: Mission, *, trace_id: str) -> Mission:
     o el usuario lo cancela. Reentrante: al reanudar (gate resuelto / reinicio)
     se vuelve a llamar con el grafo recargado y continúa donde estaba.
 
+    [2026-07-21, doc 31] Fija el contexto de telemetría al entrar: al REANUDAR
+    (gate/reinicio) este run corre en un task nuevo que no heredó el contextvar
+    del handle original — sin esto, los llm/tool_calls de la reanudación
+    quedarían huérfanos de misión.
+
     Devuelve la Mission con su `state` actualizado:
       running→done   (todo lo ejecutable terminó)
       running→waiting (pausado en un gate; el grafo espera en disco)
       running→failed  (nada útil se pudo entregar)
       running→cancelled (kill-switch)
     """
+    try:
+        import app.telemetry as _telemetry
+
+        _telemetry.set_mission(mission.id, trace_id)
+    except Exception:
+        pass
     while True:
         if mission.id in _CANCELLED:
             _cancel_remaining(graph)
@@ -524,6 +535,18 @@ def _transition(node: TaskNode, state: NodeState, graph: TaskGraph, trace_id: st
     sea reanudable."""
     node.state = state
     _checkpoint(trace_id, graph)
+    # [2026-07-21, doc 31] Telemetría: cada nodo que llega a un estado TERMINAL
+    # deja su marca (ok = DONE). Los estados intermedios no aportan (ruido).
+    if state in (NodeState.DONE, NodeState.FAILED, NodeState.SKIPPED, NodeState.CANCELLED):
+        try:
+            import app.telemetry as _telemetry
+
+            _telemetry.record("node_end", name=node.id, trace_id=trace_id,
+                              ok=(state == NodeState.DONE),
+                              detail={"state": state.value, "runtime": node.runtime,
+                                      "tools": list(node.tools or [])})
+        except Exception:
+            pass
 
 
 def _checkpoint(trace_id: str, graph: TaskGraph) -> None:

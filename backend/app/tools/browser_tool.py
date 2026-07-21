@@ -167,26 +167,39 @@ async def _dismiss_consent(page) -> Optional[str]:
     """Intenta cerrar un muro de consentimiento. Devuelve el selector que
     funciono, o None si no habia muro (o no se pudo cerrar).
 
+    [A-3 fix 2026-07-21] Busca en la pagina principal Y EN LOS IFRAMES: Google
+    y YouTube meten el muro de consentimiento en un iframe (consent.google.com /
+    consent.youtube.com), que `page.locator` NO ve. Sin escanear frames, el
+    "Aceptar todo" de YouTube nunca se pulsaba y el video no se reproducia.
+
     Nunca lanza: un muro no cerrado no debe impedir que la navegacion siga —
     el modelo lo vera igualmente en `page_state` y podra decidir otra via."""
+    # Contextos a escanear: la pagina + todos sus iframes.
+    contexts = [page]
+    try:
+        contexts.extend(page.frames)   # incluye la principal otra vez; no pasa nada
+    except Exception:
+        pass
+
     intentos = 0
     for selector in _CONSENT_SELECTORS:
         if intentos >= _CONSENT_MAX_TRIES:
             break
-        try:
-            loc = page.locator(selector).first
-            if await loc.count() == 0:
-                continue
-            intentos += 1
-            await loc.click(timeout=_CONSENT_TIMEOUT_MS)
-            # Deja que la pagina reaccione al consentimiento (recarga/overlay).
+        for ctx in contexts:
             try:
-                await page.wait_for_load_state("domcontentloaded", timeout=3000)
+                loc = ctx.locator(selector).first
+                if await loc.count() == 0:
+                    continue
+                intentos += 1
+                await loc.click(timeout=_CONSENT_TIMEOUT_MS)
+                # Deja que la pagina reaccione al consentimiento (recarga/overlay).
+                try:
+                    await page.wait_for_load_state("domcontentloaded", timeout=3000)
+                except Exception:
+                    pass
+                return selector
             except Exception:
-                pass
-            return selector
-        except Exception:
-            continue
+                continue
     return None
 
 
@@ -348,6 +361,11 @@ class BrowserTool(BaseTool):
         if not selector:
             return {"success": False, "result": None, "error": "falta parametro: selector"}
         tid, page = await _get_page(params.get("tab_id"), _session_id_of(params))
+        # [A-3 fix 2026-07-21] El muro de cookies REAPARECE al interactuar (YouTube
+        # lo reinyecta tras un rato / tras el primer clic). Se cierra ANTES de
+        # clicar: si no, el clic caía sobre el overlay y la canción no se
+        # reproducía (o se pausaba). Best-effort, no rompe si no hay muro.
+        await _dismiss_consent(page)
         await page.click(selector, timeout=10000)
         return {"success": True, "result": {"tab_id": tid, "clicked": selector}, "error": None}
 
@@ -357,6 +375,7 @@ class BrowserTool(BaseTool):
         if not selector:
             return {"success": False, "result": None, "error": "falta parametro: selector"}
         tid, page = await _get_page(params.get("tab_id"), _session_id_of(params))
+        await _dismiss_consent(page)   # [A-3 fix] el muro puede reaparecer antes de escribir
         await page.fill(selector, text, timeout=10000)
         return {"success": True, "result": {"tab_id": tid, "typed_into": selector}, "error": None}
 

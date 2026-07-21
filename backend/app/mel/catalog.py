@@ -50,7 +50,17 @@ def _scores(chat, classify, extract, summarize, draft, reason, code, analyze,
         Capability.ANALYZE: analyze,
         Capability.RESEARCH: reason,     # research ≈ razonamiento largo (prior)
         Capability.VISION: vision,
-        Capability.AGENTIC: reason,
+        # [Opt latencia 2026-07-20] AGENTIC = el bucle de tool-use, que se llama
+        # UNA VEZ POR CADA ACCIÓN de una misión (abrir navegador, clic, escribir
+        # archivo…). Antes heredaba de `reason` → cada acción disparaba el
+        # modelo MÁS LENTO (peor aún con razonadores tipo MiniMax/DeepSeek que
+        # generan cadenas <think> por paso). Elegir la siguiente herramienta de
+        # un catálogo y rellenar sus params es una tarea ESTRUCTURADA y RÁPIDA
+        # (como classify/extract), no razonamiento profundo. Mapear AGENTIC a
+        # `classify` enruta el bucle a un modelo rápido → las acciones de una
+        # misión dejan de esperar segundos entre sí. Es el mayor recorte de
+        # latencia del runtime, sin tocar ningún timeout (no rompe misiones).
+        Capability.AGENTIC: classify,
     }
 
 
@@ -163,18 +173,23 @@ CATALOG: dict[str, dict] = {
     #     del CLI. Marcarlo local haria que la politica Offline contara con el
     #     estando sin conexion — justo lo que Offline promete evitar.
     # Pico en CODE: es un agente de programacion, no un chat generico.
+    # NOTA is_local=False A PROPÓSITO (regla del usuario, 2026-07-21): aunque el
+    # CLI se ejecute en la terminal local, es un servicio de PAGO con sesión en
+    # la nube — jamás cuenta como modelo local (ni entra en Offline, ni en la
+    # 4ª posición de las cadenas, ni descuenta el aviso de "solo local").
     "claude_code": {
         "default": {"scores": _scores(88, 82, 86, 88, 88, 90, 94, 88),
                     "relative_cost": 20, "is_local": False},
         "models": {
+            # [2026-07-21] Corregido: `fable` (Fable 5) es el modelo MÁS capaz
+            # del CLI (tier Mythos, por encima de Opus) — la nota anterior
+            # ("rápido de gama alta") describía un pasado que ya no existe.
+            "fable":  {"scores": _scores(95, 88, 91, 95, 95, 97, 98, 95),
+                       "relative_cost": 40, "is_local": False},
             "opus":   {"scores": _scores(92, 85, 88, 92, 93, 95, 96, 92),
                        "relative_cost": 30, "is_local": False},
             "haiku":  {"scores": _scores(80, 84, 82, 82, 78, 76, 82, 78),
                        "relative_cost": 10, "is_local": False},
-            # `fable` es el modelo rápido de gama alta del CLI: casi calidad de
-            # sonnet con menos coste/latencia.
-            "fable":  {"scores": _scores(86, 84, 85, 86, 85, 86, 90, 85),
-                       "relative_cost": 15, "is_local": False},
         },
     },
     # --- V1.0: proveedores nuevos (2026-07-18) ---
@@ -234,3 +249,26 @@ def cost_of(ref: ModelRef) -> int:
 
 def is_local(provider: str, model: str = "") -> bool:
     return profile_for(provider, model)["is_local"]
+
+
+# ---------------------------------------------------------------------------
+# [2026-07-21] Capacidades NO APTAS por proveedor — nacido de un fallo REAL de
+# producción (caso Melendi): Claude CLI sirviendo el CHAT respondió con su
+# propia identidad de terminal ("soy Claude Code, no tengo acceso al
+# navegador") en vez de usar las tools de Aithera, con latencias de minutos.
+# El CLI arranca un PROCESO por llamada (lento), no tiene streaming real y
+# conserva su identidad de asistente de código: NO APTO para el chat
+# interactivo, el clasificador de intents (hot path de CADA mensaje) ni el
+# bucle de tools (AGENTIC — una llamada por acción). SÍ es apto para trabajo
+# de fondo: programar, razonar, redactar, resumir, analizar.
+# La regla se aplica en 3 capas: compilación de políticas, filtro en ejecución
+# (retroactivo: sanea políticas ya editadas) y bloqueo en la UI.
+# ---------------------------------------------------------------------------
+UNFIT_CAPABILITIES: dict[str, frozenset] = {
+    "claude_code": frozenset({Capability.CHAT, Capability.CLASSIFY, Capability.AGENTIC}),
+}
+
+
+def unfit_for(provider: str) -> frozenset:
+    """Capacidades para las que un proveedor NO es apto (vacío = apto en todas)."""
+    return UNFIT_CAPABILITIES.get(provider, frozenset())

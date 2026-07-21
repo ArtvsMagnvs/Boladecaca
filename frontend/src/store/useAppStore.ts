@@ -33,6 +33,12 @@ function readStoredTier(): QualityTier {
 interface AppState {
   backendConnected: boolean;
   aiStatus: AIStatus | null;
+  /** [2026-07-21] "provider:model" que lleva el CHAT según la política ACTIVA
+   *  del MEL (Inteligencia) — la VERDAD que muestran Sidebar/Hub/Ajustes, en
+   *  vez del proveedor legacy (que podía contradecirla, bug real). */
+  chatPrimary: string | null;
+  /** ¿El proveedor del chat primario está fallando ahora (breaker abierto)? */
+  chatPrimaryDown: boolean;
   coreState: AICoreState;
   setCoreState: (state: AICoreState) => void;
   pulseError: () => void;
@@ -48,6 +54,8 @@ interface AppState {
 export const useAppStore = create<AppState>((set) => ({
   backendConnected: false,
   aiStatus: null,
+  chatPrimary: null,
+  chatPrimaryDown: false,
   coreState: "idle",
 
   setCoreState: (state) => set({ coreState: state }),
@@ -73,10 +81,27 @@ export const useAppStore = create<AppState>((set) => ({
 
   refreshAIStatus: async () => {
     try {
-      const status = await api.getAIStatus();
-      set({ aiStatus: status });
+      // [2026-07-21] Junto al status legacy se lee la política ACTIVA del MEL:
+      // su primario de CHAT es lo que la UI muestra en todas partes.
+      const [status, pols, health, models] = await Promise.all([
+        api.getAIStatus(),
+        api.getMelPolicies().catch(() => null),
+        api.getMelHealthSummary().catch(() => null),
+        api.getMelModels().catch(() => null),
+      ]);
+      const active = pols?.find((p) => p.is_active);
+      // El primario EFECTIVO: la ejecución salta los modelos no aptos para
+      // chat (unfit, p.ej. Claude CLI) aunque sigan en la política guardada —
+      // la UI muestra lo que de verdad responderá.
+      const unfitOf = (key: string) =>
+        models?.find((m) => m.key === key)?.unfit ?? [];
+      const chatChain = active?.compiled?.chat ?? [];
+      const chatPrimary = chatChain.find((k) => !unfitOf(k).includes("chat")) ?? null;
+      const prov = chatPrimary ? chatPrimary.split(":")[0] : null;
+      const chatPrimaryDown = !!prov && !!health?.providers_down?.includes(prov);
+      set({ aiStatus: status, chatPrimary, chatPrimaryDown });
     } catch {
-      set({ aiStatus: null });
+      set({ aiStatus: null, chatPrimary: null, chatPrimaryDown: false });
     }
   },
 
