@@ -344,3 +344,95 @@ async def test_nullruntime_sin_tools_sigue_por_el_chat(monkeypatch):
     res = await NullRuntime().execute_task(task, memory=None, tools=tool_manager,
                                            approval_gate=None)
     assert res.success and res.output == "respuesta de chat"
+
+
+# ---------------------------------------------------------------------------
+# [#209, 2026-07-22] Observabilidad del bucle: las DENEGACIONES dejan telemetría
+#
+# El caso real que motivó esto: la misión mini_web del Mission Lab quemó 12
+# iteraciones con solo 2 tools ejecutadas — las otras 10 vueltas (tools
+# inventadas/denegadas, respuestas no-JSON) no dejaban NINGÚN evento, así que el
+# timeline era indiagnosticable.
+# ---------------------------------------------------------------------------
+@pytest.mark.anyio
+async def test_una_tool_denegada_deja_evento_de_telemetria(monkeypatch):
+    import app.telemetry as telemetry
+
+    grabado: list[dict] = []
+    monkeypatch.setattr(telemetry, "record",
+                        lambda stage, **kw: grabado.append({"stage": stage, **kw}))
+
+    _fake_mel(monkeypatch, [
+        # tool inventada -> DENEGADO -> el modelo se rinde con prosa
+        json.dumps({"tool": {"tool_id": "filesystem", "action": "accion_inventada",
+                             "params": {}}}),
+        '{"answer": "no he podido"}',
+    ])
+
+    res = await toolloop.run(
+        instruction="haz algo", context="", allowed_tools=["filesystem"],
+        tool_manager=tool_manager, max_iters=3,
+    )
+
+    assert not res.ok   # sin fundamento (ninguna tool ejecutada con éxito)
+    denials = [g for g in grabado if g["stage"] == "tool_call" and g.get("detail", {}) and g["detail"].get("denied")]
+    assert denials, f"la denegación no dejó telemetría: {grabado}"
+    assert denials[0]["name"] == "filesystem.accion_inventada"
+    assert "accion_inventada" in denials[0]["detail"]["reason"] or "acción" in denials[0]["detail"]["reason"]
+
+
+@pytest.mark.anyio
+async def test_una_respuesta_no_json_deja_evento_invalid_json(monkeypatch):
+    import app.telemetry as telemetry
+
+    grabado: list[dict] = []
+    monkeypatch.setattr(telemetry, "record",
+                        lambda stage, **kw: grabado.append({"stage": stage, **kw}))
+
+    _fake_mel(monkeypatch, [
+        "Claro, voy a crear la página web que me pides.",   # prosa, no JSON
+        '{"answer": "nada"}',
+    ])
+
+    await toolloop.run(
+        instruction="haz algo", context="", allowed_tools=["filesystem"],
+        tool_manager=tool_manager, max_iters=3,
+    )
+
+    eventos = [g for g in grabado if g["stage"] == "toolloop" and g["name"] == "invalid_json"]
+    assert eventos, f"la respuesta en prosa no dejó telemetría: {grabado}"
+
+
+# ---------------------------------------------------------------------------
+# [#209, 2026-07-22] El parser tolera el formato real de MiniMax-M2.7
+# ---------------------------------------------------------------------------
+def test_extract_json_repara_claves_sin_comillas_formato_minimax():
+    """Payload EXACTO capturado en telemetría del Mission Lab (2026-07-22):
+    MiniMax-M2.7 envuelve en [TOOL_CALL] y deja la clave `tool` sin comillas.
+    Antes: None → iteración quemada. Ahora: parsea y la tool se ejecuta."""
+    from app.tie.intents import _extract_json
+
+    raw = ('[TOOL_CALL]\n'
+           '{tool: {"tool_id": "browser", "action": "scroll", '
+           '"params": {"direction": "down"}}}\n'
+           '[/TOOL_CALL]')
+    data = _extract_json(raw)
+    assert data is not None, "el formato real de MiniMax debe parsear"
+    assert data["tool"]["tool_id"] == "browser"
+    assert data["tool"]["action"] == "scroll"
+
+
+def test_extract_json_no_toca_json_valido_con_dos_puntos_en_strings():
+    """La reparación NUNCA corre sobre JSON válido: un valor con `palabra:`
+    dentro de un string no puede corromperse."""
+    from app.tie.intents import _extract_json
+
+    raw = '{"answer": "resumen: todo bien, nota: sin cambios"}'
+    assert _extract_json(raw) == {"answer": "resumen: todo bien, nota: sin cambios"}
+
+
+def test_extract_json_sigue_devolviendo_none_con_basura():
+    from app.tie.intents import _extract_json
+
+    assert _extract_json("esto no tiene json ninguno") is None
+    assert _extract_json("{esto tampoco es reparable") is None

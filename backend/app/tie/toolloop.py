@@ -254,6 +254,30 @@ def _truncate(text: str, limit: int = _MAX_OBSERVATION_CHARS) -> str:
     return text[:limit] + f"\n… [truncado: {len(text)} caracteres en total]"
 
 
+def _record_denial(tool_id, action, reason: str) -> None:
+    """[#209] Telemetría de una petición de tool DENEGADA (inventada, fuera de
+    whitelist o fuera de alcance). Best-effort, jamás rompe el bucle."""
+    try:
+        import app.telemetry as _telemetry
+
+        _telemetry.record("tool_call", name=f"{tool_id}.{action}", ok=False,
+                          detail={"denied": True, "reason": str(reason)[:200]})
+    except Exception:
+        pass
+
+
+def _record_loop_event(name: str, detail: Optional[dict] = None) -> None:
+    """[#209] Telemetría de un giro del bucle que NO es una tool: respuesta no
+    parseable, answer rechazado por falta de fundamento, permiso no concedido.
+    Stage propio ("toolloop") para no contaminar las estadísticas de tools."""
+    try:
+        import app.telemetry as _telemetry
+
+        _telemetry.record("toolloop", name=name, ok=False, detail=detail)
+    except Exception:
+        pass
+
+
 async def run(
     *,
     instruction: str,
@@ -355,6 +379,7 @@ async def run(
                 )
             transcript.append(f"TU RESPUESTA:\n{res.text[:500]}")
             transcript.append('ERROR: responde SOLO con JSON, {"tool": {...}} o {"answer": "..."}.')
+            _record_loop_event("invalid_json", {"text": res.text[:150]})   # [#209]
             continue
 
         if "answer" in data:
@@ -376,6 +401,7 @@ async def run(
                     "requiere datos reales del sistema: obténlos con una herramienta del "
                     "catálogo antes de responder. No inventes el resultado."
                 )
+                _record_loop_event("answer_rejected_ungrounded")   # [#209]
                 continue
             return ToolLoopResult(
                 ok=False, answer=answer, tool_calls=tool_calls, iterations=iteration,
@@ -400,6 +426,12 @@ async def run(
             reason = _denial_reason(tool_id, action, allowed_tools, tool_manager)
             transcript.append(f"DENEGADO: {reason}")
             tool_calls.append({"tool_id": tool_id, "action": action, "denied": True, "reason": reason})
+            # [2026-07-22, #209] Las DENEGACIONES también dejan telemetría. Sin
+            # esto, una misión que quema iteraciones pidiendo tools inventadas o
+            # fuera de whitelist es invisible: el timeline muestra N llamadas
+            # LLM y 0 rastro de en qué se fueron (caso real mini_web: 12
+            # iteraciones, 2 tools ejecutadas, 10 en un limbo indiagnosticable).
+            _record_denial(tool_id, action, reason)
             continue
 
         # [R4] ¿Está DENTRO del alcance del encargo? Esto NO es un permiso que el
@@ -414,6 +446,7 @@ async def run(
                 transcript.append(f"FUERA DE TU ALCANCE: {out_of_scope}")
                 tool_calls.append({"tool_id": tool_id, "action": action,
                                    "denied": True, "out_of_scope": True, "reason": out_of_scope})
+                _record_denial(tool_id, action, out_of_scope)   # [#209] rastro
                 continue
 
         # [S2-extra, C-1b] ESCRITURA ETIQUETADA — la otra mitad del aislamiento
@@ -447,6 +480,8 @@ async def run(
                                "needed_approval": True, "granted": granted, "reason": reason})
             if not granted:
                 transcript.append(f"SIN PERMISO para {tool_id}.{action}: {reason}")
+                _record_loop_event("permission_denied",
+                                   {"tool": f"{tool_id}.{action}", "reason": reason[:150]})  # [#209]
                 continue
             transcript.append(f"PERMISO CONCEDIDO para {tool_id}.{action}.")
 

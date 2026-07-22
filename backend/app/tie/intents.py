@@ -96,7 +96,17 @@ modelo de IA por su nombre, "explicit_model" es null. Devuelve SOLO el JSON."""
 
 def _extract_json(text: str) -> Optional[dict]:
     """Extrae el primer objeto JSON de una respuesta del LLM, tolerante a
-    ```json ... ``` y a texto alrededor. None si no hay JSON parseable."""
+    ```json ... ``` y a texto alrededor. None si no hay JSON parseable.
+
+    [2026-07-22, #209] Tolerante además a claves SIN comillas. Caso real
+    medido en el Mission Lab: MiniMax-M2.7 emite sistemáticamente
+    `[TOOL_CALL]\\n{tool: {"tool_id": ...}}\\n[/TOOL_CALL]` — el envoltorio ya
+    lo cubría la heurística de llaves, pero `{tool:` (sin comillas) hacía
+    fallar `json.loads` y el toolloop quemaba la iteración con un "responde
+    SOLO con JSON" (7 de 12 vueltas perdidas en una misión real, y en el peor
+    caso el texto crudo del tool-call se filtraba al usuario como respuesta).
+    La reparación SOLO se intenta cuando el parseo estricto ya falló: un JSON
+    válido jamás se toca."""
     if not text:
         return None
     # bloque ```json ... ``` o ``` ... ```
@@ -112,6 +122,20 @@ def _extract_json(text: str) -> Optional[dict]:
         return None
     try:
         return json.loads(candidate)
+    except (json.JSONDecodeError, ValueError):
+        return _parse_lax_json(candidate)
+
+
+def _parse_lax_json(candidate: str) -> Optional[dict]:
+    """Segundo intento: pone comillas a las claves desnudas (`{tool:` →
+    `{"tool":`) y reintenta. Devuelve None si ni así parsea o si el resultado
+    no es un objeto."""
+    repaired = re.sub(r'([{,]\s*)([A-Za-z_][A-Za-z0-9_]*)(\s*:)', r'\1"\2"\3', candidate)
+    if repaired == candidate:
+        return None
+    try:
+        out = json.loads(repaired)
+        return out if isinstance(out, dict) else None
     except (json.JSONDecodeError, ValueError):
         return None
 
