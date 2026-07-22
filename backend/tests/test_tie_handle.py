@@ -284,6 +284,12 @@ async def test_submit_mission_siempre_planifica(monkeypatch):
 
     assert m.state == "done" and m.source == "automation"
     assert rt.calls == ["hacer la tarea"]
+    # [fix mismatch, 2026-07-22] La Mission devuelta lleva el trace_id de su
+    # traza: es lo que el Orquestador emite por SSE y lo que la UI/telemetría
+    # consultan. Sin él, el conductor solo tenía mission.id (un id que ningún
+    # endpoint resuelve) — el bug real del Mission Lab.
+    assert m.trace_id, "submit_mission no estampó mission.trace_id"
+    assert tracer.get_meta(m.trace_id)["mission_id"] == m.id
 
 
 # ---------------------------------------------------------------------------

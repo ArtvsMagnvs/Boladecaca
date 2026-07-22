@@ -149,9 +149,16 @@ async def _orchestrate_stream(text: str, objectives_hint: list[str], channel: Op
         if actual is None:
             continue
         for o in actual.objectives:
+            # [2026-07-22, fix mismatch doc 31] El evento SSE "mission" debe
+            # llevar el TRACE_ID, no el mission_id — es lo que ya usan
+            # `/api/tie/missions/{id}` y `Missions.tsx` (el camino corto del
+            # TIE ya lo hacía así; aquí faltaba alinear el Orquestador). Se
+            # anuncia por `o.mission_id` (se conoce un instante antes) pero se
+            # EMITE `o.trace_id`, con fallback defensivo si por lo que sea
+            # faltara (nunca debería, `submit_mission` siempre lo estampa).
             if o.mission_id and o.mission_id not in anunciadas:
                 anunciadas.add(o.mission_id)
-                yield ("mission", o.mission_id)
+                yield ("mission", o.trace_id or o.mission_id)
         hechos = sum(1 for o in actual.objectives if o.state in ("done", "failed", "skipped", "cancelled"))
         if hechos != ultimo_hechos and hechos < n:
             ultimo_hechos = hechos

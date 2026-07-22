@@ -140,6 +140,7 @@ async def _ejecutar_como_mision(objetivo: Objective, run: OrchestrationRun) -> N
         parent_id=objetivo.mission_id,   # None salvo en sub-misiones
     )
     objetivo.mission_id = mission.id
+    objetivo.trace_id = mission.trace_id
     objetivo.outcome = mission.outcome
     # Una misión que quedó esperando aprobación NO es un fallo: es un estado
     # legítimo que la consolidación tiene que contar tal cual.

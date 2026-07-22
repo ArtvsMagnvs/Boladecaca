@@ -170,6 +170,7 @@ async def handle_stream(text: str, *, channel: str = "web", intent: Optional[Int
 
     mission = new_mission(goal=intent.goal or text, source="user", channel=channel)
     trace_id = tracer.record_start(mission, channel=channel)
+    mission.trace_id = trace_id     # [fix mismatch, doc 31] mission.id != trace_id
     tracer.record_intent(trace_id, intent)
     tracer.emit_started(mission)
 
@@ -356,6 +357,7 @@ async def submit_mission(
         intent.raw_text = goal
     intent.requires_planning = True  # una misión explícita nunca es "charla"
     trace_id = tracer.record_start(mission, channel=channel)
+    mission.trace_id = trace_id     # [fix mismatch, doc 31] mission.id != trace_id
     tracer.record_intent(trace_id, intent)
     tracer.emit_started(mission)
 
@@ -420,6 +422,7 @@ async def _run_pipeline(
 
     mission = new_mission(goal=intent.goal or text, source=source, channel=channel)
     trace_id = tracer.record_start(mission, channel=channel)
+    mission.trace_id = trace_id     # [fix mismatch, doc 31] mission.id != trace_id
     tracer.record_intent(trace_id, intent)
     tracer.emit_started(mission)
 

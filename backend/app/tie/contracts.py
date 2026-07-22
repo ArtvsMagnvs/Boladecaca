@@ -323,6 +323,14 @@ class Mission:
     # amplia ("crea 15 canales" → una sub-misión por canal). None = misión raíz.
     run_id: Optional[str] = None
     parent_id: Optional[str] = None
+    # [2026-07-22, doc 31 fix] `mission.id` y el `trace_id` de su traza son
+    # DISTINTOS por diseño (una misión podrá tener varias trazas en V1.2, ver
+    # `tracer.record_start`). Todo lo que el usuario/UI puede consultar hoy
+    # (`/api/tie/missions/{id}`, la telemetría) indexa por TRACE_ID, no por
+    # mission_id — este campo lo lleva colgado de la Mission para que quien la
+    # recibe (el Orquestador, R2) pueda propagar el id correcto sin tener que
+    # conocer el tracer. Campo append-only, no rompe nada existente.
+    trace_id: Optional[str] = None
 
     @staticmethod
     def new_id() -> str:

@@ -131,6 +131,13 @@ async def complete(req: ExecutionRequest) -> ExecutionResult:
     attempts = 0
     last_error = "sin candidatos viables"
     last_reason = "no_viable"
+    # [2026-07-22, #212] Observabilidad de fallos: se retiene QUIÉN falló (el
+    # último candidato) y qué candidatos se probaron. Antes el registro de un
+    # fallo llevaba provider/model NULL y solo la razón CLASIFICADA
+    # ("request_invalid") — diagnosticar el caso real de MiniMax-M3-highspeed
+    # exigió una sonda en vivo que un log con el error crudo habría evitado.
+    last_ref: Optional[ModelRef] = None
+    tried: list[str] = []
     for ref in chain:
         if attempts >= _MAX_HOPS:
             break
@@ -151,14 +158,15 @@ async def complete(req: ExecutionRequest) -> ExecutionResult:
                 decision_id=trace.id,
             )
         # falló este candidato
-        last_error, last_reason = err, reason
+        last_error, last_reason, last_ref = err, reason, ref
+        tried.append(ref.key)
         breakers.record_failure(ref.provider, reason)
         if reason == "request_invalid":
             break   # fallo del request: rotar no ayuda (doc 19 §8.1)
 
     latency = int((time.monotonic() - t0) * 1000)
-    _record_async(req, None, ok=False, latency_ms=latency, fallback_reason=last_reason,
-                  trace_id=trace.id, attempts=attempts)
+    _record_async(req, last_ref, ok=False, latency_ms=latency, fallback_reason=last_reason,
+                  trace_id=trace.id, attempts=attempts, error=last_error, tried=tried)
     return ExecutionResult(text="", ok=False, error=last_error, decision_id=trace.id,
                            usage=Usage(latency_ms=latency))
 
@@ -201,6 +209,7 @@ async def stream(req: ExecutionRequest) -> AsyncIterator[str]:
     (si el primer candidato falla antes de emitir, se rinde con un chunk de
     error — el caller conserva su degradación). Los saltos de cadena en streaming
     son V1.2."""
+    t0 = time.monotonic()
     available = _apply_exclude(registry.list_available(), req.exclude)
     if not available:
         yield "[MEL: no hay proveedores IA configurados]"
@@ -251,6 +260,13 @@ async def stream(req: ExecutionRequest) -> AsyncIterator[str]:
     except Exception as e:
         _, reason = classify_failure(exc=e)
         breakers.record_failure(ref.provider, reason)
+        # [#212] El fallo de streaming tampoco puede ser invisible: antes este
+        # camino no dejaba NINGÚN rastro en telemetría (solo el texto de error
+        # incrustado en el propio stream, que se pierde con la conversación).
+        _record_async(req, ref, ok=False,
+                      latency_ms=int((time.monotonic() - t0) * 1000),
+                      fallback_reason=reason, trace_id=trace.id,
+                      error=f"{type(e).__name__}: {e}")
         yield f"[MEL: error de streaming en {ref.provider}: {e}]"
 
 
@@ -260,23 +276,37 @@ async def stream(req: ExecutionRequest) -> AsyncIterator[str]:
 def _record_async(req: ExecutionRequest, ref: Optional[ModelRef], *, ok: bool,
                   latency_ms: int, tokens: Optional[int] = None,
                   fallback_reason: Optional[str] = None, trace_id: Optional[str] = None,
-                  attempts: int = 1) -> None:
+                  attempts: int = 1, error: Optional[str] = None,
+                  tried: Optional[list[str]] = None) -> None:
     """Escribe una fila en `mel_executions`. Nunca bloquea ni rompe: si hay un
     event loop corriendo, lo hace en una task; si no (contexto sync/tests), lo
-    escribe inline y traga errores."""
-    # [2026-07-21, doc 31] Telemetría punta a punta: CADA llamada LLM del MEL
-    # (complete Y stream pasan por aquí) queda en `mission_events` con su
-    # capacidad, modelo, latencia y resultado — ligada a la misión en curso
-    # vía contextvar. Best-effort: telemetry.record jamás lanza.
+    escribe inline y traga errores.
+
+    [#212] `error` es el texto CRUDO del fallo del proveedor (recortado) y
+    `tried` la lista de candidatos probados — van al `detail` JSON de la
+    telemetría, no a `mel_executions` (su esquema no cambia). La razón
+    clasificada ("request_invalid") dice QUÉ tipo de fallo fue; el texto crudo
+    dice POR QUÉ de verdad ("invalid model ... 400 Bad Request")."""
+    # [2026-07-21, doc 31] Telemetría punta a punta: CADA llamada LLM de
+    # `complete` queda en `mission_events` con su capacidad, modelo, latencia y
+    # resultado — ligada a la misión en curso vía contextvar. Best-effort:
+    # telemetry.record jamás lanza.
     try:
         import app.telemetry as _telemetry
 
+        detail: dict = {}
+        if attempts > 1 or fallback_reason:
+            detail = {"attempts": attempts, "fallback_reason": fallback_reason}
+        if error:
+            detail["error"] = error[:300]
+        if tried and len(tried) > 1:
+            detail["tried"] = tried
         _telemetry.record(
             "llm_call", name=req.capability.value,
             provider=ref.provider if ref else None,
             model=ref.model if ref else None,
             duration_ms=latency_ms, ok=ok,
-            detail={"attempts": attempts, "fallback_reason": fallback_reason} if (attempts > 1 or fallback_reason) else None,
+            detail=detail or None,
         )
     except Exception:
         pass

@@ -45,6 +45,16 @@ class Objective:
     # — estado (lo escribe SOLO el conductor) —
     state: str = "pending"
     mission_id: Optional[str] = None                 # la misión del TIE que lo resolvió
+    # [2026-07-22, fix mismatch doc 31] `mission_id` (Mission.id) y el trace_id
+    # de su traza son DISTINTOS por diseño (Mission.trace_id). TODO lo que la UI
+    # y la telemetría pueden consultar hoy indexa por trace_id
+    # (`/api/tie/missions/{trace_id}`, `mission_events.mission_id` que en
+    # realidad guarda el id de Mission... — ver telemetry, que sí usa
+    # Mission.id). El punto real del bug era que el streaming del Orquestador
+    # emitía `mission_id` mientras que el streaming directo del TIE emite
+    # `trace_id`: dos convenciones distintas para el mismo evento SSE. Este
+    # campo deja que el conductor propague el trace_id real de cada objetivo.
+    trace_id: Optional[str] = None
     outcome: Optional[str] = None                    # su resultado, para la consolidación
     error: Optional[str] = None
     depth: int = 0                                   # 0 = raíz; 1+ = vino de descomponer otro

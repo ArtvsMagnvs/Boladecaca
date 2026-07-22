@@ -18,6 +18,42 @@ import pytest
 from app.tie.contracts import Intent, IntentType
 
 
+@pytest.fixture
+def _runs_reales():
+    """Crea la tabla `orchestration_runs` en la BD de tests y limpia los runs
+    que el test genere. Mismo patrón que `test_orchestrator.py::_limpia_runs`
+    (init_db corre antes de que los modelos del orquestador se registren, así
+    que create_all de entrada es obligatorio en SQLite de tests). Sin la tabla,
+    `store.save` falla en silencio (best-effort) y el bucle de sondeo de
+    `_orchestrate_stream` nunca ve los objetivos — el test de los eventos
+    "mission" necesita el store FUNCIONANDO, no mudo."""
+    from app.db.database import Base, SessionLocal, engine as db_engine
+    from app.orchestrator import store
+
+    Base.metadata.create_all(bind=db_engine)
+    creados: list[str] = []
+    original = store.save
+
+    def _spy(run, **kwargs):
+        if run.id not in creados:
+            creados.append(run.id)
+        return original(run, **kwargs)
+
+    store.save = _spy
+    yield
+    store.save = original
+    from app.orchestrator.models import OrchestrationRunRow
+    db = SessionLocal()
+    try:
+        for rid in creados:
+            row = db.get(OrchestrationRunRow, rid)
+            if row is not None:
+                db.delete(row)
+        db.commit()
+    finally:
+        db.close()
+
+
 # ---------------------------------------------------------------------------
 # A) El chat pasa por el Orquestador
 # ---------------------------------------------------------------------------
@@ -80,7 +116,7 @@ async def test_un_solo_encargo_delega_en_el_tie_sin_reclasificar(monkeypatch):
 
 
 @pytest.mark.anyio
-async def test_dos_encargos_independientes_lanzan_misiones_en_paralelo(monkeypatch):
+async def test_dos_encargos_independientes_lanzan_misiones_en_paralelo(monkeypatch, _runs_reales):
     """EL CASO DEL USUARIO. Dos encargos que no dependen entre sí → dos misiones
     a la vez, no un plan de 2 pasos secuenciales."""
     import asyncio
@@ -106,6 +142,7 @@ async def test_dos_encargos_independientes_lanzan_misiones_en_paralelo(monkeypat
     class _M:
         def __init__(self, i):
             self.id = f"mission-{i}"
+            self.trace_id = f"trace-{i}"
             self.outcome = f"hecho {i}"
             self.state = "done"
 
@@ -140,6 +177,16 @@ async def test_dos_encargos_independientes_lanzan_misiones_en_paralelo(monkeypat
     )
     textos = [p for k, p in eventos if k == "text"]
     assert textos and "dos cosas" in textos[-1]
+
+    # [fix mismatch mission_id/trace_id, 2026-07-22] El evento SSE "mission"
+    # debe llevar el TRACE_ID (lo que `/api/tie/missions/{id}` y Missions.tsx
+    # ya esperan), no el `mission.id`. Antes de este fix se emitía
+    # `mission-1`/`mission-2` (el mission_id) y el frontend nunca encontraba
+    # esa misión en la lista — abría la primera de la lista en su lugar.
+    ids_emitidos = {p for k, p in eventos if k == "mission"}
+    assert ids_emitidos == {"trace-1", "trace-2"}, (
+        f"se emitieron mission_id en vez de trace_id: {ids_emitidos}"
+    )
 
 
 # ---------------------------------------------------------------------------

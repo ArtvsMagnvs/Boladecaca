@@ -184,3 +184,88 @@ async def test_respuesta_vacia_reintenta_y_luego_falla(monkeypatch):
     res = await executor.complete(ExecutionRequest(capability=Capability.CHAT, prompt="x"))
     assert not res.ok
     assert calls["n"] == 2   # 1 intento + 1 reintento del mismo modelo (doc 19 §8.1)
+
+
+# ---------------------------------------------------------------------------
+# [#212] Observabilidad de fallos: modelo + error crudo en telemetría
+#
+# El caso real que motivó esto (2026-07-21): un modelo primario inválido
+# (MiniMax-M3-highspeed, 400 real de la API) dejaba en telemetría solo
+# `provider=None, model=None, detail={'fallback_reason': 'request_invalid'}` —
+# diagnosticarlo exigió una sonda en vivo que un log con el texto crudo habría
+# evitado.
+# ---------------------------------------------------------------------------
+def _capture_telemetry(monkeypatch):
+    import app.telemetry as telemetry
+
+    grabado: list[dict] = []
+
+    def _record(stage, **kw):
+        grabado.append({"stage": stage, **kw})
+
+    monkeypatch.setattr(telemetry, "record", _record)
+    return grabado
+
+
+@pytest.mark.anyio
+async def test_fallo_registra_el_modelo_que_fallo_y_el_error_crudo(monkeypatch):
+    """Un fallo request_invalid del primario (el caso MiniMax-M3-highspeed) debe
+    dejar en telemetría QUIÉN falló y el texto REAL del proveedor — no
+    provider=None y una razón clasificada a secas."""
+    avail = [ModelRef("ollama", "llama3", True)]
+
+    def responder(ref):
+        return {"error": True, "response": "invalid request: 400 Bad Request (invalid model)"}
+
+    _fake_registry(monkeypatch, avail, responder)
+    grabado = _capture_telemetry(monkeypatch)
+
+    res = await executor.complete(ExecutionRequest(capability=Capability.CHAT, prompt="x"))
+
+    assert not res.ok
+    fallos = [g for g in grabado if g["stage"] == "llm_call" and g["ok"] is False]
+    assert fallos, "el fallo no dejó ningún evento llm_call en telemetría"
+    ev = fallos[-1]
+    assert ev["provider"] == "ollama" and ev["model"] == "llama3", \
+        "el evento de fallo debe identificar al candidato que falló, no None:None"
+    assert "400 Bad Request" in ev["detail"]["error"], \
+        "el detail debe llevar el texto CRUDO del proveedor, no solo la razón clasificada"
+    assert ev["detail"]["fallback_reason"] == "request_invalid"
+
+
+@pytest.mark.anyio
+async def test_fallo_multi_salto_registra_los_candidatos_probados(monkeypatch):
+    """Cuando la cadena rota por fallos transitorios, `detail.tried` lista los
+    candidatos probados — la diferencia entre 'falló el chat' y 'fallaron
+    ollama Y anthropic, en este orden'."""
+    avail = [ModelRef("ollama", "llama3", True), ModelRef("anthropic", "claude-opus-4-8", False)]
+
+    def responder(ref):
+        return {"error": True, "response": "connection timeout"}   # transitorio → rota
+
+    _fake_registry(monkeypatch, avail, responder)
+    grabado = _capture_telemetry(monkeypatch)
+
+    res = await executor.complete(ExecutionRequest(capability=Capability.SUMMARIZE, prompt="x"))
+
+    assert not res.ok
+    ev = [g for g in grabado if g["stage"] == "llm_call" and g["ok"] is False][-1]
+    assert ev["provider"] is not None, "el último candidato fallido debe quedar identificado"
+    assert len(ev["detail"]["tried"]) == 2, f"tried debería listar 2 candidatos: {ev['detail']}"
+    assert "timeout" in ev["detail"]["error"]
+
+
+@pytest.mark.anyio
+async def test_exito_no_arrastra_error_ni_tried(monkeypatch):
+    """No-regresión: un éxito limpio registra igual que antes (sin claves nuevas
+    de fallo colándose en el detail)."""
+    avail = [ModelRef("ollama", "llama3", True)]
+    _fake_registry(monkeypatch, avail, lambda ref: {"response": "hola", "tokens": 2})
+    grabado = _capture_telemetry(monkeypatch)
+
+    res = await executor.complete(ExecutionRequest(capability=Capability.CHAT, prompt="x"))
+
+    assert res.ok
+    ev = [g for g in grabado if g["stage"] == "llm_call"][-1]
+    assert ev["ok"] is True
+    assert ev["detail"] is None, f"un éxito a la primera no debe llevar detail: {ev['detail']}"

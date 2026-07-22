@@ -106,14 +106,26 @@ def record(stage: str, *, name: Optional[str] = None, provider: Optional[str] = 
 # ---------------------------------------------------------------------------
 def mission_timeline(mission_id: str) -> dict:
     """Timeline ordenado de UNA misión + resumen calculado (duraciones por
-    etapa, LLM por modelo, tools ok/fallo)."""
+    etapa, LLM por modelo, tools ok/fallo).
+
+    [2026-07-22, fix mismatch doc 31] Acepta indistintamente un mission_id
+    (Mission.id) o un trace_id: cada fila guarda los dos, pero quien llama
+    (mission_report.py, un cliente externo) solo tiene el id que le llegó por
+    SSE, y esa convención no era uniforme entre el camino corto del TIE
+    (emitía trace_id) y el Orquestador (emitía mission_id) — ver
+    app/tie/pipeline.py y app/orchestrator/__init__.py. Consultar por
+    cualquiera de los dos hace el lookup robusto sin depender de que esa
+    inconsistencia esté 100% corregida en todos los callers."""
+    from sqlalchemy import or_
+
     from app.db.database import SessionLocal
     from app.telemetry.models import MissionEvent
 
     db = SessionLocal()
     try:
         rows = (db.query(MissionEvent)
-                .filter(MissionEvent.mission_id == mission_id)
+                .filter(or_(MissionEvent.mission_id == mission_id,
+                           MissionEvent.trace_id == mission_id))
                 .order_by(MissionEvent.id).all())
     finally:
         db.close()
