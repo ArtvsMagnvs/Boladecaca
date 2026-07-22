@@ -97,6 +97,21 @@ class Settings:
     # poder mirarlo y tomar el control. Solo se pone a True para automatismos de
     # fondo donde una ventana emergente molestaria.
     BROWSER_HEADLESS = os.getenv("BROWSER_HEADLESS", "false").strip().lower() in ("1", "true", "yes")
+    # [2026-07-23, petición del usuario] CHROME REAL, no el Chromium "de test":
+    # canal del navegador ("chrome" = el Google Chrome instalado; "chromium" =
+    # el bundled de Playwright como respaldo si Chrome no está).
+    BROWSER_CHANNEL = os.getenv("BROWSER_CHANNEL", "chrome").strip().lower()
+    # Perfil PERSISTENTE de Aithera: cookies, sesiones (Google incluida) y
+    # consentimientos aceptados SOBREVIVEN entre misiones y reinicios. El
+    # usuario inicia sesión en Google UNA vez en este perfil y queda iniciada.
+    # NOTA técnica: no puede usarse el perfil de uso diario del usuario —
+    # Chrome ≥136 bloquea la automatización sobre el user-data-dir por defecto
+    # (protección anti-infostealers) y además su Chrome abierto lo tiene
+    # bloqueado. Perfil propio persistente = mismo efecto práctico, sin pelea.
+    BROWSER_PROFILE_DIR = os.getenv(
+        "BROWSER_PROFILE_DIR",
+        os.path.join(os.getenv("APPDATA", os.path.expanduser("~")), "Aithera", "chrome-profile"),
+    )
 
     # --- V1.0 (R2, Orquestador — doc 23) ---
     # Kill-switch: con False, el Gateway sigue enganchado a `tie.handle` y todo

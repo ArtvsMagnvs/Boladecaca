@@ -1821,6 +1821,30 @@ con riesgo real de romper la que ya usan sentence-transformers/ChromaDB —
 confirmado al intentar instalarlo: quiso bajar torch 2.13.0 sobre el 2.12.1+cpu
 existente).
 
+**[2026-07-23] Chrome REAL + perfil persistente + cookies definitivas**
+(petición del usuario): `browser_tool` ya NO usa el Chromium "de test" con
+perfil de usar-y-tirar. Ahora lanza el Google **Chrome instalado**
+(`BROWSER_CHANNEL="chrome"`, respaldo a Chromium bundled) sobre un **perfil
+PERSISTENTE propio de Aithera** (`%APPDATA%/Aithera/chrome-profile`, override
+`BROWSER_PROFILE_DIR`): el usuario inicia sesión en Google UNA vez y queda; las
+cookies/consentimientos sobreviven a misiones y reinicios. No es el perfil de
+uso diario del usuario a propósito (Chrome ≥136 bloquea la automatización sobre
+el user-data-dir por defecto, y su Chrome abierto lo tiene bloqueado) — perfil
+propio persistente = mismo efecto práctico sin pelea. Con perfil persistente
+las misiones COMPARTEN el contexto (sesión de Google compartida es el objetivo)
+y solo se aíslan las pestañas; `close_session` cierra las pestañas de la misión
+pero NO el contexto compartido. **Muro de cookies — arreglo DEFINITIVO** (`_dismiss_consent` v2, 3 capas):
+(1) lo APRENDIDO para ese dominio (persiste en `consent_learned.json` del
+perfil — "que aprenda de forma definitiva"), (2) catálogo de 15 CMPs
+mayoritarios por CSS (página + iframes), (3) botón/enlace por TEXTO de
+aceptación en 5 idiomas (ES/EN/FR/DE/PT, atraviesa shadow DOM) para los CMPs
+caseros. Todo éxito se aprende; sumado al perfil persistente, un muro solo
+cuesta tiempo UNA vez por sitio en la vida del perfil. Se reintenta ANTES de
+cada `click`/`type` (YouTube lo reinyecta). Tests sin red:
+`test_browser_consent_v2.py` (11) + `test_audit_s3_browser.py` (fixture al modo
+efímero). Verificado en vivo con Chrome real: YouTube y El Mundo cargan
+contenido real, cero cookies visibles.
+
 **Limitaciones reales conocidas** (verificadas en vivo, no supuestas):
 `browser.google_search` funciona a nivel de código pero Google bloquea el
 tráfico headless como sospechoso → para buscar de verdad se usa `search`

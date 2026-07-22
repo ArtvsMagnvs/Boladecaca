@@ -186,6 +186,7 @@ async def test_toolloop_fuerza_politica_rapida_no_la_de_calidad(monkeypatch):
         model_override: Optional[str] = None
         policy_override: Optional[str] = None
         context_tags: Optional[dict] = None
+        fitness_exempt: bool = False
 
     @dataclass
     class _R:

@@ -353,9 +353,24 @@ pytestmark_browser = pytest.mark.skipif(not _playwright_available(), reason="Pla
 
 
 @pytest.fixture
-async def _close_browser_after():
-    yield
+async def _close_browser_after(monkeypatch, tmp_path):
+    # [2026-07-23] Los tests son HERMETICOS: NO usan el Chrome real ni el
+    # perfil de Aithera del usuario (lo contaminaria y chocaria con su Chrome
+    # abierto). Chromium bundled + perfil temporal descartable + headless.
+    from app.core.config import settings
     from app.tools import browser_tool
+
+    monkeypatch.setattr(settings, "BROWSER_CHANNEL", "chromium")
+    monkeypatch.setattr(settings, "BROWSER_PROFILE_DIR", str(tmp_path / "chrome-profile"))
+    monkeypatch.setattr(settings, "BROWSER_HEADLESS", True)
+    browser_tool._learned_consent = None   # sin caché heredado entre tests
+    yield
+    if browser_tool._persistent_context:
+        try:
+            await browser_tool._persistent_context.close()
+        except Exception:
+            pass
+        browser_tool._persistent_context = None
     if browser_tool._browser:
         await browser_tool._browser.close()
         browser_tool._browser = None

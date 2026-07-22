@@ -104,10 +104,15 @@ class _FakeBrowser:
 
 @pytest.fixture
 def fake_browser(monkeypatch):
-    """Instala un navegador falso y limpia el estado global entre tests."""
+    """Instala un navegador falso (modo EFIMERO — un contexto por mision) y
+    limpia el estado global entre tests. [2026-07-23] Fuerza
+    `_persistent_context=None` para que los tests de aislamiento F-1 ejerciten
+    el camino efimero (un `new_context` por mision), no el perfil persistente."""
     def _install(page_factory):
         browser = _FakeBrowser(page_factory)
         monkeypatch.setattr(browser_tool, "_browser", browser)
+        monkeypatch.setattr(browser_tool, "_persistent_context", None)
+        monkeypatch.setattr(browser_tool, "_learned_consent", {})
 
         async def _noop():
             return None
@@ -290,6 +295,7 @@ async def test_f1_el_toolloop_inyecta_la_sesion_de_la_mision(monkeypatch):
         model_override: Optional[str] = None
         context_tags: Optional[dict] = None
         policy_override: Optional[str] = None
+        fitness_exempt: bool = False
 
     @dataclass
     class _Res:

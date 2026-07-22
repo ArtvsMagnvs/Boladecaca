@@ -31,16 +31,30 @@ from app.core.config import settings
 from .base import BaseTool
 from .filesystem_tool import _resolve_user_path, _is_path_allowed
 
-# Estado del navegador -- un unico proceso Chromium.
+# Estado del navegador -- un unico proceso.
 _playwright = None
-_browser = None
+_browser = None              # modo respaldo (ephemeral): Browser de Playwright
+_persistent_context = None   # modo normal: BrowserContext PERSISTENTE (perfil)
 
 # [Auditoria v0.9.5, F-1] SESION POR MISION. Antes las pestanas vivian en un
 # unico dict global y `_current_tab` era una sola variable: con
 # ORCH_MAX_CONCURRENT=3, dos misiones que usaran el navegador a la vez se
 # pisaban la pestana activa (la mision A navegaba, la B clicaba en la pagina de
-# A). Ahora cada mision tiene su propio BrowserContext de Playwright — pestanas,
-# cookies y sesion aisladas — y su propia pestana activa.
+# A). Cada mision tiene su propio grupo de pestanas y su pestana activa.
+#
+# [2026-07-23, peticion del usuario] PERFIL PERSISTENTE + CHROME REAL: el
+# navegador ya no es el Chromium "de test" con perfil de usar-y-tirar — es el
+# Google Chrome instalado (channel="chrome") sobre un perfil PROPIO de Aithera
+# que sobrevive entre misiones y reinicios (%APPDATA%/Aithera/chrome-profile).
+# Consecuencias buscadas: la sesion de Google se inicia UNA vez y queda; cada
+# muro de cookies aceptado queda aceptado PARA SIEMPRE en ese sitio (la mitad
+# del arreglo definitivo de consentimiento es esta persistencia).
+#
+# El aislamiento F-1 cambia de forma con el perfil persistente: las misiones
+# comparten el MISMO contexto (las cookies/sesiones compartidas son el
+# objetivo), y lo que se aisla por mision son las PESTANAS y la pestana
+# activa. Si el perfil no puede abrirse (lock huerfano, etc.) se degrada al
+# modo antiguo: navegador efimero con un contexto por mision.
 #
 # Clave "default" = sin mision (chat directo, tests): mismo comportamiento de
 # siempre, cero regresion.
@@ -48,10 +62,12 @@ _DEFAULT_SESSION = "default"
 
 
 class _Session:
-    """Pestanas + pestana activa de UNA mision, sobre su propio BrowserContext."""
+    """Pestanas + pestana activa de UNA mision. `owns_context=True` solo en el
+    modo respaldo (contexto efimero propio que hay que cerrar al terminar)."""
 
-    def __init__(self, context: Any) -> None:
+    def __init__(self, context: Any, owns_context: bool = False) -> None:
         self.context = context
+        self.owns_context = owns_context
         self.pages: Dict[str, Any] = {}
         self.current_tab: Optional[str] = None
 
@@ -60,8 +76,8 @@ _sessions: Dict[str, _Session] = {}
 
 
 async def _ensure_browser():
-    global _playwright, _browser
-    if _browser is not None:
+    global _playwright, _browser, _persistent_context
+    if _browser is not None or _persistent_context is not None:
         return
     try:
         from playwright.async_api import async_playwright
@@ -71,31 +87,50 @@ async def _ensure_browser():
             "playwright install chromium)"
         ) from e
     _playwright = await async_playwright().start()
+
+    # [Fix 2026-07-19] VISIBLE, no headless: si Aithera navega por ti, tienes
+    # que poder mirarlo y tomar el control. Ademas headless se bloquea como
+    # sospechoso en muchos sitios (documentado en CLAUDE.md §8).
+    headless = settings.BROWSER_HEADLESS
+    profile_dir = settings.BROWSER_PROFILE_DIR
+    # Sin la barra "Chrome esta siendo controlado por software automatizado":
+    # es el navegador DEL USUARIO trabajando para el, no un banco de pruebas.
+    launch_kwargs = dict(headless=headless, ignore_default_args=["--enable-automation"])
+
+    # Cadena de degradacion honesta (cada nivel se loguea):
+    #   1) Chrome REAL + perfil persistente de Aithera   ← lo pedido
+    #   2) Chromium bundled + perfil persistente         (no hay Chrome)
+    #   3) Chromium efimero (modo antiguo)               (perfil bloqueado)
+    for channel in ([settings.BROWSER_CHANNEL] if settings.BROWSER_CHANNEL != "chromium" else []) + [None]:
+        try:
+            import os
+            os.makedirs(profile_dir, exist_ok=True)
+            _persistent_context = await _playwright.chromium.launch_persistent_context(
+                profile_dir, **({**launch_kwargs, "channel": channel} if channel else launch_kwargs),
+            )
+            return
+        except Exception:
+            continue
     try:
-        # [Fix 2026-07-19] VISIBLE, no headless. Aithera decia "he abierto el
-        # navegador" y el usuario no veia ninguna ventana: el navegador existia
-        # de verdad, pero invisible. Si Aithera navega POR TI, tienes que poder
-        # mirar lo que hace y tomar el control cuando quieras — un agente que
-        # actua a ciegas en tu ordenador es justo lo contrario de lo que se
-        # busca aqui.
-        #
-        # Ademas funciona MEJOR: Google y otros sitios bloquean el trafico
-        # headless por sospechoso (ya documentado en CLAUDE.md §8 como
-        # limitacion real de `browser.google_search`).
-        _browser = await _playwright.chromium.launch(headless=settings.BROWSER_HEADLESS)
+        _browser = await _playwright.chromium.launch(headless=headless)
     except Exception as e:
         raise RuntimeError(
-            f"no se pudo lanzar Chromium (¿falta 'playwright install chromium'?): {e}"
+            f"no se pudo lanzar el navegador (¿falta 'playwright install chromium'?): {e}"
         ) from e
 
 
 async def _get_session(session_id: Optional[str]) -> _Session:
-    """La sesion de navegador de una mision (su BrowserContext propio)."""
+    """La sesion de navegador de una mision. Con perfil persistente: contexto
+    COMPARTIDO (sesiones/cookies del usuario) y pestanas propias por mision.
+    En modo respaldo: BrowserContext efimero propio (comportamiento antiguo)."""
     await _ensure_browser()
     sid = session_id or _DEFAULT_SESSION
     sess = _sessions.get(sid)
     if sess is None:
-        sess = _Session(await _browser.new_context())
+        if _persistent_context is not None:
+            sess = _Session(_persistent_context, owns_context=False)
+        else:
+            sess = _Session(await _browser.new_context(), owns_context=True)
         _sessions[sid] = sess
     return sess
 
@@ -122,16 +157,25 @@ async def _get_page(tab_id: Optional[str], session_id: Optional[str] = None):
 
 
 async def close_session(session_id: str) -> bool:
-    """Cierra la sesion de navegador de una mision (libera su contexto y todas
-    sus pestanas). La llama el executor al terminar una mision: sin esto, cada
-    mision que abriera el navegador dejaria un contexto vivo para siempre."""
+    """Cierra la sesion de navegador de una mision. Con perfil persistente
+    cierra SOLO las pestanas de esa mision (el perfil/contexto sigue vivo —
+    ahi estan la sesion de Google y los consentimientos aceptados); en modo
+    respaldo cierra tambien su contexto efimero. La llama el executor al
+    terminar una mision."""
     sess = _sessions.pop(session_id, None)
     if sess is None:
         return False
-    try:
-        await sess.context.close()
-    except Exception:
-        pass
+    if sess.owns_context:
+        try:
+            await sess.context.close()
+        except Exception:
+            pass
+    else:
+        for page in list(sess.pages.values()):
+            try:
+                await page.close()
+            except Exception:
+                pass
     return True
 
 
@@ -158,48 +202,184 @@ _CONSENT_SELECTORS = (
     'button[aria-label="Aceptar todas"]',
     '[data-testid="uc-accept-all-button"]',                 # Usercentrics
     "#L2AGLb",                                              # Google "Acepto"
+    "#CybotCookiebotDialogBodyLevelButtonLevelOptinAllowAll",  # Cookiebot
+    "#truste-consent-button",                               # TrustArc
+    "button#sp-cc-accept",                                  # Amazon
+    ".cmplz-accept",                                        # Complianz (WordPress)
+    'button[data-cookiebanner="accept_button"]',            # Facebook/Meta
 )
 _CONSENT_TIMEOUT_MS = 1200
 _CONSENT_MAX_TRIES = 3
 
+# [2026-07-23, v2] Capa de TEXTO: cuando el CMP no esta en el catalogo, se
+# busca cualquier boton/enlace visible cuyo texto accesible sea una frase de
+# aceptacion (ES/EN/FR/DE/PT). Cubre los CMP caseros, que son la cola larga
+# que rompia misiones. Frases EXACTAS o de arranque, cortas — jamas un "ok"
+# suelto ni un "configurar/rechazar" (mejor no tocar que tocar mal).
+_CONSENT_TEXTS = (
+    "aceptar todo", "aceptar todas", "aceptar y continuar", "aceptar cookies",
+    "aceptar y cerrar", "acepto las cookies", "aceptar", "acepto", "de acuerdo",
+    "entendido", "consentir",
+    "accept all", "accept all cookies", "allow all", "allow all cookies",
+    "accept cookies", "accept & continue", "accept and continue", "i accept",
+    "i agree", "agree all", "agree", "accept", "got it", "allow cookies",
+    "tout accepter", "alles akzeptieren", "alle akzeptieren", "aceitar tudo",
+    "aceitar todos",
+)
 
-async def _dismiss_consent(page) -> Optional[str]:
-    """Intenta cerrar un muro de consentimiento. Devuelve el selector que
-    funciono, o None si no habia muro (o no se pudo cerrar).
+# [2026-07-23, v2] APRENDIZAJE PERSISTENTE POR DOMINIO (peticion del usuario:
+# "que aprenda de forma definitiva"). Cuando cualquier capa cierra un muro, se
+# guarda {dominio → estrategia} en el perfil de Aithera; la proxima visita a
+# ese dominio prueba PRIMERO lo aprendido (via rapida). Sumado al perfil
+# persistente (un consentimiento aceptado no vuelve a aparecer en ese sitio),
+# el muro de un sitio solo puede costar tiempo UNA vez en la vida del perfil.
+_learned_consent: Optional[Dict[str, Dict[str, str]]] = None
 
-    [A-3 fix 2026-07-21] Busca en la pagina principal Y EN LOS IFRAMES: Google
-    y YouTube meten el muro de consentimiento en un iframe (consent.google.com /
-    consent.youtube.com), que `page.locator` NO ve. Sin escanear frames, el
-    "Aceptar todo" de YouTube nunca se pulsaba y el video no se reproducia.
 
-    Nunca lanza: un muro no cerrado no debe impedir que la navegacion siga —
-    el modelo lo vera igualmente en `page_state` y podra decidir otra via."""
-    # Contextos a escanear: la pagina + todos sus iframes.
+def _consent_store_path():
+    import os
+    return os.path.join(settings.BROWSER_PROFILE_DIR, "consent_learned.json")
+
+
+def _load_learned() -> Dict[str, Dict[str, str]]:
+    global _learned_consent
+    if _learned_consent is None:
+        import json
+        try:
+            with open(_consent_store_path(), encoding="utf-8") as f:
+                _learned_consent = json.load(f)
+        except Exception:
+            _learned_consent = {}
+    return _learned_consent
+
+
+def _save_learned(domain: str, kind: str, value: str) -> None:
+    """Best-effort: aprender jamas puede romper la navegacion."""
+    import json
+    import os
+    try:
+        learned = _load_learned()
+        learned[domain] = {"kind": kind, "value": value}
+        os.makedirs(settings.BROWSER_PROFILE_DIR, exist_ok=True)
+        with open(_consent_store_path(), "w", encoding="utf-8") as f:
+            json.dump(learned, f, ensure_ascii=False, indent=1)
+    except Exception:
+        pass
+
+
+def _domain_of(page) -> str:
+    try:
+        from urllib.parse import urlparse
+        host = (urlparse(page.url).netloc or "").lower()
+        return host[4:] if host.startswith("www.") else host
+    except Exception:
+        return ""
+
+
+def _consent_contexts(page) -> list:
+    """La pagina + sus iframes (Google/YouTube meten el muro en un iframe que
+    `page.locator` no ve — fix A-3 2026-07-21)."""
     contexts = [page]
     try:
         contexts.extend(page.frames)   # incluye la principal otra vez; no pasa nada
     except Exception:
         pass
+    return contexts
 
+
+async def _try_css(page, selector: str) -> bool:
+    for ctx in _consent_contexts(page):
+        try:
+            loc = ctx.locator(selector).first
+            if await loc.count() == 0:
+                continue
+            await loc.click(timeout=_CONSENT_TIMEOUT_MS)
+            return True
+        except Exception:
+            continue
+    return False
+
+
+async def _try_text(page, text: str) -> bool:
+    """Boton/enlace por NOMBRE ACCESIBLE exacto (case-insensitive). Los
+    locators por rol de Playwright atraviesan shadow DOM — cubre CMPs que el
+    CSS plano no alcanza."""
+    import re as _re
+    pattern = _re.compile(rf"^\s*{_re.escape(text)}\s*$", _re.IGNORECASE)
+    for ctx in _consent_contexts(page):
+        for role in ("button", "link"):
+            try:
+                loc = ctx.get_by_role(role, name=pattern).first
+                if await loc.count() == 0:
+                    continue
+                await loc.click(timeout=_CONSENT_TIMEOUT_MS)
+                return True
+            except Exception:
+                continue
+    return False
+
+
+async def _dismiss_consent(page) -> Optional[str]:
+    """Cierra un muro de consentimiento (cookies/GDPR). Devuelve la estrategia
+    que funciono ("selector", "text=frase" o "learned:..."), o None si no habia
+    muro o no se pudo cerrar. Nunca lanza: un muro no cerrado no debe impedir
+    que la navegacion siga — el modelo lo vera en `page_state`.
+
+    v2 (2026-07-23) — tres capas, de mas rapida a mas general:
+      1. LO APRENDIDO para este dominio (via inmediata).
+      2. Catalogo de CMPs mayoritarios (CSS, pagina + iframes).
+      3. TEXTO accesible de aceptacion en 5 idiomas (atraviesa shadow DOM).
+    Todo exito se APRENDE (dominio → estrategia) y persiste en el perfil."""
+    domain = _domain_of(page)
+
+    async def _settle():
+        try:
+            await page.wait_for_load_state("domcontentloaded", timeout=3000)
+        except Exception:
+            pass
+
+    # 1) lo aprendido para este dominio
+    learned = _load_learned().get(domain)
+    if learned:
+        try:
+            hit = (await _try_css(page, learned["value"])) if learned["kind"] == "css" \
+                else (await _try_text(page, learned["value"]))
+            if hit:
+                await _settle()
+                return f"learned:{learned['value']}"
+        except Exception:
+            pass
+
+    # 2) catalogo de CMPs (acotado: los muros reales aparecen en el top-3 de
+    # intentos con elemento presente; sin elemento presente el coste es ~0)
     intentos = 0
     for selector in _CONSENT_SELECTORS:
         if intentos >= _CONSENT_MAX_TRIES:
             break
-        for ctx in contexts:
+        for ctx in _consent_contexts(page):
             try:
                 loc = ctx.locator(selector).first
                 if await loc.count() == 0:
                     continue
                 intentos += 1
                 await loc.click(timeout=_CONSENT_TIMEOUT_MS)
-                # Deja que la pagina reaccione al consentimiento (recarga/overlay).
-                try:
-                    await page.wait_for_load_state("domcontentloaded", timeout=3000)
-                except Exception:
-                    pass
+                await _settle()
+                if domain:
+                    _save_learned(domain, "css", selector)
                 return selector
             except Exception:
                 continue
+
+    # 3) texto de aceptacion (la cola larga de CMPs caseros)
+    for text in _CONSENT_TEXTS:
+        try:
+            if await _try_text(page, text):
+                await _settle()
+                if domain:
+                    _save_learned(domain, "text", text)
+                return f"text={text}"
+        except Exception:
+            continue
     return None
 
 
