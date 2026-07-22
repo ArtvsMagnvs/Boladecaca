@@ -159,8 +159,11 @@ def test_agentic_usa_modelo_rapido_no_reason():
 @pytest.mark.anyio
 async def test_toolloop_fuerza_politica_rapida_no_la_de_calidad(monkeypatch):
     """EL fix de los 15s/paso: el bucle NO debe usar la política de calidad del
-    usuario (que puede ser opus/gpt), sino `economy` (rápido). Un modelo fijado
-    (TIE_TOOL_MODEL) tiene máxima prioridad."""
+    usuario (que puede ser opus/gpt), sino la política rápida de Settings.
+    [2026-07-22] El default pasó de "economy" a "speed" (la política MEDIDA por
+    mel/benchmark: el más rápido de esta máquina con suelo de calidad — barato
+    no siempre es rápido: el local barato tardaba 100s+/paso, medido). Un
+    modelo fijado (TIE_TOOL_MODEL) sigue teniendo máxima prioridad."""
     import json
     import sys
     import types
@@ -216,6 +219,6 @@ async def test_toolloop_fuerza_politica_rapida_no_la_de_calidad(monkeypatch):
     res = await toolloop.run(instruction="abre youtube", context="",
                              allowed_tools=["browser"], tool_manager=_TM(), max_iters=3)
     assert res.ok
-    # Todas las llamadas del bucle van por economy (rápido), NUNCA por la política
-    # de calidad del usuario.
-    assert all(p == "economy" and m is None for p, m in reqs), reqs
+    # Todas las llamadas del bucle van por la política rápida (speed, la medida
+    # por benchmark), NUNCA por la política de calidad del usuario.
+    assert all(p == "speed" and m is None for p, m in reqs), reqs

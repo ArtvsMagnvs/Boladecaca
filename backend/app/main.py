@@ -282,6 +282,16 @@ async def lifespan(app: FastAPI):
             # (economy). El refresco de fondo no tiene prisa (es cada 14 días).
             id="mel_research_refresh", first_run_delay_s=900,
         )
+        # [2026-07-22] Auto-BENCHMARK catch-up: mide los modelos que aún no
+        # tienen medición (los nuevos se miden solos al conectarse, vía
+        # register_handlers). One-shot con retraso (10 min): fuera de la
+        # ventana de arranque, y `benchmark_missing` es no-op si todo está
+        # medido — coste cero en el arranque normal.
+        scheduler_service.add_interval_job(
+            mel.benchmark_missing,
+            minutes=24 * 60,               # re-chequeo diario de "faltantes" (no-op normalmente)
+            id="mel_benchmark_catchup", first_run_delay_s=600,
+        )
         active = next((p["name"] for p in mel.policies() if p.get("is_active")), "?")
         log_info(
             "startup",

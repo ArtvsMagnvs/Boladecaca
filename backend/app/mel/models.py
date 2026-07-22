@@ -103,3 +103,26 @@ class MelPolicy(Base):
     is_active = Column(Boolean, default=False, index=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow)
+
+
+class MelBenchmark(Base):
+    """[2026-07-22] Medición REAL de un modelo en esta máquina (benchmark.py):
+    latencia (mediana de sondas) y calidad verificable (JSON exacto, seguir
+    instrucciones, razonamiento con respuesta única). Complementa al informe
+    investigado (MelCapabilityReport, conocimiento) con NÚMEROS medidos — las
+    políticas SPEED y BALANCED compilan con esto. Una fila por (provider,
+    model), upsert (la última medición manda). `ok=False` = el modelo no
+    respondió a NINGUNA sonda (id inválido, API caída): las políticas medidas
+    lo excluyen."""
+
+    __tablename__ = "mel_benchmarks"
+
+    id = Column(Integer, primary_key=True)
+    provider = Column(String(40), index=True)
+    model = Column(String(160), index=True)
+    ok = Column(Boolean, default=False)
+    latency_ms_median = Column(Integer)
+    speed_score = Column(Integer, default=0)         # 0-100 (de la latencia medida)
+    quality_score = Column(Integer, default=0)       # 0-100 (% sondas verificables)
+    probes = Column(JSON)                            # detalle por sonda
+    updated_at = Column(DateTime, default=datetime.utcnow)

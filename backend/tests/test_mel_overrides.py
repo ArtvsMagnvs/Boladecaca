@@ -52,7 +52,8 @@ AVAIL = [ModelRef("ollama", "llama3", True), ModelRef("anthropic", "claude-opus-
 def test_ensure_compiled_crea_custom():
     policy_store.ensure_compiled(AVAIL)
     names = {p["name"] for p in policy_store.list_policies()}
-    assert names == {"economy", "quality", "offline", "custom"}
+    # [2026-07-22] +speed/+balanced (políticas medidas por mel/benchmark)
+    assert names == {"economy", "quality", "offline", "custom", "speed", "balanced"}
 
 
 def test_set_primary_pone_el_modelo_primero_con_respaldos():

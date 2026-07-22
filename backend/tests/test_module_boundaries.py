@@ -79,6 +79,7 @@ FORBIDDEN_MODULES = (
     ("app.mel.research", APP_DIR / "mel"),
     ("app.mel.overrides", APP_DIR / "mel"),
     ("app.mel.repetition", APP_DIR / "mel"),   # [R7] era el único del MEL sin vigilar
+    ("app.mel.benchmark", APP_DIR / "mel"),    # [2026-07-22] mediciones velocidad/calidad
     # V1.0 (R2): fronteras del Orquestador. La dependencia va en UN SOLO
     # sentido (orquestador -> TIE); el test de abajo vigila que no haya ciclo.
     ("app.orchestrator.contracts", APP_DIR / "orchestrator"),
@@ -262,6 +263,8 @@ def test_mel_public_api_completa():
         # [2026-07-21] edicion de respaldos por posicion + resumen de salud
         # (banner "trabajando solo en local")
         "set_policy_slot", "health_summary",
+        # [2026-07-22] benchmark medido (velocidad/calidad reales por modelo)
+        "benchmark_summary", "benchmark_missing",
     }
     faltan = esperado - set(dir(mel))
     assert not faltan, f"app.mel no exporta: {sorted(faltan)}"

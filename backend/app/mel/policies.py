@@ -47,6 +47,63 @@ def _order_economy(available: list[ModelRef], cap: Capability) -> list[ModelRef]
     return sorted(aceptables, key=key) + sorted(resto, key=key)
 
 
+# ---------------------------------------------------------------------------
+# [2026-07-22, petición del usuario] Políticas MEDIDAS: SPEED y BALANCED usan
+# los números reales de mel/benchmark.py (latencia medida en ESTA máquina +
+# calidad verificable por sondas), no solo el conocimiento del catálogo.
+# ---------------------------------------------------------------------------
+# Suelo de calidad medida para SPEED: por debajo, un modelo rápido pero que no
+# obedece instrucciones/JSON hace perder MÁS tiempo del que ahorra (reintentos
+# del toolloop). Se aplica solo si hay medición; sin medición se confía en el
+# score del catálogo (mismo umbral que Economy).
+_SPEED_MIN_QUALITY = 34   # ≥1 de las 3 sondas verificables superadas
+
+
+def _bench(r: ModelRef) -> Optional[dict]:
+    """Medición de benchmark del modelo, o None. Import diferido para no crear
+    ciclo (benchmark importa registry, no policies)."""
+    from app.mel import benchmark
+    return benchmark.measured(r)
+
+
+def _order_speed(available: list[ModelRef], cap: Capability) -> list[ModelRef]:
+    """El más RÁPIDO medido primero. Un modelo medido como muerto (ok=False —
+    p.ej. un id que la API rechaza con 400) queda EXCLUIDO del pool principal;
+    los rápidos-pero-torpes (calidad medida < suelo) van detrás de los dignos.
+    Sin medición → después de los medidos, ordenados por coste (heurística)."""
+    dead, slow_pool, fast_pool, unmeasured = [], [], [], []
+    for r in available:
+        b = _bench(r)
+        if b is None:
+            unmeasured.append(r)
+        elif not b["ok"]:
+            dead.append(r)
+        elif b["quality_score"] < _SPEED_MIN_QUALITY:
+            slow_pool.append((b["latency_ms_median"] or 10 ** 9, r))
+        else:
+            fast_pool.append((b["latency_ms_median"] or 10 ** 9, r))
+    ordered = [r for _, r in sorted(fast_pool, key=lambda t: (t[0], t[1].key))]
+    ordered += [r for _, r in sorted(slow_pool, key=lambda t: (t[0], t[1].key))]
+    ordered += sorted(unmeasured, key=lambda r: (cost_of(r), r.key))
+    ordered += sorted(dead, key=lambda r: r.key)   # último recurso, jamás primario
+    return ordered
+
+
+def _order_balanced(available: list[ModelRef], cap: Capability) -> list[ModelRef]:
+    """Calidad buena a velocidad decente: maximiza una mezcla del score de la
+    capacidad (catálogo+investigado, 60%) y la velocidad MEDIDA (40%). Sin
+    medición, la velocidad cuenta neutra (50) — el catálogo decide. Los
+    medidos-muertos, al final."""
+    def combo(r: ModelRef) -> float:
+        b = _bench(r)
+        speed = float(b["speed_score"]) if (b and b["ok"]) else 50.0
+        return 0.6 * float(score_of(r, cap)) + 0.4 * speed
+
+    alive = [r for r in available if not (_bench(r) and not _bench(r)["ok"])]
+    dead = [r for r in available if r not in alive]
+    return sorted(alive, key=lambda r: (-combo(r), cost_of(r), r.key)) + sorted(dead, key=lambda r: r.key)
+
+
 def _compile_policy(name: PolicyName, available: list[ModelRef]) -> dict[str, list[str]]:
     """Compila UNA política → {capability_value: [model_key, ...]}. Nunca produce
     cadenas vacías si hay ≥1 modelo (con 1 solo proveedor, cadenas de 1 — válido
@@ -67,6 +124,10 @@ def _compile_policy(name: PolicyName, available: list[ModelRef]) -> dict[str, li
 
         if name == PolicyName.ECONOMY:
             ordered = _order_economy(pool, cap)
+        elif name == PolicyName.SPEED:
+            ordered = _order_speed(pool, cap)
+        elif name == PolicyName.BALANCED:
+            ordered = _order_balanced(pool, cap)
         else:  # QUALITY y OFFLINE ordenan por calidad
             ordered = _order_quality(pool, cap)
 
@@ -85,11 +146,14 @@ def _compile_policy(name: PolicyName, available: list[ModelRef]) -> dict[str, li
 
 
 def compile_all(available: list[ModelRef]) -> dict[str, dict[str, list[str]]]:
-    """Compila las 3 políticas automáticas. Pura (no toca la DB)."""
+    """Compila las políticas automáticas (todas menos Custom, que es el lienzo
+    del usuario). [2026-07-22] +SPEED y +BALANCED (medidas por benchmark)."""
     return {
         PolicyName.ECONOMY.value: _compile_policy(PolicyName.ECONOMY, available),
         PolicyName.QUALITY.value: _compile_policy(PolicyName.QUALITY, available),
         PolicyName.OFFLINE.value: _compile_policy(PolicyName.OFFLINE, available),
+        PolicyName.SPEED.value: _compile_policy(PolicyName.SPEED, available),
+        PolicyName.BALANCED.value: _compile_policy(PolicyName.BALANCED, available),
     }
 
 
@@ -111,6 +175,10 @@ def _order_for(name: str, available: list[ModelRef], cap: Capability) -> list[Mo
         return _order_quality([r for r in available if r.is_local], cap)
     if name == PolicyName.ECONOMY.value:
         return _order_economy(available, cap)
+    if name == PolicyName.SPEED.value:
+        return _order_speed(available, cap)
+    if name == PolicyName.BALANCED.value:
+        return _order_balanced(available, cap)
     return _order_quality(available, cap)   # quality, custom
 
 
@@ -161,6 +229,36 @@ class PolicyStore:
         except Exception as e:
             logger.error(f"[policies] ensure_compiled falló (no crítico): {type(e).__name__}: {e}")
             db.rollback()
+        finally:
+            db.close()
+
+    def recompile_pristine(self, available: list[ModelRef]) -> list[str]:
+        """[2026-07-22] Recompila las políticas AUTOMÁTICAS que el usuario no ha
+        editado (`pristine=True`) con los datos actuales (catálogo + investigado
+        + benchmark medido). Las editadas JAMÁS se tocan (doc 19 §5.3). Lo llama
+        el benchmark al terminar una tanda de mediciones — así SPEED/BALANCED
+        reflejan los números nuevos sin esperar a un reinicio."""
+        from app.db.database import SessionLocal
+        from app.mel.models import MelPolicy
+
+        fresh = compile_all(available)
+        updated: list[str] = []
+        db = SessionLocal()
+        try:
+            for row in db.query(MelPolicy).filter(MelPolicy.pristine.is_(True)).all():
+                if row.name in fresh and row.compiled != fresh[row.name]:
+                    row.compiled = fresh[row.name]
+                    row.version = (row.version or 1) + 1
+                    row.updated_at = datetime.utcnow()
+                    updated.append(row.name)
+            if updated:
+                db.commit()
+                logger.info(f"[policies] recompiladas (pristine) con datos nuevos: {updated}")
+            return updated
+        except Exception as e:
+            logger.error(f"[policies] recompile_pristine falló (no crítico): {type(e).__name__}: {e}")
+            db.rollback()
+            return []
         finally:
             db.close()
 

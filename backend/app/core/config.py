@@ -76,12 +76,14 @@ class Settings:
     # [Opt latencia 2026-07-21] Política del bucle de tool-use. El bucle se
     # ejecuta UNA VEZ POR ACCIÓN, así que su modelo domina la latencia de una
     # misión. Con la política de calidad del usuario (p.ej. custom→claude/opus)
-    # cada paso tardaba 13-18s (medido en los logs del usuario). "economy"
-    # (local-primero, rápido y gratis) recorta cada paso a ~1-3s. La elección
+    # cada paso tardaba 13-18s (medido en los logs del usuario). La elección
     # de herramienta es una decisión estructurada, no necesita el modelo más
-    # potente. Si el modelo local resultara flojo para el navegador, pon aquí
-    # otra política o fija un modelo con TIE_TOOL_MODEL.
-    TIE_TOOL_POLICY = os.getenv("TIE_TOOL_POLICY", "economy")
+    # potente. [2026-07-22] Default "speed": la política MEDIDA (mel/benchmark)
+    # elige el modelo más rápido de ESTA máquina con un suelo mínimo de calidad
+    # estructurada — antes "economy" (barato ≠ rápido: el local barato tardaba
+    # 100s+ por paso en el equipo del usuario, medido). Si hiciera falta, pon
+    # aquí otra política o fija un modelo con TIE_TOOL_MODEL.
+    TIE_TOOL_POLICY = os.getenv("TIE_TOOL_POLICY", "speed")
     # Fija un modelo EXACTO para el bucle (ej. "claude_code:haiku"). Vacío = usar
     # TIE_TOOL_POLICY. Máxima prioridad si se define.
     TIE_TOOL_MODEL = os.getenv("TIE_TOOL_MODEL", "").strip()

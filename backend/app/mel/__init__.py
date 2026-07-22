@@ -168,8 +168,26 @@ def ensure_ready() -> None:
 def register_handlers() -> None:
     """[E1b] Cablea el MEL con el bus de eventos: suscribe la investigación
     automática a `provider.model_configured` (doc 19 §5.4.1). Idempotente. Lo
-    llama el lifespan, mismo patrón que `tie.register_handlers()`."""
+    llama el lifespan, mismo patrón que `tie.register_handlers()`.
+    [2026-07-22] También el auto-BENCHMARK: al conectar un modelo se le mide
+    (latencia real + calidad verificable) sin que el usuario haga nada."""
     _research.register()
+    from app.mel import benchmark as _benchmark
+    _benchmark.register()
+
+
+def benchmark_summary() -> list[dict]:
+    """[2026-07-22] Las mediciones reales por modelo (velocidad/calidad) — para
+    la UI de Inteligencia y diagnóstico."""
+    from app.mel import benchmark as _benchmark
+    return _benchmark.summary()
+
+
+async def benchmark_missing() -> int:
+    """[2026-07-22] Mide los modelos SIN medición (catch-up de arranque; lo
+    programa el lifespan). Los nuevos se miden solos vía register_handlers."""
+    from app.mel import benchmark as _benchmark
+    return await _benchmark.benchmark_missing()
 
 
 def capability_report() -> list[dict]:
@@ -196,4 +214,5 @@ __all__ = [
     "list_models", "set_policy_primary", "restore_policy",
     "set_project_override", "overrides_for", "list_overrides", "clear_override",
     "set_policy_slot", "health_summary",
+    "benchmark_summary", "benchmark_missing",
 ]

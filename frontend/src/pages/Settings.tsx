@@ -783,7 +783,12 @@ const AUTONOMY_PROFILES: Array<{ id: string; label: string; hint: string }> = [
  */
 const MEL_POLICY_META: Record<string, { label: string; hint: string }> = {
   economy: { label: "Economía", hint: "Prioriza el coste: usa el modelo local para tareas simples y el mejor de pago solo cuando hace falta." },
-  quality: { label: "Calidad", hint: "El mejor modelo para cada tarea, sin importar el coste." },
+  quality: { label: "Calidad", hint: "El mejor modelo para cada tarea, sin importar el coste ni la velocidad." },
+  // [2026-07-22, petición del usuario] Políticas MEDIDAS: Aithera sondea cada
+  // modelo conectado (latencia real + calidad verificable) y compila con esos
+  // números — el usuario no tiene que probar modelos a mano.
+  speed: { label: "Velocidad", hint: "El modelo más rápido medido en tu equipo, aceptando menos calidad. Ideal para tareas mecánicas." },
+  balanced: { label: "Equilibrado", hint: "Buena calidad a velocidad decente: mezcla la calidad conocida con la rapidez medida de cada modelo." },
   offline: { label: "Sin conexión", hint: "Solo modelos locales (sin internet). Puede no cubrir todas las tareas." },
   custom: { label: "Personalizado", hint: "Tú decides el modelo de cada tarea. Parte de Calidad; edita lo que quieras y restaura cuando quieras." },
 };
@@ -794,8 +799,8 @@ const MEL_CAP_LABEL: Record<string, string> = {
 // Orden y whitelist de capacidades activas (las reservadas research/vision/
 // agentic existen en el backend pero no se muestran — no aportan al usuario aún).
 const MEL_CAPS_ORDER = ["chat", "classify", "extract", "summarize", "draft", "reason", "code", "analyze"];
-const MEL_POLICY_ORDER = ["economy", "quality", "offline", "custom"];
-const MEL_EDITABLE = new Set(["economy", "quality", "custom"]);
+const MEL_POLICY_ORDER = ["economy", "quality", "speed", "balanced", "offline", "custom"];
+const MEL_EDITABLE = new Set(["economy", "quality", "speed", "balanced", "custom"]);
 
 // [2026-07-21] Nombres ABREVIADOS compartidos por toda la app (Inteligencia,
 // badges, Sidebar, Hub): lib/modelNames.ts — "MiniMax · M3-highspeed",

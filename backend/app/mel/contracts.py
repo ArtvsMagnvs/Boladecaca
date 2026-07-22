@@ -39,12 +39,16 @@ class Capability(str, Enum):
 
 
 class PolicyName(str, Enum):
-    """Las 4 políticas de ejecución (doc 19 §4). Custom es V1.2 (aquí solo el
-    nombre, para que el contrato esté completo)."""
+    """Las políticas de ejecución (doc 19 §4; enum APPEND-ONLY). Custom es el
+    lienzo editable del usuario (E2b). [2026-07-22, petición del usuario]
+    SPEED y BALANCED compilan con MEDICIONES reales (mel/benchmark.py):
+    velocidad pura con suelo mínimo de calidad, y el equilibrio calidad/latencia."""
     ECONOMY = "economy"      # el candidato más barato aceptable por capacidad
     QUALITY = "quality"      # orden puro por score; coste solo desempata
     OFFLINE = "offline"      # SOLO proveedores locales
-    CUSTOM = "custom"        # definida por el usuario (builder drag&drop, V1.2)
+    CUSTOM = "custom"        # definida por el usuario (editable, E2b)
+    SPEED = "speed"          # el más RÁPIDO medido (con suelo mínimo de calidad)
+    BALANCED = "balanced"    # calidad buena a velocidad decente (medido)
 
 
 # ---------------------------------------------------------------------------
