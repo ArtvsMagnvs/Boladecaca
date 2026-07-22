@@ -1,10 +1,13 @@
 # backend/app/tools/search_tool.py
 #
 # V1.0/1.1 (Tools): busqueda web real (no navegador -- eso es Browser Tool).
-# Dos proveedores combinables (peticion del usuario, 2026-07-18): Brave Search
-# API (probado primero, tiene plan gratuito de 2000 consultas/mes) y SerpAPI
-# (resultados de Google reales) como respaldo si Brave falla o no esta
-# configurado. El usuario configura una o ambas API keys en Ajustes ->
+# Dos proveedores combinables (peticion del usuario, 2026-07-18): SerpAPI
+# (resultados de Google reales; plan free SIN tarjeta, 250 consultas/mes) se
+# prueba PRIMERO, y Brave Search API (su plan free exige vincular tarjeta,
+# 1000 consultas/mes) queda como respaldo si SerpAPI falla o no esta
+# configurado — orden decidido por el usuario (2026-07-22): la cuota de Brave
+# es mayor pero esta atada a una tarjeta, mejor reservarla de red de
+# seguridad. El usuario configura una o ambas API keys en Ajustes ->
 # Busqueda web (endpoints en app/api/endpoints/search_config.py); las keys se
 # leen cifradas de la tabla Config, igual que el token de Telegram.
 #
@@ -118,19 +121,20 @@ async def _search(vertical: str, query: str, count: int) -> Dict[str, Any]:
         }
 
     errors = []
-    # Brave primero (plan gratuito mas generoso); SerpAPI como respaldo.
-    if keys["brave"]:
-        try:
-            items = await _search_brave(vertical, query, count, keys["brave"])
-            return {"success": True, "result": {"provider": "brave", "query": query, "items": items}, "error": None}
-        except Exception as e:
-            errors.append(f"brave: {type(e).__name__}: {e}")
+    # SerpAPI primero (free sin tarjeta); Brave como respaldo (free con
+    # tarjeta vinculada) — orden del usuario, 2026-07-22.
     if keys["serpapi"]:
         try:
             items = await _search_serpapi(vertical, query, count, keys["serpapi"])
             return {"success": True, "result": {"provider": "serpapi", "query": query, "items": items}, "error": None}
         except Exception as e:
             errors.append(f"serpapi: {type(e).__name__}: {e}")
+    if keys["brave"]:
+        try:
+            items = await _search_brave(vertical, query, count, keys["brave"])
+            return {"success": True, "result": {"provider": "brave", "query": query, "items": items}, "error": None}
+        except Exception as e:
+            errors.append(f"brave: {type(e).__name__}: {e}")
 
     return {"success": False, "result": None, "error": "todos los proveedores fallaron: " + " | ".join(errors)}
 
@@ -140,8 +144,8 @@ class SearchTool(BaseTool):
     name = "Search Tool"
     description = (
         "Busqueda web real (no navegador): web, noticias, imagenes, videos. "
-        "Usa Brave Search API primero; si falla o no esta configurada, cae a "
-        "SerpAPI (Google). Requiere al menos una API key en Ajustes."
+        "Usa SerpAPI (Google) primero; si falla o no esta configurada, cae a "
+        "Brave Search API. Requiere al menos una API key en Ajustes."
     )
     requires_confirmation = False
 

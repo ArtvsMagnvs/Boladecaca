@@ -265,8 +265,9 @@ async def test_search_con_brave_configurado_usa_brave(_clean_search_config):
 
 
 @pytest.mark.anyio
-async def test_search_falla_brave_cae_a_serpapi(_clean_search_config):
-    import httpx as httpx_module
+async def test_search_con_ambos_configurados_usa_serpapi_primero(_clean_search_config):
+    """[2026-07-22, orden del usuario] SerpAPI (free sin tarjeta, 250/mes) es
+    el PRINCIPAL; Brave (free con tarjeta vinculada, 1000/mes) el respaldo."""
     from app.core import secrets
     from app.db.database import SessionLocal
     from app.db.models import Config
@@ -281,16 +282,47 @@ async def test_search_falla_brave_cae_a_serpapi(_clean_search_config):
     serp_resp.json.return_value = {"organic_results": [{"title": "Serp", "link": "https://y.com", "snippet": "s"}]}
     serp_resp.raise_for_status = MagicMock()
 
+    # Ambos responderían bien: debe elegir SerpAPI sin siquiera tocar Brave.
+    urls: list[str] = []
+
     async def _get(self, url, **kwargs):
-        if "brave" in url:
-            raise httpx_module.ConnectError("brave caido")
+        urls.append(url)
         return serp_resp
 
     with patch("httpx.AsyncClient.get", new=_get):
         r = await tool_manager.execute("search", "search_web", {"query": "aithera"})
     assert r["success"]
     assert r["result"]["provider"] == "serpapi"
-    assert r["result"]["items"][0]["title"] == "Serp"
+    assert all("serpapi" in u for u in urls), f"tocó otro proveedor sin necesidad: {urls}"
+
+
+@pytest.mark.anyio
+async def test_search_falla_serpapi_cae_a_brave(_clean_search_config):
+    import httpx as httpx_module
+    from app.core import secrets
+    from app.db.database import SessionLocal
+    from app.db.models import Config
+
+    db = SessionLocal()
+    db.add(Config(key="search_brave_api_key", value=secrets.encrypt("fake-brave")))
+    db.add(Config(key="search_serpapi_api_key", value=secrets.encrypt("fake-serp")))
+    db.commit()
+    db.close()
+
+    brave_resp = MagicMock()
+    brave_resp.json.return_value = {"web": {"results": [{"title": "Brv", "url": "https://x.com", "description": "d"}]}}
+    brave_resp.raise_for_status = MagicMock()
+
+    async def _get(self, url, **kwargs):
+        if "serpapi" in url:
+            raise httpx_module.ConnectError("serpapi caido")
+        return brave_resp
+
+    with patch("httpx.AsyncClient.get", new=_get):
+        r = await tool_manager.execute("search", "search_web", {"query": "aithera"})
+    assert r["success"]
+    assert r["result"]["provider"] == "brave"
+    assert r["result"]["items"][0]["title"] == "Brv"
 
 
 @pytest.mark.anyio

@@ -507,9 +507,10 @@ function EmailGoogleStatus() {
  */
 /**
  * V1.0/1.1 (Tools, petición del usuario 2026-07-18): Search Tool combina 2
- * proveedores — Brave Search API se prueba primero (plan gratuito de 2000
- * consultas/mes); si falla o no está configurado, cae a SerpAPI. Ambos son
- * opcionales e independientes; basta con configurar uno para que funcione.
+ * proveedores. [2026-07-22, orden del usuario] SerpAPI (Google) se prueba
+ * PRIMERO (plan free sin tarjeta, 250 consultas/mes); Brave Search API es el
+ * respaldo (su plan free exige vincular tarjeta de crédito, 1.000/mes). Ambos
+ * son opcionales e independientes; basta con configurar uno para que funcione.
  */
 function SearchProviderCard({
   label, hint, signupUrl, status, onSave, onDelete,
@@ -579,22 +580,24 @@ function SearchSettings() {
   return (
     <div className="space-y-3">
       <p className="text-xs text-ink-dim">
-        Aithera prueba primero Brave; si falla o no está configurado, usa SerpAPI. Con uno
+        Aithera prueba primero SerpAPI; si falla o no está configurado, usa Brave. Con uno
         solo ya funciona — configura los dos si quieres respaldo automático.
       </p>
       <SearchProviderCard
-        label="Brave Search API" hint="Gratis hasta 2.000 consultas/mes."
-        signupUrl="https://api.search.brave.com/register"
-        status={status?.brave}
-        onSave={async (k) => { await api.configureSearchProvider("brave", k); refresh(); }}
-        onDelete={async () => { await api.deconfigureSearchProvider("brave"); refresh(); }}
-      />
-      <SearchProviderCard
-        label="SerpAPI (Google)" hint="Resultados de Google reales. Plan gratuito limitado (~100/mes)."
+        label="SerpAPI (Google)"
+        hint="Principal. Resultados de Google reales. Plan gratuito sin tarjeta: 250 consultas/mes."
         signupUrl="https://serpapi.com/manage-api-key"
         status={status?.serpapi}
         onSave={async (k) => { await api.configureSearchProvider("serpapi", k); refresh(); }}
         onDelete={async () => { await api.deconfigureSearchProvider("serpapi"); refresh(); }}
+      />
+      <SearchProviderCard
+        label="Brave Search API"
+        hint="Respaldo. Plan gratuito de 1.000 consultas/mes (requiere vincular tarjeta de crédito)."
+        signupUrl="https://api.search.brave.com/register"
+        status={status?.brave}
+        onSave={async (k) => { await api.configureSearchProvider("brave", k); refresh(); }}
+        onDelete={async () => { await api.deconfigureSearchProvider("brave"); refresh(); }}
       />
     </div>
   );
