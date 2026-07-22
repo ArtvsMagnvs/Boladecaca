@@ -269,3 +269,28 @@ async def test_exito_no_arrastra_error_ni_tried(monkeypatch):
     ev = [g for g in grabado if g["stage"] == "llm_call"][-1]
     assert ev["ok"] is True
     assert ev["detail"] is None, f"un éxito a la primera no debe llevar detail: {ev['detail']}"
+
+
+@pytest.mark.anyio
+async def test_override_a_modelo_no_capaz_falla_claro_salvo_fitness_exempt(monkeypatch):
+    """[2026-07-22] Un override explicito a un modelo NO CAPAZ de la tarea
+    devuelve error claro (nunca se sustituye en silencio). La UNICA excepcion
+    es fitness_exempt (el banco de medicion): sin ella, un modelo excluido no
+    podria re-medirse jamas."""
+    from app.mel import policies as _pol_mod
+    import importlib
+    pol = importlib.import_module("app.mel.policies")
+
+    avail = [ModelRef("ollama", "llama3", True)]
+    _fake_registry(monkeypatch, avail, lambda ref: {"response": "hola", "tokens": 1})
+    monkeypatch.setattr(pol, "is_capable", lambda r, cap: False)
+
+    req = ExecutionRequest(capability=Capability.CHAT, prompt="x",
+                          model_override="ollama:llama3")
+    res = await executor.complete(req)
+    assert not res.ok and "ExplicitModelUnfit" in res.error
+
+    req2 = ExecutionRequest(capability=Capability.CHAT, prompt="x",
+                           model_override="ollama:llama3", fitness_exempt=True)
+    res2 = await executor.complete(req2)
+    assert res2.ok, "el banco (fitness_exempt) debe poder medir al excluido"

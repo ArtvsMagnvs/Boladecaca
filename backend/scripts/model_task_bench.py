@@ -138,23 +138,24 @@ def _esc_web_info(d: Path):
 
 def _esc_memory(code: str):
     async def verify():
-        """[fix del propio banco] Verificador ASÍNCRONO: la primera versión
-        llamaba a asyncio.run() desde dentro del loop del script y reventaba
-        para TODOS los modelos — un fallo del banco disfrazado de incapacidad
-        del modelo. Ahora `run_scenario` awaitea los verificadores async."""
+        """[fix del propio banco] Verificador ASÍNCRONO y con REINTARDO: la
+        indexación de ChromaDB tras `store()` no es instantánea — verificar en
+        el mismo milisegundo daba falsos negativos (medido: los modelos
+        ejecutaban las 2 tools bien y aun así 'fallaban'). Se reintenta hasta
+        3 veces con 2.5s entre intentos. Se busca en TODOS los tipos activos
+        (los modelos eligen personal/project/conversational indistintamente —
+        eso es gusto, no incapacidad)."""
         from app.memory import memory_router
 
-        # Se busca en TODOS los tipos activos, no solo PERSONAL: los modelos
-        # eligen tipo distinto para el mismo hecho (personal/project/
-        # conversational — comprobado en vivo) y penalizar esa elección medía
-        # gusto, no capacidad. Lo que importa es que el dato quedara guardado y
-        # sea recuperable.
-        # Firma real de MemoryRouter.search (leída del código, no supuesta):
-        # search(query, memory_types=None, top_k=5, filters=None).
-        items = await memory_router.search(
-            f"código del laboratorio de pruebas {code}", top_k=25)
-        return any(code.lower() in (getattr(i, "content", "") or "").lower()
-                   for i in items)
+        for intento in range(3):
+            if intento:
+                await asyncio.sleep(2.5)
+            items = await memory_router.search(
+                f"código del laboratorio de pruebas {code}", top_k=25)
+            if any(code.lower() in (getattr(i, "content", "") or "").lower()
+                   for i in items):
+                return True
+        return False
 
     return (
         f"Guarda en tu memoria este dato: el código del laboratorio de pruebas es {code}. "
@@ -163,13 +164,14 @@ def _esc_memory(code: str):
     )
 
 
-def build_scenarios(model_slug: str) -> list[dict]:
+def build_scenarios(model_slug: str, run_tag: str = "") -> list[dict]:
     base = LAB / model_slug
-    # Código ÚNICO por modelo: con `model_slug[:6]` los cuatro claude_code_*
-    # compartían "AZUL-claude" y el verificador de memoria daba por bueno lo que
-    # había guardado OTRO modelo (falso positivo). Hash corto del slug completo.
+    # Código ÚNICO por modelo Y POR TANDA: por modelo para que uno no valide lo
+    # guardado por otro (pasó con slug[:6] → "AZUL-claude" compartido); por
+    # tanda para que los restos de tandas anteriores en la memoria jamás
+    # produzcan un falso positivo ni compitan en el ranking semántico.
     import hashlib
-    code = f"AZUL-{hashlib.sha1(model_slug.encode()).hexdigest()[:8].upper()}"
+    code = f"AZUL-{hashlib.sha1((model_slug + run_tag).encode()).hexdigest()[:8].upper()}"
     files_create = _esc_files_create(base / "s1")
     files_edit = _esc_files_edit(base / "s2")
     code_write = _esc_code_write(base / "s3")
@@ -178,24 +180,65 @@ def build_scenarios(model_slug: str) -> list[dict]:
     web_info = _esc_web_info(base / "s6")
     memory = _esc_memory(code)
     return [
-        {"id": "files_create", "tag": "files", "tools": ["filesystem"], "spec": files_create},
-        {"id": "files_edit", "tag": "files", "tools": ["filesystem"], "spec": files_edit},
-        {"id": "code_write", "tag": "code", "tools": ["filesystem"], "spec": code_write},
-        {"id": "doc_csv", "tag": "docs", "tools": ["filesystem"], "spec": doc_csv},
-        {"id": "web_read", "tag": "web", "tools": ["browser", "filesystem"], "spec": web_read},
-        {"id": "web_info", "tag": "web", "tools": ["search", "filesystem"], "spec": web_info},
-        {"id": "memory_save", "tag": "memory", "tools": ["memory"], "spec": memory},
+        {"id": "files_create", "tag": "files", "tools": ["filesystem"], "spec": files_create, "dir": base / "s1"},
+        {"id": "files_edit", "tag": "files", "tools": ["filesystem"], "spec": files_edit, "dir": base / "s2"},
+        {"id": "code_write", "tag": "code", "tools": ["filesystem"], "spec": code_write, "dir": base / "s3"},
+        {"id": "doc_csv", "tag": "docs", "tools": ["filesystem"], "spec": doc_csv, "dir": base / "s4"},
+        {"id": "web_read", "tag": "web", "tools": ["browser", "filesystem"], "spec": web_read, "dir": base / "s5"},
+        {"id": "web_info", "tag": "web", "tools": ["search", "filesystem"], "spec": web_info, "dir": base / "s6"},
+        {"id": "memory_save", "tag": "memory", "tools": ["memory"], "spec": memory, "dir": None},
     ]
 
 
 # ---------------------------------------------------------------------------
-async def run_scenario(model_key: str, esc: dict) -> dict:
+# Clasificación de fallos (v2 — petición del usuario: el banco debe decir POR
+# QUÉ, sin excepciones). Un fallo de INFRAESTRUCTURA jamás cuenta como
+# incapacidad del modelo:
+#   quota        límite de uso del proveedor (429) → reintentable
+#   connection   caída de red/Ollama → reintentable
+#   timeout      el escenario agotó su techo duro
+#   no_tools     el modelo respondió pero no logró ejecutar NINGUNA tool
+#                (formato/decisión — esto SÍ es del modelo)
+#   wrong_result ejecutó tools pero el resultado verificado es incorrecto
+#                (esto SÍ es del modelo)
+#   bench_error  excepción del propio banco (culpa nuestra, no del modelo)
+# ---------------------------------------------------------------------------
+_RETRYABLE = ("quota", "connection")
+_MAX_RETRIES = 2          # reintentos extra ante fallos de infraestructura
+_RETRY_BACKOFF_S = 30.0
+
+
+def _classify(err: str, executed: int, verified: bool, timed_out: bool,
+              bench_exc: bool) -> str | None:
+    if verified:
+        return None
+    if bench_exc:
+        return "bench_error"
+    low = (err or "").lower()
+    if "429" in (err or "") or "hit your" in low or "rate limit" in low or "quota" in low:
+        return "quota"
+    if "error connecting" in low or "connection" in low or "getaddrinfo" in low:
+        return "connection"
+    if timed_out:
+        return "timeout"
+    return "wrong_result" if executed > 0 else "no_tools"
+
+
+async def _run_scenario_once(model_key: str, esc: dict) -> dict:
     from app.tie import toolloop
     from app.tools.tool_manager import tool_manager
 
     instruction, setup, verify = esc["spec"]
+    # [v2] LIMPIEZA PREVIA: sin esto, el verificador encontraba archivos de la
+    # tanda ANTERIOR y daba éxitos falsos (medido: "creó" un archivo en 1.1s
+    # con 0 tools). El directorio del escenario nace vacío en cada medición.
+    if esc.get("dir"):
+        import shutil
+        shutil.rmtree(esc["dir"], ignore_errors=True)
     setup()
     t0 = time.monotonic()
+    timed_out = bench_exc = False
+    res = None
     try:
         res = await asyncio.wait_for(
             toolloop.run(
@@ -208,47 +251,75 @@ async def run_scenario(model_key: str, esc: dict) -> dict:
                 pre_approved=True,
                 session_key=f"bench-{model_key}-{esc['id']}",
                 timeout_s=60,
+                # El banco MIDE: salta el filtro de aptitud (si no, un modelo
+                # excluido no podría re-evaluarse jamás). Producción no lo usa.
+                fitness_exempt=True,
             ),
             timeout=_SCENARIO_TIMEOUT_S,
         )
-        executed = sum(1 for c in res.tool_calls if c.get("ok"))
-        denied = sum(1 for c in res.tool_calls if c.get("denied"))
-        out = verify()
-        verified = bool(await out if asyncio.iscoroutine(out) else out)
-        err = (res.error or "")
-        # [honestidad del banco] Un límite de cuota del PROVEEDOR (429) o una
-        # caída de conexión NO son incapacidad del modelo: se marcan
-        # `unavailable` para que no contaminen el % de éxito. Medir mal es peor
-        # que no medir.
-        low = err.lower()
-        unavailable = ("429" in err or "hit your" in low or "rate limit" in low
-                       or "error connecting" in low)
-        return {
-            "ok": verified,                       # la VERIFICACIÓN manda, no res.ok
-            "unavailable": bool(unavailable and not verified),
-            "loop_ok": res.ok,
-            "duration_ms": int((time.monotonic() - t0) * 1000),
-            "iterations": res.iterations,
-            "tools_executed": executed,
-            "tools_denied": denied,
-            "error": err[:200] if not verified else None,
-        }
     except asyncio.TimeoutError:
-        return {"ok": False, "unavailable": False, "loop_ok": False,
-                "duration_ms": int((time.monotonic() - t0) * 1000),
-                "iterations": _MAX_ITERS, "tools_executed": 0, "tools_denied": 0,
-                "error": f"timeout tras {_SCENARIO_TIMEOUT_S}s"}
+        timed_out = True
     except Exception as e:
-        return {"ok": False, "unavailable": False, "loop_ok": False,
-                "duration_ms": int((time.monotonic() - t0) * 1000),
-                "iterations": 0, "tools_executed": 0, "tools_denied": 0,
-                "error": f"{type(e).__name__}: {e}"[:200]}
+        bench_exc = True
+        bench_err = f"{type(e).__name__}: {e}"[:200]
     finally:
         try:
             from app.tools import browser_tool
             await browser_tool.close_session(f"bench-{model_key}-{esc['id']}")
         except Exception:
             pass
+
+    executed = sum(1 for c in (res.tool_calls if res else []) if c.get("ok"))
+    denied = sum(1 for c in (res.tool_calls if res else []) if c.get("denied"))
+    try:
+        out = verify()
+        verified = bool(await out if asyncio.iscoroutine(out) else out)
+    except Exception as e:
+        verified, bench_exc = False, True
+        bench_err = f"verificador roto: {type(e).__name__}: {e}"[:200]
+
+    if bench_exc:
+        err = bench_err
+    elif timed_out:
+        err = f"timeout tras {_SCENARIO_TIMEOUT_S}s"
+    else:
+        err = res.error or ""
+    kind = _classify(err, executed, verified, timed_out, bench_exc)
+    return {
+        "ok": verified,                        # la VERIFICACIÓN manda, no res.ok
+        "failure_kind": kind,                  # None si ok
+        "unavailable": kind in _RETRYABLE,     # compat con la lectura previa
+        "loop_ok": bool(res.ok) if res else False,
+        "duration_ms": int((time.monotonic() - t0) * 1000),
+        "iterations": res.iterations if res else _MAX_ITERS,
+        "tools_executed": executed,
+        "tools_denied": denied,
+        # Rastro compacto de QUÉ hizo (diagnóstico sin releer logs):
+        "tool_calls": [
+            {"t": f"{c.get('tool_id')}.{c.get('action')}",
+             "ok": bool(c.get("ok")), "denied": bool(c.get("denied"))}
+            for c in (res.tool_calls if res else [])
+        ][:12],
+        "error": err[:250] if not verified else None,
+    }
+
+
+async def run_scenario(model_key: str, esc: dict) -> dict:
+    """Corre el escenario con REINTENTOS ante fallos de infraestructura
+    (cuota/conexión): hasta _MAX_RETRIES extra con backoff. El resultado final
+    lleva `attempts`; si tras los reintentos sigue siendo infraestructura,
+    queda `unavailable` (no medible) — jamás como incapacidad del modelo."""
+    result = None
+    for attempt in range(1, _MAX_RETRIES + 2):
+        result = await _run_scenario_once(model_key, esc)
+        result["attempts"] = attempt
+        if result["ok"] or result["failure_kind"] not in _RETRYABLE:
+            return result
+        if attempt <= _MAX_RETRIES:
+            print(f"     · {esc['id']}: {result['failure_kind']} — reintento "
+                  f"{attempt}/{_MAX_RETRIES} en {int(_RETRY_BACKOFF_S)}s", flush=True)
+            await asyncio.sleep(_RETRY_BACKOFF_S)
+    return result
 
 
 def persist(provider: str, model: str, tasks: dict) -> None:
@@ -299,11 +370,17 @@ async def main(only_models: set[str] | None, only_tags: set[str] | None) -> None
     # Rápidos primero (resultados parciales útiles cuanto antes).
     alive.sort(key=lambda r: (micro.measured(r) or {}).get("latency_ms_median") or 10 ** 9)
 
-    print(f"═══ Task-bench: {len(alive)} modelos × escenarios ═══", flush=True)
+    # Etiqueta de tanda: hace únicos los códigos de memoria entre tandas (los
+    # restos de una tanda anterior no pueden dar falsos positivos ni competir
+    # en el ranking). Se pasa por CLI en el resume; default = hoy.
+    import datetime as _dt
+    run_tag = _dt.date.today().isoformat()
+
+    print(f"═══ Task-bench v2: {len(alive)} modelos × escenarios (tanda {run_tag}) ═══", flush=True)
     resumen: dict[str, dict] = {}
     for ref in alive:
         slug = ref.key.replace(":", "_").replace("/", "_").replace(".", "_")[:40]
-        escenarios = [e for e in build_scenarios(slug)
+        escenarios = [e for e in build_scenarios(slug, run_tag)
                       if only_tags is None or e["tag"] in only_tags]
         tasks: dict[str, dict] = {}
         print(f"\n▶ {ref.key}", flush=True)
@@ -311,9 +388,10 @@ async def main(only_models: set[str] | None, only_tags: set[str] | None) -> None
             r = await run_scenario(ref.key, esc)
             tasks[esc["id"]] = r
             mark = "✓" if r["ok"] else ("·" if r.get("unavailable") else "✗")
+            kind = f" [{r['failure_kind']}]" if r.get("failure_kind") else ""
             print(f"   {mark} {esc['id']:14s} {r['duration_ms']/1000:6.1f}s "
-                  f"iters={r['iterations']} tools={r['tools_executed']}"
-                  + (f" — {r['error']}" if r.get("error") else ""), flush=True)
+                  f"iters={r['iterations']} tools={r['tools_executed']}{kind}"
+                  + (f" — {r['error'][:120]}" if r.get("error") else ""), flush=True)
         persist(ref.provider, ref.model, tasks)
         oks = sum(1 for t in tasks.values() if t["ok"])
         na = sum(1 for t in tasks.values() if t.get("unavailable"))

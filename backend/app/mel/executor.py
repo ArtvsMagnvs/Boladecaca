@@ -117,6 +117,28 @@ async def complete(req: ExecutionRequest) -> ExecutionResult:
             error=f"ExplicitModelUnavailable: «{req.model_override}» no está configurado. Disponibles: {opciones}",
         )
 
+    # [2026-07-22, orden del usuario] Ni siquiera un override puede ejecutar un
+    # modelo NO CAPAZ de esta tarea (catálogo o medido por el task-bench):
+    #  - override de TAREA (duro): se le dice claro al usuario, no se sustituye
+    #    en silencio (mismo criterio que ExplicitModelUnavailable).
+    #  - pin de PROYECTO (suave): degrada a la política con log, igual que
+    #    cuando el modelo pineado ya no está configurado.
+    # `fitness_exempt` (append-only): SOLO el banco de medición — sin esta
+    # excepción, un modelo excluido no podría re-medirse nunca.
+    if forced is not None and not req.fitness_exempt:
+        from app.mel.policies import is_capable
+        if not is_capable(forced, req.capability):
+            if hard:
+                return ExecutionResult(
+                    text="", ok=False,
+                    error=(f"ExplicitModelUnfit: «{forced.key}» no puede realizar la tarea "
+                           f"'{req.capability.value}' (no apto por catálogo o por medición). "
+                           f"Elige otro modelo para esto."),
+                )
+            logger.warning(f"[executor] pin de proyecto → «{forced.key}» no es capaz de "
+                           f"{req.capability.value}; degrado a política")
+            forced = None
+
     chain = [forced] if forced else _chain_for(req, available)
     trace = decision.decide(req, chain, breakers.is_closed, forced=forced, forced_origin=origin)
 

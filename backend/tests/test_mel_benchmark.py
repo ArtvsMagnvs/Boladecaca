@@ -187,3 +187,190 @@ def test_recompile_pristine_respeta_las_editadas(_mediciones_fake):
             db.commit()
         finally:
             db.close()
+
+
+# ---------------------------------------------------------------------------
+# [2026-07-22, orden del usuario] EXCLUSIÓN TOTAL de modelos no capaces
+#
+# La regla: un fallo REAL medido en una tarea excluye al modelo de TODAS las
+# posiciones de esa capacidad (ni primario ni respaldos), en TODAS las
+# políticas — incluido Personalizado. Un respaldo que no puede cumplir la
+# tarea no es red de seguridad, es un fallo aplazado.
+# La contra-regla: cuota/conexión/timeout JAMÁS excluyen (no son capacidad),
+# y sin datos v2 no se excluye.
+# ---------------------------------------------------------------------------
+def _persist_tasks(provider: str, model: str, tasks: dict, ok: bool = True):
+    from datetime import datetime
+
+    from app.db.database import SessionLocal
+    from app.mel import benchmark
+    from app.mel.models import MelBenchmark
+
+    db = SessionLocal()
+    try:
+        db.query(MelBenchmark).filter(MelBenchmark.provider == provider,
+                                      MelBenchmark.model == model).delete()
+        db.add(MelBenchmark(provider=provider, model=model, ok=ok,
+                            speed_score=50, quality_score=50, tasks=tasks,
+                            updated_at=datetime.utcnow()))
+        db.commit()
+    finally:
+        db.close()
+    benchmark.invalidate_unfit_cache()
+
+
+@pytest.fixture
+def _limpia_benchmarks():
+    from app.db.database import SessionLocal
+    from app.mel import benchmark
+    from app.mel.models import MelBenchmark
+
+    yield
+    db = SessionLocal()
+    try:
+        db.query(MelBenchmark).filter(MelBenchmark.provider.in_(
+            ["provx", "provy"])).delete(synchronize_session=False)
+        db.commit()
+    finally:
+        db.close()
+    benchmark.invalidate_unfit_cache()
+
+
+def test_fallo_real_medido_excluye_de_todas_las_posiciones(_limpia_benchmarks):
+    """El caso que el usuario señaló: '¿solo no ponerlo de primario? ¿y si el
+    primario falla, ponemos de respaldo uno que NO FUNCIONA?'. Un modelo con
+    fallo real en tareas de tools no aparece en NINGUNA posición de agentic."""
+    from app.mel.policies import _compile_policy, is_capable
+
+    torpe = ModelRef("provx", "torpe", False)
+    bueno = ModelRef("provy", "bueno", False)
+    _persist_tasks("provx", "torpe", {
+        "files_create": {"ok": False, "failure_kind": "wrong_result"},
+        "files_edit": {"ok": True, "failure_kind": None},
+    })
+
+    assert not is_capable(torpe, Capability.AGENTIC)
+    assert is_capable(bueno, Capability.AGENTIC)      # sin datos → no se excluye
+
+    for pol in (PolicyName.QUALITY, PolicyName.ECONOMY, PolicyName.SPEED, PolicyName.BALANCED):
+        chains = _compile_policy(pol, [torpe, bueno])
+        assert "provx:torpe" not in chains["agentic"], (
+            f"{pol.value}: el no-capaz apareció en la cadena de agentic")
+        assert "provx:torpe" in chains["chat"], (
+            f"{pol.value}: la exclusión es POR CAPACIDAD, no global")
+
+
+def test_cuota_conexion_timeout_jamas_excluyen(_limpia_benchmarks):
+    """fable/sonnet/haiku fallaron por cuota 429 — eso NO es incapacidad. Si
+    esto excluyera, conectar Claude con la cuota agotada lo inutilizaría."""
+    from app.mel.policies import is_capable
+
+    ref = ModelRef("provx", "torpe", False)
+    _persist_tasks("provx", "torpe", {
+        "files_create": {"ok": False, "failure_kind": "quota"},
+        "files_edit": {"ok": False, "failure_kind": "connection"},
+        "web_read": {"ok": False, "failure_kind": "timeout"},
+        "doc_csv": {"ok": False, "failure_kind": "bench_error"},
+    })
+    assert is_capable(ref, Capability.AGENTIC)
+
+
+def test_datos_v1_sin_failure_kind_no_excluyen(_limpia_benchmarks):
+    """La primera tanda (contaminada por cuota, sin clasificación) jamás puede
+    usarse para excluir: solo los datos v2 con failure_kind cuentan."""
+    from app.mel.policies import is_capable
+
+    ref = ModelRef("provx", "torpe", False)
+    _persist_tasks("provx", "torpe", {
+        "files_create": {"ok": False, "error": "429 ..."},   # formato v1
+    })
+    assert is_capable(ref, Capability.AGENTIC)
+
+
+def test_memory_save_no_computa_para_agentic(_limpia_benchmarks):
+    """La fiabilidad guardar→recuperable es deuda de PLATAFORMA (roadmap
+    pre-1.0): un fallo ahí no descalifica al modelo en agentic."""
+    from app.mel.policies import is_capable
+
+    ref = ModelRef("provx", "torpe", False)
+    _persist_tasks("provx", "torpe", {
+        "memory_save": {"ok": False, "failure_kind": "wrong_result"},
+        "files_create": {"ok": True, "failure_kind": None},
+    })
+    assert is_capable(ref, Capability.AGENTIC)
+
+
+def test_code_write_real_excluye_solo_de_code(_limpia_benchmarks):
+    from app.mel.policies import is_capable
+
+    ref = ModelRef("provx", "torpe", False)
+    _persist_tasks("provx", "torpe", {
+        "code_write": {"ok": False, "failure_kind": "no_tools"},
+        "files_create": {"ok": True, "failure_kind": None},
+    })
+    assert not is_capable(ref, Capability.CODE)
+    assert is_capable(ref, Capability.AGENTIC)
+
+
+def test_modelo_muerto_medido_no_es_capaz_de_nada(_limpia_benchmarks):
+    from app.mel.policies import is_capable
+
+    ref = ModelRef("provx", "torpe", False)
+    _persist_tasks("provx", "torpe", {}, ok=False)   # ni una sonda respondió
+    for cap in (Capability.CHAT, Capability.AGENTIC, Capability.REASON):
+        assert not is_capable(ref, cap)
+
+
+def test_set_primary_y_set_slot_rechazan_no_capaz_medido(_limpia_benchmarks):
+    """Ni siquiera en Personalizado: NUNCA es posible asignar un modelo a una
+    tarea que no puede realizar (orden del usuario, 2026-07-22)."""
+    from app.mel.policies import policy_store
+
+    torpe = ModelRef("provx", "torpe", False)
+    bueno = ModelRef("provy", "bueno", True)
+    _persist_tasks("provx", "torpe", {
+        "files_create": {"ok": False, "failure_kind": "wrong_result"},
+    })
+    policy_store.ensure_compiled([torpe, bueno])
+
+    assert policy_store.set_primary("custom", "agentic", "provx:torpe",
+                                    [torpe, bueno]) is False
+    assert policy_store.set_slot("custom", "agentic", 1, "provx:torpe",
+                                 [torpe, bueno]) is False
+    # En una capacidad donde SÍ es capaz, se acepta con normalidad.
+    assert policy_store.set_primary("custom", "chat", "provx:torpe",
+                                    [torpe, bueno]) is True
+
+
+def test_cadena_persistida_con_no_capaz_se_filtra_en_ejecucion(_limpia_benchmarks):
+    """Retroactivo: una política guardada ANTES de conocerse la medición no
+    puede seguir ejecutando el modelo no capaz — el filtro corre en
+    active_chain/chain_for_named, sin tocar lo persistido."""
+    from app.db.database import SessionLocal
+    from app.mel.models import MelPolicy
+    from app.mel.policies import policy_store
+
+    torpe = ModelRef("provx", "torpe", False)
+    bueno = ModelRef("provy", "bueno", True)
+    _persist_tasks("provx", "torpe", {
+        "files_create": {"ok": False, "failure_kind": "wrong_result"},
+    })
+    db = SessionLocal()
+    try:
+        db.query(MelPolicy).delete()
+        db.add(MelPolicy(name="custom", version=1, pristine=False, is_active=True,
+                         compiled={"agentic": ["provx:torpe", "provy:bueno"]}))
+        db.commit()
+    finally:
+        db.close()
+    try:
+        chain = policy_store.active_chain(Capability.AGENTIC, [torpe, bueno])
+        assert [r.key for r in chain] == ["provy:bueno"], (
+            "el no-capaz persistido debe filtrarse en ejecución")
+    finally:
+        db = SessionLocal()
+        try:
+            db.query(MelPolicy).delete()
+            db.commit()
+        finally:
+            db.close()

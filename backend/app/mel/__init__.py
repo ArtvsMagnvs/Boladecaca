@@ -77,14 +77,18 @@ def list_models() -> list[dict]:
     cadenas de política (petición del usuario, 2026-07-18)."""
     from app.ai.catalog import get_provider_info
     from app.mel.catalog import unfit_for
+    from app.mel import benchmark as _benchmark
     out = []
     for ref in _registry.list_available():
         label = get_provider_info(ref.provider).get("label", ref.provider)
+        # [2026-07-21] capacidades para las que NO es apto (la UI lo excluye/
+        # marca; p.ej. Claude CLI en chat/classify). [2026-07-22] Se suma la
+        # no-aptitud MEDIDA por el task-bench: un modelo con fallo real medido
+        # no es asignable a esa tarea NI SIQUIERA en Personalizado.
+        unfit = {c.value for c in unfit_for(ref.provider)} | _benchmark.measured_unfit(ref)
         out.append({"key": ref.key, "provider": ref.provider, "model": ref.model,
                     "is_local": ref.is_local, "label": label,
-                    # [2026-07-21] capacidades para las que NO es apto (la UI
-                    # lo excluye/marca; p.ej. Claude CLI en chat/classify).
-                    "unfit": [c.value for c in unfit_for(ref.provider)]})
+                    "unfit": sorted(unfit)})
     return out
 
 

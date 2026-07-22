@@ -110,6 +110,13 @@ class ExecutionRequest:
                                             # dejar que un modelo se autoevalúe cuando
                                             # hay alternativa (extensión append-only,
                                             # nunca cambia una firma existente)
+    # [2026-07-22, append-only] SOLO para el banco de medición
+    # (scripts/model_task_bench.py): salta el filtro de aptitud del executor
+    # para poder MEDIR un modelo en una capacidad donde hoy está excluido —
+    # medir es el punto; sin esto la exclusión impediría re-evaluar jamás.
+    # NINGÚN camino de producción lo activa (default False = comportamiento
+    # idéntico al de siempre, bit a bit).
+    fitness_exempt: bool = False
 
 
 @dataclass(frozen=True)

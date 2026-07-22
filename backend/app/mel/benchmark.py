@@ -189,6 +189,7 @@ def _persist(result: dict) -> None:
             db.commit()
         finally:
             db.close()
+        invalidate_unfit_cache()   # los datos nuevos deben verse al instante
     except Exception as e:
         logger.error(f"[benchmark] persistencia falló (no crítico): {type(e).__name__}: {e}")
 
@@ -238,6 +239,84 @@ def summary() -> list[dict]:
             db.close()
     except Exception:
         return []
+
+
+# ---------------------------------------------------------------------------
+# [2026-07-22, orden del usuario] NO-APTITUD MEDIDA por capacidad.
+#
+# LA REGLA: un modelo con fallo REAL medido en una tarea no puede aparecer en
+# NINGUNA posición de la cadena de esa capacidad — ni primario ni respaldo.
+# Un respaldo que no puede cumplir la tarea no es una red de seguridad, es un
+# fallo aplazado.
+#
+# LA CONTRA-REGLA (igual de importante): solo excluye la EVIDENCIA FIABLE.
+#   - quota (429), connection, timeout, bench_error → NO son señal de
+#     capacidad; jamás excluyen (el catch-up re-mide cuando se pueda).
+#   - Sin datos v2 (sin `failure_kind`) → no se excluye: los datos de la
+#     primera tanda estaban contaminados por cuota y no distinguen causas.
+#   - `memory_save` NO computa para la aptitud agentic mientras la fiabilidad
+#     guardar→recuperable del MOS esté marcada como problema de PLATAFORMA
+#     (roadmap pre-1.0): los modelos ejecutan la tool bien y el dato tarda en
+#     indexarse — penalizarlos mediría nuestra deuda, no su capacidad.
+# ---------------------------------------------------------------------------
+# Escenarios cuyo fallo REAL invalida la capacidad AGENTIC (uso de tools):
+_AGENTIC_CORE = ("files_create", "files_edit", "doc_csv", "web_read", "web_info")
+# Fallos que SÍ son del modelo (con el modelo respondiendo y las tools sanas):
+_REAL_FAILURES = frozenset({"no_tools", "wrong_result"})
+
+_unfit_cache: dict = {"at": 0.0, "map": {}}
+_UNFIT_CACHE_TTL_S = 60.0
+
+
+def measured_unfit_map() -> dict[str, set]:
+    """{model_key → set de capability values NO aptas según medición}. Cacheado
+    60s (la compilación consulta muchas veces). Nunca lanza: sin BD → {}."""
+    now = time.monotonic()
+    if now - _unfit_cache["at"] < _UNFIT_CACHE_TTL_S:
+        return _unfit_cache["map"]
+    out: dict[str, set] = {}
+    try:
+        from app.db.database import SessionLocal
+        from app.mel.models import MelBenchmark
+
+        db = SessionLocal()
+        try:
+            for row in db.query(MelBenchmark).all():
+                key = f"{row.provider}:{row.model}"
+                unfit: set = set()
+                # Muerto medido (ni una sonda respondió): no apto para NADA.
+                if row.ok is False:
+                    from app.mel.contracts import Capability
+                    unfit = {c.value for c in Capability}
+                else:
+                    tasks = row.tasks or {}
+                    v2 = {k: v for k, v in tasks.items()
+                          if isinstance(v, dict) and "failure_kind" in v}
+                    real_fail = {k for k, v in v2.items()
+                                 if not v.get("ok") and v.get("failure_kind") in _REAL_FAILURES}
+                    if any(k in real_fail for k in _AGENTIC_CORE):
+                        unfit.add("agentic")
+                    if "code_write" in real_fail:
+                        unfit.add("code")
+                if unfit:
+                    out[key] = unfit
+        finally:
+            db.close()
+    except Exception as e:
+        logger.error(f"[benchmark] measured_unfit_map falló (no excluye nada): {e!r}")
+        out = {}
+    _unfit_cache["at"] = now
+    _unfit_cache["map"] = out
+    return out
+
+
+def measured_unfit(ref: ModelRef) -> set:
+    """Las capacidades NO aptas medidas de UN modelo (set de values)."""
+    return measured_unfit_map().get(ref.key, set())
+
+
+def invalidate_unfit_cache() -> None:
+    _unfit_cache["at"] = 0.0
 
 
 # ---------------------------------------------------------------------------

@@ -109,6 +109,23 @@ def _extract_json(text: str) -> Optional[dict]:
     válido jamás se toca."""
     if not text:
         return None
+    # [2026-07-22, task-bench] ARRAY de tool calls: MiniMax-M2.7 emite a veces
+    # `[{"tool": A}, {"tool": B}]` — varios objetos de golpe. La heurística
+    # primer-{...último-} produce `{A}, {B}` (inválido) y la iteración se
+    # perdía; medido en el banco: TODOS los code_write de M2.7/M2.7-highspeed
+    # caían por esto. Se parsea el array y se toma el PRIMER dict útil (el
+    # bucle es elegir-UNA-acción-observar: ejecutar la primera y devolver la
+    # observación es exactamente el contrato).
+    arr_start = text.find("[")
+    obj_start = text.find("{")
+    if arr_start != -1 and (obj_start == -1 or arr_start < obj_start):
+        arr_end = text.rfind("]")
+        if arr_end > arr_start:
+            data = _try_parse(text[arr_start:arr_end + 1])
+            if isinstance(data, list):
+                for el in data:
+                    if isinstance(el, dict) and ("tool" in el or "answer" in el):
+                        return el
     # bloque ```json ... ``` o ``` ... ```
     fence = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", text, re.DOTALL)
     candidate = fence.group(1) if fence else None
@@ -120,22 +137,27 @@ def _extract_json(text: str) -> Optional[dict]:
             candidate = text[start:end + 1]
     if not candidate:
         return None
+    out = _try_parse(candidate)
+    return out if isinstance(out, dict) else None
+
+
+def _try_parse(candidate: str):
+    """json.loads estricto y, si falla, la reparación de claves desnudas. None
+    si ni así. (Compartido por el camino objeto y el camino array.)"""
     try:
         return json.loads(candidate)
     except (json.JSONDecodeError, ValueError):
-        return _parse_lax_json(candidate)
+        return _parse_lax_json_any(candidate)
 
 
-def _parse_lax_json(candidate: str) -> Optional[dict]:
-    """Segundo intento: pone comillas a las claves desnudas (`{tool:` →
-    `{"tool":`) y reintenta. Devuelve None si ni así parsea o si el resultado
-    no es un objeto."""
-    repaired = re.sub(r'([{,]\s*)([A-Za-z_][A-Za-z0-9_]*)(\s*:)', r'\1"\2"\3', candidate)
+def _parse_lax_json_any(candidate: str):
+    """Reparación de claves desnudas (`{tool:` → `{"tool":`) admitiendo
+    también arrays como raíz. None si ni así parsea."""
+    repaired = re.sub(r'([{,\[]\s*)([A-Za-z_][A-Za-z0-9_]*)(\s*:)', r'\1"\2"\3', candidate)
     if repaired == candidate:
         return None
     try:
-        out = json.loads(repaired)
-        return out if isinstance(out, dict) else None
+        return json.loads(repaired)
     except (json.JSONDecodeError, ValueError):
         return None
 

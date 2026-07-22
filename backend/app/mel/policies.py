@@ -66,6 +66,21 @@ def _bench(r: ModelRef) -> Optional[dict]:
     return benchmark.measured(r)
 
 
+def is_capable(r: ModelRef, cap: Capability) -> bool:
+    """[2026-07-22, orden del usuario] EL punto único de aptitud. False si el
+    modelo NO puede cumplir esta capacidad, por CUALQUIERA de las dos vías:
+      - `unfit_for(provider)` — regla de catálogo (p.ej. Claude CLI en chat).
+      - `measured_unfit` — fallo REAL medido por el task-bench (benchmark.py).
+    Un modelo no capaz no puede aparecer en NINGUNA posición de la cadena de
+    esa capacidad, en NINGUNA política — un respaldo que no puede cumplir la
+    tarea no es una red de seguridad, es un fallo aplazado. La evidencia no
+    fiable (cuota/conexión/timeout) NUNCA excluye (ver benchmark.py)."""
+    if cap in unfit_for(r.provider):
+        return False
+    from app.mel import benchmark
+    return cap.value not in benchmark.measured_unfit(r)
+
+
 def _order_speed(available: list[ModelRef], cap: Capability) -> list[ModelRef]:
     """El más RÁPIDO medido primero. Un modelo medido como muerto (ok=False —
     p.ej. un id que la API rechaza con 400) queda EXCLUIDO del pool principal;
@@ -116,7 +131,9 @@ def _compile_policy(name: PolicyName, available: list[ModelRef]) -> dict[str, li
             pool = list(available)
         # [2026-07-21] Fuera los NO APTOS para esta capacidad (p.ej. Claude CLI
         # jamás compila en chat/classify/agentic — fallo real de producción).
-        pool = [r for r in pool if cap not in unfit_for(r.provider)]
+        # [2026-07-22] `is_capable` suma la NO-APTITUD MEDIDA (task-bench): un
+        # modelo con fallo real medido no entra en NINGUNA posición.
+        pool = [r for r in pool if is_capable(r, cap)]
 
         if not pool:
             compiled[cap.value] = []   # Offline sin local → degradada en esta capacidad
@@ -133,8 +150,11 @@ def _compile_policy(name: PolicyName, available: list[ModelRef]) -> dict[str, li
 
         # Economy/Quality terminan SIEMPRE en el mejor local disponible como red
         # de seguridad (doc 19 §4), si no está ya en los primeros puestos.
+        # [2026-07-22] Desde el POOL filtrado, no desde `available`: un local
+        # medido como no-apto tampoco vale como red de seguridad — un respaldo
+        # que no puede cumplir la tarea es un fallo aplazado.
         if name != PolicyName.OFFLINE:
-            best_local = next((r for r in _order_quality(available, cap) if r.is_local), None)
+            best_local = next((r for r in _order_quality(pool, cap) if r.is_local), None)
             chain = ordered[:_MAX_CHAIN]
             if best_local and best_local.key not in [r.key for r in chain]:
                 chain = chain[:_MAX_CHAIN - 1] + [best_local]
@@ -170,7 +190,7 @@ def _order_for(name: str, available: list[ModelRef], cap: Capability) -> list[Mo
     lo comparte la compilación automática y la edición manual (para que los
     respaldos de un modelo elegido a mano sigan el mismo criterio de esa política).
     [2026-07-21] Excluye los NO APTOS para la capacidad (unfit_for)."""
-    available = [r for r in available if cap not in unfit_for(r.provider)]
+    available = [r for r in available if is_capable(r, cap)]
     if name == PolicyName.OFFLINE.value:
         return _order_quality([r for r in available if r.is_local], cap)
     if name == PolicyName.ECONOMY.value:
@@ -295,7 +315,7 @@ class PolicyStore:
                 # editada ANTES de existir la regla (p.ej. Claude CLI en chat)
                 # se sanea aquí, en ejecución, sin tocar lo persistido.
                 chain = [by_key[k] for k in keys
-                         if k in by_key and capability not in unfit_for(by_key[k].provider)]
+                         if k in by_key and is_capable(by_key[k], capability)]
                 if chain:
                     return chain
         except Exception as e:
@@ -330,7 +350,7 @@ class PolicyStore:
                 # chain_for_named — la EJECUCIÓN jamás usa un modelo no apto
                 # para la capacidad, sin importar qué diga la política guardada.
                 chain = [by_key[k] for k in keys
-                         if k in by_key and capability not in unfit_for(by_key[k].provider)]
+                         if k in by_key and is_capable(by_key[k], capability)]
                 if chain:
                     return chain
         except Exception as e:
@@ -401,7 +421,8 @@ class PolicyStore:
         except ValueError:
             return False
         # [2026-07-21] Un modelo NO APTO para la capacidad no puede elegirse.
-        if model_key is not None and cap in unfit_for(by_key[model_key].provider):
+        # [2026-07-22] Tampoco con no-aptitud MEDIDA — ni en Personalizado.
+        if model_key is not None and not is_capable(by_key[model_key], cap):
             return False
 
         db = SessionLocal()
@@ -459,7 +480,8 @@ class PolicyStore:
         if position == _MAX_CHAIN - 1 and not by_key[model_key].is_local:
             return False   # el último eslabón es SIEMPRE local
         # [2026-07-21] Ni siquiera como respaldo: no-apto es no-apto.
-        if cap in unfit_for(by_key[model_key].provider):
+        # [2026-07-22] Incluida la no-aptitud MEDIDA (task-bench).
+        if not is_capable(by_key[model_key], cap):
             return False
 
         db = SessionLocal()

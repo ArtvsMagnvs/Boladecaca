@@ -293,6 +293,7 @@ async def run(
     authority: Optional["Authority"] = None,
     pre_approved: bool = False,
     session_key: Optional[str] = None,
+    fitness_exempt: bool = False,
 ) -> ToolLoopResult:
     """Ejecuta el ciclo elegir→ejecutar→observar.
 
@@ -348,6 +349,10 @@ async def run(
             model_override=_tool_model,
             policy_override=_tool_policy,
             context_tags={"project_id": project_id} if project_id else {},
+            # [2026-07-22] Solo el banco de medición lo activa (scripts/
+            # model_task_bench.py): permite MEDIR un modelo en una capacidad
+            # donde hoy esté excluido. Producción siempre False.
+            fitness_exempt=fitness_exempt,
         ))
         _ms = int((asyncio.get_event_loop().time() - _t_iter) * 1000)
         logger.info(f"[tie-perfil] toolloop paso {iteration}: modelo {_ms}ms"

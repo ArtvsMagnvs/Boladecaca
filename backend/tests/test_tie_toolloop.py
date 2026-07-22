@@ -436,3 +436,38 @@ def test_extract_json_sigue_devolviendo_none_con_basura():
 
     assert _extract_json("esto no tiene json ninguno") is None
     assert _extract_json("{esto tampoco es reparable") is None
+
+
+def test_extract_json_tolera_array_de_tool_calls_formato_minimax_m27():
+    """Payload REAL del task-bench (2026-07-22): MiniMax-M2.7 emite a veces un
+    ARRAY de tool calls. Antes: iteración perdida (TODOS los code_write de
+    M2.7/M2.7-highspeed cayeron por esto). Ahora: se toma la PRIMERA acción —
+    el contrato del bucle es elegir-una-observar-repetir."""
+    from app.tie.intents import _extract_json
+
+    raw = ('[{"tool": {"tool_id": "filesystem", "action": "write_file", '
+           '"params": {"path": "x/pares.py", "content": "print(2)"}}}, '
+           '{"tool": {"tool_id": "filesystem", "action": "read_file", '
+           '"params": {"path": "x/pares.py"}}}]')
+    data = _extract_json(raw)
+    assert data is not None, "el array de tool calls debe parsear"
+    assert data["tool"]["action"] == "write_file", "debe tomar la PRIMERA acción"
+
+
+def test_extract_json_array_con_claves_desnudas_tambien():
+    from app.tie.intents import _extract_json
+
+    raw = '[{tool: {"tool_id": "browser", "action": "open_url", "params": {}}}]'
+    data = _extract_json(raw)
+    assert data and data["tool"]["tool_id"] == "browser"
+
+
+def test_extract_json_no_confunde_el_envoltorio_tool_call_con_array():
+    """[TOOL_CALL] empieza por '[' pero NO es un array: el camino array debe
+    fallar limpio y caer al camino objeto de siempre (regresión del fix
+    anterior — los dos vicios de MiniMax conviven)."""
+    from app.tie.intents import _extract_json
+
+    raw = '[TOOL_CALL]\n{tool: {"tool_id": "search", "action": "search_web", "params": {}}}\n[/TOOL_CALL]'
+    data = _extract_json(raw)
+    assert data and data["tool"]["action"] == "search_web"
