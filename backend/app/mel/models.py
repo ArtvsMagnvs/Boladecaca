@@ -125,4 +125,7 @@ class MelBenchmark(Base):
     speed_score = Column(Integer, default=0)         # 0-100 (de la latencia medida)
     quality_score = Column(Integer, default=0)       # 0-100 (% sondas verificables)
     probes = Column(JSON)                            # detalle por sonda
+    # [2026-07-22, migración 28] Tareas agentic REALES verificadas por escenario
+    # ({id: {ok, duration_ms, iterations, ...}}) — scripts/model_task_bench.py.
+    tasks = Column(JSON)
     updated_at = Column(DateTime, default=datetime.utcnow)
