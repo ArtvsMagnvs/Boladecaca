@@ -19,22 +19,34 @@
 from typing import Dict, Any, List, Optional
 
 from .base import BaseTool
-from app.memory import MemoryType, memory_router
+from app.memory import MemoryType, memory_router, ACTIVE_TYPES
+
+# [2026-07-23] Fiabilidad de memoria (CRITICO pre-1.0): `MemoryType` tiene 5
+# tipos ACTIVOS (buscados por defecto) + 6 RESERVADOS (mem_knowledge, mem_tool,
+# mem_working...) que solo existen como esqueleto para fases futuras y que
+# escriben sistemas internos concretos (el AE escribe mem_automation/mem_error,
+# decision_service escribe mem_decision). Antes, `list_actions()` anunciaba los
+# 11 por igual y `_parse_memory_type` los aceptaba todos: un modelo que guardaba
+# un hecho con `memory_type="mem_knowledge"` (semanticamente tentador) lo hacia
+# con exito, pero ese item queda INVISIBLE para cualquier busqueda por defecto
+# (`search()`/`context()` filtran a `ACTIVE_TYPES` si no se especifica lo
+# contrario) -- el dato "se guarda pero no se recupera", diagnosticado en
+# testeos reales del task-bench. Fix: la tool de memoria de proposito general
+# (la que usan agentes/toolloop) solo conoce los tipos activos.
+_ACTIVE_VALUES = {t.value for t in ACTIVE_TYPES}
 
 
 def _parse_memory_type(value: str) -> Optional[MemoryType]:
     """Acepta tanto el valor completo ('mem_personal') como el nombre corto
-    ('personal') -- mas comodo para quien llama a la tool."""
+    ('personal') -- mas comodo para quien llama a la tool. Solo devuelve un
+    tipo ACTIVO: los reservados (mem_knowledge, mem_tool...) son invisibles
+    para la busqueda por defecto y no son responsabilidad de esta tool."""
     if not value:
         return None
-    try:
-        return MemoryType(value)
-    except ValueError:
-        pass
-    try:
-        return MemoryType(f"mem_{value}")
-    except ValueError:
-        return None
+    for candidate in (value, f"mem_{value}"):
+        if candidate in _ACTIVE_VALUES:
+            return MemoryType(candidate)
+    return None
 
 
 class MemoryTool(BaseTool):
@@ -64,7 +76,10 @@ class MemoryTool(BaseTool):
             return {"success": False, "result": None, "error": f"{type(e).__name__}: {e}"}
 
     def list_actions(self) -> List[Dict[str, Any]]:
-        types = ", ".join(t.value for t in MemoryType)
+        # Solo se anuncian los tipos ACTIVOS: son los unicos que la busqueda
+        # por defecto recorre. Los reservados (mem_knowledge, mem_tool...) no
+        # se ofrecen aqui a proposito -- ver nota junto a _ACTIVE_VALUES.
+        types = ", ".join(sorted(_ACTIVE_VALUES))
         return [
             {
                 "id": "search_memory",
@@ -72,7 +87,7 @@ class MemoryTool(BaseTool):
                 "requires_confirmation": False,
                 "params": {
                     "query": "string",
-                    "memory_types": f"lista opcional de: {types} (default: todos los activos)",
+                    "memory_types": f"lista opcional de: {types} (default: todos)",
                     "top_k": "int opcional (default 5)",
                 },
             },

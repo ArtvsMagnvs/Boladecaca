@@ -26,6 +26,7 @@ from .interfaces import (
 # --- Puntos de acceso publicos (singletons) ---
 from .router import MemoryRouter, memory_router
 from .stores.skill_store import LocalSkillStore, skill_store
+from .stores.local_store import ACTIVE_TYPES
 
 # --- Vault (V0.85, doc 07 §9): espejo Markdown, solo escritura ---
 from .vault import write_daily_summary as vault_write_daily_summary
@@ -80,6 +81,7 @@ __all__ = [
     "memory_router",
     "LocalSkillStore",
     "skill_store",
+    "ACTIVE_TYPES",
     # vault
     "vault_write_daily_summary",
     "vault_write_decision",

@@ -75,6 +75,37 @@ class _Session:
 _sessions: Dict[str, _Session] = {}
 
 
+def _browser_mode() -> str:
+    """[2026-07-23] Modo elegido por el usuario en Ajustes → Conexiones →
+    Búsqueda web: "aithera" (perfil dedicado, persistente, recomendado) o
+    "user" (el Chrome HABITUAL del usuario, su sesión real). Valor en claro en
+    Config (no es un secreto). Nunca lanza: sin BD legible → "aithera"
+    (el modo seguro por defecto)."""
+    try:
+        from app.db.database import SessionLocal
+        from app.db.models import Config
+
+        db = SessionLocal()
+        try:
+            row = db.query(Config).filter(Config.key == "browser_mode").first()
+            return row.value if row and row.value in ("aithera", "user") else "aithera"
+        finally:
+            db.close()
+    except Exception:
+        return "aithera"
+
+
+def _user_chrome_profile_dir() -> Optional[str]:
+    """La carpeta "User Data" REAL de Chrome del usuario (Windows). None si no
+    se puede localizar — entonces no se intenta el modo "user" a ciegas."""
+    import os
+    base = os.getenv("LOCALAPPDATA")
+    if not base:
+        return None
+    path = os.path.join(base, "Google", "Chrome", "User Data")
+    return path if os.path.isdir(path) else None
+
+
 async def _ensure_browser():
     global _playwright, _browser, _persistent_context
     if _browser is not None or _persistent_context is not None:
@@ -92,15 +123,46 @@ async def _ensure_browser():
     # que poder mirarlo y tomar el control. Ademas headless se bloquea como
     # sospechoso en muchos sitios (documentado en CLAUDE.md §8).
     headless = settings.BROWSER_HEADLESS
-    profile_dir = settings.BROWSER_PROFILE_DIR
     # Sin la barra "Chrome esta siendo controlado por software automatizado":
     # es el navegador DEL USUARIO trabajando para el, no un banco de pruebas.
     launch_kwargs = dict(headless=headless, ignore_default_args=["--enable-automation"])
 
-    # Cadena de degradacion honesta (cada nivel se loguea):
+    mode = _browser_mode()
+
+    # [2026-07-23] Modo "user": el Chrome HABITUAL del usuario, con su sesion
+    # real. NUNCA se sustituye en silencio por el perfil dedicado si esto
+    # falla (mismo criterio que ExplicitModelUnfit/ExplicitModelUnavailable
+    # del MEL: el usuario eligio esto A PROPOSITO, si no funciona se le dice
+    # POR QUE, no se le cambia el navegador sin avisar). La causa mas comun de
+    # fallo es que su Chrome ya este abierto -- Chrome bloquea un segundo
+    # proceso sobre el mismo perfil.
+    if mode == "user":
+        user_dir = _user_chrome_profile_dir()
+        if user_dir is None:
+            raise RuntimeError(
+                "No se encontró tu perfil de Chrome en este equipo. Cambia a "
+                "'Chrome dedicado de Aithera' en Ajustes → Conexiones → Búsqueda web."
+            )
+        try:
+            _persistent_context = await _playwright.chromium.launch_persistent_context(
+                user_dir, channel="chrome", **launch_kwargs,
+            )
+            return
+        except Exception as e:
+            raise RuntimeError(
+                "No se pudo abrir tu Chrome habitual con tu sesión real. Lo más probable "
+                "es que ya lo tengas abierto — Chrome no permite que dos procesos usen el "
+                "mismo perfil a la vez. Ciérralo del todo y reintenta, o cambia a "
+                "'Chrome dedicado de Aithera' en Ajustes → Conexiones → Búsqueda web. "
+                f"({type(e).__name__}: {e})"
+            ) from e
+
+    # Modo "aithera" (por defecto): cadena de degradacion honesta (cada nivel
+    # se intenta en orden, el fallo de uno pasa al siguiente):
     #   1) Chrome REAL + perfil persistente de Aithera   ← lo pedido
     #   2) Chromium bundled + perfil persistente         (no hay Chrome)
     #   3) Chromium efimero (modo antiguo)               (perfil bloqueado)
+    profile_dir = settings.BROWSER_PROFILE_DIR
     for channel in ([settings.BROWSER_CHANNEL] if settings.BROWSER_CHANNEL != "chromium" else []) + [None]:
         try:
             import os

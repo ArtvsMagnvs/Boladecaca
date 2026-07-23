@@ -159,6 +159,43 @@ async def test_memory_type_invalido_rechazado():
     assert "memory_type invalido" in r["error"]
 
 
+@pytest.mark.anyio
+async def test_memory_type_reservado_rechazado_no_invisible():
+    """[2026-07-23] Fiabilidad de memoria (CRITICO pre-1.0): `MemoryType` tiene
+    tipos RESERVADOS (mem_knowledge, mem_tool, mem_working...) que no son
+    busqueda por defecto (`ACTIVE_TYPES`). Antes de este fix, un modelo podia
+    guardar con `memory_type="mem_knowledge"` (o el atajo corto "knowledge")
+    con EXITO -- el dato quedaba invisible para cualquier busqueda que no
+    pidiera ese tipo exacto, dando la falsa sensacion de "se guarda pero no se
+    recupera". Ahora la tool de proposito general solo conoce los 5 activos:
+    un tipo reservado se rechaza CLARO en el momento de guardar, en vez de
+    fallar en silencio horas/dias despues en una busqueda futura."""
+    from app.memory import MemoryType
+
+    assert MemoryType("mem_knowledge") is not None  # existe de verdad en el enum...
+
+    for reserved in ("mem_knowledge", "knowledge", "mem_tool", "mem_working"):
+        r = await tool_manager.execute("memory", "save_memory", {
+            "content": "no deberia guardarse", "memory_type": reserved, "source": "test",
+        })
+        assert not r["success"], f"{reserved!r} se guardo pero es un tipo reservado (invisible por defecto)"
+        assert "memory_type invalido" in r["error"]
+
+    r = await tool_manager.execute("memory", "delete_memory", {
+        "memory_type": "mem_knowledge", "filters": {"source": "test"},
+    })
+    assert not r["success"]
+
+    # Los 5 activos anunciados a los modelos NUNCA incluyen un reservado.
+    from app.tools.memory_tool import MemoryTool
+    actions = MemoryTool().list_actions()
+    save_types_desc = next(a for a in actions if a["id"] == "save_memory")["params"]["memory_type"]
+    assert "mem_knowledge" not in save_types_desc
+    assert "mem_tool" not in save_types_desc
+    assert "mem_working" not in save_types_desc
+    assert "mem_personal" in save_types_desc
+
+
 # ---------------------------------------------------------------------------
 # Model Tool (Ollama mockeado -- no depende de tener Ollama arrancado en CI)
 # ---------------------------------------------------------------------------
