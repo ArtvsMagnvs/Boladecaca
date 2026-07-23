@@ -1,5 +1,10 @@
-# Voice Synthesis API Endpoints - Supports both ElevenLabs, eSpeak NG, and
+# Voice Synthesis API Endpoints - ElevenLabs, EdgeTTS, Kokoro, y
 # faster-whisper STT (V0.83, Paso 4).
+#
+# [2026-07-23, A·VOZ-1] eSpeak NG RETIRADO (doc 32). EdgeTTS es la base
+# garantizada (gratis, sin key, sin instalar nada) desde V3 (voice_defaults);
+# eSpeak solo aportaba un fallback offline de peor calidad que ya no hace
+# falta. Ver PLAN_MAESTRO_2026/32_VOZ_CONVERSACION_Y_NAVEGACION_WEB.md.
 from fastapi import APIRouter, HTTPException, UploadFile, File
 from fastapi.responses import Response, JSONResponse
 from pydantic import BaseModel
@@ -19,13 +24,6 @@ from app.voice.elevenlabs_voice import (
 import asyncio
 from app.voice.kokoro_voice import kokoro_client, KOKORO_VOICES
 from app.voice.edge_tts_voice import edgetts_client, EDGE_VOICES
-from app.voice.espeak_voice import (
-    espeak_client,
-    synthesize_offline,
-    get_espeak_voices,
-    is_espeak_available,
-    ESPEAK_VOICES
-)
 from app.voice.whisper_stt import transcribe, get_status as stt_status
 from app.voice.text_clean import clean_for_speech
 
@@ -36,25 +34,28 @@ class SynthesizeRequest(BaseModel):
     text: str
     voice_id: Optional[str] = "XB0fDUnXU5powGXd8GSW"  # Default: Spanish female
     use_stream: Optional[bool] = True
-    # V0.83: "espeak" fuerza el fallback offline (lo usa la conversación por voz
-    # cuando ElevenLabs falla, para que Aithera siga hablando).
     provider: Optional[str] = None
+
+
+def _edge_voice_or_default(voice_id: Optional[str]) -> str:
+    """`voice_id` por defecto de `SynthesizeRequest` es un ID de ElevenLabs
+    ("XB0fDUnXU5powGXd8GSW") — pasarlo tal cual a EdgeTTS rompería la síntesis
+    justo en el caso por defecto (sin ElevenLabs configurado, sin provider
+    explícito). Solo se reusa `voice_id` si es un nombre de voz de Edge real."""
+    if voice_id and any(v["id"] == voice_id for v in EDGE_VOICES):
+        return voice_id
+    return "es-ES-ElviraNeural"
 
 
 @router.get("/voices")
 def list_voices() -> JSONResponse:
-    """
-    Get list of all available professional voices.
-    Includes both ElevenLabs (if configured) and eSpeak NG (always available).
-    """
+    """Get list of all available professional voices (ElevenLabs, si está
+    configurado)."""
     voices = []
 
     # Add ElevenLabs voices if configured
     if elevenlabs_client.api_key:
         voices.extend(elevenlabs_client.get_professional_voices())
-
-    # Add eSpeak NG voices (always available as fallback)
-    voices.extend(get_espeak_voices())
 
     return JSONResponse(content=voices)
 
@@ -94,36 +95,27 @@ def voice_status() -> JSONResponse:
     """
     Check voice synthesis status.
 
-    FIX V0.3 (Fase 1 Estabilizacion Hub V03 - P2): devuelve la estructura
-    PLANA { configured, voices_count, message } en lugar de la version
-    anidada previa { elevenlabs: {...}, espeak: {...} }. Esto alinea el
-    contrato HTTP con lo que el cliente TypeScript (api.ts) ya consume
-    desde V0.2 para la barra de estado inferior del Hub.
+    FIX V0.3 (Fase 1 Estabilizacion Hub V03 - P2): estructura PLANA
+    { configured, voices_count, message } — contrato que el cliente
+    TypeScript (api.ts) consume desde V0.2 para la barra de estado del Hub.
 
-    Mantenemos la informacion completa de ambos proveedores (ElevenLabs
-    + eSpeak) en claves adicionales para no perder capacidad de
-    diagnostico, pero la lectura principal del estado es la clave
-    plana de mas arriba.
+    [2026-07-23, A·VOZ-1] eSpeak retirado: EdgeTTS es el fallback SIEMPRE
+    disponible (gratis, sin key, sin instalar nada) — a diferencia de eSpeak,
+    no depende de un binario que el usuario tuviera que instalar aparte, así
+    que "configured" es efectivamente siempre True.
     """
     elevenlabs_status = bool(elevenlabs_client.api_key)
-    espeak_status = is_espeak_available()
 
-    # Estado principal plano (contrato publico)
     if elevenlabs_status:
         configured = True
         voices_count = len(PROFESSIONAL_VOICES)
         source = "elevenlabs"
         message = "ElevenLabs configurado"
-    elif espeak_status:
-        configured = True
-        voices_count = len(ESPEAK_VOICES)
-        source = "espeak"
-        message = "eSpeak NG disponible (fallback offline)"
     else:
-        configured = False
-        voices_count = 0
-        source = "none"
-        message = "Sin motor de voz configurado"
+        configured = True
+        voices_count = len(EDGE_VOICES)
+        source = "edgetts"
+        message = "EdgeTTS disponible (gratis, sin configuración)"
 
     return JSONResponse(content={
         # Contrato principal (estructura plana) - V0.3
@@ -131,20 +123,15 @@ def voice_status() -> JSONResponse:
         "voices_count": voices_count,
         "message": message,
         "source": source,
-        # Detalle adicional de ambos proveedores (no rompe compatibilidad
-        # con clientes que ya lean las claves anidadas)
+        # Detalle adicional (no rompe compatibilidad con clientes que ya
+        # lean la clave anidada "elevenlabs")
         "elevenlabs": {
             "configured": elevenlabs_status,
             "voices_count": len(PROFESSIONAL_VOICES),
             "message": "ElevenLabs ready" if elevenlabs_status else "Set ELEVENLABS_API_KEY for AI voices"
         },
-        "espeak": {
-            "available": espeak_status,
-            "voices_count": len(ESPEAK_VOICES),
-            "message": "eSpeak NG ready" if espeak_status else "Install eSpeak NG for offline voices"
-        },
-        "fallback": "espeak" if espeak_status else "none",
-        "recommended": "elevenlabs" if elevenlabs_status else ("espeak" if espeak_status else "none")
+        "fallback": "edgetts",
+        "recommended": "elevenlabs" if elevenlabs_status else "edgetts",
     })
 
 
@@ -152,11 +139,11 @@ def voice_status() -> JSONResponse:
 async def synthesize(request: SynthesizeRequest) -> Response:
     """
     Synthesize speech from text.
-    
+
     Priority:
     1. ElevenLabs (if API key configured)
-    2. eSpeak NG (offline fallback)
-    
+    2. EdgeTTS (free fallback, no key required)
+
     Returns MP3/WAV audio data.
     """
     if not request.text.strip():
@@ -207,8 +194,8 @@ async def synthesize(request: SynthesizeRequest) -> Response:
             detail=edgetts_client.last_error or "EdgeTTS no devolvio audio.",
         )
 
-    # Try ElevenLabs first — salvo que se fuerce eSpeak con provider="espeak".
-    if elevenlabs_client.api_key and request.provider != "espeak":
+    # Try ElevenLabs first (si está configurado).
+    if elevenlabs_client.api_key:
         try:
             audio_data = await elevenlabs_synthesize(
                 text=text,
@@ -240,40 +227,23 @@ async def synthesize(request: SynthesizeRequest) -> Response:
                 detail=f"ElevenLabs fallo: {type(e).__name__}: {e}",
             )
 
-    # Si llegamos aqui, ElevenLabs no estaba configurado. Fallback a eSpeak.
-    if is_espeak_available():
-        # Map ElevenLabs voice IDs to eSpeak voice keys
-        espeak_voice_map = {
-            "XB0fDUnXU5powGXd8GSW": "es_female",  # Spanish
-            "VRgBjM5LWMVLQdJBADuO": "es_male",
-            "EXAVITQu4vr4xnSDxMaL": "en_female",  # English
-            "21m00Tcm4TlvDq8ikWAM": "en_us_female",
-            "TxGEqnHWrfWFTfGW9Uj1": "en_male",
-            "CYw3kZ02XxukaQ43fj0C": "en_us_male",
-            "M0XMcJl3aMSh0bL3V0tX": "ja_female",  # Japanese
-            "Xb7hH8MSDhxAmzVbBvjN": "ja_male",
-            "GMwe3DBXQwAEkbqiQDhK": "fr_male",  # French
-            "TxhqxN7eKXvBdrCDK0Kz": "zh_female",  # Chinese
-        }
+    # Si llegamos aqui, ElevenLabs no estaba configurado (o se pidió otro
+    # proveedor no manejado arriba). Fallback a EdgeTTS — gratis, sin key,
+    # siempre disponible (A·VOZ-1: reemplaza al antiguo fallback eSpeak).
+    audio_data = await edgetts_client.synthesize_mp3(
+        text, _edge_voice_or_default(request.voice_id)
+    )
+    if audio_data:
+        return Response(
+            content=audio_data,
+            media_type="audio/mpeg",
+            headers={"Content-Disposition": 'inline; filename="speech.mp3"'}
+        )
 
-        espeak_key = espeak_voice_map.get(request.voice_id, "es_female")
-        # FIX (audit): synthesize_offline() llama a subprocess.run() de forma
-        # SINCRONA. Sin to_thread, bloquea el event loop entero (todas las
-        # demas peticiones concurrentes: chat, email, agentes...) durante la
-        # sintesis — justo en el camino que se activa cuando ElevenLabs falla.
-        audio_data = await asyncio.to_thread(synthesize_offline, text, espeak_key)
-
-        if audio_data:
-            return Response(
-                content=audio_data,
-                media_type="audio/wav",
-                headers={"Content-Disposition": 'inline; filename="speech.wav"'}
-            )
-    
     # No synthesis available
     raise HTTPException(
         status_code=503,
-        detail="No voice synthesis available. Install eSpeak NG or configure ElevenLabs."
+        detail=edgetts_client.last_error or "No voice synthesis available.",
     )
 
 
@@ -330,8 +300,8 @@ async def synthesize_base64(request: SynthesizeRequest) -> JSONResponse:
             detail=edgetts_client.last_error or "EdgeTTS no devolvio audio.",
         )
 
-    # Try ElevenLabs first — salvo que se fuerce eSpeak con provider="espeak".
-    if elevenlabs_client.api_key and request.provider != "espeak":
+    # Try ElevenLabs first (si está configurado).
+    if elevenlabs_client.api_key:
         try:
             audio_data = await elevenlabs_synthesize(
                 text=text,
@@ -356,54 +326,23 @@ async def synthesize_base64(request: SynthesizeRequest) -> JSONResponse:
                 detail=f"ElevenLabs fallo: {type(e).__name__}: {e}",
             )
 
-    # Fallback a eSpeak NG
-    if is_espeak_available():
-        espeak_voice_map = {
-            "XB0fDUnXU5powGXd8GSW": "es_female",
-            "21m00Tcm4TlvDq8ikWAM": "en_us_female",
-            "M0XMcJl3aMSh0bL3V0tX": "ja_female",
-        }
-        espeak_key = espeak_voice_map.get(request.voice_id, "es_female")
-        # FIX (audit): idem /synthesize — evitar bloquear el event loop.
-        audio_data = await asyncio.to_thread(synthesize_offline, text, espeak_key)
+    # Fallback a EdgeTTS (A·VOZ-1: reemplaza al antiguo fallback eSpeak).
+    audio_data = await edgetts_client.synthesize_mp3(
+        text, _edge_voice_or_default(request.voice_id)
+    )
+    if audio_data:
+        audio_b64 = base64.b64encode(audio_data).decode("utf-8")
+        return JSONResponse(content={
+            "audio": f"data:audio/mpeg;base64,{audio_b64}",
+            "voice_id": request.voice_id,
+            "format": "mp3",
+            "source": "edgetts",
+        })
 
-        if audio_data:
-            audio_b64 = base64.b64encode(audio_data).decode("utf-8")
-            return JSONResponse(content={
-                "audio": f"data:audio/wav;base64,{audio_b64}",
-                "voice_id": request.voice_id,
-                "format": "wav",
-                "source": "espeak_ng"
-            })
-    
     raise HTTPException(
         status_code=503,
-        detail="No voice synthesis available"
+        detail=edgetts_client.last_error or "No voice synthesis available",
     )
-
-
-@router.get("/espeak/install")
-def espeak_install_guide() -> JSONResponse:
-    """Get installation guide for eSpeak NG."""
-    return JSONResponse(content={
-        "name": "eSpeak NG",
-        "description": "Software libre de síntesis de voz",
-        "download_url": "https://github.com/espeak-ng/espeak-ng/releases",
-        "installer": "espeak-ng-x64.msi",
-        "portable": "espeak-ng-x64.zip",
-        "languages": [
-            "Spanish (es)", "English (en)", "French (fr)",
-            "German (de)", "Italian (it)", "Portuguese (pt)",
-            "Japanese (ja)", "Chinese (zh)", "Russian (ru)",
-            "And 100+ more languages"
-        ],
-        "instructions": [
-            "1. Download eSpeak NG from GitHub",
-            "2. Install or extract to a folder",
-            "3. Add the folder to PATH, or",
-            "4. Place in 'voces/espeak-ng' subfolder of Aithera backend"
-        ]
-    })
 
 
 # --------------------------------------------------------------------------
@@ -591,7 +530,7 @@ def elevenlabs_delete_config():
 
 # ----------------------------------------------------------------------
 # V0.83: proveedores Kokoro (TTS local en proceso) y EdgeTTS (Microsoft,
-# gratis). Se añaden junto a ElevenLabs y eSpeak; no sustituyen a ninguno.
+# gratis). Se añaden junto a ElevenLabs; no lo sustituyen.
 # ----------------------------------------------------------------------
 
 # [2026-07-21] Instalación de Kokoro con SEGUIMIENTO REAL. El endpoint anterior

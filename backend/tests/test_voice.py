@@ -24,7 +24,11 @@ def test_voice_status_contrato_plano(client):
     assert isinstance(data["configured"], bool)
     assert isinstance(data["voices_count"], int)
     # detalle por proveedor sin romper compatibilidad
-    assert "elevenlabs" in data and "espeak" in data
+    assert "elevenlabs" in data
+    # [A·VOZ-1] eSpeak retirado: EdgeTTS es el fallback siempre disponible.
+    assert "espeak" not in data
+    assert data["fallback"] == "edgetts"
+    assert data["configured"] is True   # EdgeTTS no depende de ninguna key
 
 
 # ----------------------------------------------------------------------
@@ -86,3 +90,56 @@ def test_transcribe_rechaza_content_type_no_audio(client):
     files = {"audio": ("nota.txt", io.BytesIO(b"no soy audio"), "text/plain")}
     r = client.post("/api/voice/transcribe", files=files)
     assert r.status_code == 400
+
+
+# ----------------------------------------------------------------------
+# [A·VOZ-1] eSpeak retirado — endpoints borrados, fallback a EdgeTTS
+# ----------------------------------------------------------------------
+
+def test_espeak_install_endpoint_no_existe(client):
+    r = client.get("/api/voice/espeak/install")
+    assert r.status_code == 404
+
+
+def test_synthesize_sin_elevenlabs_cae_a_edgetts_no_al_voice_id_de_elevenlabs(client, monkeypatch):
+    """Sin ElevenLabs configurado y sin provider explícito, el voice_id por
+    defecto de SynthesizeRequest es un ID de ElevenLabs ("XB0fD..."). Ese ID no
+    es una voz de EdgeTTS válida — el fallback debe usar la voz por defecto de
+    EdgeTTS, no pasarle el ID de ElevenLabs tal cual (rompería la síntesis)."""
+    import app.api.endpoints.voice as voice_ep
+
+    monkeypatch.setattr(type(voice_ep.elevenlabs_client), "api_key", property(lambda self: ""))
+
+    seen = {}
+
+    async def _fake_synth(text, voice):
+        seen["voice"] = voice
+        return b"fake-mp3-bytes"
+
+    monkeypatch.setattr(voice_ep.edgetts_client, "synthesize_mp3", _fake_synth)
+
+    r = client.post("/api/voice/synthesize", json={"text": "hola"})
+    assert r.status_code == 200
+    assert seen["voice"] == "es-ES-ElviraNeural"   # NUNCA el ID de ElevenLabs
+    assert seen["voice"] != "XB0fDUnXU5powGXd8GSW"
+
+
+def test_synthesize_respeta_voice_id_de_edge_valido(client, monkeypatch):
+    """Si el voice_id SÍ es una voz de Edge real, se respeta (no se pisa)."""
+    import app.api.endpoints.voice as voice_ep
+
+    monkeypatch.setattr(type(voice_ep.elevenlabs_client), "api_key", property(lambda self: ""))
+
+    seen = {}
+
+    async def _fake_synth(text, voice):
+        seen["voice"] = voice
+        return b"fake-mp3-bytes"
+
+    monkeypatch.setattr(voice_ep.edgetts_client, "synthesize_mp3", _fake_synth)
+
+    r = client.post("/api/voice/synthesize", json={
+        "text": "hola", "voice_id": "en-US-GuyNeural",
+    })
+    assert r.status_code == 200
+    assert seen["voice"] == "en-US-GuyNeural"
