@@ -1780,7 +1780,7 @@ Exception handler global en `main.py:113` que captura y loguea todo.
 
 ---
 
-## 8. ToolManager — 14 herramientas registradas (91 acciones)
+## 8. ToolManager — 15 herramientas registradas (96 acciones)
 
 El paquete `app.tools` se importa en `main.py:15` como efecto secundario
 para auto-registrar las herramientas en el `ToolManager`. Sin este import,
@@ -1804,15 +1804,19 @@ registrar una tool nueva la hace asignable sin tocar el frontend.
 | `search` | `search_tool.py` | search_web/news/images/videos — Brave Search API primero, SerpAPI como respaldo (Ajustes → Búsqueda web) | V1.0 |
 | `browser` | `browser_tool.py` | Playwright/Chromium real: open_url, new_tab, close_tab, google_search, click, type, scroll, wait_for_element, download_file, upload_file, screenshot, get_html, get_text | V1.0 |
 | `desktop` | `desktop_tool.py` | click, double_click, type, hotkey, move_mouse (SIEMPRE confirmación) + screenshot, ocr, find_text_on_screen (OCR nativo de Windows vía winocr) | V1.0 |
+| `document` | `document_tool.py` | read_pdf (texto, rango de páginas), read_docx, read_xlsx (lectura, sin confirmación) + write_docx (bloques: heading/paragraph/table), write_xlsx (filas/hojas) (escritura, confirmación → `filesystem.write`). pypdf/python-docx/openpyxl lazy. Solo dentro de HOME. #218 | V1.0 |
 | — | `base.py` | Interfaz `BaseTool` que implementan todas | V0.4 |
 | — | `tool_manager.py` | Registro centralizado + whitelist por agente + timeout duro + log de auditoría | V0.4 |
 
 **Dependencias de las tools de V1.0**: `psutil` (process/model), `playwright`
 (browser — requiere además `playwright install chromium` UNA vez, ~300MB fuera
-de pip), `pyautogui` + `winocr` (desktop). Playwright y pyautogui/winocr se
-importan de forma **LAZY** a propósito: importarlos a nivel de módulo añadía
-~0.44 s al arranque de `app.main` (medido) porque el ToolManager registra todas
-las tools al importar, aunque nadie use nunca esas tools.
+de pip), `pyautogui` + `winocr` (desktop), `pypdf`+`python-docx`+`openpyxl`
+(document, #218 — Python puro, sin binarios ni modelos que descargar).
+Playwright, pyautogui/winocr y las 3 de document se importan de forma **LAZY**
+a propósito: importarlos a nivel de módulo añadía coste al arranque de `app.main`
+(medido ~0.44 s solo con pyautogui) porque el ToolManager registra todas las
+tools al importar, aunque nadie use nunca esas tools. Verificado con document:
+`import app.tools` NO carga pypdf/docx/openpyxl.
 
 **Elección de OCR (V1.0)**: `winocr` (motor nativo de Windows) en vez de
 `pytesseract` (exige instalar el binario Tesseract aparte, un instalador de
@@ -1853,6 +1857,28 @@ con `Ctrl+A`/`Ctrl+C` se comporta de forma anómala — reproducido igual con 3
 mecanismos de inyección independientes (pyautogui, librería `keyboard`,
 SendInput con scancodes físicos), lo que descarta un fallo de la tool; otras
 combinaciones (`Ctrl+Z`, teclas sueltas) funcionan bien.
+
+**[2026-07-23] `document_tool` — documentos de oficina reales (#218)**: cerraba
+un hueco de capacidad básico (Aithera no podía leer un PDF ni entregar un
+XLSX/DOCX de verdad). 15.ª tool, 5 acciones: `read_pdf` (texto, rango de
+páginas opcional), `read_docx`, `read_xlsx` (lectura, sin confirmación) +
+`write_docx` (bloques heading/paragraph/table o `content` plano) y `write_xlsx`
+(filas simples o varias hojas) (escritura → confirmación, mapeada a
+`filesystem.write` en el catálogo de permisos). Alcance HONESTO: PDF solo
+LECTURA (generar PDF es reportlab/weasyprint, mucho más pesado y menos
+necesario, fuera de alcance); un PDF escaneado no tiene texto que extraer → el
+resultado lo avisa y sugiere OCR (`desktop_tool`/winocr). Librerías `pypdf` +
+`python-docx` + `openpyxl` (Python PURO, sin binarios ni modelos que descargar —
+misma disciplina que se evitó con pytesseract/easyocr), importadas de forma
+LAZY (verificado: `import app.tools` no las carga). Reusa EXACTAMENTE la
+validación de paths de `filesystem_tool` (solo HOME, sin traversal). Con límites
+(25MB por archivo, 200 páginas, 500k chars, 5000 filas/hoja) para no volcar un
+libro entero al contexto del LLM. Frase curada en `capabilities_map` (el chat
+sabe presentarla). Tests: `test_document_tool.py` (16 — ciclos completos
+escribir→leer de XLSX y DOCX, extracción de texto de un PDF hecho a mano,
+aviso honesto sin texto, seguridad de paths, confirmación por acción,
+helper de rango de páginas). Suite: **886 passed**. Verificado en vivo contra
+las librerías reales (round-trips) y leyendo un PDF real del usuario.
 
 **Validaciones del ExecutionEngine** (en `tool_manager.py`):
 1. La tool debe estar en el registro

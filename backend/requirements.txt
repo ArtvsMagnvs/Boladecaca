@@ -104,6 +104,19 @@ pyautogui==0.9.54
 # cualquier Windows 10/11 sin instalar nada mas.
 winocr==0.0.15
 
+# --- Documentos de oficina (V1.0 Tools, #218) ---
+# Leer PDF (pypdf) + leer/escribir DOCX (python-docx) y XLSX (openpyxl). Los
+# tres son Python PURO, sin binarios de sistema ni modelos que descargar
+# (misma disciplina que se evito con pytesseract/easyocr): instalan y funcionan
+# en cualquier equipo con pip. Se importan de forma LAZY dentro de document_tool
+# (igual que Playwright/pyautogui) para no cargar lxml/pypdf en cada arranque
+# del backend cuando nadie use documentos. pypdf extrae TEXTO de PDFs de texto;
+# un PDF escaneado (solo imagen) no tiene texto que extraer -> eso es OCR
+# (desktop_tool/winocr), un camino distinto.
+pypdf==6.14.2
+python-docx==1.2.0
+openpyxl==3.1.5
+
 # --- Planificador de jobs (V0.9 Automation A2a) ---
 # APScheduler: el planificador unico del backend. Absorbe los jobs asyncio de
 # V0.85 (ingesta, resumen nocturno) + el nuevo lifecycle del MOS. 3.x (linea

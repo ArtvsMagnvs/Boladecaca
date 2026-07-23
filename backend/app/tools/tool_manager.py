@@ -66,6 +66,7 @@ class ToolManager:
         from .search_tool import SearchTool
         from .browser_tool import BrowserTool
         from .desktop_tool import DesktopTool
+        from .document_tool import DocumentTool
         from .aithera_tool import AitheraTool
 
         self.register(FilesystemTool())
@@ -82,6 +83,7 @@ class ToolManager:
         self.register(SearchTool())
         self.register(BrowserTool())
         self.register(DesktopTool())
+        self.register(DocumentTool())
         self.register(AitheraTool())
 
     def register(self, tool: BaseTool) -> None:

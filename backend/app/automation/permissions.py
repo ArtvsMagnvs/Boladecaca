@@ -186,6 +186,7 @@ _TOOL_PERMISSION: dict[str, str] = {
     "shell": "shell.run",
     "powershell": "shell.run",
     "filesystem": "filesystem.write",
+    "document": "filesystem.write",   # write_docx/write_xlsx crean archivos en HOME
     "git": "git.write",
     "aithera": "workspace.write",
     "telegram": "telegram.send",

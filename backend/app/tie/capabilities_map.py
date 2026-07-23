@@ -71,6 +71,7 @@ _TOOL_BLURBS: dict[str, str] = {
     "model": "gestionar los modelos de IA que tienes instalados en local",
     "memory": "buscar y guardar cosas en tu memoria — lo que ya sabe de ti y tus proyectos",
     "secrets": "guardar contraseñas y claves de forma segura para usarlas cuando haga falta",
+    "document": "leer PDF y crear o leer documentos de Word (.docx) y hojas de Excel (.xlsx)",
     "aithera": "gestionar tus proyectos, tareas, agentes y automatizaciones por ti",
 }
 
@@ -79,7 +80,7 @@ _TOOL_BLURBS: dict[str, str] = {
 _CATEGORIES: list[tuple[str, tuple[str, ...]]] = [
     ("comunicarme y organizarte", ("email", "calendar")),
     ("moverme por internet", ("browser", "search", "download")),
-    ("tu ordenador", ("filesystem", "shell", "powershell", "git", "process", "desktop")),
+    ("tu ordenador", ("filesystem", "shell", "powershell", "git", "process", "desktop", "document")),
     ("mi propia inteligencia", ("model", "memory", "secrets")),
     ("organizar tu trabajo", ("aithera",)),
 ]
