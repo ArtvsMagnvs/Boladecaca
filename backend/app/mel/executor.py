@@ -25,7 +25,7 @@ from app.mel.contracts import (
     ServedBy,
     Usage,
 )
-from app.mel.fallback import FailureAction, breakers, classify_failure
+from app.mel.fallback import FailureAction, REQUEST_FAULT_REASONS, breakers, classify_failure
 from app.mel.policies import policy_store
 from app.mel.repetition import RepetitionGuard
 from app.mel.contracts import PolicyName
@@ -160,6 +160,15 @@ async def complete(req: ExecutionRequest) -> ExecutionResult:
     # exigió una sonda en vivo que un log con el error crudo habría evitado.
     last_ref: Optional[ModelRef] = None
     tried: list[str] = []
+    # [2026-07-23, #213] STOP con EVIDENCIA, no con un solo 4xx. Antes,
+    # cualquier "request_invalid" cortaba la cadena entera — y el caso real de
+    # producción (MiniMax-M3-highspeed devolviendo 400 "invalid model", un
+    # fallo de ESE modelo) dejó al usuario sin respuesta con fallbacks sanos
+    # disponibles. Ahora solo se corta cuando ≥2 proveedores DISTINTOS
+    # coinciden en un fallo de la familia request (REQUEST_FAULT_REASONS):
+    # dos APIs independientes rechazando el mismo request sí prueban que el
+    # problema es el request. `bad_model` nunca cuenta (config por-modelo).
+    request_fault_providers: set[str] = set()
     for ref in chain:
         if attempts >= _MAX_HOPS:
             break
@@ -183,8 +192,10 @@ async def complete(req: ExecutionRequest) -> ExecutionResult:
         last_error, last_reason, last_ref = err, reason, ref
         tried.append(ref.key)
         breakers.record_failure(ref.provider, reason)
-        if reason == "request_invalid":
-            break   # fallo del request: rotar no ayuda (doc 19 §8.1)
+        if reason in REQUEST_FAULT_REASONS:
+            request_fault_providers.add(ref.provider)
+            if len(request_fault_providers) >= 2:
+                break   # evidencia: es el request, rotar más es quemar llamadas
 
     latency = int((time.monotonic() - t0) * 1000)
     _record_async(req, last_ref, ok=False, latency_ms=latency, fallback_reason=last_reason,

@@ -92,12 +92,53 @@ def test_breaker_no_abre_por_auth_ni_quota():
 # Clasificación de fallos
 # ---------------------------------------------------------------------------
 def test_classify_failure():
-    assert classify_failure(detail="invalid request: prompt too long")[0] == FailureAction.STOP
+    # [#213] La familia request ya NO devuelve STOP: classify es stateless y no
+    # puede saber si rotar ayudaría — el corte con evidencia lo aplica el
+    # executor (2 proveedores distintos). "prompt too long" es límite POR
+    # MODELO: otro con ventana mayor puede servir.
+    assert classify_failure(detail="invalid request: prompt too long") == (FailureAction.NEXT, "context_length")
     assert classify_failure(detail="connection timeout")[0] == FailureAction.NEXT
     assert classify_failure(detail="429 rate limit")[1] == "quota"
     assert classify_failure(detail="401 unauthorized")[1] == "auth"
     import httpx
     assert classify_failure(exc=httpx.ConnectError("boom"))[0] == FailureAction.NEXT
+
+
+def test_classify_failure_subclasifica_la_familia_request():
+    """[#213] El cajón único "request_invalid → STOP" era demasiado ancho: el
+    caso real de producción (MiniMax-M3-highspeed, 400 "invalid model") era un
+    fallo de ESE modelo y el STOP dejó al usuario sin respuesta con fallbacks
+    sanos. Ahora se sub-clasifica y todo es NEXT."""
+    from app.mel.fallback import REQUEST_FAULT_REASONS
+
+    # bad_model: modelo inexistente EN ESE proveedor → rotar ayuda seguro.
+    assert classify_failure(detail="400 Bad Request (invalid model)") == (FailureAction.NEXT, "bad_model")
+    assert classify_failure(detail="model not found: gpt-9")[1] == "bad_model"
+    # bad_model NO forma parte de la familia que corta la cadena.
+    assert "bad_model" not in REQUEST_FAULT_REASONS
+
+    # context_length: límite por-modelo.
+    assert classify_failure(detail="context_length_exceeded")[1] == "context_length"
+    assert "context_length" in REQUEST_FAULT_REASONS
+
+    # content_policy: la moderación varía por proveedor (un local no modera).
+    assert classify_failure(detail="flagged by content policy")[1] == "content_policy"
+    assert "content_policy" in REQUEST_FAULT_REASONS
+
+    # genérico: 4xx de validación sin señal más específica.
+    assert classify_failure(detail="invalid request")[1] == "request_invalid"
+    assert "request_invalid" in REQUEST_FAULT_REASONS
+
+    # nada de la familia request devuelve STOP ya.
+    for d in ("invalid model x", "context length exceeded", "content policy", "400 bad request"):
+        assert classify_failure(detail=d)[0] == FailureAction.NEXT
+
+
+def test_classify_failure_400_dentro_de_otro_numero_no_es_request_invalid():
+    """[#213] La marca "400" iba PRIMERO y se colaba dentro de otros números:
+    "timeout after 2400ms" se clasificaba como request_invalid (y con el diseño
+    viejo, cortaba la cadena). Ahora el cajón genérico va el ÚLTIMO."""
+    assert classify_failure(detail="timeout after 2400ms") == (FailureAction.NEXT, "transient")
 
 
 # ---------------------------------------------------------------------------
@@ -230,7 +271,9 @@ async def test_fallo_registra_el_modelo_que_fallo_y_el_error_crudo(monkeypatch):
         "el evento de fallo debe identificar al candidato que falló, no None:None"
     assert "400 Bad Request" in ev["detail"]["error"], \
         "el detail debe llevar el texto CRUDO del proveedor, no solo la razón clasificada"
-    assert ev["detail"]["fallback_reason"] == "request_invalid"
+    # [#213] "invalid model" ahora se sub-clasifica como bad_model (más preciso
+    # que el genérico request_invalid de antes) — la telemetría gana señal.
+    assert ev["detail"]["fallback_reason"] == "bad_model"
 
 
 @pytest.mark.anyio
@@ -294,3 +337,129 @@ async def test_override_a_modelo_no_capaz_falla_claro_salvo_fitness_exempt(monke
                            model_override="ollama:llama3", fitness_exempt=True)
     res2 = await executor.complete(req2)
     assert res2.ok, "el banco (fitness_exempt) debe poder medir al excluido"
+
+
+# ---------------------------------------------------------------------------
+# [#213] STOP-vs-NEXT refinado: el corte de cadena exige EVIDENCIA
+# (≥2 proveedores DISTINTOS con fallo de la familia request), nunca un solo 4xx.
+# ---------------------------------------------------------------------------
+def _fixed_chain(monkeypatch, chain):
+    """Controla la composición exacta de la cadena (sin depender de cómo
+    compile la política activa sobre `available`)."""
+    monkeypatch.setattr(executor, "_chain_for", lambda req, av: chain)
+
+
+@pytest.mark.anyio
+async def test_bad_model_del_primario_rota_y_el_fallback_responde(monkeypatch):
+    """EL caso de producción (2026-07-21): MiniMax-M3-highspeed devolvía 400
+    "invalid model" — un fallo de ESE modelo — y el STOP viejo cortaba la
+    cadena entera: fallo total para el usuario con fallbacks sanos disponibles.
+    Ahora bad_model rota y el secundario sirve la respuesta."""
+    chain = [ModelRef("minimax", "MiniMax-M3-highspeed", False),
+             ModelRef("ollama", "llama3", True)]
+
+    def responder(ref):
+        if ref.provider == "minimax":
+            return {"error": True, "response": "invalid request: 400 Bad Request (invalid model)"}
+        return {"response": "servido por el fallback", "tokens": 3}
+
+    _fake_registry(monkeypatch, chain, responder)
+    _fixed_chain(monkeypatch, chain)
+
+    res = await executor.complete(ExecutionRequest(capability=Capability.CHAT, prompt="x"))
+    assert res.ok and "fallback" in res.text
+    assert res.served_by.provider == "ollama"
+    assert res.served_by.fallbacks_used == 1
+
+
+@pytest.mark.anyio
+async def test_dos_proveedores_distintos_con_fallo_de_request_cortan_la_cadena(monkeypatch):
+    """Dos APIs INDEPENDIENTES rechazando el mismo request sí es evidencia de
+    que el problema es el request: el tercer candidato no se quema."""
+    chain = [ModelRef("ollama", "llama3", True),
+             ModelRef("anthropic", "claude-sonnet-5", False),
+             ModelRef("openai", "gpt-5.1", False)]
+    llamados: list[str] = []
+
+    def responder(ref):
+        llamados.append(ref.provider)
+        return {"error": True, "response": "invalid request"}
+
+    _fake_registry(monkeypatch, chain, responder)
+    _fixed_chain(monkeypatch, chain)
+
+    res = await executor.complete(ExecutionRequest(capability=Capability.CHAT, prompt="x"))
+    assert not res.ok
+    assert llamados == ["ollama", "anthropic"], \
+        f"con 2 proveedores coincidiendo, el 3.º no debe intentarse: {llamados}"
+
+
+@pytest.mark.anyio
+async def test_fallo_de_request_repetido_del_mismo_proveedor_no_es_evidencia(monkeypatch):
+    """Dos modelos del MISMO proveedor rechazando puede ser un bug del formato
+    de payload de ESE adapter (R6.5a: cada proveedor tiene el suyo) — no prueba
+    nada sobre el request. El tercero (proveedor distinto) sí se intenta."""
+    chain = [ModelRef("minimax", "MiniMax-M2.7", False),
+             ModelRef("minimax", "MiniMax-M3", False),
+             ModelRef("ollama", "llama3", True)]
+
+    def responder(ref):
+        if ref.provider == "minimax":
+            return {"error": True, "response": "invalid request"}
+        return {"response": "el local responde", "tokens": 2}
+
+    _fake_registry(monkeypatch, chain, responder)
+    _fixed_chain(monkeypatch, chain)
+
+    res = await executor.complete(ExecutionRequest(capability=Capability.CHAT, prompt="x"))
+    assert res.ok and "local" in res.text
+
+
+@pytest.mark.anyio
+async def test_bad_model_nunca_corta_la_cadena(monkeypatch):
+    """bad_model es config POR MODELO (dos entradas mal escritas en la cadena
+    no dicen nada de la tercera) — no cuenta para el corte con evidencia."""
+    chain = [ModelRef("minimax", "modelo-que-no-existe", False),
+             ModelRef("anthropic", "otro-inexistente", False),
+             ModelRef("ollama", "llama3", True)]
+
+    def responder(ref):
+        if ref.provider != "ollama":
+            return {"error": True, "response": f"model not found: {ref.model}"}
+        return {"response": "el tercero responde", "tokens": 2}
+
+    _fake_registry(monkeypatch, chain, responder)
+    _fixed_chain(monkeypatch, chain)
+
+    res = await executor.complete(ExecutionRequest(capability=Capability.CHAT, prompt="x"))
+    assert res.ok and "tercero" in res.text
+
+
+@pytest.mark.anyio
+async def test_context_length_rota_a_un_modelo_con_ventana_mayor(monkeypatch):
+    """El límite de contexto es POR MODELO: un prompt que no cabe en uno puede
+    caber en otro con ventana mayor. Con el diseño viejo ("context length" ∈
+    request fault → STOP), esto era fallo total."""
+    chain = [ModelRef("ollama", "llama3", True),
+             ModelRef("anthropic", "claude-sonnet-5", False)]
+
+    def responder(ref):
+        if ref.provider == "ollama":
+            return {"error": True, "response": "context_length_exceeded: input is too long"}
+        return {"response": "cabe en la ventana grande", "tokens": 5}
+
+    _fake_registry(monkeypatch, chain, responder)
+    _fixed_chain(monkeypatch, chain)
+
+    res = await executor.complete(ExecutionRequest(capability=Capability.CHAT, prompt="x"))
+    assert res.ok and "ventana grande" in res.text
+
+
+def test_familia_request_no_abre_el_breaker():
+    """Un 4xx de validación no dice nada de la SALUD del proveedor: ni las
+    razones nuevas (#213) ni la vieja abren el breaker."""
+    cb = CircuitBreaker()
+    for _ in range(5):
+        for reason in ("bad_model", "context_length", "content_policy", "request_invalid"):
+            cb.record_failure("p", reason)
+    assert cb.is_closed("p")

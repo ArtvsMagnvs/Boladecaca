@@ -19,14 +19,54 @@ class FailureAction(str, Enum):
     STOP = "stop"          # NO rotar: el fallo es del request, no del proveedor
 
 
-# Marcas textuales que indican que el fallo es del PROMPT/REQUEST (4xx de
-# validación), no del proveedor — no tiene sentido rotar de modelo (doc 19 §8.1).
-_REQUEST_FAULT_MARKS = ("invalid request", "400", "content policy", "prompt too long",
-                        "context length", "max_tokens")
+# [2026-07-23, #213] STOP-vs-NEXT refinado. El diseño original (doc 19 §8.1)
+# metía cualquier 4xx de validación en un solo cajón "request_invalid" → STOP
+# (rotar no ayudaría). El caso real de producción demostró que ese cajón era
+# demasiado ancho: MiniMax-M3-highspeed devolvía 400 "invalid model" — un fallo
+# de ESE modelo concreto, no del request — y el STOP cortaba toda la cadena
+# dejando al usuario sin respuesta con fallbacks sanos disponibles.
+#
+# La asimetría de coste manda: un STOP equivocado = fallo total para el
+# usuario; un NEXT equivocado = 1-2 llamadas extra rápidas (un 4xx responde en
+# ms y la cadena ya está acotada por _MAX_HOPS). Por eso:
+#   - El cajón se sub-clasifica: bad_model / context_length / content_policy /
+#     request_invalid. TODOS devuelven NEXT — con proveedores heterogéneos
+#     (formatos de payload distintos, ventanas de contexto distintas,
+#     moderación distinta, locales sin moderación) casi ningún 4xx es
+#     provablemente irrotable desde un string de error.
+#   - El STOP ya no lo decide esta función (es stateless y no puede saberlo):
+#     lo decide el executor con EVIDENCIA — solo corta la cadena cuando ≥2
+#     proveedores DISTINTOS coinciden en un fallo de la familia request
+#     (REQUEST_FAULT_REASONS). Dos APIs independientes rechazando el mismo
+#     request sí prueba que el problema es el request.
+#   - `bad_model` queda FUERA de esa familia: es config por-modelo (dos
+#     entradas mal configuradas en la cadena no dicen nada de la tercera).
+
+# Modelo inexistente/mal escrito EN ESE proveedor → rotar ayuda seguro.
+_BAD_MODEL_MARKS = ("invalid model", "model not found", "unknown model",
+                    "no such model", "model does not exist",
+                    "model_not_found", "does not exist or you do not have access")
+
+# Límite de contexto DE ESE modelo → otro con ventana mayor puede servir.
+_CONTEXT_MARKS = ("context length", "prompt too long", "maximum context",
+                  "max_tokens", "too many tokens", "context_length_exceeded",
+                  "input is too long")
+
+# Moderación DE ESE proveedor → otro (p.ej. un local) puede responder.
+_CONTENT_MARKS = ("content policy", "content_filter", "content filter",
+                  "moderation", "flagged")
+
+# 4xx de validación genérico — el resto de la familia request.
+_REQUEST_FAULT_MARKS = ("invalid request", "400", "bad request")
 
 # Errores de red/transitorios → siguiente + cuentan para el breaker.
 _TRANSIENT_MARKS = ("timeout", "timed out", "connection", "connect", "getaddrinfo",
                     "5xx", "500", "502", "503", "504", "network", "unavailable")
+
+# La familia "fallo del request": si DOS proveedores distintos coinciden en
+# una de estas razones, el executor corta la cadena (rotar más es quemar
+# llamadas en un request condenado). bad_model NO está: es config por-modelo.
+REQUEST_FAULT_REASONS = frozenset({"request_invalid", "context_length", "content_policy"})
 
 
 def classify_failure(*, exc: Exception | None = None, detail: str = "") -> tuple[FailureAction, str]:
@@ -37,9 +77,14 @@ def classify_failure(*, exc: Exception | None = None, detail: str = "") -> tuple
     if exc is not None:
         text = f"{type(exc).__name__}: {exc}".lower()
 
-    # 1) fallo del propio request → parar (rotar no ayudaría)
-    if any(m in text for m in _REQUEST_FAULT_MARKS):
-        return FailureAction.STOP, "request_invalid"
+    # 1) marcas ESPECÍFICAS de la familia request. Todo NEXT — el corte con
+    #    evidencia (2 proveedores distintos) lo aplica el executor.
+    if any(m in text for m in _BAD_MODEL_MARKS):
+        return FailureAction.NEXT, "bad_model"
+    if any(m in text for m in _CONTEXT_MARKS):
+        return FailureAction.NEXT, "context_length"
+    if any(m in text for m in _CONTENT_MARKS):
+        return FailureAction.NEXT, "content_policy"
 
     # 2) respuesta vacía (post-strip) → un reintento del mismo modelo
     if "empty" in text or text.strip() in ("", "vacío", "vacio"):
@@ -56,6 +101,12 @@ def classify_failure(*, exc: Exception | None = None, detail: str = "") -> tuple
     # 5) cuota/rate (402/429) → siguiente
     if "429" in text or "402" in text or "quota" in text or "rate limit" in text:
         return FailureAction.NEXT, "quota"
+
+    # 6) 4xx de validación genérico — EL ÚLTIMO a propósito: la marca "400"
+    #    puede colarse dentro de otro número ("timeout after 2400ms"), así que
+    #    solo captura cuando no hubo ninguna señal más clara antes.
+    if any(m in text for m in _REQUEST_FAULT_MARKS):
+        return FailureAction.NEXT, "request_invalid"
 
     # por defecto: siguiente (un fallo desconocido no debe colgar la cadena)
     return FailureAction.NEXT, "unknown"
