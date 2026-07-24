@@ -297,6 +297,43 @@ async def test_submit_mission_siempre_planifica(monkeypatch):
 # ---------------------------------------------------------------------------
 @pytest.mark.anyio
 async def test_eventos_mission_started_y_completed(monkeypatch):
+    """[A·VOZ-3] Los eventos mission.* solo los dispara una misión DE VERDAD
+    (is_direct_action o el camino complejo) — la charla (CONVERSATIONAL,
+    is_short_path) ya no crea misión, así que ya no puede usarse aquí como
+    disparador (ver test_charla_no_dispara_eventos_de_mision más abajo, que
+    blinda justo lo contrario)."""
+    from app.core.events import subscribe, unsubscribe
+    from app.tie.runtime import AgentResult, NullRuntime
+
+    got = []
+    async def _h(ev):
+        got.append(ev.name)
+    for name in ("mission.started", "mission.completed"):
+        subscribe(name, _h)
+    try:
+        _fake_intent(monkeypatch, Intent(
+            type=IntentType.EXECUTE, goal="abre algo", confidence=0.9,
+            requires_tools=["filesystem"],
+        ))
+
+        async def _execute_task(self, task, memory, tools, approval_gate):
+            return AgentResult(task_id=task.id, success=True, output="hecho", tokens=1)
+        monkeypatch.setattr(NullRuntime, "execute_task", _execute_task)
+
+        await handle(_Env("abre algo"))
+        await asyncio.sleep(0.05)
+        assert "mission.started" in got and "mission.completed" in got
+    finally:
+        for name in ("mission.started", "mission.completed"):
+            unsubscribe(name, _h)
+
+
+@pytest.mark.anyio
+async def test_charla_no_dispara_eventos_de_mision(monkeypatch):
+    """[A·VOZ-3] Complemento del test anterior: la charla (camino corto
+    conversacional) NO crea misión, así que no dispara mission.started ni
+    mission.completed — antes SÍ los disparaba, y era justo lo que hacía
+    aparecer los saludos en la vista de Misiones."""
     from app.core.events import subscribe, unsubscribe
 
     got = []
@@ -307,9 +344,10 @@ async def test_eventos_mission_started_y_completed(monkeypatch):
     try:
         _fake_intent(monkeypatch, Intent(type=IntentType.CONVERSATIONAL, goal="hola", confidence=0.9))
         _fake_short_chat(monkeypatch)
-        await handle(_Env("hola"))
+        out = await handle(_Env("hola"))
         await asyncio.sleep(0.05)
-        assert "mission.started" in got and "mission.completed" in got
+        assert out == "respuesta corta"
+        assert got == [], f"la charla no debe disparar eventos de misión: {got}"
     finally:
         for name in ("mission.started", "mission.completed"):
             unsubscribe(name, _h)
@@ -481,6 +519,35 @@ async def test_handle_stream_camino_corto_emite_status_y_tokens(monkeypatch):
     assert kinds[0] == "status" and kinds.count("text") == 3
     assert texts == "Hola, soy Aithera"
     assert "mission" not in kinds          # el camino corto no crea misión que seguir
+
+
+@pytest.mark.anyio
+async def test_charla_no_deja_fila_en_orchestrator_traces(monkeypatch):
+    """[A·VOZ-3] No-regresión de fondo: ni `handle` ni `handle_stream` deben
+    escribir NINGUNA fila en `orchestrator_traces` para una charla — es
+    justo lo que antes hacía aparecer los saludos en la vista de Misiones."""
+    from app.tie import handle_stream
+    from app.tie.runtime import AgentChunk, NullRuntime
+
+    _fake_intent(monkeypatch, Intent(type=IntentType.CONVERSATIONAL, goal="hola", confidence=0.9))
+    _fake_short_chat(monkeypatch, "hola de vuelta")
+
+    async def _stream(self, task, memory, tools, approval_gate):
+        yield AgentChunk(task_id=task.id, kind="text", payload="hola de vuelta")
+    monkeypatch.setattr(NullRuntime, "stream_task", _stream)
+
+    s = SessionLocal()
+    try:
+        assert s.query(OrchestratorTrace).count() == 0   # limpio antes (fixture)
+
+        await handle(_Env("hola"))
+        assert s.query(OrchestratorTrace).count() == 0, "handle() dejó una traza para una charla"
+
+        async for _ in handle_stream("hola", channel="web"):
+            pass
+        assert s.query(OrchestratorTrace).count() == 0, "handle_stream() dejó una traza para una charla"
+    finally:
+        s.close()
 
 
 @pytest.mark.anyio

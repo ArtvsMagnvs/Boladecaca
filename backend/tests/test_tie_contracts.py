@@ -228,7 +228,11 @@ async def test_nullruntime_ejecuta_chat(monkeypatch):
 # Pipeline — handle/submit_mission camino corto + traza
 # ---------------------------------------------------------------------------
 @pytest.mark.anyio
-async def test_handle_camino_corto_responde_y_deja_traza(monkeypatch):
+async def test_handle_camino_corto_responde_sin_dejar_traza(monkeypatch):
+    """[A·VOZ-3, doc 32] La charla NO deja fila en `orchestrator_traces` — antes
+    sí (de ahí el nombre viejo de este test), y era justo lo que hacía aparecer
+    los saludos en la vista de Misiones. Solo las misiones DE VERDAD (acción
+    directa o camino complejo) dejan traza."""
     from app.tie import handle
     import app.tie.intents as intents_mod
     from app.services import chat_service
@@ -255,11 +259,7 @@ async def test_handle_camino_corto_responde_y_deja_traza(monkeypatch):
 
     s = SessionLocal()
     try:
-        traces = s.query(OrchestratorTrace).all()
-        assert len(traces) == 1
-        assert traces[0].state == "done"
-        assert traces[0].intent is not None and traces[0].intent["type"] == "conversational"
-        assert traces[0].channel == "electron"
+        assert s.query(OrchestratorTrace).count() == 0
     finally:
         s.close()
 

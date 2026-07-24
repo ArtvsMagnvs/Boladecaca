@@ -168,6 +168,17 @@ async def handle_stream(text: str, *, channel: str = "web", intent: Optional[Int
         return
     force_model = explicit["model_key"] if explicit else None
 
+    # [A·VOZ-3, doc 32] Camino corto: SIN misión ni traza (ver la nota gemela en
+    # `_run_pipeline` — una charla no es una misión). Streamea tokens de verdad,
+    # igual que siempre; no hay `_close_if_orphan` que aplicar porque no se abrió
+    # ninguna traza que pudiera quedar huérfana.
+    if intent.is_short_path:
+        async for ev in _short_path_stream(text, intent, channel, memory_router,
+                                           tool_manager, approval_gate, force_model,
+                                           session_id):
+            yield ev
+        return
+
     mission = new_mission(goal=intent.goal or text, source="user", channel=channel)
     trace_id = tracer.record_start(mission, channel=channel)
     mission.trace_id = trace_id     # [fix mismatch, doc 31] mission.id != trace_id
@@ -186,8 +197,7 @@ async def handle_stream(text: str, *, channel: str = "web", intent: Optional[Int
     # waiting y aquí no se pisa nada.
     try:
         async for ev in _stream_body(text, intent, mission, trace_id, channel,
-                                     prefetched, memory_router, tool_manager, approval_gate,
-                                     force_model, session_id):
+                                     prefetched, force_model):
             yield ev
     finally:
         _close_if_orphan(trace_id)
@@ -269,28 +279,28 @@ async def _direct_action_path(
     return out
 
 
-async def _stream_body(text, intent, mission, trace_id, channel, prefetched,
-                       memory_router, tool_manager, approval_gate, force_model,
-                       session_id=None):
-    """El cuerpo real del streaming. Separado para que `handle_stream` pueda
-    envolverlo en un `finally` que cierre la traza si el cliente se va."""
-    # --- camino corto: tokens de verdad ---
-    if intent.is_short_path:
-        acc = ""
-        task = AgentTask(id=AgentTask.new_id(), instruction=text, channel=channel,
-                         tools=intent.requires_tools, model_hint=force_model,
-                         session_id=session_id)
-        runtime = get_runtime("null")
-        async for chunk in runtime.stream_task(
-            task, memory=memory_router, tools=tool_manager, approval_gate=approval_gate
-        ):
-            if chunk.kind == "text" and chunk.payload:
-                acc += chunk.payload
-                yield ("text", chunk.payload)
-        tracer.record_end(trace_id, outcome=acc[:2000])
-        tracer.emit_completed(mission, ok=bool(acc), nodes=0)
-        return
+async def _short_path_stream(text, intent, channel, memory_router, tool_manager,
+                             approval_gate, force_model, session_id=None):
+    """[A·VOZ-3] Streaming del camino corto — SIN misión ni traza (una charla no
+    es una misión, ver la nota en `handle_stream`/`_run_pipeline`). Streamea
+    tokens de verdad, exactamente igual que antes; la única diferencia es que
+    ya no abre ni cierra una fila en `orchestrator_traces`."""
+    task = AgentTask(id=AgentTask.new_id(), instruction=text, channel=channel,
+                     tools=intent.requires_tools, model_hint=force_model,
+                     session_id=session_id)
+    runtime = get_runtime("null")
+    async for chunk in runtime.stream_task(
+        task, memory=memory_router, tools=tool_manager, approval_gate=approval_gate
+    ):
+        if chunk.kind == "text" and chunk.payload:
+            yield ("text", chunk.payload)
 
+
+async def _stream_body(text, intent, mission, trace_id, channel, prefetched, force_model):
+    """El cuerpo real del streaming (acción directa / camino complejo — el corto
+    ya se resolvió en `handle_stream` antes de llegar aquí, sin misión). Separado
+    para que `handle_stream` pueda envolverlo en un `finally` que cierre la
+    traza si el cliente se va."""
     # --- [Opt latencia] camino de ACCIÓN DIRECTA: tarea mecánica de un solo
     # encargo (abrir YouTube y poner música, crear carpeta+archivo). Sin planner
     # ni grafo: un bucle de tool-use rápido la resuelve de corrido. Colapsa ~8
@@ -420,18 +430,26 @@ async def _run_pipeline(
         return explicit["text"]   # aclaración/confirmación: no se ejecuta nada este turno
     force_model = explicit["model_key"] if explicit else None
 
+    # [A·VOZ-3, doc 32] Camino corto: ~80% de las queries no pagan planner ni
+    # grafo (doc 14 §6) — Y AHORA TAMPOCO MISIÓN/TRAZA. Una charla no es una
+    # misión: crear la fila en `orchestrator_traces` (vía `new_mission` +
+    # `tracer.record_start`) era lo que hacía aparecer los saludos en Misiones
+    # ("Responder al saludo / Completado") y lo que escribía en el hot path de
+    # cada mensaje trivial. Solo se crea misión/traza cuando el flujo entra en
+    # `is_direct_action` o en el camino complejo (misiones DE VERDAD). La
+    # conversación se sigue persistiendo como conversación (session_id/
+    # ChatMessage vía NullRuntime) — eso no cambia; lo que se retira es la
+    # traza de misión. La telemetría no se rompe: su contexto de misión
+    # (`_mission_ctx`) ya tiene (None, None) como default documentado para
+    # "llamada suelta (chat corto)" — exactamente este caso.
+    if intent.is_short_path:
+        return await _short_path(text, intent, channel, model_key=force_model)
+
     mission = new_mission(goal=intent.goal or text, source=source, channel=channel)
     trace_id = tracer.record_start(mission, channel=channel)
     mission.trace_id = trace_id     # [fix mismatch, doc 31] mission.id != trace_id
     tracer.record_intent(trace_id, intent)
     tracer.emit_started(mission)
-
-    # [3] Camino corto: ~80% de las queries no pagan planner ni grafo (doc 14 §6).
-    if intent.is_short_path:
-        out = await _short_path(text, intent, channel, model_key=force_model)
-        tracer.record_end(trace_id, outcome=out[:2000])
-        tracer.emit_completed(mission, ok=True, nodes=0)
-        return out
 
     # [Opt latencia] Acción directa: tarea mecánica de un solo encargo → un bucle
     # de tool-use rápido, sin planner (mismo criterio que el camino de streaming).

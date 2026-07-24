@@ -141,8 +141,19 @@ las acciones siguen clasificándose con LLM igual que antes.
 
 ---
 
-## A·VOZ-3 — El camino corto conversacional NO crea misión
-**Modelo: Sonnet · Esfuerzo: Medio** — *(arreglo de latencia, parte 2 + UX)*
+## A·VOZ-3 — El camino corto conversacional NO crea misión ✅ HECHO
+**Modelo: Sonnet · Esfuerzo: Medio**
+
+> Cerrado 2026-07-24. `_run_pipeline` (handle) y `handle_stream` comprueban
+> `is_short_path` ANTES de `new_mission`/`tracer.record_start` — para la charla
+> se salta directo a `_short_path`/`_short_path_stream` sin crear fila en
+> `orchestrator_traces`. Hallazgo clave durante el diseño: `tracer.record_start`
+> también fija el contexto de misión de la telemetría (`_mission_ctx`) — pero su
+> propio código ya documentaba `(None, None)` como default para "llamada suelta
+> (chat corto)", así que saltárselo no rompe nada, es el caso ya previsto.
+> Verificado en vivo contra Postgres real: 77 trazas antes y después de un
+> "hola" real. Tests: 3 nuevos + 2 actualizados (uno medía justo lo contrario:
+> que la charla SÍ dejaba traza — invertido a propósito). — *(arreglo de latencia, parte 2 + UX)*
 
 La charla no es una misión. No debe ensuciar Misiones ni escribir trazas en el
 hot path.
