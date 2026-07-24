@@ -58,8 +58,14 @@ Claude Code.
 
 # BLOQUE A — VOZ AUTÓNOMA + CONVERSACIÓN FLUIDA
 
-## A·VOZ-1 — Retirar eSpeak, garantizar EdgeTTS como base
+## A·VOZ-1 — Retirar eSpeak, garantizar EdgeTTS como base ✅ HECHO (commit c61df78)
 **Modelo: Sonnet · Esfuerzo: Bajo**
+
+> Cerrado 2026-07-23. `espeak_voice.py` eliminado; `/synthesize` y
+> `/synthesize/base64` caen a EdgeTTS; `/status` sin "espeak"; `/espeak/install`
+> retirado (404). Bug de paso: el `voice_id` por defecto (ID de ElevenLabs) se
+> colaba al fallback de Edge y lo rompía — arreglado con `_edge_voice_or_default`.
+> Frontend actualizado (sin commitear, entrelazado con Cowork). Suite: 888.
 
 Decisión tomada (usuario): eSpeak fuera. EdgeTTS es la base (gratis, sin key,
 sin instalar nada, ya es el default).
@@ -85,8 +91,17 @@ comentario histórico; síntesis de voz funciona con EdgeTTS; suite verde.
 
 ---
 
-## A·VOZ-2 — Pre-clasificador barato: la charla trivial NO paga LLM
+## A·VOZ-2 — Pre-clasificador barato: la charla trivial NO paga LLM ✅ HECHO
 **Modelo: Opus · Esfuerzo: Medio** — *(el arreglo de latencia, parte 1)*
+
+> Cerrado 2026-07-23. `intents.fast_precheck()` (0 LLM, determinista,
+> conservador) cableado al inicio de `classify()` — así se benefician TODOS los
+> caminos (orquestador, pipeline, decomposer), no solo `handle_stream`, porque
+> el orquestador es quien llama a `classify()` primero. Verificado EN VIVO
+> contra el backend real: **"hola"/"gracias"/"qué tal" → 0.1-0.2 ms (0 LLM)**
+> frente a **"abre YouTube…" → 160 s** por el clasificador LLM — la magnitud
+> exacta de la queja del usuario. Tests: `test_fast_precheck.py` (63) + 3 de
+> contrato actualizados (usaban "hola" como input genérico del camino LLM).
 
 El corazón del arreglo. Un heurístico determinista (0 LLM) resuelve la
 clasificación de la charla obvia **antes** de tocar el modelo.

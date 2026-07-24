@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import json
 import re
+import unicodedata
 from typing import Optional
 
 from app.ai.reasoning_filter import strip_reasoning
@@ -26,6 +27,105 @@ from app.tie.contracts import MEL_CAPABILITIES, Intent, IntentType
 logger = get_system_logger("tie.intents")
 
 CONFIDENCE_FLOOR = 0.55  # < esto → se fuerza conversational (doc 11 B.1)
+
+
+# ===========================================================================
+# [A·VOZ-2, doc 32] Pre-clasificador barato: la charla trivial NO paga LLM
+# ===========================================================================
+# EL PROBLEMA (medido en código): `classify()` es una llamada LLM completa
+# (prompt de sistema de ~120 líneas + salida JSON) que se ESPERA antes del
+# primer token de respuesta — el 100% de los mensajes la paga, incluida la
+# charla trivial ("hola", "gracias"). Con un modelo de classify lento o
+# razonador (`<think>`) son decenas de segundos antes de responder. En la
+# conversación por voz eso la hace inusable (el usuario reporta ~1 min).
+#
+# LA SOLUCIÓN: un heurístico DETERMINISTA (0 LLM) resuelve la charla obvia
+# antes de tocar el modelo. Conservador por diseño — ante CUALQUIER duda
+# devuelve None (que clasifique el LLM): un falso "no es charla" solo cuesta
+# el round-trip de siempre; un falso "es charla" perdería una acción, así que
+# jamás se arriesga. Solo dispara cuando TODOS los tokens del mensaje son de
+# cortesía/saludo (o coincide una frase de charla exacta) — si aparece
+# cualquier palabra de acción, dominio, o un mensaje largo, cae a None.
+
+def _normalize(text: str) -> str:
+    """minúsculas + sin acentos + sin signos de puntuación de los extremos, para
+    que 'Adiós!' y 'adios' o '¿Cómo estás?' y 'como estas' coincidan igual."""
+    t = unicodedata.normalize("NFKD", text.lower())
+    t = "".join(c for c in t if not unicodedata.combining(c))
+    return t
+
+
+# Frases de charla EXACTAS (ya normalizadas). Cubren el grueso de la charla real.
+_CHITCHAT_PHRASES: frozenset[str] = frozenset({
+    # saludos
+    "hola", "holaa", "holaaa", "buenas", "hey", "ey", "hola aithera",
+    "buenos dias", "buenas tardes", "buenas noches", "saludos", "hi", "hello",
+    # cómo estás / qué tal
+    "que tal", "que tal aithera", "que tal todo", "como estas", "como estas aithera",
+    "como te va", "como va", "como va todo", "todo bien", "que pasa", "que hay",
+    "how are you", "how are you doing", "whats up", "good morning", "good evening",
+    # agradecimientos
+    "gracias", "muchas gracias", "muchisimas gracias", "mil gracias",
+    "gracias aithera", "vale gracias", "ok gracias", "perfecto gracias",
+    "thanks", "thank you", "thanks a lot",
+    # despedidas
+    "adios", "hasta luego", "hasta pronto", "hasta manana", "hasta la proxima",
+    "nos vemos", "chao", "chau", "bye", "goodbye", "see you",
+    # confirmaciones / cortesía
+    "vale", "ok", "okay", "okey", "dale", "de acuerdo", "perfecto", "genial",
+    "estupendo", "guay", "bien", "muy bien", "entendido", "listo", "claro",
+    "sure", "cool", "nice", "great", "fine", "alright", "got it",
+})
+
+# Tokens de cortesía/saludo/relleno. Si TODOS los tokens de un mensaje corto
+# están aquí, es charla (cubre combinaciones no listadas: "hola buenas gracias").
+_COURTESY_TOKENS: frozenset[str] = frozenset({
+    "hola", "holaa", "holaaa", "buenas", "hey", "ey", "hi", "hello", "saludos", "aithera",
+    "gracias", "muchas", "muchisimas", "mil", "thx", "thanks", "thank", "you", "ty",
+    "adios", "chao", "chau", "bye", "goodbye", "hasta", "luego", "pronto", "manana",
+    "proxima", "nos", "vemos", "see",
+    "vale", "ok", "oka", "okay", "okey", "dale", "listo", "perfecto", "genial", "guay",
+    "bien", "muy", "estupendo", "entendido", "claro", "exacto", "correcto", "acuerdo",
+    "si", "no", "por", "favor", "nada", "un", "placer", "encantado", "de",
+    "que", "tal", "como", "estas", "va", "todo", "tu", "pasa", "hay", "te", "y",
+    "buenos", "dias", "tardes", "noches",
+    "please", "cool", "nice", "great", "fine", "alright", "got", "it", "sure", "yes",
+    "good", "morning", "evening", "night", "how", "are", "whats", "up", "doing", "a", "lot",
+})
+
+_MAX_PRECHECK_WORDS = 6   # un mensaje largo casi nunca es charla pura → al LLM
+
+
+def fast_precheck(text: str) -> Optional[Intent]:
+    """Devuelve un Intent CONVERSACIONAL instantáneo (0 LLM) si el mensaje es
+    charla obvia; None si hay que clasificar con el modelo. Función pura,
+    determinista y conservadora (ante la duda, None)."""
+    raw = (text or "").strip()
+    if not raw:
+        return None
+    norm = _normalize(raw)
+    # tokens sin puntuación (una URL/@/número rompe el patrón de cortesía)
+    tokens = [tok.strip(".,;:!?¡¿()[]{}\"'…-") for tok in norm.split()]
+    tokens = [tok for tok in tokens if tok]
+    if not tokens or len(tokens) > _MAX_PRECHECK_WORDS:
+        return None
+
+    # frase exacta de charla (normalizada, colapsando espacios)
+    phrase = " ".join(tokens)
+    is_chitchat = phrase in _CHITCHAT_PHRASES
+    # o TODOS los tokens son de cortesía (cubre combinaciones no listadas)
+    if not is_chitchat:
+        is_chitchat = all(tok in _COURTESY_TOKENS for tok in tokens)
+    if not is_chitchat:
+        return None
+
+    return Intent(
+        type=IntentType.CONVERSATIONAL,
+        goal=raw,
+        confidence=1.0,           # el heurístico está seguro; no fuerza el floor
+        model_capability="chat",
+        raw_text=raw,             # fidelidad del texto original (S2)
+    )
 
 _SYSTEM_PROMPT = """Eres el clasificador de intenciones de Aithera (un asistente personal).
 Recibes UN mensaje del usuario y devuelves SOLO un objeto JSON (sin texto extra, sin
@@ -234,10 +334,20 @@ def _objectives(value) -> list[str]:
 
 async def classify(text: str, *, channel: Optional[str] = None) -> Intent:
     """Clasifica un mensaje → Intent completo. Modelo barato; fail-safe a
-    conversational. `channel` es informativo (no cambia la clasificación)."""
+    conversational. `channel` es informativo (no cambia la clasificación).
+
+    [A·VOZ-2] La charla obvia se resuelve ANTES de tocar el LLM: `fast_precheck`
+    (0 LLM, determinista) corta el round-trip del clasificador para ~la mayoría
+    de turnos conversacionales. Es el arreglo de latencia — un "hola" ya no
+    espera una llamada completa al modelo antes de responder."""
     text = (text or "").strip()
     if not text:
         return Intent.conversational_fallback(goal="")
+
+    pre = fast_precheck(text)
+    if pre is not None:
+        logger.info(f"[tie-perfil] precheck HIT (charla, 0 LLM): {text[:40]!r}")
+        return pre
 
     try:
         from app.tie import router

@@ -167,7 +167,9 @@ async def test_classify_umbral_fuerza_conversational(monkeypatch):
 async def test_classify_json_basura_fallback(monkeypatch):
     from app.tie import classify
     _fake_ai(monkeypatch, "esto no es json en absoluto")
-    it = await classify("hola")
+    # [A·VOZ-2] input NO trivial: un saludo cortaría en el precheck (0 LLM) y
+    # nunca llegaría al camino que este test ejercita (el fallback del LLM).
+    it = await classify("resúmeme el informe del proyecto Aithera")
     assert it.type == IntentType.CONVERSATIONAL and it.confidence == 0.0
 
 
@@ -183,7 +185,8 @@ async def test_classify_error_del_proveedor_fallback(monkeypatch):
 async def test_classify_extrae_json_en_bloque_markdown(monkeypatch):
     from app.tie import classify
     _fake_ai(monkeypatch, 'Claro:\n```json\n{"type":"conversational","goal":"saludo","confidence":0.8}\n```\n')
-    it = await classify("hola")
+    # [A·VOZ-2] input NO trivial para llegar al LLM (un saludo iría al precheck).
+    it = await classify("resúmeme el informe del proyecto Aithera")
     assert it.type == IntentType.CONVERSATIONAL and it.goal == "saludo"
 
 

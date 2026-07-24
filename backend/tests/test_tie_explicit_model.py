@@ -55,11 +55,13 @@ async def test_clasificador_sin_modelo_deja_explicit_none(monkeypatch):
     from app.tie import intents, router
 
     async def _complete(prompt, *, system_prompt=None, capability="chat"):
-        return {"response": json.dumps({"type": "conversational", "goal": "hola", "confidence": 0.9}),
+        return {"response": json.dumps({"type": "conversational", "goal": "resumen", "confidence": 0.9}),
                 "error": False}
     monkeypatch.setattr(router, "complete", _complete)
 
-    intent = await intents.classify("hola")
+    # [A·VOZ-2] input NO trivial para llegar al LLM (un saludo iría al precheck,
+    # que también deja explicit_model=None, pero no ejercitaría el camino LLM).
+    intent = await intents.classify("resume el informe del proyecto")
     assert intent.explicit_model is None
 
 
