@@ -221,6 +221,17 @@ desde su primer día — así no hay migración funcional después. API interna:
 
 - Hub: tarjeta "Memoria" (última ingesta, días cubiertos, briefing de hoy en 2 líneas).
 
+**[Δ 2026-07-24, comparativa competitiva — doc 32 Anexo] Memoria humano-legible
+→ V1.4**: la comparativa con OpenClaw reveló una ventaja de UX suya que el MOS no
+tiene — su memoria es un `MEMORY.md` en texto plano que el usuario puede ABRIR y
+EDITAR directamente. El MOS de Aithera es MÁS sofisticado (ChromaDB, 5 tipos,
+lifecycle, atribución de fuente) pero nada es tan auditable como un texto editable.
+Decisión del usuario (2026-07-24): en V1.4 (doc 27 §8 U1) exponer una VISTA/EXPORT
+legible y editable del perfil (extendiendo `memory/profile.py` de R6.5c, ya visible
+y borrable en Ajustes) — el usuario ve y edita en texto plano lo que Aithera sabe
+de él, y la edición se refleja en el MOS. Es una capa de legibilidad ENCIMA del
+MOS, no un cambio de almacén (ChromaDB sigue siendo la fuente).
+
 ## 9. Vault — ✅ IMPLEMENTADO (2026-07-13, post-cierre de M1-M5)
 
 `vault.py`: espejo Markdown de `mem_personal.kind=daily_summary` y `decisions` en

@@ -51,26 +51,36 @@ GSN/CIE (V2.0) ───────────→ LSL madura + Skill Evolution
    memoria+tools+LLM y desactivar sus superficies propias, y las garantías de la
    auditoría (grounding, gates, honestidad) deben aplicarse a Hermes igual que al
    toolloop propio. Contingencia si NO-GO intacta (doc 10 §6).
-3. **AVCS Génesis se recupera en V1.1 como pista frontend paralela.** Estaba
-   planificada en V0.82/83 y NO se construyó (CLAUDE.md W2b). Es frontend puro:
-   no compite con el trabajo backend del Learner y da a los beta testers la
-   identidad visual. MVP1/MVP2 mantienen su sitio (V1.5/V1.6).
+3. **[Corrección 2026-07-22] AVCS Génesis NO necesita recuperarse en V1.1 — ya
+   se construyó en V0.82/83.** Este plan (escrito 2026-07-20) asumía, citando
+   una nota de CLAUDE.md del sprint W2b, que Génesis seguía sin construir; una
+   auditoría de commits (`c457393`…`918138a`, 2026-07-10 a 07-12, ver doc 03
+   §2) confirma que el motor GPGPU completo, 3 ritmos reales (Reposo/Escucha/
+   Comunicación con audio), Modo Presencia, Chat limpio y PerformanceManager
+   Q1-Q4 YA ESTÁN en manos del usuario — la nota de CLAUDE.md comparaba con el
+   AVCS *maduro* de MVP1/MVP2, no con esta fase. V1.1 se reduce a Learner
+   puro (backend, 4 sesiones); los 4 ritmos que faltan (Comprensión/Acción/
+   Error/Recuperación con pesos propios) y los campos maduros siguen siendo
+   MVP1/MVP2, en su sitio (V1.5/V1.6) — sin cambios ahí.
 
 ## 2. Roadmap resultante (V1.0 → V1.6)
 
 | Fase | Nombre | Sesiones | Por qué aquí |
 |---|---|---|---|
 | **V1.0 cierre** | MVP-beta (instalador + onboarding + verificación total) | 4 | sin dependencias; todo lo demás espera a que la beta exista |
-| **V1.1** | Learner operativo + AVCS Génesis | 6 (4B+2F) | máximo fan-out de dependencias; frontend paralelo |
+| **V1.1** | Learner operativo | 4 | máximo fan-out de dependencias (AVCS Génesis YA entregado en V0.82/83 — corrección 2026-07-22, ver §1.3) |
 | **V1.2** | MCP interop + TIE v2 + MEL Learning + Skill Evolution/AutomationLearner | 6 | consume model_stats (V1.1); MCP prepara a Hermes |
 | **V1.3** | Hermes Runtime (H0 GO/NO-GO → H1-H4) | 5 | necesita LSL (V1.1) y aprovecha MCP (V1.2) |
-| **V1.4** | Red (Web+PWA+PIN) + voz data-driven + UX remanentes | 4 | independiente; mejor con el núcleo agéntico ya estable |
+| **V1.4** | Red (Web+PWA+PIN) + 2 canales (Discord/WhatsApp) + sandboxing Docker + voz data-driven + UX/memoria legible | 7 | independiente; mejor con el núcleo agéntico ya estable. +3 sesiones de la comparativa competitiva (doc 32 Anexo) |
 | **V1.5** | AVCS MVP1 + Hub avanzado + multi-instancia runtimes | 5 | necesita Génesis (V1.1) y Hermes si GO (V1.3) |
 | **V1.6** | AVCS MVP2 + Project Memory Capa 2 + puerta a GSN/CIE | 5 | cierra el organismo; revisa contratos de red para V2.0 |
 
-Total: **35 sesiones**. Reparto de modelos: Fable 5 ×12 (crítico), Opus 4.8 ×21,
-Sonnet ×2. Regla de asignación: **Fable = contratos nuevos, concurrencia,
-seguridad, GPU delicado** (equivocarse ahí cuesta el doble de arreglar — aquí no
+Total: **36 sesiones** (35→33 tras la corrección 2026-07-22: AVCS Génesis ya
+construido, se retiran las 2 sesiones AV1-AV2 de V1.1; 33→36 el 2026-07-24 al
+añadir 3 sesiones a V1.4 desde la comparativa competitiva —W3 canales, S1
+sandboxing, y la ampliación de U1 con memoria legible— ver doc 32 Anexo). Reparto
+de modelos: Fable 5 ×12 (crítico), Opus 4.8 ×22, Sonnet ×2. Regla de asignación:
+**Fable = contratos nuevos, concurrencia, seguridad, GPU delicado** (equivocarse ahí cuesta el doble de arreglar — aquí no
 hay economía); **Opus = features sobre patrones ya establecidos**; **Sonnet =
 mecánico/UI simple/docs**.
 
@@ -142,9 +152,19 @@ listan en su sección de abajo — no se improvisan.
 
 ---
 
-## 5. V1.1 — Learner operativo + AVCS Génesis (6 sesiones) → tag `v1.1.0`
+## 5. V1.1 — Learner operativo (4 sesiones) → tag `v1.1.0`
 
-*Pista backend (L1-L4) y pista frontend (AV1-AV2) pueden intercalarse.*
+> **[Corrección 2026-07-22]** Esta fase incluía originalmente una pista
+> frontend paralela (AV1 "el motor" + AV2 "ritmos+producto") para construir
+> AVCS Génesis, asumiendo que no existía. Auditoría de commits confirmó que
+> Génesis (ParticleEngine GPGPU, ShaderSystem, RhythmEngine, semilla+ondas+
+> Reposo, ritmos Escucha/Comunicación con audio real, Modo Presencia, Chat
+> limpio, PerformanceManager Q1-Q4) se construyó en V0.82/83, 2026-07-10 a
+> 07-12 (commits `c457393`, `93b3e8b`, `8f5ad70`, `7b6d376`,
+> `6d8b820`/`19adbb4`/`aadb180`, `918138a` — ver doc 03 §2). AV1 y AV2 se
+> retiran de este plan; los 4 ritmos que faltan (Comprensión/Acción/Error/
+> Recuperación) y los campos maduros siguen en V1.5 (AVCS MVP1, §9), sin
+> cambios. V1.1 queda 100% backend.
 
 ### L1 — Contratos del Learner + LSL completa · **Fable 5, extra**
 - Alcance: tabla `skills` + `skill_events` con linaje (docs 09 §1.1, 15 §6.2),
@@ -168,8 +188,17 @@ listan en su sección de abajo — no se improvisan.
 - Alcance: patrones de error (mem_error), skills transferibles entre proyectos
   (WPMS tags), calidad de skills (quality_score/error_rate), briefing semanal de
   aprendizaje (doc 09 §2.2). Jobs APScheduler idle, micro-batch ≤50.
+- **[Comparativa competitiva 2026-07-24, doc 32 Anexo] `/learn`-style skill
+  authoring (idea de Hermes Agent)**: la redacción de una skill DRAFT no tiene
+  por qué ser 100% automática desde traces — se añade la vía de que el usuario
+  invoque "aprende esto" pasando una conversación/URL/notas y el propio agente
+  investigue y escriba un `SKILL.md` conforme al estándar (Hermes lo hace con su
+  comando `/learn`). Encaja en el LLL como una FUENTE más de skills DRAFT (misma
+  cuarentena, mismo linaje, misma revisión HITL del panel L4) — no un pivote,
+  una entrada adicional. Detalle de diseño también en doc 09 (LSL/LLL) §skills.
 - Tests: unit por análisis con fixtures deterministas; "un error repetido 3×
-  genera propuesta" (producto).
+  genera propuesta" (producto); "`/learn` desde notas produce un `SKILL.md`
+  válido en cuarentena, nunca activo directo".
 
 ### L4 — Panel "Lo que Aithera ha aprendido" · **Opus, alto**
 - Alcance: página/panel con propuestas (skill nueva, mejora, regla sugerida) +
@@ -179,24 +208,20 @@ listan en su sección de abajo — no se improvisan.
 - Cierre de fase: los 4 product-contracts de L1 verdes + evals: 2 misiones
   canónicas nuevas sobre aprendizaje.
 
-### AV1 — AVCS Génesis: el motor · **Fable 5, extra**
-- Alcance: doc 13 §20 Fase 0-S1: ParticleEngine GPGPU (FBO ping-pong),
-  ShaderSystem (noise/curl/sdf), RhythmEngine (pesos, no switches), Semilla +
-  Ondas de sincronía + respiración de Reposo (§6-7). Sustituye a `AICore.tsx`
-  manteniendo el contrato con `coreState`.
-- Por qué Fable: GPU + la identidad visual entera depende de este motor.
-- Tests: fps ≥ 60 en tier Q2 (assert de frametime en harness dev), test de
-  no-repetición (grabación 5 min revisada), tsc/build limpios.
-
-### AV2 — Génesis: ritmos + producto · **Opus, alto**
-- Alcance: Escucha + Comunicación simples (audio-reactiva con audioLevel), sin
-  clipping (fit-contain + falloff §13.3), Modo Presencia (§13.4), Chat limpio
-  (§13.5), PerformanceManager v0 (Q1-Q3 + escalera básica).
-- Cierre: test de presencia (13 §21.1) con 5 personas.
+*(AV1 "el motor" y AV2 "ritmos + producto" — retirados: ya entregados en
+V0.82/83, ver nota de corrección arriba. Contenido histórico recuperable en
+el git log de este doc si hiciera falta consultar el alcance original.)*
 
 ---
 
 ## 6. V1.2 — MCP + TIE v2 + MEL Learning (6 sesiones) → tag `v1.2.0`
+
+> **[Comparativa competitiva 2026-07-24, doc 32 Anexo]** MCP (cliente+servidor)
+> ya estaba planeado aquí — la comparativa con OpenJarvis/OpenClaw/Hermes lo
+> CONFIRMA como el estándar de interoperabilidad del sector (los tres lo tienen;
+> OpenJarvis además con A2A bidireccional). Ninguna reprogramación: C1/C2 cierran
+> ese gap. Nota de diseño: OpenJarvis expone MCP cliente Y servidor de forma
+> bidireccional — nuestro C2 (server) ya lo prevé, mantenerlo en el alcance.
 
 ### C1 — MCP client · **Fable 5, extra**
 - Alcance: `MCPToolProxy` — tools de servidores MCP externos registradas en el
@@ -264,6 +289,19 @@ listan en su sección de abajo — no se improvisan.
 - Alcance: `HermesRuntime(AgentRuntime)` esqueleto + endpoint local
   OpenAI-compatible que traduce a `mel.complete/stream` (así TODAS las llamadas
   LLM de Hermes respetan políticas/fallbacks/aprendizaje del MEL) + lifecycle.
+- **[Comparativa competitiva 2026-07-24, doc 32 Anexo] Patrón "narrow waist" de
+  Hermes**: Hermes usa UN único contrato `provider.py`+`registry.py`+`plugin.yaml`
+  para TODO lo pluggable (modelos, canales, navegador, TTS/STT, memoria) — no un
+  interfaz bespoke por capacidad. Aithera hoy solo lo hace para modelos (el MEL).
+  H1 es el momento natural de generalizarlo: al enchufar Hermes como 2.º runtime
+  bajo `AgentRuntime`, formalizar el mismo contrato uniforme para runtimes (y
+  dejar el camino abierto a aplicarlo a voz/navegador/memoria/canales cuando
+  toque). Es la lección arquitectónica de tener un 2.º runtime real: el valor del
+  contrato uniforme se paga justo aquí. Detalle en doc 10 (AgentRuntime).
+  **Nota honesta**: el TIE de Aithera ya es MÁS estructurado que el bucle plano
+  de Hermes (planner+DAG vs ReAct) — Hermes NO trae planificación "gratis"; lo
+  que aporta es su ecosistema (32 proveedores, 24 canales, 181 skills) y el
+  patrón del contrato uniforme, no su arquitectura de razonamiento.
 
 ### H2 — Memory + Context providers · **Opus, alto**
 - AitheraMemoryProvider/ContextProvider sobre `memory_router` (doc 10 §2) +
@@ -284,18 +322,52 @@ listan en su sección de abajo — no se improvisan.
 
 ---
 
-## 8. V1.4 — Red + voz + pulido (4 sesiones) → tag `v1.4.0`
+## 8. V1.4 — Red + voz + pulido + hardening (7 sesiones) → tag `v1.4.0`
+
+> **[Comparativa competitiva 2026-07-24, doc 32 Anexo]** V1.4 absorbe 3 items
+> derivados de la comparativa OpenJarvis/OpenClaw/Hermes (W3 canales, S1
+> sandboxing, y memoria legible dentro de U1) — encajan aquí porque V1.4 es la
+> pasada de "red + clientes + pulido/hardening" antes del gran V1.5 (AVCS).
 
 ### W1 — Web client + PIN + rate limiting · **Fable 5, extra**
 - Build React servido en `/app`, token/PIN para orígenes no-localhost, slowapi,
   CORS ampliado controlado, sesiones. Superficie de red = Fable. Product-contract:
   "sin PIN válido, NINGÚN endpoint responde datos desde origen de red".
 ### W2 — PWA + móvil · **Opus, alto** — manifest, service worker, layout móvil.
+### W3 — 2 canales más del Gateway (Discord + WhatsApp) · **Opus, alto**
+- **[Comparativa, post-1.0 decidido por el usuario]** OpenClaw/Hermes/OpenJarvis
+  tienen 24-37 canales; Aithera solo Telegram. El patrón `ChannelAdapter` (ABC)
+  + `Gateway.dispatch` YA está pensado para esto (doc 20, de hecho inspirado en
+  OpenClaw) — añadir un adapter es fino, cero cambios en el resto (principio 3).
+  Discord y WhatsApp son los dos siguientes obvios. Whitelist por usuario, token
+  cifrado DPAPI (mismo patrón que Telegram). Product-contract: "un canal nuevo
+  no toca la lógica de negocio; un adapter roto no tumba el Gateway".
+### S1 — Sandboxing de ejecución (Docker/contenedor) · **Fable 5, extra**
+- **[Comparativa, antes de v1.5 decidido por el usuario]** Hoy `shell_tool`/
+  `powershell_tool`/`desktop_tool`/`browser_tool` se apoyan en whitelist de
+  comandos, NO en aislamiento de proceso — 2 de 3 competidores (OpenClaw: Docker
+  por defecto; Hermes: Docker/SSH/Singularity/Modal/Daytona/NVIDIA OpenShell;
+  OpenJarvis: WASM+Docker) lo tratan como imprescindible. Alcance: modo de
+  ejecución CONTENEDORIZADA opcional para las tools peligrosas (Docker como
+  backend por defecto, degradación graciosa a whitelist si Docker no está),
+  sin romper el modelo de permisos A3b existente. Superficie de seguridad = Fable.
+  Product-contract: "con Docker disponible, `shell.run` corre en un contenedor
+  aislado, no en el proceso del backend"; "sin Docker, sigue funcionando con la
+  whitelist de siempre (nunca deja al usuario sin la capacidad)".
 ### V1 — Voz data-driven · **Opus, alto** — decidir VZ2 (tiny/GPU), VZ3 (Silero
   VAD), VZ4 con los datos reales del profiling VZ5; implementar lo que los datos
   justifiquen; presupuesto TTFB < 2 s (JWIKI 08).
-### U1 — UX remanentes · **Sonnet, medio** — ConfirmDialog restantes, empty-states,
-  focus-trap (doc 26 U1-U3).
+### U1 — UX remanentes + memoria humano-legible · **Sonnet, medio**
+- ConfirmDialog restantes, empty-states, focus-trap (doc 26 U1-U3).
+- **[Comparativa, retoque MOS/UX decidido por el usuario]** Memoria humano-legible
+  (inspirado en `MEMORY.md` de OpenClaw): el MOS de Aithera es MÁS sofisticado
+  (ChromaDB, 5 tipos, lifecycle) pero nada es tan auditable como un texto que el
+  usuario pueda abrir y editar. Extender `memory/profile.py` (R6.5c, ya visible y
+  borrable en Ajustes) hacia una VISTA/EXPORT legible del perfil + memoria
+  personal — el usuario ve y edita lo que Aithera sabe de él en texto plano.
+  Sigue siendo el MOS por debajo; esto es una capa de legibilidad, no un cambio
+  de almacén. Product-contract: "el usuario puede leer y editar su perfil en
+  texto; una edición se refleja en el MOS".
 
 ---
 
@@ -333,7 +405,7 @@ Cierre V1.6 = Aithera como organismo completo local. **V1.6→V2.0: GSN + CIE**
 | ¿TIE v2 y v3 juntos? | v2 solo (V1.2); **v3 disuelto** en Learner/MEL/Hermes | v3 era una etiqueta sobre dependencias ajenas |
 | ¿Hermes gradual o completo? | **Gradual con H0 GO/NO-GO** (V1.3) | viable (lib Python + memory providers enchufables + LLM custom endpoint→MEL) pero hay que interceptar 3 sistemas y aplicar las garantías de la auditoría; "de golpe" = repetir el error del Orquestrator |
 | ¿Learner antes que Hermes? | Sí (V1.1) | máximo fan-out; Hermes necesita la LSL |
-| ¿AVCS Génesis dónde? | V1.1 pista frontend | estaba sin construir; paralelizable; identidad para la beta |
+| ¿AVCS Génesis dónde? | **Ninguna parte — ya construido** en V0.82/83 (corrección 2026-07-22) | se asumió sin construir por una nota de CLAUDE.md mal interpretada; commits reales de 2026-07-10/12 lo desmienten (doc 03 §2) |
 | ¿Playwright en instalador? | Descarga opcional post-install | 300 MB fuera del NSIS; consentimiento explícito |
 | ¿Empaquetado backend? | venv embebido + Python portable | pyinstaller inviable con chromadb/torch |
 | Tests | pirámide 4 capas; producto EN ROJO al abrir cada fase; evals desde V1.2 | la lección S4, sistematizada |
@@ -342,3 +414,8 @@ Cierre V1.6 = Aithera como organismo completo local. **V1.6→V2.0: GSN + CIE**
 *Plan 2026-07-20 (Fable 5, rol CTO+comité). Fuentes: CLAUDE.md (estado real),
 docs 09/10/13/14/15/19/24/25/26, investigación Hermes (GitHub NousResearch/
 hermes-agent, docs oficiales). Sustituye la tabla V1.1-V1.6 previa del roadmap.*
+*Corrección 2026-07-22: AVCS Génesis (V0.82/83) se había construido de
+verdad (commits 2026-07-10 a 07-12) cuando este plan se escribió — una nota
+de CLAUDE.md del sprint W2b, mal interpretada, decía lo contrario. Retiradas
+las sesiones AV1-AV2 de V1.1 (35→33 sesiones totales); sin más cambios de
+alcance en el resto del plan. Detalle de la auditoría en doc 03 §2.*

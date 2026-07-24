@@ -110,6 +110,16 @@ skills y mejorar las existentes. Corre 100% local.
 Todas las propuestas son **no bloqueantes** (notificación suave en el Hub) y HITL:
 el LLL propone, el usuario dispone — coherente con la autonomía gradual del email.
 
+**[Δ 2026-07-24, comparativa competitiva — doc 32 Anexo] Autoría de skills tipo
+`/learn` (idea de Hermes Agent)**: además de las 5 fuentes automáticas de skills
+DRAFT de arriba, se añade una FUENTE 6 explícita e iniciada por el usuario: "aprende
+esto" pasando una conversación, una URL o unas notas → el propio agente investiga
+y redacta un `SKILL.md` conforme al estándar `agentskills.io`, y entra como DRAFT
+en cuarentena (mismo linaje, misma validación por 3 ejecuciones OK, mismo HITL del
+panel L4). Hermes tiene esto como su comando `/learn` y funciona bien; es una
+entrada más al mismo embudo LSL, no un mecanismo aparte. Se implementa en V1.1
+(doc 27 §5 L3).
+
 ### 2.3 Ejecución (restricciones duras)
 
 - Background task asyncio (V1.0) → job APScheduler (desde V0.9 existe scheduler).

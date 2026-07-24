@@ -2084,6 +2084,16 @@ npm run electron:build  # genera release/*.exe con electron-builder
    localhost + `null` (Electron) + `CORS_ALLOWED_ORIGINS`. Ver `main.py`.
 6. **Sin autenticación de red** — app personal monousuario. El PIN/token para
    exponer a la red local se implementará junto al cliente Web (post-V1.0).
+7. **Ejecución de tools solo por whitelist, sin aislamiento de proceso** —
+   `shell_tool`/`powershell_tool`/`desktop_tool`/`browser_tool` validan contra
+   una whitelist de comandos, pero corren en el proceso del backend, sin
+   contenedor/sandbox. La comparativa competitiva (2026-07-24, doc 32 Anexo)
+   confirmó que 2 de 3 sistemas OSS punteros (OpenClaw: Docker; Hermes:
+   Docker/SSH/Singularity/Modal/Daytona/OpenShell; OpenJarvis: WASM+Docker) lo
+   tratan como imprescindible. **Programado: sandboxing Docker opcional en V1.4**
+   (doc 27 §8 S1, degradación graciosa a whitelist si no hay Docker). No urge
+   (sin incidentes; app monousuario), pero es la brecha de seguridad más
+   consistente frente a la competencia.
 
 ### Deuda técnica crítica
 

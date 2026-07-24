@@ -19,6 +19,34 @@
 
 ---
 
+## 0a. REGLA DE DESARROLLO — a partir de V1.0, manda el doc 27 (simple, sin ambigüedad)
+
+**Este documento (03) es el MAPA general** — visión, orden de fases, filosofía.
+**El documento [`27_PLAN_V1_A_V16.md`](27_PLAN_V1_A_V16.md) es el PLAN EJECUTABLE**
+— sesión por sesión, con alcance cerrado, modelo/esfuerzo asignado, tests
+obligatorios y criterio de cierre para cada una.
+
+**Regla, para que no haya confusión en ninguna sesión futura**: desde el cierre
+de V1.0 (MVP-beta) en adelante — es decir, **V1.1, V1.2, V1.3, V1.4, V1.5 y
+V1.6** — el trabajo de desarrollo sigue LITERALMENTE los pasos del doc 27
+(secciones 4 a 10 de ese documento), no una reinterpretación de las secciones
+6-10 de este doc 03. Si alguna vez este doc 03 y el doc 27 parecen decir cosas
+distintas para V1.0+, **gana el doc 27** (ya lo decía la cabecera de este
+documento con "MANDA sobre las secciones 6-10"; esta sección lo deja explícito
+y fácil de encontrar). Las secciones 6-10 de este doc 03 son un RESUMEN de
+doc 27 para tener la vista de conjunto — el detalle real (qué construir sesión
+a sesión) vive solo en doc 27.
+
+Para el propio cierre de V1.0 (MVP-beta, sección 5 de abajo): el plan ejecutable
+son las 4 sesiones **B1-B4** de doc 27 §4 (Verificación total, Instalador+
+auto-start, Onboarding wizard, Beta kit+release) — la mención más abajo a
+"Sprints O1-O5" es la numeración ANTIGUA de antes de que TIE/MEL/Tools/
+Orchestrator se ejecutaran con sus propios nombres (T1-T5, E1-E2b, R1-R7); se
+mantiene aquí solo como historial de diseño, pero el plan que se sigue de
+verdad para lo que falta de V1.0 es **B1-B4 de doc 27 §4**.
+
+---
+
 ## 0. Filosofía ACI (la capa por encima del roadmap)
 
 - **ACI (Aithera Cognitive Infrastructure)**: memoria + skills + tools +
@@ -55,28 +83,54 @@
   voz (STT Whisper, TTS multi-proveedor, conversación continua) · Hub responsivo.
 - Pendientes menores heredados: PIN/token de red y cliente Web+PWA → **post-V1.0**.
 
-## 2. V0.82 / V0.83 — Voz + Hub: **AVCS Fase 0 "Génesis"** (diseño: doc 13)
+## 2. ✅ V0.82 / V0.83 — Voz + Hub: **AVCS Fase 0 "Génesis"** — CERRADA (diseño: doc 13)
 
-Última puesta a punto de voz y Hub, con el nacimiento del **Aithera Visual
-Consciousness System** (especificación completa en `13_AVCS_DISENO_MAESTRO.md`):
+> **[Corrección 2026-07-22]** Esta fase **SÍ se construyó** — commits
+> `c457393`/`93b3e8b`/`8f5ad70`/`7b6d376`/`6d8b820`/`19adbb4`/`aadb180`/
+> `918138a` (2026-07-10 a 2026-07-12). Una nota posterior en CLAUDE.md
+> (escrita el 2026-07-15, en el sprint W2b del Workspace) decía "AVCS
+> completo de doc 13... sin construir" — comparaba con el AVCS *maduro* de
+> MVP1/MVP2, no con esta fase, pero se leyó como "Génesis no existe" y ese
+> error se propagó al doc 27 (que reprogramaba construir Génesis en V1.1).
+> Corregido aquí y en doc 27 §1/§5 — ver auditoría 2026-07-22 (commits+código
+> reales en `frontend/src/avcs/`).
 
-1. **Semilla + Ondas de Sincronía** con el motor de partículas real (ParticleEngine
-   GPGPU mínimo + ShaderSystem + RhythmEngine) — sustituye a la esfera `AICore.tsx`.
-2. Ritmos iniciales: **Reposo** (respiración orgánica nunca idéntica), **Escucha**
-   simple (el campo se hunde, primeras raíces insinuadas) y **Comunicación** simple
-   (la energía asciende y late con la voz de Aithera vía audioLevel).
-3. **Sin clipping**: canvas full-bleed, cámara fit-contain +12% de margen y falloff
-   de borde — la energía nunca queda cortada por arriba/abajo/laterales (13 §13.3).
-4. **Modo Presencia**: botón (+ tecla) que pliega TODA la UI y deja solo el
-   organismo visual; segundo clic/Esc restaura (13 §13.4).
-5. **Chat limpio**: presencia central + panel lateral flotante (~380 px) con
-   historial, input y botones de voz/conversación (13 §13.5).
-6. PerformanceManager v0 (tiers Q1-Q3 manuales + escalado dinámico básico).
+Nace el **Aithera Visual Consciousness System** (especificación completa en
+`13_AVCS_DISENO_MAESTRO.md`), motor real en `frontend/src/avcs/` (contrato de
+arquitectura congelado en `avcs/ARCHITECTURE.md`):
 
-Se mantiene: remate de voces ElevenLabs + STT (V0.83), quitar `PROFESSIONAL_VOICES`
-hardcodeadas (doc 12 A6) y el sprint perf-front (lazy Three.js/code-splitting) —
-misma zona de código, mismo momento.
-**Cierre**: test de presencia superado (13 §21.1). ~3-4 sesiones.
+1. ✅ **Semilla + Ondas de Sincronía** — `ParticleEngine` GPGPU real
+   (`GPUComputationRenderer` ping-pong, 3 texturas) + `ShaderSystem` +
+   `RhythmEngine` — sustituye a la esfera `AICore.tsx`. Semilla con la forma
+   de pétalo de loto de la referencia (`math/lotus.ts`), núcleo Ámbar
+   constante + aura, respiración anti-mecánica (nunca `sin(t)` puro).
+2. ✅ Ritmos reales: **Reposo** (S1) y **Escucha**/**Comunicación** (S2, con
+   pesos propios diseñados — no clones de Reposo) — `AudioBridge`/
+   `AudioReactor` real sobre el audio del TTS; el logo se hincha con la voz
+   al hablar.
+3. ✅ **Sin clipping**: cámara fit-contain + falloff de borde NDC (13 §13.3).
+4. ✅ **Modo Presencia** (F9/botón, pliega toda la UI, 13 §13.4).
+5. ✅ **Chat limpio**: presencia central + panel lateral flotante (13 §13.5).
+6. ✅ **PerformanceManager v0**: tiers **Q1-Q4** (creció de Q1-Q3 a Q1-Q4 más
+   tarde) con selector en Ajustes → HUB Visual, alimentado además por el
+   scanner de hardware (CLAUDE.md §23).
+
+**Deuda real que SÍ queda de esta fase** (no confundir con MVP1 de V1.5):
+`PROFESSIONAL_VOICES` sigue hardcodeado en `elevenlabs_voice.py` (doc 12 A6,
+sin tocar). El sprint perf-front (`React.lazy`/`Suspense` por ruta) **sí se
+hizo**, pero en O3 (doc 26, 2026-07-20) — sesión distinta, no este bloque.
+
+**Lo que NO se construyó aquí y sigue siendo MVP1 (V1.5, doc 13 §20)**: los
+otros 4 ritmos (Comprensión/Acción/Error/Recuperación hoy son copias de los
+pesos de Reposo en `constants.ts`, no diseño propio), los campos de fuerza
+maduros (raíces/ramas/mandalas — `fRoot/fBranch/fMandala/fChannel` siguen
+siendo `vec3(0.0)`), el factor de sincronía visual completo y el pulido de
+transición entre ritmos.
+
+**Cierre real**: verificado en navegador (semilla emerge, ondas empujan el
+campo, respira sin bucle detectable en 5 min, 0 errores de consola;
+navegar Hub↔Chat×4 = 1 solo Canvas, 0 re-inits). 8 commits, 2026-07-10 a
+2026-07-12.
 
 ## 3. ✅ V0.85 — MOS Skeleton — CERRADA (tag `v0.8.5`) (diseño completo: doc 07)
 
@@ -180,6 +234,18 @@ Arquitectura de 4 capas (Triggers/Conditions/Actions/Learner) con MVP funcional:
 >
 > **Queda UN bloque para `1.0.0`: el MVP-beta** (instalador NSIS, auto-start del
 > backend, onboarding). Todo lo demás de V1.0 está cerrado.
+>
+> **[Δ 2026-07-22, CRÍTICO pre-1.0 — orden del usuario] Fiabilidad de memoria
+> (guardar→recuperable).** El task-bench de modelos (mel_benchmarks.tasks,
+> scripts/model_task_bench.py) destapó que `memory_save` es el escenario menos
+> fiable del sistema: los modelos ejecutan la memory tool CORRECTAMENTE (save +
+> search, 2 tools OK) y aun así el dato tarda en ser recuperable o no aparece
+> en la búsqueda semántica — apunta a la memory tool / indexación de ChromaDB
+> (latencia de indexado tras `store()`, ranking), NO a los modelos. Un
+> asistente que "guarda" algo y luego no lo encuentra es inaceptable en 1.0.
+> **Revisar y arreglar ANTES del MVP-beta.** (Mitigación temporal ya aplicada:
+> `memory_save` no computa para la aptitud agentic de los modelos, y el
+> verificador del banco reintenta con espera de indexación.)
 
 El cerebro: los 6 componentes de 11-B (Intent Classifier barato-siempre → Context
 Enricher con pre-fetch/caché → Task Planner potente-solo-si-hace-falta → Executor
@@ -232,9 +298,18 @@ confirmación de alcance (tarea vs. proyecto) — el override manda sobre el MEL
 pero el TIE tiene que confirmar el alcance antes de aplicarlo. Mismo bloque del
 roadmap, 4.5-5 sesiones en vez de 2-3.
 
-Sprints O1-O5 + E1-E1b-E2-E2b (8.5-9.5 sesiones). Tag `v1.0.0-beta`.
+> **Nota (2026-07-23)**: la línea de arriba ("Sprints O1-O5 + E1-E1b-E2-E2b")
+> es la numeración de diseño ANTERIOR a que TIE/MEL/Tools/Orchestrator se
+> ejecutaran de verdad con sus propios nombres de sprint (T1-T5 para el TIE,
+> E1-E2b para el MEL, R1-R7 para el Orquestrator — todos ✅ CERRADOS, ver nota
+> al inicio de esta sección). Se conserva como historial, pero **lo único que
+> falta de V1.0 y el plan real a seguir son las 4 sesiones B1-B4 de doc 27
+> §4** (Verificación total · Instalador+auto-start · Onboarding wizard · Beta
+> kit+release) — ver regla de la sección 0a.
 
-## 6. V1.1 — **Learner operativo** + AVCS Génesis (plan de sesiones: doc 27 §5)
+Tag `v1.0.0-beta` → `v1.0.0` al cerrar B1-B4 (doc 27 §4).
+
+## 6. V1.1 — **Learner operativo** (plan de sesiones: doc 27 §5)
 
 **[Δ 2026-07-20, reordenación por dependencias — doc 27 §1]**: el Learner SUBE a
 V1.1 (es el nodo con más dependientes: MEL Learning, AutomationLearner, Skill
@@ -242,14 +317,23 @@ Evolution, reflexión, y la LSL que Hermes necesita) y Hermes BAJA a V1.3. "TIE
 v3" queda DISUELTO: reflexión continua → Learner (aquí), routing predictivo →
 MEL Learning (V1.2), multi-runtime → V1.5.
 
+**[Corrección 2026-07-22]**: esta fase YA NO incluye AVCS Génesis. Se
+descubrió (auditoría de commits) que Génesis se construyó en V0.82/83
+(§2 — 2026-07-10 a 07-12), no que estuviera pendiente. La pista frontend
+paralela AV1-AV2 que aquí se planeaba se retira por completo; V1.1 queda
+100% backend (Learner). Completar los 4 ritmos que faltan
+(Comprensión/Acción/Error/Recuperación) sigue siendo MVP1 (V1.5, doc 13 §20)
+— confirmado con el usuario que no urge, puede esperar a esa fase.
+
 - **Backend (L1-L4)**: LSL completa (tabla `skills`+`skill_events` con linaje) +
   escalera de confianza + Mission Learning (`mission.completed` → model_stats,
   decisiones, skills DRAFT) + LLL análisis 2-5 + panel "Lo que Aithera ha
   aprendido" con Aceptar/Editar/Rechazar/Undo.
-- **Frontend (AV1-AV2)**: **AVCS Génesis** (doc 13 Fase 0 — estaba sin construir):
-  ParticleEngine GPGPU + semilla + ondas + 3 ritmos + Modo Presencia + Chat
-  limpio + sin clipping. Pista paralela: no compite con el backend.
-- 6 sesiones (Fable ×2: contratos L1, motor AV1). Tag `v1.1.0`.
+- **[Comparativa competitiva 2026-07-24, doc 32 Anexo]** El LLL (L3) gana una vía
+  de autoría de skills tipo `/learn` de Hermes Agent: el usuario pasa una
+  conversación/URL/notas y Aithera redacta el `SKILL.md` (cuarentena + HITL,
+  como cualquier skill DRAFT). Es una FUENTE más, no un pivote. Detalle en doc 09.
+- 4 sesiones (Fable ×1: contratos L1). Tag `v1.1.0`.
 
 ## 7. V1.2 — MCP Interop + **TIE v2** + **MEL Learning** (doc 27 §6)
 
@@ -261,6 +345,11 @@ MEL Learning (V1.2), multi-runtime → V1.5.
   `MissionAction` del AE + **mission evals** (suite canónica pre-release).
 - **MEL Learning + Recommendation Engines** (doc 19 §9.2-9.3, ahora con
   `model_stats` poblada por el Learner) + **Skill Evolution** + AutomationLearner.
+- **[Comparativa competitiva 2026-07-24, doc 32 Anexo]** MCP era el gap de
+  interoperabilidad más citado: los tres sistemas OSS más usados
+  (OpenClaw/Hermes/OpenJarvis) lo tienen, OpenJarvis además bidireccional (+A2A).
+  Ya estaba planeado aquí — la comparativa solo confirma la prioridad, sin
+  reprogramar. Mantener C2 (server) bidireccional en el alcance.
 - 6 sesiones (Fable ×2: C1 MCP client, T1 executor). Tag `v1.2.0`.
 
 ## 8. V1.3 — Hermes Runtime (GO/NO-GO) (doc 27 §7)
@@ -274,11 +363,31 @@ offline) → GO: H1-H4 incremental con las garantías de la auditoría (groundin
 gates) aplicadas a Hermes · NO-GO: plan B (doc 10 §6) en 2 sesiones. 5 sesiones
 (Fable ×2: H0, H1+shim MEL). Tag `v1.3.0`.
 
-## 8b. V1.4 — Red (Web+PWA+PIN) + voz data-driven + pulido (doc 27 §8)
+**[Comparativa competitiva 2026-07-24, doc 32 Anexo]** H1 generaliza el patrón
+"narrow waist" de Hermes (UN contrato `provider+registry+plugin` para TODO lo
+pluggable, no solo modelos como hoy el MEL): al enchufar el 2.º runtime real, se
+formaliza el contrato uniforme. **Nota honesta**: el TIE de Aithera ya es MÁS
+estructurado que el bucle plano de Hermes (planner+DAG vs ReAct, confirmado por
+análisis externos) — Hermes aporta su ecosistema (32 proveedores/24 canales/181
+skills) y el patrón del contrato, NO su arquitectura de razonamiento.
+
+## 8b. V1.4 — Red (Web+PWA+PIN) + 2 canales + sandboxing + voz + memoria legible (doc 27 §8)
 
 Cliente Web servido en `/app` + PIN/token + rate limiting (Fable: superficie de
 red) + PWA + decisiones de voz VZ2-VZ4 CON los datos del profiling VZ5 + UX
-remanentes (U1-U3). 4 sesiones. Tag `v1.4.0`.
+remanentes (U1-U3). **[Comparativa competitiva 2026-07-24, doc 32 Anexo]** V1.4
+absorbe 3 items derivados de la comparativa OpenJarvis/OpenClaw/Hermes (todos
+decididos por el usuario para post-1.0):
+- **W3 — 2 canales más del Gateway (Discord + WhatsApp)**: los competidores
+  tienen 24-37 canales; Aithera solo Telegram. El patrón `ChannelAdapter` (doc
+  20, ya inspirado en OpenClaw) hace barato añadir adapters.
+- **S1 — Sandboxing de ejecución (Docker)** para `shell`/`desktop`/`browser`:
+  hoy solo whitelist; 2 de 3 competidores usan aislamiento real de proceso. Modo
+  contenedorizado opcional, degradación graciosa si no hay Docker.
+- **Memoria humano-legible** (dentro de U1, inspirado en `MEMORY.md` de
+  OpenClaw): vista/export legible y editable del perfil MOS (extiende `profile.py`).
+
+7 sesiones (Fable ×2: W1 red, S1 sandboxing). Tag `v1.4.0`.
 
 ## 9. V1.5 — **AVCS MVP1 "Lenguaje completo"** + Hub avanzado + multi-instancia (13 §20, 27 §9)
 
@@ -343,23 +452,26 @@ tipado. Sincronización LSL↔GSN siempre con confirmación explícita (09 §3).
 
 | Versión | Nombre | Sesiones (Opus 4.8) | Entregable usable |
 |---|---|---|---|
-| V0.82/0.83 | Voz + **AVCS Fase 0** (semilla+ondas, 3 ritmos, modo presencia, chat limpio) | 3-4 | una presencia viva en el Hub |
+| V0.82/0.83 ✅ | Voz + **AVCS Fase 0 "Génesis"** — cerrada 2026-07-12 (semilla+ondas, 3 ritmos reales, modo presencia, chat limpio, PerformanceManager Q1-Q4) | 3-4 (hecho) | presencia viva en el Hub, ya entregada |
 | V0.85 ✅ | MOS Skeleton (cerrada, tag `v0.8.5`) | 5-6 | memoria viva: ingesta, briefing, contexto con fuentes |
 | V0.87 | **WPMS** (Workspace) | 2-3 | proyectos/milestones/tareas vara-Linear, progreso automático, enganche MOS/TIE |
 | V0.9 | Automation + Gates | 4-5 | briefing matinal automático, reglas, aprobaciones |
 | V1.0 | **TIE v1** (Orchestrator) + **MVP BETA** | 5-6 | **instalable y autónomo para beta testers**; planes como grafo, camino corto, kill-switch |
 | V1.0 cierre | **MVP-beta** (instalador+onboarding+verificación) | 4 | doble clic y funciona; tag `v1.0.0` (doc 27 §4) |
-| V1.1 | **Learner** + AVCS Génesis | 6 | Aithera aprende (LSL, Mission Learning, panel con undo); presencia visual viva |
+| V1.1 | **Learner operativo** | 4 | Aithera aprende (LSL, Mission Learning, panel con undo) — AVCS Génesis ya entregado en V0.82/83, no se repite |
 | V1.2 | MCP + **TIE v2** + MEL Learning + Skill Evolution | 6 | interop total; olas+replan+presupuestos; el MEL aprende; evals |
 | V1.3 | Hermes Runtime (H0 GO/NO-GO → H1-H4) | 5 | runtime que crece, con memoria/tools/LLM 100% de Aithera |
 | V1.4 | Web+PWA+PIN + voz data-driven | 4 | Aithera desde el navegador/móvil; voz fluida medida |
-| V1.5 | **AVCS MVP1** + Hub avanzado + multi-instancia | 5 | los 7 ritmos, UI rediseñada (TIE v3 disuelto: ver doc 27 §1) |
+| V1.5 | **AVCS MVP1** + Hub avanzado + multi-instancia | 5 | completa los 4 ritmos que faltan (3 ya reales desde V0.82/83) + campos maduros, UI rediseñada (TIE v3 disuelto: ver doc 27 §1) |
 | V1.6 | **AVCS MVP2** + Project Memory C2 + puerta GSN/CIE | 5 | el Hub como organismo; contratos de red revisados |
 | V2.0+ | Red (GSN/CIE/Guardians) | — | inteligencia colectiva opcional |
 
-**Total hasta V1.0 beta: ~16-20 sesiones.** Regla de siempre: si una fase crece, se
-parte en dos (principio 7); si algo amenaza la fecha de V1.0, se recorta alcance de
-la fase, nunca se aplaza V1.0.
+**Total hasta V1.0 beta: ~16-20 sesiones** (mayormente ya ejecutadas — ver §5).
+**Total V1.0 cierre → V1.6: 33 sesiones** (recuento exacto y detallado por
+sesión en doc 27 §2 — la cifra de esta tabla es orientativa/histórica, doc 27
+manda, ver §0a). Regla de siempre: si una fase crece, se parte en dos
+(principio 7); si algo amenaza la fecha de V1.0, se recorta alcance de la
+fase, nunca se aplaza V1.0.
 
 ---
 *Roadmap definitivo 2026-07-09 (Fable 5). Sustituye a la versión V0.7.2→V1.2.

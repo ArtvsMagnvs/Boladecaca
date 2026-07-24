@@ -11,8 +11,21 @@
 ## 1. La interfaz `AgentRuntime` (se define en V1.0, no en V1.1)
 
 ```
-Orchestrator → AgentRuntime → [ NullRuntime (V1.0) | HermesRuntime (V1.1) | futuros ]
+Orchestrator → AgentRuntime → [ NullRuntime (V1.0) | HermesRuntime (V1.3) | futuros ]
 ```
+
+> **[Δ 2026-07-24, comparativa competitiva — doc 32 Anexo] Patrón "narrow waist"
+> de Hermes**: la revisión del repo real de Hermes Agent (Nous Research) reveló
+> que TODO lo pluggable en Hermes usa UN único contrato uniforme
+> `provider.py`+`registry.py`+`plugin.yaml` — modelos, canales, navegador,
+> TTS/STT, memoria. Aithera hoy solo lo hace para modelos (el MEL). Al enchufar
+> `HermesRuntime` como 2.º runtime real (V1.3, doc 27 §7 H1) se formaliza el mismo
+> contrato uniforme para runtimes, y queda abierto el camino de aplicarlo a
+> voz/navegador/memoria/canales cuando toque. **Nota honesta**: el bucle de
+> ejecución de Hermes es un ReAct plano SIN planificador/DAG — el TIE de Aithera
+> ya es MÁS estructurado (planner+grafo validado+checkpoints). Lo que aporta
+> Hermes es el patrón del contrato + su ecosistema (32 proveedores, 24 canales,
+> 181 skills), NO su arquitectura de razonamiento.
 
 ```python
 # backend/app/tie/runtime.py (V1.0)

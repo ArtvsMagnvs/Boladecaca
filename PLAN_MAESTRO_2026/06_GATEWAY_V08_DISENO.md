@@ -174,6 +174,16 @@ Regla al escribir adapters: **son piezas finas**. Si te ves metiendo lógica de
 negocio (decidir qué responder, tocar la BD de dominio, llamar tools), va en el
 handler, no en el adapter.
 
+**[Δ 2026-07-24, comparativa competitiva — doc 32 Anexo] Canales adicionales
+(Discord + WhatsApp) → V1.4 (post-1.0)**: la comparativa con OpenClaw/Hermes/
+OpenJarvis (24-37 canales cada uno) confirma que este patrón `ChannelAdapter`
+escala barato a muchos adapters — de hecho está inspirado en el Gateway de
+OpenClaw. Decisión del usuario (2026-07-24): añadir **Discord** y **WhatsApp**
+como 2.º y 3.er canal **después de 1.0** (sesión W3 en doc 27 §8). Cada uno es
+un adapter fino por esta misma guía (whitelist por usuario, token cifrado DPAPI
+como Telegram, `to_envelope`/`deliver`/`authorize`/`start`/`stop`), cero cambios
+en el handler ni en la lógica de negocio (principio 3).
+
 ---
 
 ## 6. Qué está hecho y qué queda (V0.8)

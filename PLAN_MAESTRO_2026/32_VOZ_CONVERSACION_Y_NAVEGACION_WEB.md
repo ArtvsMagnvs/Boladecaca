@@ -301,6 +301,58 @@ frase de voz suena antes de terminar de generar el texto.
 
 ---
 
+## A·VOZ-7 — Contexto de sesión cacheado (no re-consultar el MOS cada turno)
+**Modelo: Opus · Esfuerzo: Medio** — *(idea robada de Hermes Agent, ver Anexo competitivo)*
+
+Origen: la investigación competitiva (Hermes Agent de Nous Research). Hermes
+**congela su memoria en un snapshot una vez por sesión** y la renderiza como un
+bloque estático en el system prompt para el resto de la sesión — a propósito,
+para NO invalidar el caché de prompt del proveedor en cada turno. Cita textual
+de su `AGENTS.md`: *"el caché de prompt por conversación es sagrado… todo lo que
+mute el contexto pasado… multiplica el coste del usuario"*.
+
+El problema en Aithera: `enricher.py` pide contexto al MOS en CADA turno del
+chat (con presupuesto duro de 300 ms). En el camino corto conversacional eso es
+(a) una consulta al MOS por mensaje que casi siempre devuelve lo mismo dentro de
+una sesión, y (b) un system prompt que cambia turno a turno → invalida el caché
+de prompt de los proveedores que lo soportan (Anthropic 90% descuento, etc.),
+multiplicando coste y latencia del primer token.
+
+Decisión tomada: en el camino corto (charla), cachear el contexto del MOS **por
+sesión** (`session_id`), no por mensaje — refrescándolo solo cuando cambia de
+sesión o pasa un TTL prudente. El presupuesto de 300 ms sigue siendo el tope de
+la PRIMERA consulta de la sesión; los turnos siguientes reusan el snapshot.
+
+Matiz importante (project_memory_should_never_skip, memoria del proyecto): el
+timeout de 300 ms del M4 se marcó como parche, no como objetivo — esta sesión NO
+lo elimina, pero sí reduce cuántas veces se paga, que es una mejora real sin
+tocar la corrección. El contexto de una MISIÓN (camino complejo/acción directa)
+NO se cachea así: cada nodo puede pedir tipos de memoria distintos (el enricher
+ya tiene su propia caché de 60 s por (query, tipos) de T2) — esto es solo para
+la charla, donde el contexto es estable dentro del hilo.
+
+Pasos exactos:
+1. En el camino corto (`_short_path`/`_short_path_stream` de A·VOZ-3, y el
+   `build_system_prompt` que usan vía `NullRuntime`): resolver el contexto del
+   MOS UNA vez por `session_id` y guardarlo (dict en memoria keyed by session_id,
+   con TTL configurable, p.ej. `TIE_SESSION_CTX_TTL_S` default 600).
+2. La primera consulta de la sesión respeta el presupuesto de 300 ms (igual que
+   hoy); un HIT de caché de sesión no consulta el MOS ni espera nada.
+3. Invalidación: al cambiar de sesión, al pasar el TTL, o si el usuario guarda
+   algo en memoria a mitad de sesión (evento `memory.ingested`/`save_memory` →
+   invalida el snapshot de esa sesión para que el nuevo dato entre en el
+   siguiente turno — nunca dejar memoria fresca "invisible", C-1b/fiabilidad).
+4. Métrica: `[voz-perfil] ctx-sesión HIT/MISS` para medir el ahorro real.
+5. Tests: dos turnos de la misma sesión → 1 sola consulta al MOS; cambiar de
+   sesión → nueva consulta; guardar en memoria a mitad → el siguiente turno
+   refresca (la memoria nueva NO queda invisible).
+
+**Criterio de cierre**: en una charla de varios turnos, el MOS se consulta 1 vez
+por sesión (no por mensaje), medido por `ctx-sesión HIT`; una memoria guardada a
+mitad de sesión aparece en el siguiente turno (no se pierde).
+
+---
+
 # BLOQUE B — NAVEGACIÓN WEB BÁSICA (pre-1.0)
 
 > Origen: revisión de Mark-L. Su fiabilidad en YouTube/música viene de **NO
@@ -461,6 +513,7 @@ verificados en vivo, con los gates disparando en los puntos sensibles.
 | A·VOZ-4 | Voz/Orq | Misiones en 2.º plano + reporte async | **Opus** | Alto | ✅ **prioritario** |
 | A·VOZ-5 | Voz | Kokoro-onnx opcional (sin Docker) | Opus | Alto | ➖ opcional |
 | A·VOZ-6 | Voz | Pulido STT/TTS + medir TTFB<2s | Sonnet | Medio | ✅ |
+| A·VOZ-7 | Voz/Orq | Contexto de sesión cacheado (no re-consultar el MOS cada turno) | **Opus** | Medio | ✅ |
 | B·WEB-1 | Web | Abrir medios/URL en navegador real ⭐ | Sonnet | Bajo | ✅ **prioritario** |
 | B·WEB-2 | Web | Clic por visión (fallback) | Opus | Alto | ✅ |
 | C·WEB-3 | Web+ | Bucle agentic DOM+visión (set-of-mark) | Opus | Muy Alto | ➖ post-1.0 |
@@ -511,7 +564,59 @@ Docker Desktop [unattended install (roadmap #307)](https://github.com/docker/roa
 
 ---
 
-*Creado 2026-07-23. Fundado en: `app/tie/pipeline.py`/`intents.py`/`contracts.py`
+## Anexo — Comparativa competitiva: OpenJarvis · OpenClaw · Hermes Agent (2026-07-24)
+
+Investigación verificada con DATOS PRIMARIOS (API de GitHub, código fuente crudo
+vía `raw.githubusercontent.com`, no resúmenes de terceros) de los tres sistemas
+"Jarvis-like" OSS más usados, además de Mark-L. **Este anexo es la fuente del
+"por qué" de las decisiones de roadmap derivadas** (ver §"Decisiones de roadmap"
+abajo); doc 03 y doc 27 las colocan en su versión, apuntando aquí.
+
+**Cifras verificadas hoy** (recontadas, no las de la JWIKI a ciegas):
+OpenClaw 383.989★ (licencia "Other"/NOASSERTION, no MIT puro pese al marketing),
+Hermes Agent 219.802★ (MIT; la única cifra no auditable del todo — ratio
+fork/star normal y 7.303 archivos con SECURITY.md serio argumentan contra que
+sea humo), OpenJarvis 7.893★ (Apache-2.0, arXiv 2605.17172, el más "papers-real").
+
+**El hallazgo central**: NINGUNO de los tres tiene planificador/grafo. Los tres
+—independientemente— resuelven "cómo ejecuta una tarea" con un **bucle plano
+ReAct** (el LLM decide turno a turno, sin DAG, sin checkpoint por nodo, sin gate
+a nivel de plan). Un análisis académico forense de OpenClaw (arXiv 2604.05589)
+lo critica por "descomposición de tareas limitada" y "pérdida de continuidad en
+procedimientos multi-paso" — justo lo que el TIE de Aithera resuelve. **La
+orquestación de Aithera (planner→DAG validado→executor con checkpoints/gates/
+kill-switch/recovery) es objetivamente más rigurosa que la de los tres, según
+sus propios análisis externos.** No es un área a mejorar: es nuestra ventaja.
+
+**Dónde Aithera ya va por delante** (confirmado, no imitar): muro de cookies
+(3 capas aprendidas — ninguno lo resuelve así; OpenJarvis ni lo maneja), postura
+de seguridad conservadora (OpenClaw tiene historial público malo: auditoría de
+512 vulns, exfiltración confirmada por Cisco, prohibido en China, incidente
+"MoltMatch"), y el MEL eligiendo modelo por capacidad MEDIDA (nadie más lo hace).
+
+**Qué SÍ merece robar** (cada uno con su decisión de roadmap ya tomada):
+
+| De | Idea | Dónde va | Nota |
+|---|---|---|---|
+| Hermes | Congelar contexto de memoria por SESIÓN (no por turno) para no invalidar el caché de prompt | **A·VOZ-7** (este doc) | cita: "el caché de prompt es sagrado" |
+| Todos | Instalador un-comando + auto-start + onboarding hardware-aware | **V1.0 MVP-beta** (ya planeado, doc 27 B1-B4) | los tres lo tienen; valida la prioridad, no cambia el plan |
+| OpenClaw/Hermes | Sandboxing REAL de ejecución (Docker/contenedor) para shell/desktop/browser | **V1.4** (hardening antes de v1.5) | nuestra whitelist es más débil en profundidad; 2 de 3 lo tratan como imprescindible |
+| OpenClaw/Hermes/OJ | 2 canales más del Gateway (Discord/WhatsApp) | **V1.4** (post-1.0) | nuestro `ChannelAdapter` ya está pensado para esto |
+| Hermes | `/learn`: el agente redacta su propio `SKILL.md` desde conversación/URL/notas | **V1.1 LLL** (doc 09/15) | idea concreta de implementación del LLL, no un pivote |
+| Hermes | "Narrow waist": UN contrato `provider+registry+plugin` para TODO lo pluggable (modelos/voz/navegador/memoria/canales), no solo modelos | **V1.3** (con Hermes, su ejemplo) | refactor arquitectónico; Hermes es el caso de uso que lo justifica |
+| OpenClaw | Memoria humano-legible/editable (tipo `MEMORY.md`) | **V1.4** (retoque MOS/UX) | extiende `memory/profile.py` (ya visible en Ajustes) hacia legibilidad plena |
+| OpenClaw/Hermes/OJ | MCP cliente+servidor (interop) | **V1.2** (YA planeado, doc 27 C1/C2) | la comparativa confirma que es el estándar de interop del sector |
+
+**Qué NO copiar** (con evidencia): el bucle plano de los tres (nuestro TIE ya es
+superior, dicho por sus propios análisis); la postura "cooperativo, no
+adversarial" de OpenClaw sin red de contención real (es el patrón detrás de sus
+incidentes); el "self-evolving" de Hermes tal cual (solo la Fase 1 funciona y
+exige revisión humana — aspirar, no replicar ya).
+
+---
+
+*Creado 2026-07-23 · comparativa competitiva añadida 2026-07-24. Fundado en:
+`app/tie/pipeline.py`/`intents.py`/`contracts.py`
 (código real), JWIKI `08_VOICE/` + `01_LANDSCAPE/`, revisión del repo Mark-L, y
 búsqueda web verificada (Kokoro/Docker, browser-use/Skyvern). Las decisiones
 están tomadas para que cada sesión solo ejecute.*
