@@ -742,7 +742,7 @@
   "settings.ia.cloud.desc": "Servicios externos, cada uno con su clave. Claude Code CLI usa tu sesión del terminal (sin key).",
   "settings.ia.cloud.title": "En la nube — API key o suscripción",
   "settings.ia.codex.installHint": "Incluido en tu plan de ChatGPT (Free/Go/Plus/Pro y superiores): sin API key. Instala con `npm i -g @openai/codex` e inicia sesión con `codex login`. (Si el login con ChatGPT no funcionara en tu plan, puedes usar una API key de OpenAI con `codex login --with-api-key`.)",
-  "settings.ia.codex.modelHint": "GPT-5.6 Sol, Terra, Luna, 5.5, 5.4 y 5.4 mini (o el recomendado de tu cuenta por defecto) — asigna los diferentes modelos de Codex a cada tipo de tarea de fondo (programar, razonar, redactar, analizar) en Inteligencia.",
+  "settings.ia.codex.modelHint": "GPT-5.6 Terra, Luna, 5.5, 5.4 y 5.4 mini (o el recomendado de tu cuenta por defecto) — asigna los diferentes modelos de Codex a cada tipo de tarea de fondo (programar, razonar, redactar, analizar) en Inteligencia. (Sol no está disponible con login por ChatGPT, solo por API key.)",
   "settings.ia.intelligence.title": "Inteligencia (MEL: Model Execution Layer)",
   "settings.ia.local.onlyDownload": "Aquí solo se descargan e instalan en tu PC. Para elegir cuáles usa Aithera, ve abajo a",
   "settings.ia.local.title": "Modelos locales — descarga e instalación",

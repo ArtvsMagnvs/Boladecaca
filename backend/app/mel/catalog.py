@@ -202,13 +202,15 @@ CATALOG: dict[str, dict] = {
     # ids verificados en learn.chatgpt.com/docs/models, 2026-07-24): permite
     # elegir un Codex concreto por tarea en Inteligencia, igual que Claude Code
     # con fable/opus/sonnet/haiku. Sin los ids "-codex" (deprecados/rechazados
-    # bajo login por ChatGPT — ver nota en ai/catalog.py).
+    # bajo login por ChatGPT — ver nota en ai/catalog.py). TAMPOCO "gpt-5.6-sol"
+    # — CONFIRMADO EN VIVO (2026-07-25): 400 "not supported when using Codex
+    # with a ChatGPT account" (exige facturación por API key). El benchmark del
+    # MEL ya lo había detectado y excluido solo (measured_unfit, ok=False) —
+    # esto solo saca la entrada MUERTA del catálogo para no ofrecerla en la UI.
     "codex": {
         "default": {"scores": _scores(84, 82, 86, 86, 86, 90, 94, 88),
                     "relative_cost": 22, "is_local": False},
         "models": {
-            "gpt-5.6-sol":   {"scores": _scores(88, 85, 90, 90, 90, 94, 97, 92),
-                              "relative_cost": 45, "is_local": False},
             "gpt-5.6-terra": {"scores": _scores(85, 83, 87, 87, 87, 91, 95, 89),
                               "relative_cost": 30, "is_local": False},
             "gpt-5.6-luna":  {"scores": _scores(78, 80, 80, 80, 78, 82, 86, 80),

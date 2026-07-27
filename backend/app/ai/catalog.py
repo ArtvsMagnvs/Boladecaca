@@ -64,22 +64,25 @@ PROVIDER_CATALOG: Dict[str, Dict[str, Any]] = {
     # [2026-07-25] SÍ se puede elegir modelo — `codex exec --model <id>` (docs
     # oficiales learn.chatgpt.com/docs/models, verificado 2026-07-24). Lista
     # verificada de ids ACTUALES (misma familia que el proveedor "openai"):
-    # gpt-5.6-sol/terra/luna, 5.5, 5.4, 5.4-mini. Deliberadamente NO se ofrecen
-    # los ids con sufijo "-codex" (p.ej. gpt-5.3-codex): la documentación oficial
-    # los marca deprecados o, según reportes del propio repo, el login por
-    # ChatGPT los rechaza (son de uso vía API key). `default_model=""`
-    # (recomendado) sigue siendo la opción más segura: Codex elige el modelo
-    # recomendado de la cuenta si el usuario no fija uno explícito.
+    # gpt-5.6-terra/luna, 5.5, 5.4, 5.4-mini. Deliberadamente NO se ofrecen los
+    # ids con sufijo "-codex" (p.ej. gpt-5.3-codex): deprecados o rechazados
+    # bajo login por ChatGPT. TAMPOCO se ofrece "gpt-5.6-sol" — CONFIRMADO EN
+    # VIVO (2026-07-25, `codex exec --model gpt-5.6-sol`, cuenta autenticada):
+    # `400 "The 'gpt-5.6-sol' model is not supported when using Codex with a
+    # ChatGPT account."` — el flagship exige facturación por API key, no login
+    # por ChatGPT (el propio benchmark del MEL ya lo había detectado y excluido
+    # solo). `default_model=""` (recomendado) sigue siendo la opción más
+    # segura: Codex elige el modelo recomendado de la cuenta si el usuario no
+    # fija uno explícito.
     "codex": {
         "label": "Codex CLI (OpenAI)",
         "description": "Incluido en tu plan de ChatGPT (Free/Go/Plus/Pro…): sin API key — usa Codex desde tu terminal (`codex login`)",
         "requires_key": False,
         "default_model": "",
-        "models": ["gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna",
+        "models": ["gpt-5.6-terra", "gpt-5.6-luna",
                    "gpt-5.5", "gpt-5.4", "gpt-5.4-mini"],
         "model_labels": {
-            "gpt-5.6-sol": "GPT-5.6 Sol (el más capaz)",
-            "gpt-5.6-terra": "GPT-5.6 Terra (equilibrado)",
+            "gpt-5.6-terra": "GPT-5.6 Terra (el más capaz vía ChatGPT)",
             "gpt-5.6-luna": "GPT-5.6 Luna (rápido)",
             "gpt-5.5": "GPT-5.5",
             "gpt-5.4": "GPT-5.4",
