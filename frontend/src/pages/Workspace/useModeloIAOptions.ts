@@ -7,15 +7,16 @@
 // un proveedor en Ajustes, esta lista se actualiza sola, sin tocar código.
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
+import { useT } from "@/store/useI18n";
 
 export interface ModeloIAOption {
   value: string;
   label: string;
 }
 
-const GENERIC: ModeloIAOption = { value: "generic", label: "Flexible según necesidad" };
-
 export function useModeloIAOptions() {
+  const tr = useT();
+  const GENERIC: ModeloIAOption = { value: "generic", label: tr("workspace.modeloIA.generic") };
   const [options, setOptions] = useState<ModeloIAOption[]>([GENERIC]);
 
   useEffect(() => {

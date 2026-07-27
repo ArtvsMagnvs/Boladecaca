@@ -206,6 +206,23 @@ async def _generate_graph(goal: str, context: str, mission_id: str,
         tools = [t for t in tools if t in permitidas]
     # [S2, B-1] El planner ve el catálogo REAL (acciones incluidas), no solo nombres.
     system = _SYSTEM_PROMPT.replace("{tools}", _tools_catalog_text(permitidas))
+    # [I18N-9] Los `goal` de cada nodo se muestran al usuario en la vista de
+    # Misiones — deben salir en el idioma de interfaz elegido. Se localiza SOLO
+    # ese campo: las claves del JSON, ids (n1, n2…) y tool_ids NO se traducen, o
+    # el plan dejaría de parsear/validar. Si no hay idioma elegido, no se añade
+    # nada (comportamiento histórico: goals en el idioma que decida el modelo).
+    try:
+        from app.core.language import ui_language_name
+
+        lang_name = ui_language_name()
+        if lang_name:
+            system += (
+                f"\n\nIDIOMA: escribe el campo \"goal\" de cada nodo en {lang_name} "
+                f"(es lo que el usuario leerá). NO traduzcas las claves del JSON, "
+                f"los ids de nodo ni los tool_ids del catálogo."
+            )
+    except Exception:
+        pass  # best-effort: sin idioma, goals en el idioma que elija el modelo
     # [S2, C-1] Etiquetado anti-contaminación: el OBJETIVO es la petición
     # literal; el CONTEXTO va explícitamente marcado como solo-referencia.
     user = f"OBJETIVO (la petición del usuario, tal cual — la ÚNICA fuente del plan):\n{goal}"

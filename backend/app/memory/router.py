@@ -25,6 +25,19 @@ class MemoryRouter:
     def __init__(self, default_store: IMemoryStore):
         self._default: IMemoryStore = default_store
         self._routes: dict[MemoryType, IMemoryStore] = {}
+        # [A·VOZ-7] Contador monótono de ESCRITURAS. Sube en cada `store()`
+        # (venga del usuario, un agente, la ingesta o el resumen nocturno). Los
+        # consumidores que cachean lecturas (p.ej. el contexto por sesión de la
+        # charla, chat_service) guardan el valor al que lo computaron y refrescan
+        # cuando cambia — así una memoria recién guardada NUNCA queda invisible
+        # (fiabilidad, misma regla que C-1b). Contador, no evento: funciona en
+        # contexto sync y no depende de que un handler llegue a tiempo.
+        self._write_version: int = 0
+
+    def write_version(self) -> int:
+        """Nº de escrituras en memoria hasta ahora (monótono). Lo usan los cachés
+        de lectura para saber si su snapshot sigue siendo válido."""
+        return self._write_version
 
     # -- registro (el punto de intercambio tecnologico) ----------------------
 
@@ -51,9 +64,12 @@ class MemoryRouter:
         metadata: Optional[dict] = None,
         dedup_key: Optional[str] = None,
     ) -> str:
-        return await self._store_for(memory_type).store(
+        item_id = await self._store_for(memory_type).store(
             content, memory_type, source, metadata=metadata, dedup_key=dedup_key
         )
+        # [A·VOZ-7] Una escritura invalida los snapshots de lectura cacheados.
+        self._write_version += 1
+        return item_id
 
     async def search(
         self,

@@ -19,8 +19,10 @@ from typing import Optional
 
 from app.core.config import settings
 from app.core.logging_config import get_system_logger
+from app.core.strings import t as _t
 from app.tie import authority as authority_mod
-from app.tie import enricher, executor, intents, planner, responder, tracer
+from app.tie import (conversation, enricher, executor, intents, planner,
+                     quick_answers, responder, tracer)
 from app.tie.authority import Authority
 from app.tie.contracts import Intent, Mission, NodeState, TaskGraph
 from app.tie.missions import new_mission
@@ -30,6 +32,12 @@ logger = get_system_logger("tie.pipeline")
 
 # action_type del gate del PLAN (distinto del gate de nodo, `tie_resume` — T3).
 PLAN_ACTION_TYPE = "tie_plan"
+
+# [A·VOZ-4] Tareas de fondo en vuelo. Retener la referencia es obligatorio:
+# `asyncio.create_task` sin guardar el resultado deja la task a merced del GC,
+# que puede recolectarla (y cancelar la misión) en silencio — el mismo footgun
+# que `core/events._inflight`. `discard` la suelta cuando termina.
+_BG_TASKS: set = set()
 
 
 # ---------------------------------------------------------------------------
@@ -53,10 +61,8 @@ async def _resolve_explicit_model(intent: Intent, *, project_id: Optional[int]) 
         if ref is None:
             # Nombre no resuelto → NUNCA inventar; decir qué SÍ hay (doc 19 §7b.2).
             disponibles = ", ".join(sorted({m["label"] for m in mel.list_models()})) or "ninguno configurado"
-            return {"action": "reply", "text": (
-                f"No tengo configurado ningún modelo que se llame «{em['name']}». "
-                f"Modelos disponibles ahora mismo: {disponibles}. "
-                f"Puedes conectar más en Ajustes → Proveedores de IA."
+            return {"action": "reply", "text": _t(
+                "pipeline.model_unknown", name=em["name"], available=disponibles,
             )}
 
         scope = em.get("scope", "unspecified")
@@ -65,24 +71,19 @@ async def _resolve_explicit_model(intent: Intent, *, project_id: Optional[int]) 
             if project_id:
                 mel.set_project_override(project_id, ref.key)
                 await _record_override_decision(project_id, ref.key)
-                return {"action": "reply", "text": (
-                    f"Hecho. A partir de ahora usaré {ref.provider} ({ref.model}) para todo este "
-                    f"proyecto. Puedes quitarlo cuando quieras en Ajustes → Inteligencia."
+                return {"action": "reply", "text": _t(
+                    "pipeline.model_pinned_project", provider=ref.provider, model=ref.model,
                 )}
             # Chat general sin proyecto asociado: no hay a qué fijarlo.
-            return {"action": "reply", "text": (
-                f"Puedo usar {ref.provider} para este mensaje, pero esta conversación no está "
-                f"ligada a ningún proyecto, así que no puedo fijarlo «para todo el proyecto» desde "
-                f"aquí. Si quieres fijarlo a un proyecto, dímelo desde ese proyecto o en Ajustes → "
-                f"Inteligencia. ¿Lo uso solo para este mensaje?"
+            return {"action": "reply", "text": _t(
+                "pipeline.model_no_project_bind", provider=ref.provider,
             )}
 
         if scope == "unspecified":
             # Nombró un modelo pero no dijo si es puntual o permanente → preguntar,
             # sin ejecutar nada este turno (aclaración de camino corto, sin gate).
-            return {"action": "reply", "text": (
-                f"¿Quieres que use {ref.provider} ({ref.model}) solo para esta petición, o a partir "
-                f"de ahora para todo? Dímelo y sigo."
+            return {"action": "reply", "text": _t(
+                "pipeline.model_scope_unspecified", provider=ref.provider, model=ref.model,
             )}
 
         # scope == "task": forzar ese modelo para esta tarea/turno.
@@ -120,11 +121,11 @@ async def handle(envelope) -> str:
         return await _run_pipeline(text, source="user", channel=channel)
     except Exception as e:  # el Gateway ya hace fail-soft, pero el TIE no delega su honestidad
         logger.error(f"[tie] handle falló de forma inesperada: {type(e).__name__}: {e}")
-        return "He tenido un problema interno procesando eso. Inténtalo otra vez."
+        return _t("pipeline.internal_error_retry")
 
 
 async def handle_stream(text: str, *, channel: str = "web", intent: Optional[Intent] = None,
-                        session_id: Optional[str] = None):
+                        session_id: Optional[str] = None, conversational: bool = False):
     """[T4b] Entrada STREAMING — la que usa `/api/chat/stream` (el chat de
     Electron). Emite tuplas `(kind, payload)`:
       ("status", "analizando"|"planificando"|…)  → feedback inmediato (≤1 s, doc 11 B.5)
@@ -143,23 +144,41 @@ async def handle_stream(text: str, *, channel: str = "web", intent: Optional[Int
     traía varios encargos. Se le pasa aquí para no pagar una SEGUNDA llamada al
     clasificador en el ~80% de mensajes que son de un solo encargo — la regla de
     no-regresión de doc 23 §0 ("el camino corto no paga ni una llamada extra").
+
+    `conversational` [A·VOZ-4, doc 32]: modo conversación (lo pone el chat de VOZ,
+    o el usuario). En este modo, una misión (acción directa o compleja) NO bloquea
+    el turno: se acusa recibo al instante ("me pongo a ello"), se ejecuta en
+    segundo plano y se avisa por el canal cuando termina. La charla (camino corto)
+    responde igual que siempre. En modo texto (default), comportamiento clásico:
+    el plan se ve/aprueba en línea, nada cambia.
     """
     from app.automation import approval_gate
     from app.memory import memory_router
     from app.tools import tool_manager
 
-    yield ("status", "analizando")
+    # [2026-07-24] RESPUESTA DETERMINISTA sobre los datos propios ("¿qué
+    # proyectos tengo?", "muestra mis agentes/reglas/tareas"): SQL + plantilla,
+    # 0 LLM, 0 alucinación, instantánea. Es EL arreglo definitivo del fallo
+    # reportado (el LLM decía "no tengo acceso a tus proyectos" o los
+    # inventaba). Solo cuando el mensaje es un listado claro (conservador).
+    if intent is None:
+        quick = await asyncio.to_thread(quick_answers.try_answer, text)
+        if quick:
+            yield ("text", quick)
+            return
+
+    # [A·VOZ-6] Clasificar SIN emitir "analizando" todavía: el ~80% de los
+    # mensajes son camino corto (charla / query simple) y NO deben mostrar
+    # "analizando" — eso hacía que un simple "¿cómo estás?" pareciera una misión
+    # y tapaba el hecho de que ya se está respondiendo. El status solo tiene
+    # sentido para las MISIONES (cubre la latencia del planner), y se emite abajo.
+    # El clasificador ya tiene su propio fast-path (0 LLM) para la charla obvia.
     try:
         if intent is None:
-            intent_task = asyncio.create_task(intents.classify(text, channel=channel))
-            ctx_task = asyncio.create_task(_prefetch_context(text))
-            intent = await intent_task
-            prefetched = await ctx_task
-        else:
-            prefetched = await _prefetch_context(text)
+            intent = await intents.classify(text, channel=channel)
     except Exception as e:
         logger.error(f"[tie] handle_stream: clasificación falló: {type(e).__name__}: {e}")
-        intent, prefetched = Intent.conversational_fallback(text), ""
+        intent = Intent.conversational_fallback(text)
 
     # [E2b] ¿El usuario nombró un modelo? Aclaración/pin/forzado antes de nada.
     explicit = await _resolve_explicit_model(intent, project_id=None)
@@ -168,22 +187,47 @@ async def handle_stream(text: str, *, channel: str = "web", intent: Optional[Int
         return
     force_model = explicit["model_key"] if explicit else None
 
-    # [A·VOZ-3, doc 32] Camino corto: SIN misión ni traza (ver la nota gemela en
-    # `_run_pipeline` — una charla no es una misión). Streamea tokens de verdad,
-    # igual que siempre; no hay `_close_if_orphan` que aplicar porque no se abrió
-    # ninguna traza que pudiera quedar huérfana.
+    # [A·VOZ-3/A·VOZ-6] Camino corto: SIN misión, SIN traza, SIN status y SIN
+    # prefetch. Antes se pagaba `_prefetch_context` (una consulta al MOS con
+    # presupuesto de 300 ms) ANTES de este check y luego se DESCARTABA — el
+    # camino corto arma su propio contexto dentro de `NullRuntime.stream_task`
+    # (build_system_prompt ya consulta el MOS). Era latencia muerta en el hot
+    # path de cada charla. Ahora arranca a streamear tokens de inmediato.
     if intent.is_short_path:
         async for ev in _short_path_stream(text, intent, channel, memory_router,
                                            tool_manager, approval_gate, force_model,
-                                           session_id):
+                                           session_id, conversational=conversational):
             yield ev
         return
+
+    # --- A partir de aquí es una MISIÓN de verdad ---
+    # AHORA sí "analizando" (cubre la latencia del planner) y el prefetch de
+    # contexto, que el camino complejo/de fondo sí consume.
+    yield ("status", _t("status.analyzing"))
+    prefetched = await _prefetch_context(text)
 
     mission = new_mission(goal=intent.goal or text, source="user", channel=channel)
     trace_id = tracer.record_start(mission, channel=channel)
     mission.trace_id = trace_id     # [fix mismatch, doc 31] mission.id != trace_id
     tracer.record_intent(trace_id, intent)
     tracer.emit_started(mission)
+
+    # [A·VOZ-4, doc 32] Modo conversación: la misión NO bloquea el turno. Se acusa
+    # recibo YA (para que la voz responda en < 2 s y el usuario pueda seguir
+    # hablando), se lanza la ejecución real en segundo plano, y se avisa por el
+    # canal cuando termine (o cuando necesite permiso). El reporte final lo entrega
+    # el handler del bus de `conversation.py` al recibir `mission.completed/failed`.
+    if conversational:
+        conversation.register(mission.id, trace_id, session_id=session_id,
+                              channel=channel, goal=mission.goal)
+        task = asyncio.create_task(_run_background_mission(
+            text, intent, mission, trace_id, channel, prefetched, force_model,
+            session_id=session_id))
+        _BG_TASKS.add(task)
+        task.add_done_callback(_BG_TASKS.discard)
+        yield ("mission", trace_id)              # el usuario puede abrirla/seguirla
+        yield ("text", conversation.acuse_text())  # "me pongo a ello" — cierra el turno
+        return
 
     # [Fix 2026-07-19] TRAZA ZOMBI. Si el cliente corta el stream (el botón de
     # parar, navegar a otra página, cerrar la app), este generador se cierra y
@@ -197,7 +241,7 @@ async def handle_stream(text: str, *, channel: str = "web", intent: Optional[Int
     # waiting y aquí no se pisa nada.
     try:
         async for ev in _stream_body(text, intent, mission, trace_id, channel,
-                                     prefetched, force_model):
+                                     prefetched, force_model, session_id=session_id):
             yield ev
     finally:
         _close_if_orphan(trace_id)
@@ -210,7 +254,7 @@ def _close_if_orphan(trace_id: str) -> None:
         if meta and meta.get("state") == "running":
             tracer.record_end(
                 trace_id,
-                outcome="Lo paraste antes de que terminara.",
+                outcome=_t("pipeline.stream_stopped"),
                 state="cancelled",
             )
             logger.info(f"[tie] traza {trace_id[:8]} cerrada como cancelada (stream abortado)")
@@ -241,6 +285,7 @@ def _direct_action_tools(intent: Intent) -> list[str]:
 async def _direct_action_path(
     text: str, intent: Intent, mission: Mission, trace_id: str,
     *, force_model: Optional[str] = None, channel: Optional[str] = None,
+    session_id: Optional[str] = None,
 ) -> str:
     """[Opt latencia] Un ÚNICO bucle de tool-use resuelve una tarea mecánica
     entera —abrir, observar, actuar, responder— sin planner ni grafo multi-nodo.
@@ -254,19 +299,49 @@ async def _direct_action_path(
     t0 = __import__("time").monotonic()
     tools = _direct_action_tools(intent)
     runtime = get_runtime("null")
+    # [2026-07-25] CONTEXTO REAL para el bucle. EL FALLO QUE CIERRA: una orden
+    # como "en ESTE proyecto crea una milestone MVP y un agente" era imposible de
+    # ejecutar — el bucle no sabía a qué proyecto se refería ni tenía los IDs
+    # (`create_milestone` exige `project_id`), y acababa agotando iteraciones.
+    # Ahora recibe (a) el estado real del workspace con IDs y (b) los últimos
+    # turnos de la conversación, así que resuelve referencias ("este proyecto",
+    # "el agente que acabo de crear") sin adivinar. Genérico: sirve a CUALQUIER
+    # acción de `aithera_tool`, presente o futura. Best-effort.
+    ctx_parts: list[str] = []
+    try:
+        from app.services import chat_service
+
+        ws = await asyncio.to_thread(chat_service._workspace_block)
+        if ws:
+            ctx_parts.append(ws)
+        turnos = await asyncio.to_thread(chat_service.recent_turns, session_id)
+        if turnos:
+            hist = "\n".join(f"{t['role']}: {t['content'][:300]}" for t in turnos[-6:])
+            ctx_parts.append(
+                "Últimos turnos de la conversación (para resolver referencias como "
+                f"«este proyecto» o «ese agente»):\n{hist}"
+            )
+    except Exception as e:
+        logger.info(f"[tie] no se pudo armar el contexto de la acción: {e!r}")
+
     task = AgentTask(
         id=AgentTask.new_id(),
         instruction=intent.raw_text or text,     # el texto ORIGINAL (fidelidad, S2)
+        context="\n\n".join(ctx_parts),
         channel=channel or mission.channel,
         tools=tools,
         model_hint=force_model,
         mission_id=mission.id,                   # sesión de navegador por misión (F-1)
         project_id=mission.project_id,
+        session_id=session_id,
     )
     result = await runtime.execute_task(
         task, memory=memory_router, tools=tool_manager, approval_gate=approval_gate,
     )
-    out = result.output or ("Hecho." if result.success else (result.error or "No pude completarlo."))
+    out = result.output or (
+        _t("pipeline.generic_done") if result.success
+        else (result.error or _t("pipeline.generic_could_not"))
+    )
     mission.outcome = out[:2000]
     mission.state = "done" if result.success else "failed"
     tracer.record_end(trace_id, outcome=mission.outcome, state=mission.state)
@@ -280,23 +355,39 @@ async def _direct_action_path(
 
 
 async def _short_path_stream(text, intent, channel, memory_router, tool_manager,
-                             approval_gate, force_model, session_id=None):
+                             approval_gate, force_model, session_id=None,
+                             *, conversational=False):
     """[A·VOZ-3] Streaming del camino corto — SIN misión ni traza (una charla no
     es una misión, ver la nota en `handle_stream`/`_run_pipeline`). Streamea
     tokens de verdad, exactamente igual que antes; la única diferencia es que
-    ya no abre ni cierra una fila en `orchestrator_traces`."""
+    ya no abre ni cierra una fila en `orchestrator_traces`.
+
+    `conversational` [A·VOZ-8]: si viene de VOZ, la respuesta se enruta por la
+    política rápida (el runtime lo lee de `task.conversational`)."""
     task = AgentTask(id=AgentTask.new_id(), instruction=text, channel=channel,
                      tools=intent.requires_tools, model_hint=force_model,
-                     session_id=session_id)
+                     session_id=session_id, conversational=conversational)
     runtime = get_runtime("null")
+    # [A·VOZ-6 profiling] Tiempo hasta el PRIMER token del camino corto — la
+    # métrica que importa para la fluidez de voz/chat (TTFT). Si es alto con la
+    # charla, el cuello es el modelo de CHAT, no el TIE (que ya no pone traza,
+    # status ni prefetch en este camino). Se loguea una sola vez por turno.
+    import time as _time
+    _t0 = _time.monotonic()
+    _first = True
     async for chunk in runtime.stream_task(
         task, memory=memory_router, tools=tool_manager, approval_gate=approval_gate
     ):
         if chunk.kind == "text" and chunk.payload:
+            if _first:
+                _first = False
+                logger.info(f"[tie-perfil] camino corto, primer token: "
+                            f"{int((_time.monotonic() - _t0) * 1000)}ms")
             yield ("text", chunk.payload)
 
 
-async def _stream_body(text, intent, mission, trace_id, channel, prefetched, force_model):
+async def _stream_body(text, intent, mission, trace_id, channel, prefetched, force_model,
+                       session_id=None):
     """El cuerpo real del streaming (acción directa / camino complejo — el corto
     ya se resolvió en `handle_stream` antes de llegar aquí, sin misión). Separado
     para que `handle_stream` pueda envolverlo en un `finally` que cierre la
@@ -306,28 +397,76 @@ async def _stream_body(text, intent, mission, trace_id, channel, prefetched, for
     # ni grafo: un bucle de tool-use rápido la resuelve de corrido. Colapsa ~8
     # llamadas (muchas lentas) en 3-4 rápidas. NO se emite ("mission",…) porque
     # no hay plan que revisar — es una acción, no una misión de varios pasos. ---
+    # [2026-07-24] ACUSE INMEDIATO en texto natural (petición del usuario): una
+    # misión tarda segundos o minutos — el chat NUNCA debe quedarse mudo mientras
+    # tanto. Se emite YA un "Entendido, me pongo con ello: {goal}" y después
+    # llegan los estados y el resultado (se concatenan en la misma burbuja).
     if intent.is_direct_action:
-        yield ("status", "ejecutando")
+        yield ("text", _t("pipeline.ack_mission", goal=(intent.goal or text)[:120]) + "\n\n")
+        yield ("status", _t("status.executing"))
         try:
             out = await _direct_action_path(text, intent, mission, trace_id,
-                                            force_model=force_model, channel=channel)
+                                            force_model=force_model, channel=channel,
+                                            session_id=session_id)
         except Exception as e:
             logger.error(f"[tie] acción directa falló: {type(e).__name__}: {e}")
-            out = "He tenido un problema procesando eso."
+            out = _t("pipeline.generic_problem")
             mission.outcome = out
         yield ("text", mission.outcome or out)
         return
 
     # --- camino complejo ---
-    yield ("status", "planificando")
+    yield ("text", _t("pipeline.ack_mission", goal=(intent.goal or text)[:120]) + "\n\n")
+    yield ("status", _t("status.planning"))
     yield ("mission", trace_id)
     context = prefetched if not intent.memory_types else await _context_for(intent, text)
     try:
         await _complex_path(text, intent, mission, trace_id, context, force_model=force_model)
     except Exception as e:
         logger.error(f"[tie] handle_stream: pipeline complejo falló: {type(e).__name__}: {e}")
-        mission.outcome = "He tenido un problema procesando eso."
-    yield ("text", mission.outcome or "(sin respuesta)")
+        mission.outcome = _t("pipeline.generic_problem")
+    yield ("text", mission.outcome or _t("pipeline.no_response"))
+
+
+async def _run_background_mission(text, intent, mission, trace_id, channel, prefetched, force_model,
+                                  session_id=None):
+    """[A·VOZ-4] El cuerpo de una misión de fondo (modo conversación). Corre
+    detached (`asyncio.create_task`), sin stream: hace exactamente la misma
+    selección de camino que `_stream_body` (acción directa o complejo) pero a
+    completarse, no a emitir tokens. El reporte al usuario NO se manda aquí:
+
+      · Terminación normal (done/failed): `_direct_action_path`/`_execute_and_respond`
+        ya emiten `mission.completed`/`failed`; el handler del bus en
+        `conversation.py` construye y entrega el reporte. Un solo camino, sin
+        doble aviso, y cubre igual de bien la terminación TARDÍA tras aprobar un
+        gate del plan (que ocurre en otra petición, fuera de esta tarea).
+      · Pausa en gate (`mission.state == "waiting"`): no hay evento de terminación,
+        así que se avisa aquí ("necesito tu permiso"), manteniendo la misión
+        registrada para el reporte final cuando el usuario apruebe.
+    """
+    try:
+        if intent.is_direct_action:
+            await _direct_action_path(text, intent, mission, trace_id,
+                                      force_model=force_model, channel=channel,
+                                      session_id=session_id)
+        else:
+            context = prefetched if not intent.memory_types else await _context_for(intent, text)
+            await _complex_path(text, intent, mission, trace_id, context, force_model=force_model)
+    except Exception as e:
+        logger.error(f"[tie] misión de fondo falló: {type(e).__name__}: {e}")
+        # El grupo done/failed lo cubre el bus; una excepción DURA aquí (rara) no
+        # emitió evento, así que se cierra la traza y se avisa como fallo honesto.
+        try:
+            if not mission.outcome:
+                mission.outcome = _t("conversation.report_error")
+            tracer.record_end(trace_id, outcome=mission.outcome, state="failed")
+        except Exception:
+            pass
+        await conversation.report_failure(mission.id)
+        return
+
+    if mission.state == "waiting":
+        await conversation.on_gate_pending(mission.id)
 
 
 async def submit_mission(
@@ -415,6 +554,12 @@ async def submit_mission(
 async def _run_pipeline(
     text: str, *, source: str, channel: Optional[str], project_id: Optional[int] = None
 ) -> str:
+    # [2026-07-24] Respuesta determinista sobre los datos propios (0 LLM) —
+    # mismo criterio que en handle_stream; cubre el Gateway/Telegram.
+    quick = await asyncio.to_thread(quick_answers.try_answer, text)
+    if quick:
+        return quick
+
     # [1+2] Clasificar y pre-fetch de contexto EN PARALELO (doc 11 B.2): el
     # enricher no sabe todavía qué tipos pedir, así que hace una consulta general;
     # si el intent pide tipos concretos, el planner/nodo la afinará. Coste: una
@@ -460,7 +605,7 @@ async def _run_pipeline(
     # [4] Complejo: contexto afinado por el intent (si pidió tipos concretos) y a planificar.
     context = prefetched if not intent.memory_types else await _context_for(intent, text)
     await _complex_path(text, intent, mission, trace_id, context, force_model=force_model)
-    return mission.outcome or "(sin respuesta)"
+    return mission.outcome or _t("pipeline.no_response")
 
 
 async def _complex_path(
@@ -484,10 +629,7 @@ async def _complex_path(
     if isinstance(graph, planner.PlanRejection):
         # [S2, B-1] El objetivo excede las capacidades reales: se le dice AL
         # USUARIO, claro y a la primera — nunca una misión fantasma que finge.
-        mission.outcome = (
-            f"No puedo hacer esto de forma completa con mis capacidades actuales: "
-            f"{graph.reason}"
-        )
+        mission.outcome = _t("pipeline.cannot_capability", reason=graph.reason)
         mission.state = "done"   # es una RESPUESTA (honesta), no un fallo del sistema
         tracer.record_end(trace_id, outcome=mission.outcome)
         tracer.emit_completed(mission, ok=True, nodes=0)
@@ -516,10 +658,9 @@ async def _complex_path(
     # planificar no tiene side effects (regla 11-B).
     if _needs_plan_approval(graph):
         await _open_plan_gate(graph, mission, trace_id)
-        mission.outcome = (
-            f"He preparado un plan de {len(graph.nodes)} paso(s) para «{mission.goal}». "
-            f"Como toca algo sensible, necesito tu visto bueno antes de ejecutarlo:\n\n"
-            f"{responder.plan_summary(graph)}"
+        mission.outcome = _t(
+            "pipeline.plan_needs_approval", n=len(graph.nodes), goal=mission.goal,
+            plan_summary=responder.plan_summary(graph),
         )
         tracer.record_end(trace_id, outcome=mission.outcome, state="waiting")
         return
@@ -536,7 +677,7 @@ async def _execute_and_respond(graph: TaskGraph, mission: Mission, trace_id: str
     if mission.state == "waiting":
         # Un nodo abrió su propio gate (T3): la misión sigue viva en disco; el
         # usuario responderá y el evento la reanudará.
-        mission.outcome = "He empezado y estoy esperando tu confirmación para un paso."
+        mission.outcome = _t("pipeline.waiting_confirmation")
         tracer.record_end(trace_id, outcome=mission.outcome, state="waiting")
         return
 
@@ -573,7 +714,7 @@ async def _short_path(
     result = await runtime.execute_task(
         task, memory=memory_router, tools=tool_manager, approval_gate=approval_gate,
     )
-    return result.output or "(sin respuesta)"
+    return result.output or _t("pipeline.no_response")
 
 
 async def _prefetch_context(text: str) -> str:
@@ -615,7 +756,7 @@ async def _open_plan_gate(graph: TaskGraph, mission: Mission, trace_id: str) -> 
 
     gate_id = await approval_gate.request_approval(
         kind="tie.plan",
-        title=f"Plan de {len(graph.nodes)} paso(s): {mission.goal[:150]}",
+        title=_t("pipeline.plan_gate_title", n=len(graph.nodes), goal=mission.goal[:150]),
         summary=responder.plan_summary(graph),
         action_type=PLAN_ACTION_TYPE,
         action_payload={"trace_id": trace_id, "mission_id": mission.id},
@@ -651,7 +792,7 @@ async def _apply_plan_verdict(trace_id: str, approved: bool) -> None:
             n.state = NodeState.CANCELLED
         tracer.update_graph(trace_id, graph)
         mission.state = "cancelled"
-        mission.outcome = "He descartado el plan, como pediste. No he ejecutado nada."
+        mission.outcome = _t("pipeline.plan_discarded")
         tracer.record_end(trace_id, outcome=mission.outcome, state="cancelled")
         tracer.emit_cancelled(mission)
         return

@@ -43,7 +43,10 @@ async def chat_message_handler(envelope: MessageEnvelope) -> str:
     result = await chat_service.answer(
         envelope.text, channel=envelope.channel, persist_chat_message=False
     )
-    return result.text or "(sin respuesta)"
+    if result.text:
+        return result.text
+    from app.core.strings import t as _t
+    return _t("pipeline.no_response")
 
 
 class Gateway:

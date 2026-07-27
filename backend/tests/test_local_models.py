@@ -182,6 +182,135 @@ def test_claude_code_esta_en_el_catalogo_y_no_pide_key():
     assert get_provider_info("claude_code")["requires_key"] is False
 
 
+# ---------------------------------------------------------------------------
+# Codex CLI (OpenAI) — gemelo de claude_code (2026-07-24)
+# ---------------------------------------------------------------------------
+@pytest.mark.anyio
+async def test_codex_sin_cli_instalado_error_claro(monkeypatch):
+    from app.ai.providers import codex_provider as cxp
+
+    monkeypatch.setattr(cxp, "_find_cli", lambda: None)
+    p = cxp.CodexProvider()
+    r = await p.generate("hola")
+    assert r["error"] is True
+    assert "no encontrado" in r["response"].lower()
+    assert await p.health_check() is False
+
+
+@pytest.mark.anyio
+async def test_codex_exec_readonly_y_sin_model_por_defecto(monkeypatch):
+    from app.ai.providers import codex_provider as cxp
+
+    monkeypatch.setattr(cxp, "_find_cli", lambda: "codex")
+    fake = MagicMock()
+    fake.returncode = 0
+    fake.communicate = AsyncMock(return_value=(b"respuesta de codex", b""))
+    mock_exec = AsyncMock(return_value=fake)
+    with patch("asyncio.create_subprocess_exec", new=mock_exec):
+        r = await cxp.CodexProvider().generate("hola")
+    assert r.get("error") is None
+    assert r["response"] == "respuesta de codex"
+    args = list(mock_exec.call_args.args)
+    assert args[1] == "exec"                         # modo NO interactivo
+    assert "-s" in args and "read-only" in args      # sandbox de solo lectura explícito
+    assert "--model" not in args                     # por defecto NO fija ningún id de modelo
+
+
+@pytest.mark.anyio
+async def test_codex_pasa_model_solo_si_configurado(monkeypatch):
+    from app.ai.providers import codex_provider as cxp
+
+    monkeypatch.setattr(cxp, "_find_cli", lambda: "codex")
+    fake = MagicMock()
+    fake.returncode = 0
+    fake.communicate = AsyncMock(return_value=(b"ok", b""))
+    mock_exec = AsyncMock(return_value=fake)
+    with patch("asyncio.create_subprocess_exec", new=mock_exec):
+        await cxp.CodexProvider(model="gpt-5.6-terra").generate("hola")
+    args = list(mock_exec.call_args.args)
+    assert "--model" in args and "gpt-5.6-terra" in args
+
+
+@pytest.mark.anyio
+async def test_codex_fallo_de_sesion_sugiere_login(monkeypatch):
+    from app.ai.providers import codex_provider as cxp
+
+    monkeypatch.setattr(cxp, "_find_cli", lambda: "codex")
+    fake = MagicMock()
+    fake.returncode = 1
+    # stderr REAL de codex sin sesión: banner largo al principio + el 401 al
+    # final (verificado en vivo con codex-cli 0.145.0). El banner supera 500
+    # chars, así que la pista de login SOLO sobrevive si se muestra la COLA y el
+    # hint se añade tras truncar — esto blinda esa regresión.
+    banner = ("OpenAI Codex v0.145.0\nworkdir: X\nmodel: gpt-5.6-sol\n" + ("ruido " * 120))
+    stderr = (banner + "\nERROR: unexpected status 401 Unauthorized: Missing bearer or basic "
+                        "authentication in header, url: https://api.openai.com/v1/responses").encode()
+    fake.communicate = AsyncMock(return_value=(b"", stderr))
+    with patch("asyncio.create_subprocess_exec", new=AsyncMock(return_value=fake)):
+        r = await cxp.CodexProvider().generate("hola")
+    assert r["error"] is True
+    assert "codex login" in r["response"]        # la pista sobrevive al truncado
+    assert "401" in r["response"]                # y se ve el error real (la cola), no el banner
+
+
+def test_codex_esta_en_el_catalogo_y_no_pide_key():
+    from app.ai.ai_manager import NO_KEY_PROVIDERS, PROVIDER_CLASSES
+    from app.ai.catalog import get_provider_info
+    from app.mel.catalog import Capability, is_local, unfit_for
+
+    assert "codex" in PROVIDER_CLASSES
+    assert "codex" in NO_KEY_PROVIDERS
+    assert get_provider_info("codex")["requires_key"] is False
+    # MEL: agente de código → NO apto para chat/clasificar/agentic, y NUNCA local.
+    assert Capability.CHAT in unfit_for("codex")
+    assert is_local("codex") is False
+
+
+# ---------------------------------------------------------------------------
+# Codex — instalación/login asistidos desde la UI (codex_setup.py)
+# ---------------------------------------------------------------------------
+def test_codex_setup_status_reporta_no_instalado(monkeypatch):
+    from app.api.endpoints import codex_setup as cs
+
+    monkeypatch.setattr(cs, "_find_codex", lambda: None)
+    monkeypatch.setattr(cs, "_find_npm", lambda: "/usr/bin/npm")
+    monkeypatch.setattr(cs, "_authenticated", lambda: False)
+    body = cs.status().body
+    import json
+    data = json.loads(body)
+    assert data["installed"] is False
+    assert data["ready"] is False
+    assert data["npm_available"] is True
+
+
+def test_codex_install_idempotente_si_ya_instalado(monkeypatch):
+    from app.api.endpoints import codex_setup as cs
+
+    monkeypatch.setattr(cs, "_find_codex", lambda: "/usr/bin/codex")
+    import json
+    data = json.loads(cs.install().body)
+    assert data["started"] is False   # ya instalado → no relanza
+
+
+def test_codex_login_requiere_estar_instalado(monkeypatch):
+    from app.api.endpoints import codex_setup as cs
+
+    monkeypatch.setattr(cs, "_find_codex", lambda: None)
+    import json
+    data = json.loads(cs.login().body)
+    assert data["started"] is False   # sin CLI no se puede iniciar sesión
+
+
+def test_codex_install_worker_falla_claro_sin_npm(monkeypatch):
+    from app.api.endpoints import codex_setup as cs
+
+    monkeypatch.setattr(cs, "_find_npm", lambda: None)
+    cs._INSTALL.update(status="idle", detail=None)
+    cs._install_worker()
+    assert cs._INSTALL["status"] == "failed"
+    assert "npm" in (cs._INSTALL["detail"] or "").lower()
+
+
 def test_claude_code_no_cuenta_como_local_para_offline():
     """Corre en el equipo, pero necesita internet + sesión: si se marcara local,
     la política Offline contaría con él estando sin conexión."""

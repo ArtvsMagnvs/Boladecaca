@@ -18,6 +18,7 @@ import { useRef, useState } from "react";
 import type { Project } from "@/lib/api";
 import type { CardLayout } from "./useWindowCard";
 import { pct } from "./shared";
+import { useT } from "@/store/useI18n";
 
 const CLICK_THRESHOLD_PX = 4;
 
@@ -30,6 +31,7 @@ interface Props {
 }
 
 export function Shelf({ projects, getLayout, onOpen, onDragOut, onCreate }: Props) {
+  const t = useT();
   const [ghost, setGhost] = useState<{ name: string; x: number; y: number } | null>(null);
   const gesture = useRef<{ id: number; name: string; startX: number; startY: number; moved: boolean } | null>(null);
 
@@ -63,8 +65,8 @@ export function Shelf({ projects, getLayout, onOpen, onDragOut, onCreate }: Prop
   return (
     <aside className="w-56 shrink-0 flex flex-col gap-2 relative z-10">
       <div className="flex items-center justify-between px-1">
-        <h2 className="text-xs uppercase tracking-wide text-ink-faint">Proyectos</h2>
-        <button onClick={onCreate} className="text-accent hover:text-accent-soft text-lg leading-none px-1" title="Nuevo proyecto">+</button>
+        <h2 className="text-xs uppercase tracking-wide text-ink-faint">{t("workspace.shelf.title")}</h2>
+        <button onClick={onCreate} className="text-accent hover:text-accent-soft text-lg leading-none px-1" title={t("workspace.shelf.new")}>+</button>
       </div>
       <div className="flex-1 overflow-y-auto flex flex-col gap-1">
         {projects.map((p) => {
@@ -78,13 +80,13 @@ export function Shelf({ projects, getLayout, onOpen, onDragOut, onCreate }: Prop
                   ? "bg-accent/12 text-ink border-accent/25"
                   : "text-ink-dim hover:bg-base-700/40 border-transparent"
               }`}
-              title={layout.shelved ? "Arrastra para sacar, clic para abrir" : "Traer al frente"}
+              title={layout.shelved ? t("workspace.shelf.dragToTake") : t("workspace.shelf.bringToFront")}
             >
               <div className="flex items-center gap-2">
                 {!layout.shelved && <span className="h-1.5 w-1.5 rounded-full bg-accent shrink-0" />}
                 <span className="truncate flex-1">{p.name}</span>
                 {p.archived_at && (
-                  <span className="text-[9px] px-1 py-0.5 rounded bg-base-700/60 text-ink-faint shrink-0" title="Archivado">Archivado</span>
+                  <span className="text-[9px] px-1 py-0.5 rounded bg-base-700/60 text-ink-faint shrink-0" title={t("workspace.shelf.archived")}>{t("workspace.shelf.archived")}</span>
                 )}
                 {p.current_version && <span className="text-[10px] text-ink-faint shrink-0">{p.current_version}</span>}
               </div>
@@ -95,7 +97,7 @@ export function Shelf({ projects, getLayout, onOpen, onDragOut, onCreate }: Prop
           );
         })}
         {projects.length === 0 && (
-          <p className="text-xs text-ink-faint px-3 py-4">Sin proyectos. Crea uno con +.</p>
+          <p className="text-xs text-ink-faint px-3 py-4">{t("workspace.shelf.empty")}</p>
         )}
       </div>
 

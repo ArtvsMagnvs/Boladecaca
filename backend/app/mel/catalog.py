@@ -192,6 +192,35 @@ CATALOG: dict[str, dict] = {
                        "relative_cost": 10, "is_local": False},
         },
     },
+    # Codex CLI (OpenAI) — MISMO diseño que claude_code: agente de PROGRAMACIÓN
+    # que corre en la terminal del usuario con su sesión de ChatGPT (o API key).
+    # is_local=False A PROPÓSITO: se ejecuta en local pero es un servicio de PAGO
+    # con sesión en la nube (jamás cuenta como local, ni en Offline, ni en la 4ª
+    # posición de las cadenas, ni descuenta el aviso de "solo local"). Pico en
+    # CODE/REASON: es un agente de código, no un chat genérico.
+    # [2026-07-25] Perfiles por modelo (misma familia que el proveedor "openai";
+    # ids verificados en learn.chatgpt.com/docs/models, 2026-07-24): permite
+    # elegir un Codex concreto por tarea en Inteligencia, igual que Claude Code
+    # con fable/opus/sonnet/haiku. Sin los ids "-codex" (deprecados/rechazados
+    # bajo login por ChatGPT — ver nota en ai/catalog.py).
+    "codex": {
+        "default": {"scores": _scores(84, 82, 86, 86, 86, 90, 94, 88),
+                    "relative_cost": 22, "is_local": False},
+        "models": {
+            "gpt-5.6-sol":   {"scores": _scores(88, 85, 90, 90, 90, 94, 97, 92),
+                              "relative_cost": 45, "is_local": False},
+            "gpt-5.6-terra": {"scores": _scores(85, 83, 87, 87, 87, 91, 95, 89),
+                              "relative_cost": 30, "is_local": False},
+            "gpt-5.6-luna":  {"scores": _scores(78, 80, 80, 80, 78, 82, 86, 80),
+                              "relative_cost": 15, "is_local": False},
+            "gpt-5.5":       {"scores": _scores(82, 81, 84, 84, 83, 87, 90, 85),
+                              "relative_cost": 25, "is_local": False},
+            "gpt-5.4":       {"scores": _scores(78, 78, 80, 80, 78, 83, 86, 81),
+                              "relative_cost": 18, "is_local": False},
+            "gpt-5.4-mini":  {"scores": _scores(68, 74, 72, 72, 68, 70, 76, 70),
+                              "relative_cost": 8, "is_local": False},
+        },
+    },
     # --- V1.0: proveedores nuevos (2026-07-18) ---
     "kimi": {
         # Kimi destaca en contexto largo y razonamiento; buen generalista.
@@ -266,6 +295,12 @@ def is_local(provider: str, model: str = "") -> bool:
 # ---------------------------------------------------------------------------
 UNFIT_CAPABILITIES: dict[str, frozenset] = {
     "claude_code": frozenset({Capability.CHAT, Capability.CLASSIFY, Capability.AGENTIC}),
+    # Codex CLI: mismo motivo que claude_code — arranca un PROCESO por llamada
+    # (lento, sin streaming real) y es un agente de PROGRAMACIÓN con su propia
+    # identidad, no un chat interactivo. NO apto para el chat, el clasificador de
+    # intents (hot path de cada mensaje) ni el bucle de tools (AGENTIC, una
+    # llamada por acción). SÍ para programar, razonar, redactar, resumir, analizar.
+    "codex": frozenset({Capability.CHAT, Capability.CLASSIFY, Capability.AGENTIC}),
 }
 
 

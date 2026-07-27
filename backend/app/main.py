@@ -36,6 +36,9 @@ from app.api.endpoints import search_config as search_config_endpoints
 # (mel_executions/mel_policies/mel_capability_reports) antes del create_all.
 from app.api.endpoints import mel as mel_endpoints
 from app.api.endpoints import local_models as local_models_endpoints
+from app.api.endpoints import codex_setup as codex_setup_endpoints
+# V1.0 (doc 30 §1, OB-1): asistente de bienvenida — flag + idioma + modelo pendiente.
+from app.api.endpoints import onboarding as onboarding_endpoints
 # V0.7.2 (Sprint 2, PLAN_MAESTRO_2026 B4): god-endpoint de email dividido en
 # 7 routers de dominio + app/services/email_service.py. Todos comparten
 # prefix='/email'; la superficie publica /api/email es identica (contratos).
@@ -467,6 +470,8 @@ app.include_router(memory.router, prefix="/api")
 app.include_router(telegram_endpoints.router, prefix="/api")
 app.include_router(search_config_endpoints.router, prefix="/api")
 app.include_router(local_models_endpoints.router, prefix="/api")
+app.include_router(codex_setup_endpoints.router, prefix="/api")
+app.include_router(onboarding_endpoints.router, prefix="/api")
 # V0.9 (Automation Engine A1): ApprovalGate (listar/resolver aprobaciones).
 app.include_router(automation.router, prefix="/api")
 # V1.0 (TIE v1, T4): misiones, grafo, kill-switch y aprobacion de planes.

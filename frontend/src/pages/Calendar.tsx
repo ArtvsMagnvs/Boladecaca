@@ -14,20 +14,38 @@
 import { useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
 import { api } from "@/lib/api";
+import { useT } from "@/store/useI18n";
 
-const WEEKDAYS_ES = ["lun", "mar", "mié", "jue", "vie", "sáb", "dom"];
-const MONTHS_ES = [
-  "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
-  "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre",
+// [I18N-5] Nombres de dia/mes y labels de status ya no son literales fijos:
+// se resuelven con t("calendar.weekday.*")/t("calendar.month.*")/etc. Las
+// claves de STATUS_COLORS (available/unavailable/busy/mixed/neutral) siguen
+// siendo el id interno (coincide con lo que devuelve el backend); el label
+// visible se resuelve aparte con `t(STATUS_LABEL_KEY[key])`.
+const WEEKDAY_KEYS = [
+  "calendar.weekday.mon", "calendar.weekday.tue", "calendar.weekday.wed",
+  "calendar.weekday.thu", "calendar.weekday.fri", "calendar.weekday.sat", "calendar.weekday.sun",
+];
+const MONTH_KEYS = [
+  "calendar.month.1", "calendar.month.2", "calendar.month.3", "calendar.month.4",
+  "calendar.month.5", "calendar.month.6", "calendar.month.7", "calendar.month.8",
+  "calendar.month.9", "calendar.month.10", "calendar.month.11", "calendar.month.12",
 ];
 
-// Mapeo de status -> colores Tailwind
-const STATUS_COLORS: Record<string, { bg: string; ring: string; text: string; label: string }> = {
-  available:   { bg: "bg-emerald-500/15", ring: "ring-emerald-500/40", text: "text-emerald-300", label: "Libre" },
-  unavailable: { bg: "bg-rose-500/20",    ring: "ring-rose-500/50",    text: "text-rose-300",    label: "No disponible" },
-  busy:        { bg: "bg-amber-500/15",   ring: "ring-amber-500/40",   text: "text-amber-300",   label: "Ocupado" },
-  mixed:       { bg: "bg-orange-500/15",  ring: "ring-orange-500/40",  text: "text-orange-300",  label: "Mixto" },
-  neutral:     { bg: "bg-base-800/40",    ring: "ring-base-700/30",    text: "text-ink-dim",     label: "Sin config" },
+// Mapeo de status -> colores Tailwind (el color/anillo es visual, no texto).
+const STATUS_COLORS: Record<string, { bg: string; ring: string; text: string }> = {
+  available:   { bg: "bg-emerald-500/15", ring: "ring-emerald-500/40", text: "text-emerald-300" },
+  unavailable: { bg: "bg-rose-500/20",    ring: "ring-rose-500/50",    text: "text-rose-300" },
+  busy:        { bg: "bg-amber-500/15",   ring: "ring-amber-500/40",   text: "text-amber-300" },
+  mixed:       { bg: "bg-orange-500/15",  ring: "ring-orange-500/40",  text: "text-orange-300" },
+  neutral:     { bg: "bg-base-800/40",    ring: "ring-base-700/30",    text: "text-ink-dim" },
+};
+
+const STATUS_LABEL_KEY: Record<string, string> = {
+  available: "calendar.status.available",
+  unavailable: "calendar.status.unavailable",
+  busy: "calendar.status.busy",
+  mixed: "calendar.status.mixed",
+  neutral: "calendar.status.neutral",
 };
 
 interface MonthDay {
@@ -49,6 +67,7 @@ interface AvailabilityBlock {
 }
 
 export default function Calendar() {
+  const t = useT();
   const now = new Date();
   const [year, setYear] = useState(now.getFullYear());
   const [month, setMonth] = useState(now.getMonth() + 1); // 1-12
@@ -63,6 +82,9 @@ export default function Calendar() {
   const [formStatus, setFormStatus] = useState<"available" | "unavailable" | "busy">("unavailable");
   const [formLabel, setFormLabel] = useState("");
   const [formMsg, setFormMsg] = useState<string | null>(null);
+  // [I18N-5] Antes se coloreaba mirando si formMsg.startsWith("Error") — con
+  // el mensaje traducido ese prefijo ya no es fiable en los otros 3 idiomas.
+  const [formIsError, setFormIsError] = useState(false);
 
   const todayStr = useMemo(() => {
     const d = new Date();
@@ -174,6 +196,7 @@ export default function Calendar() {
   const openDay = async (date: string) => {
     setSelectedDay(date);
     setFormMsg(null);
+    setFormIsError(false);
     setFormHourStart("9");
     setFormHourEnd("18");
     setFormStatus("unavailable");
@@ -191,6 +214,7 @@ export default function Calendar() {
     setSelectedDay(null);
     setDayBlocks([]);
     setFormMsg(null);
+    setFormIsError(false);
   };
 
   const saveBlock = async () => {
@@ -205,13 +229,15 @@ export default function Calendar() {
         status: formStatus,
         label: formLabel.trim() || undefined,
       });
-      setFormMsg("Bloque guardado");
+      setFormMsg(t("calendar.modal.blockSaved"));
+      setFormIsError(false);
       // Refrescar bloques del dia y el mes
       const data = await api.getDayStatus(selectedDay);
       setDayBlocks((data.blocks || []) as AvailabilityBlock[]);
       loadMonth(year, month);
     } catch (e) {
-      setFormMsg(`Error: ${(e as Error).message}`);
+      setFormMsg(t("calendar.modal.errorPrefix", { msg: (e as Error).message }));
+      setFormIsError(true);
     }
   };
 
@@ -222,7 +248,8 @@ export default function Calendar() {
       setDayBlocks((data.blocks || []) as AvailabilityBlock[]);
       loadMonth(year, month);
     } catch (e) {
-      setFormMsg(`Error eliminando: ${(e as Error).message}`);
+      setFormMsg(t("calendar.modal.errorDeleting", { msg: (e as Error).message }));
+      setFormIsError(true);
     }
   };
 
@@ -235,9 +262,9 @@ export default function Calendar() {
       {/* Cabecera */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-semibold text-ink">Calendario</h1>
+          <h1 className="text-xl font-semibold text-ink">{t("calendar.title")}</h1>
           <p className="text-xs text-ink-faint mt-0.5">
-            Vista mensual con disponibilidad y eventos
+            {t("calendar.subtitle")}
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -245,19 +272,19 @@ export default function Calendar() {
             onClick={prevMonth}
             className="text-sm px-3 py-1.5 rounded-lg bg-base-800 hover:bg-base-700 text-ink"
           >
-            ← Anterior
+            ← {t("calendar.prev")}
           </button>
           <button
             onClick={goToday}
             className="text-xs px-3 py-1.5 rounded-lg bg-accent/15 text-accent border border-accent/30 hover:bg-accent/25"
           >
-            Hoy
+            {t("calendar.today")}
           </button>
           <button
             onClick={nextMonth}
             className="text-sm px-3 py-1.5 rounded-lg bg-base-800 hover:bg-base-700 text-ink"
           >
-            Siguiente →
+            {t("calendar.next")} →
           </button>
         </div>
       </div>
@@ -267,23 +294,23 @@ export default function Calendar() {
         {Object.entries(STATUS_COLORS).map(([key, c]) => (
           <div key={key} className="flex items-center gap-1.5">
             <span className={`inline-block w-3 h-3 rounded ${c.bg}`} />
-            <span className="text-ink-dim">{c.label}</span>
+            <span className="text-ink-dim">{t(STATUS_LABEL_KEY[key])}</span>
           </div>
         ))}
       </div>
 
       {/* Mes + ano */}
       <div className="text-center text-base font-medium text-ink-dim">
-        {MONTHS_ES[month - 1]} {year}
-        {loading && <span className="ml-2 text-xs text-ink-faint">cargando...</span>}
+        {t(MONTH_KEYS[month - 1])} {year}
+        {loading && <span className="ml-2 text-xs text-ink-faint">{t("calendar.loading")}</span>}
       </div>
 
       {/* Grid del calendario (7 columnas x N filas) */}
       <div className="flex-1 grid grid-cols-7 gap-2 min-h-0">
         {/* Cabeceras de dias de la semana */}
-        {WEEKDAYS_ES.map((wd) => (
-          <div key={wd} className="text-center text-[10px] uppercase tracking-wider text-ink-faint py-1">
-            {wd}
+        {WEEKDAY_KEYS.map((wk) => (
+          <div key={wk} className="text-center text-[10px] uppercase tracking-wider text-ink-faint py-1">
+            {t(wk)}
           </div>
         ))}
         {/* Celdas de dias */}
@@ -308,7 +335,7 @@ export default function Calendar() {
               `}
               title={
                 dayInfo
-                  ? `${cell.date} - ${colors.label}\n${dayInfo.event_count} evento(s)${
+                  ? `${cell.date} - ${t(STATUS_LABEL_KEY[dayInfo.status || "neutral"])}\n${t("calendar.tooltip.eventCount", { n: dayInfo.event_count })}${
                       dayInfo.event_titles.length ? "\n" + dayInfo.event_titles.join("\n") : ""
                     }`
                   : cell.date
@@ -321,7 +348,7 @@ export default function Calendar() {
                 </span>
                 {isToday && (
                   <span className="text-[8px] uppercase tracking-wider text-accent font-bold">
-                    Hoy
+                    {t("calendar.today")}
                   </span>
                 )}
               </div>
@@ -330,13 +357,13 @@ export default function Calendar() {
               {dayInfo && (dayInfo.event_titles.length > 0 || dayInfo.block_labels.length > 0) && (
                 <div className="flex-1 min-h-0 space-y-0.5">
                   {/* Eventos reales (de calendar_events) - icono discreto */}
-                  {dayInfo.event_titles.slice(0, 3).map((t, i) => (
+                  {dayInfo.event_titles.slice(0, 3).map((evTitle, i) => (
                     <div
                       key={`ev-${i}`}
                       className="text-[10px] truncate bg-base-950/50 rounded px-1 py-0.5"
-                      title={`Evento: ${t}`}
+                      title={t("calendar.tooltip.event", { title: evTitle })}
                     >
-                      {t}
+                      {evTitle}
                     </div>
                   ))}
                   {/* Labels de bloques manuales (de calendar_availability) */}
@@ -344,14 +371,14 @@ export default function Calendar() {
                     <div
                       key={`bl-${i}`}
                       className="text-[10px] truncate bg-base-950/30 rounded px-1 py-0.5 italic text-ink-dim"
-                      title={`Bloque manual: ${l}`}
+                      title={t("calendar.tooltip.manualBlock", { label: l })}
                     >
                       {l}
                     </div>
                   ))}
                   {dayInfo.event_count + dayInfo.block_count > 3 && (
                     <div className="text-[9px] text-ink-faint">
-                      +{dayInfo.event_count + dayInfo.block_count - 3} mas
+                      {t("calendar.tooltip.more", { n: dayInfo.event_count + dayInfo.block_count - 3 })}
                     </div>
                   )}
                 </div>
@@ -360,7 +387,7 @@ export default function Calendar() {
               {/* Indicador de bloques si hay mas de los que se muestran */}
               {dayInfo && dayInfo.block_count > dayInfo.block_labels.length && (
                 <div className="text-[9px] text-ink-faint">
-                  {dayInfo.block_count - dayInfo.block_labels.length} bloque(s) mas
+                  {t("calendar.tooltip.moreBlocks", { n: dayInfo.block_count - dayInfo.block_labels.length })}
                 </div>
               )}
             </motion.button>
@@ -382,7 +409,7 @@ export default function Calendar() {
               <h2 className="text-lg font-medium text-ink">
                 {selectedDay}
                 {selectedDay === todayStr && (
-                  <span className="ml-2 text-xs text-accent">(Hoy)</span>
+                  <span className="ml-2 text-xs text-accent">({t("calendar.today")})</span>
                 )}
               </h2>
               <button
@@ -396,7 +423,7 @@ export default function Calendar() {
             {/* Estado del dia */}
             {dayBlocks.length > 0 && (
               <div className="mb-4 p-3 rounded-lg bg-base-800/50">
-                <p className="text-xs text-ink-faint mb-2">Estado actual:</p>
+                <p className="text-xs text-ink-faint mb-2">{t("calendar.modal.currentStatus")}</p>
                 <div className="space-y-1.5">
                   {dayBlocks.map((b) => (
                     <div key={b.id} className="flex items-center justify-between gap-2">
@@ -406,7 +433,7 @@ export default function Calendar() {
                             STATUS_COLORS[b.status]?.bg || "bg-base-700"
                           } ${STATUS_COLORS[b.status]?.text || "text-ink-dim"}`}
                         >
-                          {b.status}
+                          {STATUS_LABEL_KEY[b.status] ? t(STATUS_LABEL_KEY[b.status]) : b.status}
                         </span>
                         <span className="text-xs text-ink">
                           {b.hour_start}:00 - {b.hour_end}:00
@@ -421,7 +448,7 @@ export default function Calendar() {
                         onClick={() => deleteBlock(b.id)}
                         className="text-[10px] px-2 py-0.5 rounded bg-signal-error/10 text-signal-error border border-signal-error/20 hover:bg-signal-error/20"
                       >
-                        Eliminar
+                        {t("calendar.modal.delete")}
                       </button>
                     </div>
                   ))}
@@ -432,12 +459,12 @@ export default function Calendar() {
             {/* Form para anadir bloque */}
             <div className="border-t border-base-700/50 pt-4">
               <h3 className="text-sm font-medium text-ink mb-3">
-                Anadir bloque de disponibilidad
+                {t("calendar.modal.addBlock")}
               </h3>
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-[10px] uppercase tracking-wider text-ink-faint mb-1">
-                    Desde (hora)
+                    {t("calendar.modal.fromHour")}
                   </label>
                   <input
                     type="number"
@@ -450,7 +477,7 @@ export default function Calendar() {
                 </div>
                 <div>
                   <label className="block text-[10px] uppercase tracking-wider text-ink-faint mb-1">
-                    Hasta (hora)
+                    {t("calendar.modal.toHour")}
                   </label>
                   <input
                     type="number"
@@ -463,34 +490,34 @@ export default function Calendar() {
                 </div>
                 <div>
                   <label className="block text-[10px] uppercase tracking-wider text-ink-faint mb-1">
-                    Status
+                    {t("calendar.modal.statusLabel")}
                   </label>
                   <select
                     value={formStatus}
                     onChange={(e) => setFormStatus(e.target.value as "available" | "unavailable" | "busy")}
                     className="w-full bg-base-700 border border-base-600 rounded-lg px-3 py-1.5 text-sm text-ink focus:outline-none focus:border-accent/50"
                   >
-                    <option value="available">Libre (reuniones OK)</option>
-                    <option value="unavailable">No disponible</option>
-                    <option value="busy">Ocupado</option>
+                    <option value="available">{t("calendar.option.available")}</option>
+                    <option value="unavailable">{t("calendar.option.unavailable")}</option>
+                    <option value="busy">{t("calendar.option.busy")}</option>
                   </select>
                 </div>
                 <div>
                   <label className="block text-[10px] uppercase tracking-wider text-ink-faint mb-1">
-                    Etiqueta (opcional)
+                    {t("calendar.modal.labelField")}
                   </label>
                   <input
                     type="text"
                     value={formLabel}
                     onChange={(e) => setFormLabel(e.target.value)}
-                    placeholder="ej. Reunion cliente X"
+                    placeholder={t("calendar.modal.labelPlaceholder")}
                     className="w-full bg-base-700 border border-base-600 rounded-lg px-3 py-1.5 text-sm text-ink placeholder:text-ink-faint focus:outline-none focus:border-accent/50"
                   />
                 </div>
               </div>
 
               {formMsg && (
-                <p className={`text-xs mt-2 ${formMsg.startsWith("Error") ? "text-signal-error" : "text-signal-ok"}`}>
+                <p className={`text-xs mt-2 ${formIsError ? "text-signal-error" : "text-signal-ok"}`}>
                   {formMsg}
                 </p>
               )}
@@ -500,14 +527,13 @@ export default function Calendar() {
                   onClick={saveBlock}
                   className="text-xs px-4 py-2 rounded-lg bg-accent text-base-950 font-medium hover:bg-accent-glow transition-colors"
                 >
-                  Guardar bloque
+                  {t("calendar.modal.saveBlock")}
                 </button>
               </div>
             </div>
 
             <p className="text-[10px] text-ink-faint mt-4">
-              Tip: tambien puedes configurar el calendario desde el chat. Por
-              ejemplo: <em>"marca manana de 14 a 18 como no disponible"</em>.
+              {t("calendar.modal.tip")} <em>"{t("calendar.modal.tipExample")}"</em>
             </p>
           </div>
         </div>

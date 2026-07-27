@@ -22,11 +22,17 @@
 import { useState, useRef, useCallback, useEffect } from "react";
 import { api } from "@/lib/api";
 import { useAppStore } from "@/store/useAppStore";
+import { useT } from "@/store/useI18n";
 
 interface MicButtonProps {
   /** Callback al recibir la transcripcion limpia. */
   onTranscript: (text: string) => void;
-  /** Idioma para forzar en Whisper. Default "es" (skill pitfall #4). */
+  /**
+   * Idioma para forzar en Whisper (skill pitfall #4: sin esto, un clip
+   * corto puede detectar un idioma equivocado). [I18N-6] El caller debe
+   * pasar el idioma de interfaz seleccionado (`useI18n`), no un valor fijo
+   * — antes SIEMPRE era "es" sin importar el idioma elegido en Ajustes.
+   */
   language?: string;
   /** Tamano del icono en px. Default 18. */
   size?: number;
@@ -53,6 +59,7 @@ export default function MicButton({
   disabled = false,
   onStartRecording,
 }: MicButtonProps) {
+  const t = useT();
   const [recording, setRecording] = useState(false);
   const [transcribing, setTranscribing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -130,9 +137,7 @@ export default function MicButton({
       // Chromium 122 (Electron 29) soporta audio/webm;codecs=opus nativamente.
       const mimeType = "audio/webm;codecs=opus";
       if (!MediaRecorder.isTypeSupported(mimeType)) {
-        throw new Error(
-          `Tu navegador no soporta ${mimeType}. Usa una version mas reciente de Electron.`,
-        );
+        throw new Error(t("voice.mic.unsupportedMime", { mime: mimeType }));
       }
       const recorder = new MediaRecorder(stream, { mimeType });
       chunksRef.current = [];
@@ -223,7 +228,7 @@ export default function MicButton({
         if (result.text && result.text.trim()) {
           onTranscript(result.text.trim());
         } else {
-          setError("No se detecto habla. Intentalo de nuevo.");
+          setError(t("voice.mic.noSpeechDetected"));
         }
       } catch (e: unknown) {
         const msg = e instanceof Error ? e.message : String(e);
@@ -251,12 +256,12 @@ export default function MicButton({
       : "bg-base-800 border-base-700 text-ink-dim hover:border-accent/40 hover:text-ink";
 
   const label = disabled
-    ? "Modo Conversación activo — el micro ya está escuchando"
+    ? t("voice.mic.conversationModeActive")
     : recording
-      ? "Detener grabacion"
+      ? t("voice.mic.stopRecording")
       : transcribing
-        ? "Transcribiendo..."
-        : title ?? "Dictar al chat";
+        ? t("voice.mic.transcribing")
+        : title ?? t("voice.mic.dictate");
 
   return (
     <div className="flex flex-col items-end gap-1">

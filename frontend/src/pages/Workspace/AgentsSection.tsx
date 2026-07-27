@@ -6,6 +6,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, type Agent, type AgentExecution } from "@/lib/api";
 import { AgentChip, type ChipSize } from "./AgentChip";
 import { AgentCreatePopup } from "./AgentCreatePopup";
+import { useT } from "@/store/useI18n";
 
 const CLICK_THRESHOLD_PX = 5;
 
@@ -43,6 +44,7 @@ interface Props {
 }
 
 export function AgentsSection({ projectId, size, onOpenAgent, refreshTick }: Props) {
+  const t = useT();
   const [agents, setAgents] = useState<Agent[]>([]);
   const [order, setOrder] = useState<number[]>(() => loadOrder(projectId));
   const [execByAgent, setExecByAgent] = useState<Record<number, AgentExecution[]>>({});
@@ -153,12 +155,12 @@ export function AgentsSection({ projectId, size, onOpenAgent, refreshTick }: Pro
   return (
     <section>
       <div className="flex items-center justify-between mb-1.5">
-        <h3 className="text-xs font-medium text-ink-dim">Agentes</h3>
-        <button onClick={() => setCreateOpen(true)} className="text-[11px] text-accent hover:text-accent-soft">+ Agente</button>
+        <h3 className="text-xs font-medium text-ink-dim">{t("workspace.agentsSection.title")}</h3>
+        <button onClick={() => setCreateOpen(true)} className="text-[11px] text-accent hover:text-accent-soft">{t("workspace.agentsSection.addAgent")}</button>
       </div>
 
       {ordered.length === 0 ? (
-        <p className="text-[11px] text-ink-faint px-1">Sin agentes. Añade uno con "+ Agente".</p>
+        <p className="text-[11px] text-ink-faint px-1">{t("workspace.agentsSection.empty")}</p>
       ) : (
         <div ref={containerRef} className={wrapClass}>
           {ordered.map((a) => (

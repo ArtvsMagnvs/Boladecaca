@@ -14,6 +14,7 @@
 // Por eso el ancho/alto se clampa PRIMERO y la posicion se deriva de cuanto
 // realmente se movio el borde (startRect.w - clampedW), nunca del delta crudo.
 import { useCallback, useEffect, useRef, useState } from "react";
+import { CARD_Z_MAX } from "./layers";
 
 export interface CardLayout {
   x: number;
@@ -101,8 +102,24 @@ export function useWorkspaceLayouts(storageKey: string = STORAGE_KEY) {
     });
   }, []);
 
+  // [2026-07-25] Traer al frente (clic en cualquier parte de la tarjeta, como en
+  // Windows). El contador se RECICLA al llegar al techo: antes crecía sin límite
+  // y, en una sesión larga, una tarjeta podía superar la capa de los popups y
+  // taparlos (el bug que se arregló con `layers.ts`). Al reciclar, se renumeran
+  // las tarjetas conservando su orden relativo de apilado.
   const bringToFront = useCallback(
     (projectId: number) => {
+      if (zCounter.current >= CARD_Z_MAX) {
+        setLayouts((prev) => {
+          const orden = Object.entries(prev)
+            .sort((a, b) => (a[1].zIndex || 0) - (b[1].zIndex || 0));
+          const out: Record<number, CardLayout> = {};
+          orden.forEach(([id, l], i) => { out[Number(id)] = { ...l, zIndex: i + 1 }; });
+          zCounter.current = orden.length + 1;
+          return { ...out, [projectId]: { ...(out[projectId] ?? defaultLayout(projectId)), zIndex: zCounter.current } };
+        });
+        return;
+      }
       zCounter.current += 1;
       setLayout(projectId, { zIndex: zCounter.current });
     },

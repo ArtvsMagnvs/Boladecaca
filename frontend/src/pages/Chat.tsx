@@ -7,6 +7,7 @@ import MicButton from "@/components/voice/MicButton";
 import { attachVoiceAudio } from "@/avcs";
 import { MiniMarkdown } from "@/lib/miniMarkdown";
 import { usePolling } from "@/hooks/usePolling";
+import { useT, useI18n } from "@/store/useI18n";
 
 // [O1] Trocea la respuesta en fragmentos hablables para el TTS por frases. La
 // clave del turn-taking fluido: agrupa por frases (. ! ? … saltos de línea)
@@ -63,6 +64,14 @@ export default function Chat() {
   const streamingText = activeSession.streamingText;
   const tieStatus = activeSession.tieStatus;
   const sending = activeSession.sending;
+  const t = useT();
+  // [I18N-6] El STT (MicButton) debe reconocer en el idioma de interfaz
+  // seleccionado, no forzar siempre "es" — antes era un valor fijo.
+  const uiLang = useI18n((s) => s.lang);
+  // [A·VOZ-8] Ref del idioma para el bucle de conversación (un useCallback que
+  // no se recrea): así usa SIEMPRE el idioma actual aunque se cambie a mitad.
+  const uiLangRef = useRef(uiLang);
+  useEffect(() => { uiLangRef.current = uiLang; }, [uiLang]);
   const [input, setInput] = useState("");
   const messagesEndRef = useRef<HTMLDivElement>(null);
   // Un AbortController por sesión: parar una pestaña no corta la de al lado.
@@ -123,20 +132,21 @@ export default function Chat() {
       });
   }, []);
 
-  // [O1] Síntesis con fallback a eSpeak, devuelve el data-URL del audio.
+  // [O1, A·VOZ-1] Síntesis con fallback a EdgeTTS (gratis, sin key, siempre
+  // disponible — reemplaza al antiguo fallback eSpeak), devuelve el data-URL.
   const synthChunk = useCallback(async (chunk: string): Promise<string | null> => {
     const voiceId = selectedVoiceRef.current;
     const provRaw = providerRef.current;
     // ElevenLabs va por el camino por defecto (sin provider); el resto explícito.
     const provider =
-      provRaw === "elevenlabs" ? undefined : (provRaw as "edgetts" | "kokoro" | "espeak");
+      provRaw === "elevenlabs" ? undefined : (provRaw as "edgetts" | "kokoro");
     try {
       return (await api.synthesizeVoiceBase64(chunk, voiceId, provider)).audio;
     } catch (e) {
       try {
-        return (await api.synthesizeVoiceBase64(chunk, voiceId, "espeak")).audio;
+        return (await api.synthesizeVoiceBase64(chunk, voiceId, "edgetts")).audio;
       } catch (e2) {
-        console.error("TTS falló (proveedor activo y eSpeak):", e, e2);
+        console.error("TTS falló (proveedor activo y EdgeTTS):", e, e2);
         return null;
       }
     }
@@ -314,7 +324,7 @@ export default function Chat() {
     if (!userMessage || !session || session.sending) return null;
     if (!backendConnected) {
       chat.appendMessage(sid, { role: "user", content: userMessage });
-      chat.appendMessage(sid, { role: "assistant", content: "Error: No hay conexión con el backend." });
+      chat.appendMessage(sid, { role: "assistant", content: t("chat.noBackend") });
       setInput("");
       pulseError();
       return null;
@@ -361,7 +371,7 @@ export default function Chat() {
         },
       );
       const finalSession = useChatStore.getState().sessions.find((s) => s.id === sid);
-      const reply = finalSession?.streamingText || "Sin respuesta";
+      const reply = finalSession?.streamingText || t("chat.noResponse");
       useChatStore.getState().appendMessage(sid, {
         role: "assistant", content: reply, missionId: finalSession?.missionId ?? undefined,
       });
@@ -380,12 +390,12 @@ export default function Chat() {
           role: "assistant",
           content: parcial ? `${parcial}
 
-_(parado por ti)_` : "_(parado por ti)_",
+${t("chat.stoppedByYou")}` : t("chat.stoppedByYou"),
         });
         return null;
       }
       console.error("Error en streamChat:", error);
-      useChatStore.getState().appendMessage(sid, { role: "assistant", content: "Lo siento, hubo un error al procesar tu mensaje." });
+      useChatStore.getState().appendMessage(sid, { role: "assistant", content: t("chat.genericError") });
       pulseError();
       return null;
     } finally {
@@ -583,7 +593,10 @@ _(parado por ti)_` : "_(parado por ti)_",
         voiceProfileRef.current = { t0: performance.now() };
         // [O1] Modo conversación: STT rápido (modelo base + beam voraz) para
         // que Aithera responda con fluidez, no tras varios segundos.
-        const r = await api.transcribeVoice(blob, "es", true);
+        // [A·VOZ-8] Reconoce en el idioma de interfaz elegido, no "es" fijo — si
+        // el usuario tiene la app en inglés y habla en inglés, Whisper ya no lo
+        // transcribe como español mal fonetizado (era un bug real de idioma).
+        const r = await api.transcribeVoice(blob, uiLangRef.current, true);
         voiceProfileRef.current.stt_done = performance.now();
         text = (r.text || "").trim();
       } catch { text = ""; }
@@ -673,10 +686,10 @@ _(parado por ti)_` : "_(parado por ti)_",
     <div className="h-full relative">
       <aside className="avcs-panel-breathe glass-surface absolute top-4 right-4 bottom-4 w-[min(380px,calc(100%-2rem))] rounded-2xl flex flex-col overflow-hidden">
         <div className="shrink-0 flex items-center justify-between px-4 py-3 border-b border-white/5">
-          <h1 className="text-sm font-semibold text-ink">Chat con Aithera</h1>
+          <h1 className="text-sm font-semibold text-ink">{t("chat.title")}</h1>
           <span
             className={`h-1.5 w-1.5 rounded-full shrink-0 ${backendConnected ? "bg-signal-ok" : "bg-signal-error"}`}
-            title={backendConnected ? "Conectado" : "Desconectado"}
+            title={backendConnected ? t("chat.connected") : t("chat.disconnected")}
           />
         </div>
 
@@ -703,8 +716,8 @@ _(parado por ti)_` : "_(parado por ti)_",
               {sessions.length > 1 && (
                 <button
                   onClick={(e) => { e.stopPropagation(); closeSession(s.id); }}
-                  title="Cerrar pestaña"
-                  aria-label="Cerrar pestaña"
+                  title={t("chat.closeTab")}
+                  aria-label={t("chat.closeTab")}
                   className="shrink-0 w-3.5 h-3.5 flex items-center justify-center rounded hover:bg-ink/10 hover:text-signal-error"
                 >
                   ×
@@ -714,8 +727,8 @@ _(parado por ti)_` : "_(parado por ti)_",
           ))}
           <button
             onClick={() => newSession()}
-            title="Nueva conversación"
-            aria-label="Nueva conversación"
+            title={t("chat.newConversation")}
+            aria-label={t("chat.newConversation")}
             className="shrink-0 w-6 h-6 flex items-center justify-center rounded-md text-ink-faint hover:text-ink hover:bg-base-800/60"
           >
             +
@@ -732,7 +745,7 @@ _(parado por ti)_` : "_(parado por ti)_",
               <div className="bg-base-700/50 px-3 py-2 rounded-xl text-xs text-ink-dim max-w-[85%]">
                 {/* Mientras el TIE entiende/planifica aún no hay texto: se
                     muestra QUÉ está haciendo en vez de un "Pensando..." mudo. */}
-                {streamingText ? <MiniMarkdown text={streamingText} /> : (tieStatus ? `${tieStatus}…` : "Pensando...")}
+                {streamingText ? <MiniMarkdown text={streamingText} /> : (tieStatus ? `${tieStatus}…` : t("chat.thinking"))}
                 <span className="animate-pulse">|</span>
               </div>
             </div>
@@ -772,14 +785,14 @@ _(parado por ti)_` : "_(parado por ti)_",
                 e.preventDefault();
                 handleSend();
               }}
-              placeholder="Escribe tu mensaje...  (Ctrl+Enter para otro párrafo)"
+              placeholder={t("chat.inputPlaceholder")}
               className="flex-1 min-w-0 resize-none bg-base-800 border border-base-700 rounded-lg px-3 py-2 text-xs text-ink placeholder:text-ink-faint focus:outline-none focus:border-accent/40 leading-relaxed"
             />
             {sending ? (
               <button
                 onClick={handleStop}
-                title="Parar"
-                aria-label="Parar"
+                title={t("chat.stop")}
+                aria-label={t("chat.stop")}
                 className="shrink-0 w-9 h-9 flex items-center justify-center bg-signal-error/15 text-signal-error rounded-lg border border-signal-error/30 hover:bg-signal-error/25"
               >
                 {/* Cuadrado de STOP, sin texto. */}
@@ -791,7 +804,7 @@ _(parado por ti)_` : "_(parado por ti)_",
                 disabled={!input.trim()}
                 className="shrink-0 px-3 py-2 bg-accent/15 text-accent rounded-lg text-xs font-medium border border-accent/30 hover:bg-accent/25 disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                Enviar
+                {t("chat.send")}
               </button>
             )}
           </div>
@@ -803,7 +816,7 @@ _(parado por ti)_` : "_(parado por ti)_",
                 transcribian y enviaban la misma intervencion por separado. */}
             <MicButton
               onTranscript={handleTranscript}
-              language="es"
+              language={uiLang}
               disabled={conversation}
               onStartRecording={stopSpeaking}
             />
@@ -811,8 +824,8 @@ _(parado por ti)_` : "_(parado por ti)_",
             <button
               type="button"
               onClick={toggleConversation}
-              title={conversation ? "Conversación activa — pulsa para parar" : "Conversación continua (habla y te responde en bucle)"}
-              aria-label="Modo conversación"
+              title={conversation ? t("chat.conversationActive") : t("chat.conversationStart")}
+              aria-label={conversation ? t("chat.conversationActive") : t("chat.conversationStart")}
               className={`shrink-0 w-10 h-10 rounded-lg flex items-center justify-center border transition-all ${
                 conversation
                   ? "bg-signal-ok/20 text-signal-ok border-signal-ok/40 animate-pulse"
@@ -828,7 +841,7 @@ _(parado por ti)_` : "_(parado por ti)_",
             <button
               type="button"
               onClick={toggleTts}
-              title={ttsEnabled ? "Voz activada — pulsa para silenciar" : "Voz silenciada — pulsa para activar"}
+              title={ttsEnabled ? t("chat.voiceOn") : t("chat.voiceOff")}
               aria-label="Voz (texto a voz)"
               aria-pressed={ttsEnabled}
               className={`shrink-0 w-10 h-10 rounded-lg flex items-center justify-center border transition-all ${
@@ -886,6 +899,7 @@ const ChatBubble = memo(function ChatBubble({ role, content, missionId }: {
   content: string;
   missionId?: string;
 }) {
+  const t = useT();
   return (
     <div className={`flex ${role === "user" ? "justify-end" : "justify-start"}`}>
       <div className={`max-w-[85%] px-3 py-2 rounded-xl text-xs leading-relaxed ${
@@ -901,7 +915,7 @@ const ChatBubble = memo(function ChatBubble({ role, content, missionId }: {
             to="/missions"
             className="block mt-2 text-[10px] text-accent hover:underline"
           >
-            Ver el plan y sus pasos →
+            {t("chat.viewMission")}
           </Link>
         )}
       </div>
@@ -910,6 +924,7 @@ const ChatBubble = memo(function ChatBubble({ role, content, missionId }: {
 });
 
 function PendingApprovals() {
+  const t = useT();
   const [pending, setPending] = useState<Approval[]>([]);
   const [busy, setBusy] = useState<string | null>(null);
   const appendMessage = useChatStore((s) => s.appendMessage);
@@ -934,8 +949,8 @@ function PendingApprovals() {
       appendMessage(useChatStore.getState().activeSessionId, {
         role: "assistant",
         content: approved
-          ? "Permiso concedido — sigo con ello. Puedes ver el avance paso a paso en Misiones."
-          : "Entendido, no lo hago.",
+          ? t("chat.approval.granted")
+          : t("chat.approval.denied"),
       });
     } catch {
       /* si falla, el sondeo lo volverá a mostrar */
@@ -951,7 +966,7 @@ function PendingApprovals() {
       {pending.map((a) => (
         <div key={a.gate_id} className="flex justify-start">
           <div className="max-w-[85%] rounded-xl border border-signal-warn/40 bg-signal-warn/10 px-3 py-2.5 space-y-2">
-            <p className="text-xs font-medium text-signal-warn">Necesito tu permiso</p>
+            <p className="text-xs font-medium text-signal-warn">{t("chat.approval.needPermission")}</p>
             <p className="text-xs text-ink">{a.title}</p>
             {a.summary && (
               <p className="text-[11px] text-ink-dim whitespace-pre-wrap">{a.summary}</p>
@@ -962,14 +977,14 @@ function PendingApprovals() {
                 disabled={busy === a.gate_id}
                 className="px-3 py-1.5 rounded-lg text-xs font-medium bg-signal-ok/15 text-signal-ok border border-signal-ok/30 hover:bg-signal-ok/25 disabled:opacity-50"
               >
-                Permitir
+                {t("chat.approval.allow")}
               </button>
               <button
                 onClick={() => resolve(a.gate_id, false)}
                 disabled={busy === a.gate_id}
                 className="px-3 py-1.5 rounded-lg text-xs bg-base-700/60 text-ink-dim border border-base-600 hover:text-ink disabled:opacity-50"
               >
-                No
+                {t("chat.approval.deny")}
               </button>
             </div>
           </div>

@@ -13,6 +13,7 @@ from __future__ import annotations
 
 from app.ai.reasoning_filter import strip_reasoning
 from app.core.logging_config import get_system_logger
+from app.core.strings import t as _t
 from app.tie import router
 from app.tie.contracts import Mission, NodeState, TaskGraph
 
@@ -35,7 +36,7 @@ async def build(mission: Mission, graph: TaskGraph) -> str:
     cancelled = [n for n in graph.nodes.values() if n.state == NodeState.CANCELLED]
 
     if cancelled and not done:
-        text = "He parado la tarea antes de completar ningún paso, como pediste."
+        text = _t("responder.stopped_no_steps")
     elif not done:
         text = _template_failure(mission, failed)
     else:
@@ -57,8 +58,20 @@ async def _synthesize(mission, done, failed, skipped, cancelled) -> str:
         problems = "\n\nLo que NO se pudo hacer:\n" + "\n".join(lines)
 
     prompt = f"Objetivo del usuario: {mission.goal}\n\nResultados:\n{results}{problems}"
+    # [I18N-9] El resumen de la misión sale en el idioma de interfaz elegido (si
+    # lo hay). Si no hay idioma elegido, se mantiene el default histórico
+    # (español, el idioma del propio _SYSTEM_PROMPT). Best-effort.
+    system = _SYSTEM_PROMPT
     try:
-        res = await router.complete(prompt, system_prompt=_SYSTEM_PROMPT, capability="summarize")
+        from app.core.language import language_directive
+
+        directive = language_directive()
+        if directive:
+            system = f"{_SYSTEM_PROMPT}\n\n{directive}"
+    except Exception as e:
+        logger.info(f"[responder] no se pudo resolver el idioma (uso el default): {e!r}")
+    try:
+        res = await router.complete(prompt, system_prompt=system, capability="summarize")
         if not res.get("error"):
             text = strip_reasoning(res.get("response", "") or "").strip()
             if text:
@@ -75,28 +88,30 @@ def _node_output(n) -> str:
         if out:
             return str(out)[:600]
         return str(n.result)[:600]
-    return "hecho"
+    return _t("responder.node_done_fallback")
 
 
 def _template_success(mission, done, failed, skipped, cancelled) -> str:
     """Plantilla determinista (sin LLM). Fea pero honesta: nunca deja al usuario
-    sin respuesta porque el modelo esté caído."""
-    parts = [f"He completado {len(done)} paso(s) de «{mission.goal}»:"]
+    sin respuesta porque el modelo esté caído. [I18N-10] En el idioma de
+    interfaz elegido — es texto de puro código, no pasa por ningún LLM."""
+    parts = [_t("responder.completed_header", n=len(done), goal=mission.goal)]
     parts += [f"• {n.goal}: {_node_output(n)}" for n in done]
     if failed:
-        parts.append("No pude completar: " + "; ".join(f"{n.goal} ({n.error or 'error'})" for n in failed))
+        items = "; ".join(f"{n.goal} ({n.error or 'error'})" for n in failed)
+        parts.append(_t("responder.could_not_complete", items=items))
     if skipped:
-        parts.append("Y quedaron sin intentar: " + "; ".join(n.goal for n in skipped))
+        parts.append(_t("responder.left_untried", items="; ".join(n.goal for n in skipped)))
     if cancelled:
-        parts.append("Cancelaste: " + "; ".join(n.goal for n in cancelled))
+        parts.append(_t("responder.you_cancelled", items="; ".join(n.goal for n in cancelled)))
     return "\n".join(parts)
 
 
 def _template_failure(mission, failed) -> str:
     if not failed:
-        return f"No he podido avanzar con «{mission.goal}»."
+        return _t("responder.no_progress", goal=mission.goal)
     reasons = "; ".join(f"{n.goal} ({n.error or 'error'})" for n in failed)
-    return f"No he podido completar «{mission.goal}». Falló: {reasons}"
+    return _t("responder.failed_with_reasons", goal=mission.goal, reasons=reasons)
 
 
 def plan_summary(graph: TaskGraph) -> str:
@@ -104,6 +119,6 @@ def plan_summary(graph: TaskGraph) -> str:
     del plan: los pasos en orden topológico aproximado, marcando los sensibles."""
     lines = []
     for i, node in enumerate(graph.nodes.values(), 1):
-        mark = " (pide permiso)" if node.approval_required else ""
+        mark = _t("responder.plan_step_permission_mark") if node.approval_required else ""
         lines.append(f"{i}. {node.goal}{mark}")
     return "\n".join(lines)

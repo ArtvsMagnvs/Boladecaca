@@ -113,6 +113,12 @@ def test_claude_code_sin_historial_pasa_el_prompt_tal_cual():
     assert ClaudeCodeProvider()._with_history("hola", None) == "hola"
 
 
+def test_codex_sin_historial_pasa_el_prompt_tal_cual():
+    from app.ai.providers.codex_provider import CodexProvider
+
+    assert CodexProvider()._with_history("hola", None) == "hola"
+
+
 def test_execution_request_nace_sin_historial():
     from app.mel import Capability, ExecutionRequest
 

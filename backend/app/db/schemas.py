@@ -361,6 +361,10 @@ class ChatRequest(BaseModel):
     # que no lo mande (o el chat legacy) sigue funcionando sin continuidad,
     # exactamente como antes.
     session_id: Optional[str] = None
+    # [A·VOZ-4] Modo conversacion: el chat de VOZ lo pone True para que una mision
+    # no bloquee el dialogo (acuse inmediato + ejecucion en 2.o plano + reporte
+    # async). Default False: el chat de texto mantiene el comportamiento clasico.
+    conversational: bool = False
 
 
 class ChatResponse(BaseModel):

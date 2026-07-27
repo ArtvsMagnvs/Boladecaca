@@ -12,16 +12,17 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { usePolling } from "@/hooks/usePolling";
 import { useConfirm } from "@/components/ConfirmDialog";
+import { useT } from "@/store/useI18n";
 
 import { api, type Mission, type MissionDetail, type NodeState, type TaskNode } from "@/lib/api";
 import { MiniMarkdown } from "@/lib/miniMarkdown";
 
-const STATE_LABEL: Record<string, string> = {
-  running: "En curso",
-  waiting: "Esperando tu respuesta",
-  done: "Completada",
-  failed: "Fallida",
-  cancelled: "Cancelada",
+const STATE_KEY: Record<string, string> = {
+  running: "missions.state.running",
+  waiting: "missions.state.waiting",
+  done: "missions.state.done",
+  failed: "missions.state.failed",
+  cancelled: "missions.state.cancelled",
 };
 
 const STATE_STYLE: Record<string, string> = {
@@ -32,16 +33,16 @@ const STATE_STYLE: Record<string, string> = {
   cancelled: "bg-base-700 text-ink-dim border-base-600",
 };
 
-const NODE_LABEL: Record<NodeState, string> = {
-  pending: "Pendiente",
-  ready: "Lista",
-  running: "Ejecutando",
-  waiting_approval: "Esperando permiso",
-  waiting_event: "Esperando evento",
-  done: "Hecha",
-  failed: "Falló",
-  skipped: "Omitida",
-  cancelled: "Cancelada",
+const NODE_KEY: Record<NodeState, string> = {
+  pending: "missions.node.pending",
+  ready: "missions.node.ready",
+  running: "missions.node.running",
+  waiting_approval: "missions.node.waiting_approval",
+  waiting_event: "missions.node.waiting_event",
+  done: "missions.node.done",
+  failed: "missions.node.failed",
+  skipped: "missions.node.skipped",
+  cancelled: "missions.node.cancelled",
 };
 
 const NODE_DOT: Record<NodeState, string> = {
@@ -61,6 +62,7 @@ function isLive(state: string) {
 }
 
 export default function Missions() {
+  const t = useT();
   const [confirm, confirmDialog] = useConfirm();
   const [missions, setMissions] = useState<Mission[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
@@ -98,7 +100,7 @@ export default function Missions() {
       }
       setError(null);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "No se pudieron cargar las misiones.");
+      setError(e instanceof Error ? e.message : t("missions.loadError"));
     } finally {
       setLoading(false);
     }
@@ -136,7 +138,7 @@ export default function Missions() {
       await fn();
       await load();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "La acción falló.");
+      setError(e instanceof Error ? e.message : t("missions.actionError"));
     } finally {
       setBusy(false);
     }
@@ -158,9 +160,9 @@ export default function Missions() {
     <div className="h-full flex flex-col gap-4">
       {confirmDialog}
       <div>
-        <h1 className="text-lg font-semibold text-ink">Misiones</h1>
+        <h1 className="text-lg font-semibold text-ink">{t("missions.title")}</h1>
         <p className="text-xs text-ink-faint mt-0.5">
-          Lo que Aithera está haciendo por ti: el plan, cada paso y su estado.
+          {t("missions.subtitle")}
         </p>
       </div>
 
@@ -174,12 +176,12 @@ export default function Missions() {
         {/* Lista */}
         <div className="overflow-y-auto flex flex-col gap-2">
           {loading ? (
-            <p className="text-xs text-ink-faint">Cargando…</p>
+            <p className="text-xs text-ink-faint">{t("missions.loading")}</p>
           ) : missions.length === 0 ? (
             <div className="glass-surface rounded-xl p-4">
-              <p className="text-sm text-ink">Todavía no hay misiones.</p>
+              <p className="text-sm text-ink">{t("missions.empty.title")}</p>
               <p className="text-xs text-ink-faint mt-1">
-                Cuando le pidas algo que necesite varios pasos, aparecerá aquí con su plan.
+                {t("missions.empty.desc")}
               </p>
             </div>
           ) : (
@@ -202,9 +204,9 @@ export default function Missions() {
                     onClick={async (e) => {
                       e.stopPropagation();
                       if (!(await confirm({
-                        title: "Borrar esta misión",
-                        message: "No se puede deshacer.",
-                        confirmLabel: "Borrar",
+                        title: t("missions.deleteConfirm.title"),
+                        message: t("missions.deleteConfirm.message"),
+                        confirmLabel: t("missions.deleteConfirm.confirmLabel"),
                       }))) return;
                       act(async () => {
                         await api.deleteMission(m.trace_id);
@@ -218,8 +220,8 @@ export default function Missions() {
                         }
                       });
                     }}
-                    title="Borrar misión"
-                    aria-label="Borrar misión"
+                    title={t("missions.delete")}
+                    aria-label={t("missions.delete")}
                     className="absolute top-2 right-2 w-5 h-5 flex items-center justify-center rounded text-ink-faint hover:text-signal-error hover:bg-signal-error/10"
                   >
                     ×
@@ -227,13 +229,13 @@ export default function Missions() {
                 )}
                 <div className="flex items-center justify-between gap-2 mb-1 pr-5">
                   <span className={`text-[10px] px-2 py-0.5 rounded border ${STATE_STYLE[m.state] ?? ""}`}>
-                    {STATE_LABEL[m.state] ?? m.state}
+                    {STATE_KEY[m.state] ? t(STATE_KEY[m.state]) : m.state}
                   </span>
                   <span className="text-[10px] text-ink-faint">
-                    {m.node_count > 0 ? `${m.node_count} paso(s)` : "directa"}
+                    {m.node_count > 0 ? t("missions.steps", { n: m.node_count }) : t("missions.direct")}
                   </span>
                 </div>
-                <p className="text-sm text-ink line-clamp-2">{m.goal || "(sin objetivo)"}</p>
+                <p className="text-sm text-ink line-clamp-2">{m.goal || t("missions.noGoal")}</p>
                 <p className="text-[10px] text-ink-faint mt-1">
                   {m.created_at ? new Date(m.created_at).toLocaleString() : ""}
                   {m.channel ? ` · ${m.channel}` : ""}
@@ -247,19 +249,19 @@ export default function Missions() {
         <div className="overflow-y-auto">
           {!detail ? (
             <div className="glass-surface rounded-2xl p-5">
-              <p className="text-sm text-ink-dim">Elige una misión para ver su plan.</p>
+              <p className="text-sm text-ink-dim">{t("missions.selectPrompt")}</p>
             </div>
           ) : (
             <div className="flex flex-col gap-4">
               <div className="glass-surface rounded-2xl p-5">
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
-                    <h2 className="text-base font-medium text-ink">{detail.goal || "(sin objetivo)"}</h2>
+                    <h2 className="text-base font-medium text-ink">{detail.goal || t("missions.noGoal")}</h2>
                     <p className="text-[11px] text-ink-faint mt-1">
                       <span className={`px-2 py-0.5 rounded border ${STATE_STYLE[detail.state] ?? ""}`}>
-                        {STATE_LABEL[detail.state] ?? detail.state}
+                        {STATE_KEY[detail.state] ? t(STATE_KEY[detail.state]) : detail.state}
                       </span>
-                      {detail.model_used && <span className="ml-2">modelo: {detail.model_used}</span>}
+                      {detail.model_used && <span className="ml-2">{t("missions.modelUsed", { model: detail.model_used })}</span>}
                     </p>
                   </div>
                   {isLive(detail.state) && (
@@ -268,7 +270,7 @@ export default function Missions() {
                       disabled={busy}
                       className="shrink-0 text-xs px-3 py-1.5 rounded-lg bg-signal-error/10 text-signal-error border border-signal-error/30 hover:bg-signal-error/20 disabled:opacity-50"
                     >
-                      Parar
+                      {t("missions.stop")}
                     </button>
                   )}
                 </div>
@@ -283,10 +285,9 @@ export default function Missions() {
               {/* Aprobación del plan — nada se ha ejecutado todavía */}
               {awaitingPlan && (
                 <div className="rounded-2xl p-5 bg-signal-warn/10 border border-signal-warn/30">
-                  <h3 className="text-sm font-medium text-signal-warn">Este plan necesita tu visto bueno</h3>
+                  <h3 className="text-sm font-medium text-signal-warn">{t("missions.planGate.title")}</h3>
                   <p className="text-xs text-ink-dim mt-1">
-                    Toca algo sensible, así que no he ejecutado nada todavía. Si lo apruebas, haré
-                    estos pasos sin volver a preguntarte uno por uno.
+                    {t("missions.planGate.desc")}
                   </p>
                   <div className="flex gap-2 mt-4">
                     <button
@@ -294,14 +295,14 @@ export default function Missions() {
                       disabled={busy}
                       className="text-xs px-3 py-2 rounded-lg bg-signal-ok/15 text-signal-ok border border-signal-ok/30 hover:bg-signal-ok/25 disabled:opacity-50"
                     >
-                      Aprobar y ejecutar
+                      {t("missions.planGate.approve")}
                     </button>
                     <button
                       onClick={() => act(() => api.approvePlan(detail.trace_id, false))}
                       disabled={busy}
                       className="text-xs px-3 py-2 rounded-lg bg-signal-error/10 text-signal-error border border-signal-error/30 hover:bg-signal-error/20 disabled:opacity-50"
                     >
-                      Descartar
+                      {t("missions.planGate.discard")}
                     </button>
                   </div>
                 </div>
@@ -313,7 +314,7 @@ export default function Missions() {
                   directamente el gate_id de este nodo. */}
               {awaitingNode && (
                 <div className="rounded-2xl p-5 bg-signal-warn/10 border border-signal-warn/30">
-                  <h3 className="text-sm font-medium text-signal-warn">Este paso necesita tu permiso</h3>
+                  <h3 className="text-sm font-medium text-signal-warn">{t("missions.nodeGate.title")}</h3>
                   <p className="text-xs text-ink-dim mt-1">{awaitingNode.goal}</p>
                   <div className="flex gap-2 mt-4">
                     <button
@@ -321,14 +322,14 @@ export default function Missions() {
                       disabled={busy}
                       className="text-xs px-3 py-2 rounded-lg bg-signal-ok/15 text-signal-ok border border-signal-ok/30 hover:bg-signal-ok/25 disabled:opacity-50"
                     >
-                      Aprobar
+                      {t("missions.nodeGate.approve")}
                     </button>
                     <button
                       onClick={() => act(() => api.resolveApproval(awaitingNode.gate_id!, false))}
                       disabled={busy}
                       className="text-xs px-3 py-2 rounded-lg bg-signal-error/10 text-signal-error border border-signal-error/30 hover:bg-signal-error/20 disabled:opacity-50"
                     >
-                      Rechazar
+                      {t("missions.nodeGate.reject")}
                     </button>
                   </div>
                 </div>
@@ -338,7 +339,7 @@ export default function Missions() {
               {nodes.length > 0 && (
                 <div className="glass-surface rounded-2xl p-5">
                   <h3 className="text-sm font-medium text-ink mb-3">
-                    Plan · {nodes.length} paso(s)
+                    {t("missions.plan.title", { n: nodes.length })}
                   </h3>
                   <div className="flex flex-col gap-2">
                     {nodes.map((n, i) => (
@@ -349,12 +350,12 @@ export default function Missions() {
                             <span className="text-ink-faint mr-1">{i + 1}.</span>
                             {n.goal}
                             {n.approval_required && (
-                              <span className="ml-2 text-[10px] text-signal-warn">pide permiso</span>
+                              <span className="ml-2 text-[10px] text-signal-warn">{t("missions.needsPermission")}</span>
                             )}
                           </p>
                           <p className="text-[10px] text-ink-faint mt-0.5">
-                            {NODE_LABEL[n.state]}
-                            {n.depends_on.length > 0 && ` · tras ${n.depends_on.join(", ")}`}
+                            {t(NODE_KEY[n.state])}
+                            {n.depends_on.length > 0 && ` · ${t("missions.after", { deps: n.depends_on.join(", ") })}`}
                             {n.duration_ms != null && ` · ${n.duration_ms} ms`}
                           </p>
                           {n.error && <p className="text-[11px] text-signal-error mt-1">{n.error}</p>}
@@ -376,7 +377,7 @@ export default function Missions() {
                                     onClick={() => toggleExpanded(n.id)}
                                     className="text-[10px] text-accent hover:underline mt-0.5"
                                   >
-                                    {expanded ? "ver menos" : "ver más"}
+                                    {expanded ? t("missions.seeLess") : t("missions.seeMore")}
                                   </button>
                                 )}
                               </div>

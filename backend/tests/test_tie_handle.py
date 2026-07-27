@@ -496,9 +496,10 @@ def test_purge_old_desactivado_con_cero():
 # Streaming (T4b) — lo que ve el chat de Electron
 # ---------------------------------------------------------------------------
 @pytest.mark.anyio
-async def test_handle_stream_camino_corto_emite_status_y_tokens(monkeypatch):
-    """El camino corto debe seguir streameando TOKENS (el UX de siempre), con un
-    'analizando' delante para que el primer feedback sea inmediato (doc 11 B.5)."""
+async def test_handle_stream_camino_corto_solo_tokens_sin_status(monkeypatch):
+    """[A·VOZ-6] El camino corto streamea TOKENS y NADA MÁS: sin 'analizando'
+    (una charla no es una misión y no debe parecerlo — era el bug del usuario)
+    y sin 'mission'. El primer feedback es el propio primer token."""
     from app.tie import handle_stream
     from app.tie.runtime import AgentChunk
 
@@ -516,9 +517,36 @@ async def test_handle_stream_camino_corto_emite_status_y_tokens(monkeypatch):
         if kind == "text":
             texts += payload
 
-    assert kinds[0] == "status" and kinds.count("text") == 3
+    assert kinds.count("text") == 3
     assert texts == "Hola, soy Aithera"
+    assert "status" not in kinds           # el camino corto ya NO muestra 'analizando'
     assert "mission" not in kinds          # el camino corto no crea misión que seguir
+
+
+@pytest.mark.anyio
+async def test_camino_corto_no_paga_prefetch_de_contexto(monkeypatch):
+    """[A·VOZ-6] El prefetch del MOS se hacía ANTES de decidir el camino corto y
+    luego se DESCARTABA (el camino corto arma su contexto dentro del runtime).
+    Era latencia muerta en cada charla. Ahora el camino corto NO lo llama."""
+    from app.tie import handle_stream
+    from app.tie import pipeline as pipeline_mod
+    from app.tie.runtime import AgentChunk, NullRuntime
+
+    _fake_intent(monkeypatch, Intent(type=IntentType.CONVERSATIONAL, goal="hola", confidence=0.9))
+
+    llamado = {"prefetch": 0}
+
+    async def _spy_prefetch(text):
+        llamado["prefetch"] += 1
+        return ""
+    monkeypatch.setattr(pipeline_mod, "_prefetch_context", _spy_prefetch)
+
+    async def _stream(self, task, memory, tools, approval_gate):
+        yield AgentChunk(task_id=task.id, kind="text", payload="hola")
+    monkeypatch.setattr(NullRuntime, "stream_task", _stream)
+
+    _ = [ev async for ev in handle_stream("hola", channel="web")]
+    assert llamado["prefetch"] == 0, "el camino corto no debe pagar el prefetch del MOS"
 
 
 @pytest.mark.anyio

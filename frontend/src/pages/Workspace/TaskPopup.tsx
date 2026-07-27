@@ -6,16 +6,18 @@
 import { useState } from "react";
 import type { Task, Milestone, Project, ChecklistItem, TaskLinks } from "@/lib/api";
 import { Modal, ErrorBanner, fieldLabel, fieldInput, btnPrimary, btnGhost } from "./Modal";
+// Alias 'tr' (no 't'): mismo criterio que el resto del módulo Workspace.
+import { useT } from "@/store/useI18n";
 
 const STATUSES = [
-  { value: "pending", label: "Pendiente" },
-  { value: "in_progress", label: "En progreso" },
-  { value: "completed", label: "Hecha" },
+  { value: "pending", labelKey: "workspace.taskBoard.col.pending" },
+  { value: "in_progress", labelKey: "workspace.taskBoard.col.inProgress" },
+  { value: "completed", labelKey: "workspace.taskBoard.col.completed" },
 ];
 const PRIORITIES = [
-  { value: "low", label: "Baja" },
-  { value: "medium", label: "Media" },
-  { value: "high", label: "Alta" },
+  { value: "low", labelKey: "workspace.taskPopup.priority.low" },
+  { value: "medium", labelKey: "workspace.taskPopup.priority.medium" },
+  { value: "high", labelKey: "workspace.taskPopup.priority.high" },
 ];
 
 interface Props {
@@ -40,6 +42,7 @@ function isoDateInput(value?: string | null): string {
 export function TaskPopup({
   task, projects, milestones, defaultProjectId, defaultMilestoneId, defaultStatus, onSave, onDelete, onClose,
 }: Props) {
+  const tr = useT();
   const [title, setTitle] = useState(task?.title ?? "");
   const [description, setDescription] = useState(task?.description ?? "");
   const [status, setStatus] = useState(task?.status ?? defaultStatus ?? "pending");
@@ -87,7 +90,7 @@ export function TaskPopup({
         links,
       });
     } catch (e) {
-      setError(e instanceof Error ? e.message : "No se pudo guardar la tarea.");
+      setError(e instanceof Error ? e.message : tr("workspace.taskPopup.saveFailed"));
     } finally {
       setSaving(false);
     }
@@ -97,7 +100,7 @@ export function TaskPopup({
 
   return (
     <Modal
-      title={task ? "Editar tarea" : "Nueva tarea"}
+      title={task ? tr("workspace.taskPopup.editTitle") : tr("workspace.taskPopup.newTitle")}
       onClose={onClose}
       footer={
         <>
@@ -106,75 +109,75 @@ export function TaskPopup({
               onClick={() => onDelete(task.id)}
               className="mr-auto px-3 py-2 text-signal-error/70 hover:text-signal-error text-sm"
             >
-              Eliminar
+              {tr("common.delete")}
             </button>
           )}
-          <button onClick={onClose} className={btnGhost}>Cancelar</button>
+          <button onClick={onClose} className={btnGhost}>{tr("common.cancel")}</button>
           <button onClick={handleSave} disabled={!title.trim() || saving} className={btnPrimary}>
-            {saving ? "Guardando…" : "Guardar"}
+            {saving ? tr("agents.saving") : tr("common.save")}
           </button>
         </>
       }
     >
       <ErrorBanner message={error} />
       <div>
-        <label className={fieldLabel}>Título</label>
-        <input value={title} onChange={(e) => setTitle(e.target.value)} className={fieldInput} placeholder="¿Qué hay que hacer?" autoFocus />
+        <label className={fieldLabel}>{tr("workspace.taskPopup.titleLabel")}</label>
+        <input value={title} onChange={(e) => setTitle(e.target.value)} className={fieldInput} placeholder={tr("workspace.taskPopup.titlePlaceholder")} autoFocus />
       </div>
 
       <div>
-        <label className={fieldLabel}>Descripción</label>
-        <textarea value={description ?? ""} onChange={(e) => setDescription(e.target.value)} rows={3} className={`${fieldInput} resize-none`} placeholder="Detalle (opcional)" />
+        <label className={fieldLabel}>{tr("agents.field.description")}</label>
+        <textarea value={description ?? ""} onChange={(e) => setDescription(e.target.value)} rows={3} className={`${fieldInput} resize-none`} placeholder={tr("workspace.taskPopup.descPlaceholder")} />
       </div>
 
       <div className="grid grid-cols-2 gap-3">
         <div>
-          <label className={fieldLabel}>Estado</label>
+          <label className={fieldLabel}>{tr("workspace.taskPopup.statusLabel")}</label>
           <select value={status} onChange={(e) => setStatus(e.target.value)} className={fieldInput}>
-            {STATUSES.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
+            {STATUSES.map((s) => <option key={s.value} value={s.value}>{tr(s.labelKey)}</option>)}
           </select>
         </div>
         <div>
-          <label className={fieldLabel}>Prioridad</label>
+          <label className={fieldLabel}>{tr("workspace.taskPopup.priorityLabel")}</label>
           <select value={priority} onChange={(e) => setPriority(e.target.value)} className={fieldInput}>
-            {PRIORITIES.map((p) => <option key={p.value} value={p.value}>{p.label}</option>)}
+            {PRIORITIES.map((p) => <option key={p.value} value={p.value}>{tr(p.labelKey)}</option>)}
           </select>
         </div>
         <div>
-          <label className={fieldLabel}>Proyecto</label>
+          <label className={fieldLabel}>{tr("workspace.taskPopup.projectLabel")}</label>
           <select
             value={projectId ?? ""}
             onChange={(e) => setProjectId(e.target.value ? Number(e.target.value) : null)}
             className={fieldInput}
           >
-            <option value="">— sin proyecto —</option>
+            <option value="">{tr("workspace.taskPopup.noProject")}</option>
             {projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
           </select>
         </div>
         <div>
-          <label className={fieldLabel}>Milestone</label>
+          <label className={fieldLabel}>{tr("workspace.taskPopup.milestoneLabel")}</label>
           <select
             value={milestoneId ?? ""}
             onChange={(e) => setMilestoneId(e.target.value ? Number(e.target.value) : null)}
             className={fieldInput}
           >
-            <option value="">— backlog —</option>
+            <option value="">{tr("workspace.taskPopup.noMilestoneBacklog")}</option>
             {milestones.map((m) => <option key={m.id} value={m.id}>{m.name}{m.version ? ` (${m.version})` : ""}</option>)}
           </select>
         </div>
         <div>
-          <label className={fieldLabel}>Fecha límite</label>
+          <label className={fieldLabel}>{tr("workspace.taskPopup.dueDateLabel")}</label>
           <input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} className={fieldInput} />
         </div>
         <div>
-          <label className={fieldLabel}>Estimación</label>
-          <input value={estimate ?? ""} onChange={(e) => setEstimate(e.target.value)} className={fieldInput} placeholder="p.ej. 2 sesiones" />
+          <label className={fieldLabel}>{tr("workspace.taskPopup.estimateLabel")}</label>
+          <input value={estimate ?? ""} onChange={(e) => setEstimate(e.target.value)} className={fieldInput} placeholder={tr("workspace.taskPopup.estimatePlaceholder")} />
         </div>
       </div>
 
       {/* Checklist — subtareas ligeras (no cuentan para el progreso, doc 18 §8) */}
       <div>
-        <label className={fieldLabel}>Checklist {checklist.length > 0 && <span className="text-ink-faint normal-case">· {doneCount}/{checklist.length}</span>}</label>
+        <label className={fieldLabel}>{tr("workspace.taskPopup.checklistLabel")} {checklist.length > 0 && <span className="text-ink-faint normal-case">· {doneCount}/{checklist.length}</span>}</label>
         <div className="flex flex-col gap-1.5">
           {checklist.map((item, i) => (
             <div key={i} className="flex items-center gap-2 group">
@@ -194,7 +197,7 @@ export function TaskPopup({
               onChange={(e) => setNewItem(e.target.value)}
               onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addChecklistItem(); } }}
               className={`${fieldInput} py-1.5`}
-              placeholder="Añadir subtarea…"
+              placeholder={tr("workspace.taskPopup.checklistPlaceholder")}
             />
             <button onClick={addChecklistItem} className={btnGhost}>+</button>
           </div>
@@ -203,12 +206,12 @@ export function TaskPopup({
 
       {/* Links — traza al trabajo real (doc 18 §3.5) */}
       <div>
-        <label className={fieldLabel}>Enlaces (opcional)</label>
+        <label className={fieldLabel}>{tr("workspace.taskPopup.linksLabel")}</label>
         <div className="grid grid-cols-2 gap-2">
           <input value={links.commit ?? ""} onChange={(e) => setLink("commit", e.target.value)} className={`${fieldInput} py-1.5`} placeholder="commit" />
           <input value={links.pr ?? ""} onChange={(e) => setLink("pr", e.target.value)} className={`${fieldInput} py-1.5`} placeholder="PR" />
           <input value={links.mission_id ?? ""} onChange={(e) => setLink("mission_id", e.target.value)} className={`${fieldInput} py-1.5`} placeholder="mission_id (TIE)" />
-          <input value={links.decision ?? ""} onChange={(e) => setLink("decision", e.target.value)} className={`${fieldInput} py-1.5`} placeholder="decisión" />
+          <input value={links.decision ?? ""} onChange={(e) => setLink("decision", e.target.value)} className={`${fieldInput} py-1.5`} placeholder={tr("workspace.taskPopup.linkDecision")} />
         </div>
       </div>
     </Modal>

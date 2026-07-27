@@ -124,6 +124,107 @@ CUSTOM_ID = "custom"
 
 
 # ---------------------------------------------------------------------------
+# [I18N-8] Traducción de `name`/`description` para la UI (PersonalityPicker).
+#
+# El `prompt` (instrucciones de TONO enviadas al LLM) se queda en español a
+# propósito: cambiar el idioma en que Aithera RAZONA/responde es un cambio de
+# comportamiento del chat (toca chat_service/tie/responder), no de la interfaz
+# — eso es I18N-9, deliberadamente fuera de alcance aquí (reservado para
+# revisión aparte). Lo que este bloque traduce es solo lo que el usuario LEE
+# al elegir una personalidad en Ajustes: el nombre y la descripción corta.
+# Mismo patrón que `_DEFAULT_VOICE_BY_LANG` en `api/endpoints/voice.py`:
+# clave `app_language` en `Config`, fallback a español si falta o es desconocido.
+_I18N_DISPLAY: dict[str, dict[str, dict[str, str]]] = {
+    "aithera": {
+        "en": {
+            "name": "Aithera",
+            "description": "The house style: direct, honest, warm without flattery, and action-oriented.",
+        },
+        "fr": {
+            "name": "Aithera",
+            "description": "Le style maison : directe, honnête, chaleureuse sans flatterie, orientée action.",
+        },
+        "pt": {
+            "name": "Aithera",
+            "description": "O estilo da casa: direta, honesta, próxima sem bajular e orientada à ação.",
+        },
+    },
+    "profesional": {
+        "en": {
+            "name": "Professional",
+            "description": "Formal, neutral register, like a senior colleague in a work setting.",
+        },
+        "fr": {
+            "name": "Professionnel",
+            "description": "Registre formel et neutre, comme un collègue senior dans un cadre professionnel.",
+        },
+        "pt": {
+            "name": "Profissional",
+            "description": "Registo formal e neutro, como um colega sénior num ambiente de trabalho.",
+        },
+    },
+    "cercana": {
+        "en": {
+            "name": "Warm",
+            "description": "Warm and conversational, like a friend who also knows the subject.",
+        },
+        "fr": {
+            "name": "Chaleureuse",
+            "description": "Chaleureuse et conversationnelle, comme un ami qui s'y connaît aussi.",
+        },
+        "pt": {
+            "name": "Próxima",
+            "description": "Calorosa e conversacional, como um amigo que também percebe do assunto.",
+        },
+    },
+    "concisa": {
+        "en": {
+            "name": "Concise",
+            "description": "Maximum brevity. Only the essentials, not a word more.",
+        },
+        "fr": {
+            "name": "Concise",
+            "description": "Brièveté maximale. Seulement l'essentiel, pas un mot de plus.",
+        },
+        "pt": {
+            "name": "Concisa",
+            "description": "Brevidade máxima. Só o essencial, sem uma palavra a mais.",
+        },
+    },
+    "didactica": {
+        "en": {
+            "name": "Didactic",
+            "description": "Explains the why behind things, with examples. Good for learning.",
+        },
+        "fr": {
+            "name": "Pédagogique",
+            "description": "Explique le pourquoi des choses, avec des exemples. Idéale pour apprendre.",
+        },
+        "pt": {
+            "name": "Didática",
+            "description": "Explica o porquê das coisas, com exemplos. Boa para aprender.",
+        },
+    },
+}
+
+
+def _display_lang() -> str:
+    lang = (_cfg_get("app_language") or "es").split("-")[0].lower()
+    return lang if lang in ("es", "en", "fr", "pt") else "es"
+
+
+def _localized(p: "PersonalityDef", lang: str) -> tuple[str, str]:
+    """Devuelve (name, description) en `lang`, con fallback a español si no
+    hay traducción para esa personalidad/idioma."""
+    if lang == "es":
+        return p.name, p.description
+    entry = _I18N_DISPLAY.get(p.id, {}).get(lang)
+    if not entry:
+        return p.name, p.description
+    return entry.get("name", p.name), entry.get("description", p.description)
+
+
+# ---------------------------------------------------------------------------
 # Persistencia (tabla Config existente — mismo patrón que permissions/telegram)
 # ---------------------------------------------------------------------------
 def _cfg_get(key: str) -> Optional[str]:
@@ -200,12 +301,16 @@ def save_custom(prompt: str, *, activate: bool = True) -> None:
 
 
 def catalog_payload() -> dict:
-    """Lo que consume la UI de una sola llamada."""
+    """Lo que consume la UI de una sola llamada. `name`/`description` se
+    devuelven en el idioma de la interfaz (`Config.app_language`, [I18N-8]);
+    `prompt` se queda en español a propósito (instrucciones para el LLM, no
+    texto de UI — ver nota junto a `_I18N_DISPLAY`)."""
+    lang = _display_lang()
     return {
         "active": active_id(),
         "custom_prompt": custom_prompt(),
         "personalities": [
-            {"id": p.id, "name": p.name, "description": p.description, "prompt": p.prompt}
+            {"id": p.id, **dict(zip(("name", "description"), _localized(p, lang))), "prompt": p.prompt}
             for p in CATALOG
         ],
     }

@@ -12,6 +12,7 @@ from .google_auth import (
     disconnect as google_disconnect,
     save_client_credentials as google_save_client_credentials,
     get_credentials_source as google_get_credentials_source,
+    connection_state as google_connection_state,
 )
 
 
@@ -24,4 +25,5 @@ __all__ = [
     "google_disconnect",
     "google_save_client_credentials",
     "google_get_credentials_source",
+    "google_connection_state",
 ]

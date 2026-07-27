@@ -6,6 +6,7 @@
 
 export const PROVIDER_SHORT: Record<string, string> = {
   claude_code: "Claude CLI",
+  codex: "Codex CLI",
   minimax: "MiniMax",
   openai: "OpenAI",
   anthropic: "Anthropic",

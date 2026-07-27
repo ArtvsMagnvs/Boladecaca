@@ -457,6 +457,12 @@ export interface SearchStatus {
   serpapi: SearchProviderStatus;
 }
 
+// [2026-07-23] Modo de navegador: perfil dedicado de Aithera vs Chrome habitual del usuario.
+export type BrowserMode = "aithera" | "user";
+export interface BrowserModeStatus {
+  mode: BrowserMode;
+}
+
 // [V2] Personalidad conversacional de Aithera (tono, no identidad).
 export interface PersonalityDef {
   id: string;
@@ -724,6 +730,21 @@ export const api = {
   setConfig: (key: string, value: string) =>
     request("/config/", { method: "POST", body: JSON.stringify({ key, value }) }),
 
+  // --- Onboarding (OB-1, doc 30 §1) ---
+  getOnboardingStatus: () =>
+    request<{ completed: boolean; language: string | null; pending_model: string | null }>(
+      "/onboarding/status",
+    ),
+  completeOnboarding: (body: { language: string; model_tag?: string | null }) =>
+    request<{ completed: boolean; language: string | null; pending_model: string | null }>(
+      "/onboarding/complete",
+      { method: "POST", body: JSON.stringify(body) },
+    ),
+  resetOnboarding: () =>
+    request<{ completed: boolean; language: string | null }>("/onboarding/reset", {
+      method: "POST",
+    }),
+
   // --- Proyectos ---
   getProjects: (skip = 0, limit = 100) => request<Project[]>(`/projects/?skip=${skip}&limit=${limit}`),
   createProject: (data: Partial<Project>) =>
@@ -826,6 +847,12 @@ export const api = {
     }),
   deconfigureSearchProvider: (provider: "brave" | "serpapi") =>
     request<SearchStatus>(`/search/configure/${provider}`, { method: "DELETE" }),
+  getBrowserMode: () => request<BrowserModeStatus>("/search/browser-mode"),
+  setBrowserMode: (mode: BrowserMode) =>
+    request<BrowserModeStatus>("/search/browser-mode", {
+      method: "POST",
+      body: JSON.stringify({ mode }),
+    }),
 
   // --- Email + Calendar (V0.7 Fase 4) ---
   // Email status
@@ -834,6 +861,9 @@ export const api = {
     email: string | null;
     has_credentials: boolean;
     libs_available: boolean;
+    credentials_source?: "env" | "db" | "none";
+    // AUTH-1: estado detallado para mensajes claros (sesión caducada/revocada).
+    connection_state?: "connected" | "expired" | "revoked" | "no_token" | "no_credentials" | "libs_missing";
   }>("/email/status"),
   saveEmailCredentials: (data: { client_id: string; client_secret: string }) =>
     request<{ saved: boolean }>("/email/auth/credentials", {
@@ -1262,14 +1292,13 @@ export const api = {
     // FIX V0.3 (Fase 1 Estabilizacion Hub V03 - P2): contrato principal
     // PLANO. Antes era anidado por proveedor ({ elevenlabs, espeak });
     // ahora el cliente consume directamente las claves planas que ya
-    // expone el backend. Se mantienen las claves adicionales (elevenlabs,
-    // espeak, fallback, recommended) para diagnostico.
+    // expone el backend. [A·VOZ-1] eSpeak retirado: EdgeTTS es el fallback
+    // siempre disponible.
     configured: boolean;
     voices_count: number;
     message: string;
-    source: "elevenlabs" | "espeak" | "none";
+    source: "elevenlabs" | "edgetts";
     elevenlabs: { configured: boolean; voices_count: number; message: string };
-    espeak: { available: boolean; voices_count: number; message: string };
     fallback: string;
     recommended: string;
   }> {
@@ -1281,7 +1310,7 @@ export const api = {
   async synthesizeVoice(
     text: string,
     voiceId: string,
-    provider?: "edgetts" | "kokoro" | "espeak",
+    provider?: "edgetts" | "kokoro",
   ): Promise<{ buffer: ArrayBuffer; mime: string }> {
     const response = await fetch(`${API_URL}/voice/synthesize`, {
       method: "POST",
@@ -1311,6 +1340,20 @@ export const api = {
   // [2026-07-21] Instalación de Kokoro desde la UI (pip con seguimiento real).
   installKokoro: () =>
     request<{ started: boolean; message: string }>("/voice/kokoro/install", { method: "POST" }),
+
+  // [2026-07-24] Codex CLI: instalación (npm) + login (codex login → navegador)
+  // asistidos desde Ajustes, con seguimiento de estado (mismo patrón que Kokoro).
+  getCodexStatus: () =>
+    request<{
+      installed: boolean; authenticated: boolean; ready: boolean; npm_available: boolean;
+      install_status: "idle" | "installing" | "done" | "failed"; install_detail: string | null;
+      login_status: "idle" | "running" | "done" | "failed"; login_detail: string | null;
+      login_url: string | null;
+    }>("/codex/status"),
+  installCodex: () =>
+    request<{ started: boolean; message: string }>("/codex/install", { method: "POST" }),
+  loginCodex: () =>
+    request<{ started: boolean; message: string }>("/codex/login", { method: "POST" }),
 
   // [2026-07-21] Escaneo de hardware + recomendación auto de modelo Ollama y
   // nivel de partículas del AVCS para ESTE PC.
@@ -1353,7 +1396,7 @@ export const api = {
   async synthesizeVoiceBase64(
     text: string,
     voiceId: string,
-    provider?: "edgetts" | "kokoro" | "espeak",
+    provider?: "edgetts" | "kokoro",
   ): Promise<{ audio: string; voice_id: string; source?: string }> {
     const response = await fetch(`${API_URL}/voice/synthesize/base64`, {
       method: "POST",
@@ -1501,6 +1544,9 @@ export const api = {
 
   // --- Modelos locales especializados (V1.0) ---
   getLocalCatalog: () => request<LocalModelCatalog>("/local-models/catalog"),
+  // [OB-2, doc 30 §1] Chequeo ligero de Ollama para el onboarding.
+  getRuntimeStatus: () =>
+    request<{ ok: boolean; install_url: string | null }>("/local-models/runtime"),
   installLocalModel: (tag: string) =>
     request<LocalModelJob>("/local-models/install", {
       method: "POST",

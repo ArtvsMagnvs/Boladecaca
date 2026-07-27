@@ -57,6 +57,36 @@ PROVIDER_CATALOG: Dict[str, Dict[str, Any]] = {
         },
         "supports_auto_detect": False,
     },
+    # V1.0 (2026-07-24): Codex CLI de OpenAI — el gemelo de claude_code para
+    # OpenAI. NO requiere API key: se autentica con la sesión de ChatGPT del
+    # usuario (`codex login`) o, si se prefiere, con una API key vía el propio CLI
+    # (`codex login --with-api-key`). Repo oficial: github.com/openai/codex.
+    # [2026-07-25] SÍ se puede elegir modelo — `codex exec --model <id>` (docs
+    # oficiales learn.chatgpt.com/docs/models, verificado 2026-07-24). Lista
+    # verificada de ids ACTUALES (misma familia que el proveedor "openai"):
+    # gpt-5.6-sol/terra/luna, 5.5, 5.4, 5.4-mini. Deliberadamente NO se ofrecen
+    # los ids con sufijo "-codex" (p.ej. gpt-5.3-codex): la documentación oficial
+    # los marca deprecados o, según reportes del propio repo, el login por
+    # ChatGPT los rechaza (son de uso vía API key). `default_model=""`
+    # (recomendado) sigue siendo la opción más segura: Codex elige el modelo
+    # recomendado de la cuenta si el usuario no fija uno explícito.
+    "codex": {
+        "label": "Codex CLI (OpenAI)",
+        "description": "Incluido en tu plan de ChatGPT (Free/Go/Plus/Pro…): sin API key — usa Codex desde tu terminal (`codex login`)",
+        "requires_key": False,
+        "default_model": "",
+        "models": ["gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna",
+                   "gpt-5.5", "gpt-5.4", "gpt-5.4-mini"],
+        "model_labels": {
+            "gpt-5.6-sol": "GPT-5.6 Sol (el más capaz)",
+            "gpt-5.6-terra": "GPT-5.6 Terra (equilibrado)",
+            "gpt-5.6-luna": "GPT-5.6 Luna (rápido)",
+            "gpt-5.5": "GPT-5.5",
+            "gpt-5.4": "GPT-5.4",
+            "gpt-5.4-mini": "GPT-5.4 mini (barato)",
+        },
+        "supports_auto_detect": False,
+    },
     # [2026-07-21] Catálogo RE-VERIFICADO con búsqueda web (julio 2026):
     # OpenAI: familia GPT-5.6 (Sol/Terra/Luna, GA 9-jul-2026, ids exactos del
     # changelog oficial developers.openai.com) + 5.5 (abril) + 5.4/5.4-mini

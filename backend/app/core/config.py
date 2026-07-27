@@ -58,6 +58,13 @@ class Settings:
     # Presupuesto de latencia DURO del contexto del MOS (ms). Si el enricher lo
     # excede, contexto vacío — el TIE nunca espera (mismo patrón que chat_service M4).
     TIE_CONTEXT_BUDGET_MS = int(os.getenv("TIE_CONTEXT_BUDGET_MS", "300"))
+    # [A·VOZ-7, doc 32] TTL del contexto del MOS cacheado POR SESIÓN en la charla.
+    # Dentro de una conversación el contexto de memoria a largo plazo es estable,
+    # así que se resuelve una vez por (sesión, tema) y se reutiliza — menos
+    # consultas al MOS y un prefijo de system prompt estable (no invalida el caché
+    # de prompt del proveedor turno a turno). Se refresca al expirar, al cambiar de
+    # tema, o cuando se escribe en memoria (para no dejar memoria fresca invisible).
+    TIE_SESSION_CTX_TTL_S = int(os.getenv("TIE_SESSION_CTX_TTL_S", "600"))
     # Concurrencia de olas del executor (T3/V1.2). En V1.0 la ola es de tamaño 1
     # (secuencial); el semáforo entra en V1.2 con las olas paralelas.
     TIE_MAX_PARALLEL = int(os.getenv("TIE_MAX_PARALLEL", "3"))
@@ -87,6 +94,16 @@ class Settings:
     # Fija un modelo EXACTO para el bucle (ej. "claude_code:haiku"). Vacío = usar
     # TIE_TOOL_POLICY. Máxima prioridad si se define.
     TIE_TOOL_MODEL = os.getenv("TIE_TOOL_MODEL", "").strip()
+    # [A·VOZ-8] La RESPUESTA de la conversación por VOZ se enruta por esta política,
+    # no por la política de calidad activa del usuario. Motivo: en voz la fluidez
+    # manda sobre la máxima calidad, y si el usuario tiene el chat en una política
+    # pesada (custom→claude/opus) o en un local lento, cada respuesta hablada
+    # tardaba segundos. "speed" = el modelo más RÁPIDO medido de ESTA máquina con
+    # un suelo de calidad (mismo criterio que TIE_TOOL_POLICY; "economy" NO, porque
+    # barato ≠ rápido — el local barato del usuario tarda 100s+). El chat de TEXTO
+    # sigue usando la política elegida por el usuario. Vacío = sin override (usa la
+    # política activa, como antes).
+    VOICE_CHAT_POLICY = os.getenv("VOICE_CHAT_POLICY", "speed").strip()
     # Cuánto espera el bucle a que el usuario conteste una petición de permiso
     # para una acción sensible. Si no contesta a tiempo, el paso sigue SIN esa
     # acción y lo dice — la aprobación NO se cancela: queda pendiente en la UI.

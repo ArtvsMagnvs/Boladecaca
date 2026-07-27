@@ -81,7 +81,11 @@ def test_el_orquestador_expone_handle_stream():
 @pytest.mark.anyio
 async def test_un_solo_encargo_delega_en_el_tie_sin_reclasificar(monkeypatch):
     """NO-REGRESIÓN (doc 23 §0): con 1 objetivo, el ~80% de los mensajes, no se
-    puede pagar una segunda llamada al clasificador ni cambiar el camino."""
+    puede pagar una segunda llamada al clasificador ni cambiar el camino.
+
+    [A·VOZ-6] Se usa un mensaje que NO es charla obvia (para que pase por el
+    clasificador LLM y no por el fast-path de 0 LLM); el fast-path tiene su
+    propio test aparte."""
     import app.orchestrator as orchestrator
     import app.tie as tie
 
@@ -89,19 +93,23 @@ async def test_un_solo_encargo_delega_en_el_tie_sin_reclasificar(monkeypatch):
 
     async def _classify(text, channel=None):
         llamadas["classify"] += 1
-        return Intent(type=IntentType.CONVERSATIONAL, goal=text, confidence=0.9)
+        return Intent(type=IntentType.QUERY, goal=text, confidence=0.9)
 
-    async def _tie_stream(text, *, channel="web", intent=None, session_id=None):
+    async def _tie_stream(text, *, channel="web", intent=None, session_id=None,
+                          conversational=False):
         llamadas["tie_stream"] += 1
         llamadas["intent_recibido"] = intent
         llamadas["session_recibida"] = session_id
+        llamadas["conversational_recibido"] = conversational
         yield ("text", "respuesta corta")
 
     monkeypatch.setattr(tie, "classify", _classify)
     monkeypatch.setattr(tie, "handle_stream", _tie_stream)
 
-    eventos = [ev async for ev in orchestrator.handle_stream("hola que tal",
-                                                            session_id="s-1")]
+    # [2026-07-24] Mensaje que NO es charla obvia NI un listado de datos propios
+    # (esos dos tienen fast-paths deterministas propios, con tests dedicados).
+    eventos = [ev async for ev in orchestrator.handle_stream(
+        "resume mis últimos emails importantes", session_id="s-1")]
 
     assert ("text", "respuesta corta") in eventos
     assert llamadas["tie_stream"] == 1
@@ -113,6 +121,44 @@ async def test_un_solo_encargo_delega_en_el_tie_sin_reclasificar(monkeypatch):
         "[R6.5b] el Orquestador se comió la sesión: el chat perdería el hilo al "
         "pasar por él, que es justo el camino que usa la interfaz principal"
     )
+
+
+@pytest.mark.anyio
+async def test_charla_obvia_no_clasifica_ni_muestra_analizando(monkeypatch):
+    """[A·VOZ-6] EL BUG DEL USUARIO: '¿cómo estás?' no debe (a) llamar al
+    clasificador LLM, ni (b) mostrar 'analizando' (parecer una misión). El
+    fast-path determinista (0 LLM) resuelve la charla y delega directo en el
+    TIE con el intent ya hecho."""
+    import app.orchestrator as orchestrator
+    import app.tie as tie
+
+    llamadas = {"classify": 0, "intent_recibido": None}
+
+    async def _classify(text, channel=None):
+        llamadas["classify"] += 1
+        return Intent(type=IntentType.CONVERSATIONAL, goal=text, confidence=0.9)
+
+    async def _tie_stream(text, *, channel="web", intent=None, session_id=None,
+                          conversational=False):
+        llamadas["intent_recibido"] = intent
+        yield ("text", "estoy bien, gracias")
+
+    monkeypatch.setattr(tie, "classify", _classify)
+    monkeypatch.setattr(tie, "handle_stream", _tie_stream)
+
+    eventos = [ev async for ev in orchestrator.handle_stream("¿cómo estás?")]
+
+    # NO se llamó al clasificador LLM (lo resolvió el fast-path)
+    assert llamadas["classify"] == 0, "la charla obvia no debe pagar el clasificador LLM"
+    # NO se emitió 'analizando' (una charla no es una misión)
+    kinds = [(k, p) for k, p in eventos]
+    assert not any(k == "status" for k, _ in kinds), (
+        "la charla obvia no debe mostrar 'analizando' — parecía una misión"
+    )
+    # se delegó en el TIE con el intent del fast-path (conversational, listo)
+    assert llamadas["intent_recibido"] is not None
+    assert llamadas["intent_recibido"].type == IntentType.CONVERSATIONAL
+    assert ("text", "estoy bien, gracias") in eventos
 
 
 @pytest.mark.anyio

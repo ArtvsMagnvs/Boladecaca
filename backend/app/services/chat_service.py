@@ -28,13 +28,28 @@ from app.memory import memory_manager, memory_router
 DEFAULT_SYSTEM_PROMPT = """Eres Aithera, un sistema operativo personal de IA.
 
 Conoces los proyectos, tareas, calendario y preferencias del usuario.
-Responde siempre en el idioma del usuario. Se conciso y util.
+Se conciso y util.
 
 Responde SIEMPRE en texto plano: nunca uses tablas, ni **negrita**/*cursiva*
 con asteriscos, ni encabezados con #. La interfaz muestra tu respuesta tal
 cual, sin renderizar markdown — una tabla con | y — sale desordenada e
 ilegible. Si necesitas enumerar varias cosas, usa saltos de linea con un
-guion simple por elemento."""
+guion simple por elemento.
+
+REGLA ABSOLUTA — NUNCA FINJAS HABER ACTUADO. En este turno NO tienes
+herramientas: no puedes crear, modificar ni borrar nada (ni proyectos, ni
+hitos, ni tareas, ni agentes, ni reglas, ni ajustes). Está PROHIBIDO escribir
+"he creado", "he añadido", "ya está hecho", "creo la milestone", "el agente se
+ha añadido" o cualquier frase que dé a entender que has ejecutado algo. Si el
+usuario te pide una acción y estás leyendo esto, es porque la ejecución NO se
+ha podido hacer: dilo con claridad y honestidad ("no he podido ejecutarlo",
+"no lo he hecho"), nunca lo contrario.
+
+NO INVENTES DATOS. Los proyectos, tareas, agentes y reglas del usuario que
+puedes mencionar son EXCLUSIVAMENTE los que aparezcan más abajo en este
+contexto. Si algo no está en el contexto, no existe para ti: dilo en vez de
+suponerlo. Tampoco des por hecho que algo se creó porque se hablara de ello
+antes en la conversación — si no está en la lista del contexto, no está."""
 
 CONTEXT_TIMEOUT_S = 0.3  # doc 07 §8: presupuesto de latencia del contexto del MOS
 CONTEXT_MAX_TOKENS = 1200
@@ -204,6 +219,179 @@ async def _mos_context_block(query: str, project_id=None) -> str:
         return ""
 
 
+# ---------------------------------------------------------------------------
+# [A·VOZ-7, doc 32] Contexto del MOS cacheado POR SESIÓN
+# ---------------------------------------------------------------------------
+# PROBLEMA (Hermes Agent, Nous Research): consultar el MOS en CADA turno del chat
+# (a) repite una búsqueda que dentro de una conversación casi siempre devuelve lo
+# mismo, y (b) hace que el system prompt cambie turno a turno → invalida el caché
+# de prompt del proveedor (Anthropic 90% descuento, etc.), multiplicando coste y
+# TTFT. La memoria a LARGO PLAZO (perfil, proyecto, conversaciones pasadas,
+# emails ingeridos) es estable dentro del hilo; la continuidad inmediata ya viaja
+# aparte, en `messages`/history (R6.5b) fresca cada turno.
+#
+# DISEÑO (superset seguro del literal "1 vez por sesión"): se cachea por
+# `session_id` con TTL, PERO se refresca (MISS) si (a) expira, (b) se ha escrito
+# en memoria desde entonces (`memory_router.write_version` — memoria fresca NUNCA
+# invisible, la regla del "matiz importante" del plan), o (c) el TEMA de la
+# consulta cambió de verdad. Así una charla de varios turnos sobre lo mismo paga
+# UNA consulta al MOS (el win), y un cambio de tema o una memoria nueva vuelven a
+# consultar (la corrección). NO se cachea para misiones (usan el enricher por
+# nodo) ni para chats de proyecto (project_id) — solo la charla general.
+_SESSION_CTX: dict[str, tuple] = {}   # session_id -> (query, ctx, expiry_monotonic, mem_version)
+
+
+def _topic_tokens(query: str) -> set:
+    """Tokens 'de contenido' (≥3 letras, sin acentos) para comparar temas. La
+    cortesía/relleno corto se ignora — 'y cuánto cuesta' vs 'cuánto costaba'
+    comparten 'cuanto/cuesta/costaba' lo justo; un cambio de tema no."""
+    import unicodedata
+    t = unicodedata.normalize("NFKD", (query or "").lower())
+    t = "".join(c for c in t if not unicodedata.combining(c))
+    return {w for w in "".join(c if c.isalnum() else " " for c in t).split() if len(w) >= 3}
+
+
+def _same_topic(q1: str, q2: str) -> bool:
+    """¿Las dos consultas van del MISMO tema? Jaccard de tokens de contenido ≥ 0.5.
+    Dos charlas triviales sin tokens de contenido cuentan como el mismo 'no-tema'
+    (ambas → conjunto vacío → se consideran iguales, se reutiliza el snapshot)."""
+    a, b = _topic_tokens(q1), _topic_tokens(q2)
+    if not a and not b:
+        return True
+    if not a or not b:
+        return False
+    inter = len(a & b)
+    union = len(a | b)
+    return union > 0 and (inter / union) >= 0.5
+
+
+async def _compute_memory_blocks(query: str, project_id=None) -> tuple[str, str, str]:
+    """Calcula los TRES bloques de memoria EN PARALELO, y las lecturas SÍNCRONAS
+    (ChromaDB de preferencias, lectura de perfil de la BD) en HILOS para no
+    bloquear el event loop.
+
+    [A·VOZ-8] EL BUG DE LATENCIA ESTRUCTURAL: antes `build_system_prompt` llamaba
+    `_preferences_block` (búsqueda ChromaDB síncrona, ~150 ms embebiendo la query)
+    y `_profile_block` (lectura de BD síncrona) DIRECTAMENTE dentro de una función
+    async — bloqueaban el event loop, y encima corrían EN SERIE con la consulta al
+    MOS. Cada turno de chat/voz pagaba la SUMA de las tres. Ahora corren a la vez
+    (asyncio.gather) y las sync van a `to_thread`: el coste baja al MÁXIMO de las
+    tres, no a su suma, y el loop no se bloquea."""
+    import asyncio as _asyncio
+
+    prefs, profile, mos = await _asyncio.gather(
+        _asyncio.to_thread(_preferences_block, query),
+        _asyncio.to_thread(_profile_block),
+        _mos_context_block(query, project_id=project_id),
+    )
+    return prefs, profile, mos
+
+
+async def _memory_blocks_session(
+    query: str, session_id: Optional[str], project_id=None
+) -> tuple[str, str, str]:
+    """Los tres bloques de memoria (preferencias, perfil, MOS) con CACHÉ POR
+    SESIÓN. En la charla general (con `session_id`, sin `project_id`) se resuelven
+    UNA vez por (sesión, tema) y se reutilizan — menos I/O y prefijo de system
+    prompt estable (no invalida el caché de prompt del proveedor: idea de Hermes,
+    A·VOZ-7). Se refresca (MISS) si expira el TTL, cambia el tema, o se escribió
+    en memoria (`memory_router.write_version` — memoria fresca nunca invisible).
+    Sin `session_id` o con `project_id` → sin caché, pero igualmente EN PARALELO
+    (A·VOZ-8): AE/agentes/chats de proyecto también dejan de serializar el I/O.
+    Emite `[voz-perfil] mem-sesión HIT/MISS`."""
+    if not query:
+        return "", _profile_block(), ""
+    if not session_id or project_id is not None:
+        return await _compute_memory_blocks(query, project_id=project_id)
+
+    import time
+    from app.core.config import settings
+
+    now = time.monotonic()
+    ver = memory_router.write_version()
+    entry = _SESSION_CTX.get(session_id)
+    if entry is not None:
+        e_query, e_blocks, e_exp, e_ver = entry
+        if now < e_exp and e_ver == ver and _same_topic(e_query, query):
+            print(f"[voz-perfil] mem-sesión HIT session={session_id[:8]}")
+            return e_blocks
+
+    blocks = await _compute_memory_blocks(query, project_id=None)
+    ttl = max(1, settings.TIE_SESSION_CTX_TTL_S)
+    _SESSION_CTX[session_id] = (query, blocks, now + ttl, ver)
+    print(f"[voz-perfil] mem-sesión MISS session={session_id[:8]} (I/O de memoria)")
+    return blocks
+
+
+def clear_session_context(session_id: Optional[str] = None) -> None:
+    """Invalida el contexto cacheado de una sesión (o de todas si None). Tests y
+    cualquier punto que quiera forzar un refresco."""
+    if session_id is None:
+        _SESSION_CTX.clear()
+    else:
+        _SESSION_CTX.pop(session_id, None)
+
+
+def _workspace_block() -> str:
+    """[2026-07-24] Los proyectos REALES del usuario (tabla SQL `projects`),
+    inyectados SIEMPRE en el system prompt.
+
+    EL BUG QUE CIERRA (reportado por el usuario): el prompt base decía "conoces
+    los proyectos del usuario" pero NUNCA se los pasaba — así que a "¿qué
+    proyectos tengo?" el modelo respondía inventando ("Proyecto 1", "Proyecto 2")
+    desde una memoria semántica vacía, o escalaba a una misión que se perdía. La
+    fuente de verdad de los proyectos es la tabla SQL del Workspace (WPMS), no la
+    memoria semántica. Se lee entera (son pocos, es una query barata) y se lee
+    FRESCA cada turno (no se cachea) para que un proyecto recién creado aparezca
+    de inmediato. Síncrono a propósito: el caller lo invoca vía `to_thread`.
+
+    Incluye también los agentes por proyecto, para que Aithera sepa qué tiene
+    montado sin buscar. Best-effort: cualquier fallo → bloque vacío, el chat
+    sigue."""
+    try:
+        from app.db.database import Project
+
+        db = SessionLocal()
+        try:
+            projects = (
+                db.query(Project)
+                .filter(Project.archived_at.is_(None))
+                .order_by(Project.id.desc())
+                .limit(50)
+                .all()
+            )
+            if not projects:
+                return ""
+            lines = ["Tus proyectos actuales (del Workspace, fuente de verdad — "
+                     "NO inventes proyectos que no estén en esta lista):"]
+            for p in projects:
+                estado = p.status or "active"
+                pct = f"{int((p.progress or 0.0) * 100)}%"
+                ver = f" v{p.current_version}" if p.current_version else ""
+                lines.append(f"- [id {p.id}] {p.name} — {estado}, {pct}{ver}")
+                # [2026-07-25] Material adjunto del proyecto: carpeta local y
+                # archivos/enlaces. EL HUECO QUE CIERRA: se podían adjuntar
+                # archivos, pero NADIE se los contaba al modelo — así que un
+                # agente del proyecto no sabía que existían y no podía leerlos.
+                # Con la ruta delante, puede abrirlos con `filesystem`/`document`
+                # (que validan que estén dentro de HOME).
+                if p.repo_path:
+                    lines.append(f"    carpeta local: {p.repo_path}")
+                docs = p.docs if isinstance(p.docs, list) else []
+                archivos = [d for d in docs if isinstance(d, dict) and d.get("kind") == "file"]
+                enlaces = [d for d in docs if isinstance(d, dict) and d.get("kind") != "file"]
+                for d in archivos[:12]:
+                    lines.append(f"    archivo adjunto: {d.get('label') or '?'} → {d.get('url_or_path')}")
+                for d in enlaces[:12]:
+                    lines.append(f"    enlace: {d.get('label') or '?'} → {d.get('url_or_path')}")
+            return "\n".join(lines)
+        finally:
+            db.close()
+    except Exception as e:
+        print(f"[chat_service] _workspace_block error: {e}")
+        return ""
+
+
 def _capabilities_block() -> str:
     """[R6, doc 23] Lo que Aithera sabe hacer, generado desde el catálogo real
     (`app.tie.capabilities_map`) y cacheado ahí mismo — llamarlo aquí en cada
@@ -223,15 +411,37 @@ def _capabilities_block() -> str:
 
 
 async def build_system_prompt(user_message: str, *, history: Optional[list] = None,
-                              project_id: Optional[int] = None) -> str:
+                              project_id: Optional[int] = None,
+                              session_id: Optional[str] = None) -> str:
     """[V0.85 M4] Sustituye a chat.py::_build_system_prompt (ahora async: el
     contexto del MOS es una llamada async con presupuesto de latencia).
 
     `history` [R6.5b]: los turnos previos. NO se meten en el system prompt — su
     sitio es `ExecutionRequest.messages` (R6.5a). Aquí se usan SOLO para
     construir una consulta de memoria que tenga de qué agarrarse
-    (ver `_memory_query`)."""
+    (ver `_memory_query`).
+
+    `session_id` [A·VOZ-7]: si se pasa (charla general, sin project_id), el
+    contexto del MOS se resuelve UNA vez por (sesión, tema) y se reutiliza en los
+    turnos siguientes — menos consultas al MOS y prefijo de prompt estable. Sin
+    él, comportamiento de siempre (una consulta por mensaje)."""
     base = DEFAULT_SYSTEM_PROMPT
+    # [I18N-9 + A·VOZ-8] Idioma de respuesta. Si el usuario ha elegido idioma de
+    # interfaz, la directiva va LA PRIMERA del system prompt y ESCRITA EN EL
+    # IDIOMA OBJETIVO (app.core.language) — es la única forma de que un modelo
+    # local no la ignore anclando al español dominante del resto del prompt (era
+    # la causa raíz del "siempre responde en español"). Si no hay idioma elegido,
+    # se mantiene el comportamiento histórico: inferir del mensaje. Best-effort.
+    try:
+        from app.core.language import language_directive
+
+        directive = language_directive()
+        if directive:
+            base = f"{directive}\n\n{base}"   # PRIMERO = máxima obediencia
+        else:
+            base = f"{base}\n\nResponde en el mismo idioma en el que te escriba el usuario."
+    except Exception as e:
+        print(f"[chat_service] no se pudo resolver el idioma (uso el del mensaje): {e}")
     # [V2] La PERSONALIDAD se compone SOBRE el prompt base, nunca lo sustituye:
     # el tono es configurable, pero la identidad, el formato de texto plano y la
     # honestidad no lo son (ver app/ai/personalities.py). Best-effort: si algo
@@ -250,12 +460,21 @@ async def build_system_prompt(user_message: str, *, history: Optional[list] = No
     if not user_message:
         return base
     consulta = _memory_query(user_message, history or [])
-    prefs = _preferences_block(consulta)
-    profile = _profile_block()
-    mos_ctx = await _mos_context_block(consulta, project_id=project_id)
+    # [A·VOZ-8] Los tres bloques de memoria a la vez (y cacheados por sesión en la
+    # charla) + el workspace REAL (fresco, no cacheado) — todo en paralelo, sin
+    # bloquear el event loop.
+    import asyncio as _asyncio
+    (prefs, profile, mos_ctx), workspace = await _asyncio.gather(
+        _memory_blocks_session(consulta, session_id, project_id=project_id),
+        _asyncio.to_thread(_workspace_block),
+    )
     parts = [base]
     if profile:
         parts.append(f"Lo que sabes del usuario:\n{profile}")
+    # [2026-07-24] El workspace REAL va PROMINENTE (antes de la memoria semántica):
+    # es la fuente de verdad de los proyectos, y evita que el modelo los invente.
+    if workspace:
+        parts.append(workspace)
     if prefs:
         parts.append(prefs)
     if mos_ctx:
@@ -304,7 +523,8 @@ async def answer(
     from app.mel import Capability, ExecutionRequest, complete as mel_complete
 
     history = recent_turns(session_id)
-    system_prompt = await build_system_prompt(message, history=history, project_id=project_id)
+    system_prompt = await build_system_prompt(message, history=history, project_id=project_id,
+                                              session_id=session_id)
 
     memory_manager.store_conversation("user", message, metadata={"channel": channel})
 

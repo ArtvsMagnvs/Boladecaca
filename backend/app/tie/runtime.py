@@ -60,6 +60,11 @@ class AgentTask:
     # navegador (pestañas y cookies propias por misión); cualquier tool con
     # estado futura se engancha aquí sin cambiar el contrato.
     mission_id: Optional[str] = None
+    # [A·VOZ-8] La tarea viene de una conversación por VOZ. Campo append-only. El
+    # runtime enruta la respuesta por una política RÁPIDA (VOICE_CHAT_POLICY) en
+    # vez de la de calidad del usuario: en voz la fluidez manda. Solo lo pone el
+    # camino corto de voz; el chat de texto lo deja en False (calidad del usuario).
+    conversational: bool = False
 
     @staticmethod
     def new_id() -> str:
@@ -235,6 +240,7 @@ class NullRuntime(AgentRuntime):
                 task.instruction, channel=task.channel or "tie", persist_chat_message=False,
                 model_override=_model_override_from_hint(task.model_hint),  # [E2b] override explícito
                 project_id=task.project_id,                                 # [E2b] pin de proyecto
+                session_id=task.session_id,                                 # [A·VOZ-7] caché de contexto por sesión
             )
             dur = int((time.monotonic() - t0) * 1000)
             return AgentResult(
@@ -270,11 +276,21 @@ class NullRuntime(AgentRuntime):
             # ya se hizo en M4 con el system prompt.
             history = chat_service.recent_turns(task.session_id)
             system_prompt = await chat_service.build_system_prompt(
-                task.instruction, history=history)
+                task.instruction, history=history, session_id=task.session_id)
+            # [A·VOZ-8] En VOZ, la respuesta se enruta por la política rápida
+            # (VOICE_CHAT_POLICY, p.ej. "speed"): fluidez > máxima calidad. El chat
+            # de texto (conversational=False) mantiene la política del usuario. Un
+            # override explícito de modelo (el usuario nombró uno) siempre manda.
+            from app.core.config import settings as _settings
+            voice_policy = (
+                _settings.VOICE_CHAT_POLICY
+                if task.conversational and not task.model_hint else None
+            ) or None
             req = ExecutionRequest(
                 capability=Capability.CHAT, prompt=task.instruction, system_prompt=system_prompt,
                 messages=history,
                 model_override=_model_override_from_hint(task.model_hint),  # [E2b] override explícito
+                policy_override=voice_policy,
             )
             async for chunk in mel_stream(req):
                 if chunk:

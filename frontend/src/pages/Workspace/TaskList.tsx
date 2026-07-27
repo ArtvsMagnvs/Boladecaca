@@ -4,6 +4,10 @@
 import { useMemo } from "react";
 import type { Task } from "@/lib/api";
 import { DONE_STATUSES, PRIORITY_DOT } from "./shared";
+// Alias 'tr' (no 't'): este archivo ya usa 't' como variable de tarea en
+// varios '.map((t) => …)' — evita sombrear/confundir (mismo criterio que
+// Settings.tsx, I18N-2).
+import { useT } from "@/store/useI18n";
 
 export function TaskList({
   tasks, activeMilestoneId, onToggle, onOpen,
@@ -13,13 +17,14 @@ export function TaskList({
   onToggle: (t: Task) => void;
   onOpen: (t: Task) => void;
 }) {
+  const tr = useT();
   const shown = useMemo(() => {
     const inActive = tasks.filter((t) => activeMilestoneId != null && t.milestone_id === activeMilestoneId);
     const rest = tasks.filter((t) => activeMilestoneId == null || t.milestone_id !== activeMilestoneId);
     return activeMilestoneId != null ? [...inActive, ...rest] : tasks;
   }, [tasks, activeMilestoneId]);
 
-  if (shown.length === 0) return <p className="text-xs text-ink-faint px-1 py-2">Sin tareas. Crea una con “+ Tarea”.</p>;
+  if (shown.length === 0) return <p className="text-xs text-ink-faint px-1 py-2">{tr("workspace.taskList.empty")}</p>;
 
   return (
     <div className="flex flex-col gap-1">
@@ -31,7 +36,7 @@ export function TaskList({
             <button
               onClick={() => onToggle(t)}
               className={`h-4 w-4 rounded border flex items-center justify-center shrink-0 ${done ? "bg-accent/30 border-accent/50" : "border-base-600 hover:border-accent/50"}`}
-              title={done ? "Marcar pendiente" : "Marcar hecha"}
+              title={done ? tr("workspace.taskList.markPending") : tr("workspace.taskList.markDone")}
             >
               {done && <span className="text-accent text-[10px]">✓</span>}
             </button>
@@ -43,7 +48,7 @@ export function TaskList({
             </button>
             <div className="flex items-center gap-2.5 shrink-0">
               {t.due_date && <span className="text-[11px] text-ink-faint tabular-nums">{t.due_date.slice(0, 10)}</span>}
-              <span className={`h-2 w-2 rounded-full ${PRIORITY_DOT[t.priority] ?? "bg-ink-faint"}`} title={`Prioridad: ${t.priority}`} />
+              <span className={`h-2 w-2 rounded-full ${PRIORITY_DOT[t.priority] ?? "bg-ink-faint"}`} title={tr("workspace.taskList.priority", { priority: t.priority })} />
             </div>
           </div>
         );

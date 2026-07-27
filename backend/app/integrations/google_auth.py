@@ -118,33 +118,129 @@ def has_client_credentials() -> bool:
     return _load_client_credentials() is not None
 
 
+# ----------------------------------------------------------------------
+# AUTH-1 (2026-07-23): estados de conexion + refresco robusto.
+#
+# El flujo previo tenia dos limitaciones que el usuario ya sufrio:
+#   1. Un token REVOCADO (borrado desde la cuenta de Google, o con el
+#      refresh_token invalidado) se veia EXACTAMENTE igual que "nunca
+#      conectado": ambos daban is_connected()=False, sin pista de que la
+#      solucion era "vuelve a conectar" y no "configura credenciales".
+#   2. Cada refresco hacia `TOKEN_PATH.write_text(creds.to_json())`, que
+#      SOBREESCRIBE el json entero y BORRA el campo cacheado "email" ->
+#      forzaba una llamada extra a Gmail getProfile en el siguiente /status.
+#
+# `_load_and_refresh()` centraliza carga+refresco UNA vez y clasifica el
+# resultado. `connection_state()` lo expone al /status. `get_credentials()`
+# pasa a delegar aqui (mismo contrato: creds valido o None).
+#
+# Estados posibles (str, estables para el frontend):
+#   connected      token valido (o refrescado con exito)
+#   no_token       nunca se conecto (no hay token guardado)
+#   revoked        el refresh_token ya no sirve -> hay que RECONECTAR
+#   expired        el token expiro pero el refresco fallo por algo transitorio
+#                  (sin internet, timeout) -> reintentar luego, NO reconectar
+#   no_credentials falta client_id / client_secret
+#   libs_missing   las google libs no estan instaladas
+
+def _write_token_preserving_email(creds) -> None:
+    """Escribe el token refrescado SIN perder el campo `email` ya cacheado.
+
+    `creds.to_json()` no incluye nuestro campo extra `email`; si lo volcamos
+    tal cual, el siguiente /status tendria que volver a preguntarlo a Gmail.
+    """
+    try:
+        prev_email = None
+        if TOKEN_PATH.exists():
+            try:
+                prev_email = json.loads(TOKEN_PATH.read_text()).get("email")
+            except Exception:
+                prev_email = None
+        data = json.loads(creds.to_json())
+        if prev_email and not data.get("email"):
+            data["email"] = prev_email
+        TOKEN_PATH.parent.mkdir(parents=True, exist_ok=True)
+        TOKEN_PATH.write_text(json.dumps(data))
+    except Exception as e:  # best-effort: si falla, al menos deja el token base
+        print(f"[google_auth] no se pudo preservar el email al refrescar: {e}")
+        try:
+            TOKEN_PATH.write_text(creds.to_json())
+        except Exception:
+            pass
+
+
+def _load_and_refresh() -> tuple:
+    """Carga el token y lo refresca si hace falta.
+
+    Devuelve (creds|None, state). Es el UNICO punto que hace I/O de red para
+    el refresco; tanto get_credentials() como connection_state() pasan por
+    aqui, asi que el token se refresca como mucho una vez por llamada.
+    """
+    if not _google_libs_available():
+        return None, "libs_missing"
+    if not TOKEN_PATH.exists():
+        return None, "no_token"
+    try:
+        from google.oauth2.credentials import Credentials
+        creds = Credentials.from_authorized_user_file(str(TOKEN_PATH), GOOGLE_SCOPES)
+    except Exception as e:
+        # Token corrupto / json ilegible: tratarlo como "hay que reconectar".
+        print(f"[google_auth] token ilegible: {e}")
+        return None, "revoked"
+
+    if creds and creds.valid:
+        return creds, "connected"
+
+    if creds and creds.expired and creds.refresh_token:
+        try:
+            creds.refresh(_timeout_request())
+            _write_token_preserving_email(creds)
+            return creds, "connected"
+        except Exception as e:
+            # invalid_grant = el refresh_token ya no vale (revocado, cambio de
+            # contrasena, app retirada del consentimiento) -> reconectar.
+            # Cualquier otra cosa (timeout, DNS, 5xx) es transitoria.
+            msg = str(e).lower()
+            if "invalid_grant" in msg or "invalid_token" in msg or "unauthorized" in msg:
+                print(f"[google_auth] refresh_token invalido (revocado): {e}")
+                return None, "revoked"
+            print(f"[google_auth] error transitorio al refrescar: {e}")
+            return None, "expired"
+
+    # Expirado y sin refresh_token utilizable -> no hay forma de recuperarlo solo.
+    return None, "revoked"
+
+
 def get_credentials() -> Optional[Any]:
     """Obtiene credenciales validas. Refresca si han expirado.
 
     Devuelve None si:
       - las google libs no estan instaladas
       - no hay token guardado (el usuario no ha hecho OAuth aun)
-      - las credenciales expiraron y no hay refresh_token
+      - las credenciales expiraron y no se pudieron refrescar
+
+    (AUTH-1) Delega en _load_and_refresh(); el contrato publico no cambia
+    —sigue devolviendo creds valido o None— pero ahora comparte la logica
+    de refresco y la preservacion del email cacheado.
+    """
+    creds, _state = _load_and_refresh()
+    return creds
+
+
+def connection_state() -> str:
+    """(AUTH-1) Estado de la conexion con Google, para mensajes claros en la UI.
+
+    Uno de: connected | expired | revoked | no_token | no_credentials | libs_missing.
+    Refresca el token si esta expirado (mismo coste que is_connected()); el Hub
+    lo sondea cada 30 s, pero el refresco de red solo ocurre cuando el token ya
+    ha caducado (~1 vez/hora), no en cada sondeo.
     """
     if not _google_libs_available():
-        return None
-    if not TOKEN_PATH.exists():
-        return None
-    try:
-        from google.oauth2.credentials import Credentials
-        from google.auth.transport.requests import Request
-
-        creds = Credentials.from_authorized_user_file(str(TOKEN_PATH), GOOGLE_SCOPES)
-        if creds and creds.valid:
-            return creds
-        if creds and creds.expired and creds.refresh_token:
-            creds.refresh(_timeout_request())
-            TOKEN_PATH.write_text(creds.to_json())
-            return creds
-        return None
-    except Exception as e:
-        print(f"[google_auth] error refrescando credenciales: {e}")
-        return None
+        return "libs_missing"
+    if not has_client_credentials():
+        return "no_credentials"
+    _creds, state = _load_and_refresh()
+    return state
 
 
 # [Fix 2026-07-19] Refresco de token con TIMEOUT EXPLICITO.

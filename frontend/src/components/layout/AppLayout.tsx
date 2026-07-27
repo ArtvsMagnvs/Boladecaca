@@ -3,6 +3,7 @@ import { Outlet, useNavigate } from "react-router-dom";
 import { useLocation } from "react-router-dom";
 import { Sidebar } from "./Sidebar";
 import { PresenceToggle } from "./PresenceToggle";
+import WelcomeOverlay from "@/components/onboarding/WelcomeOverlay";
 import { AitheraPresence } from "@/avcs";
 import { useAppStore } from "@/store/useAppStore";
 import { api } from "@/lib/api";
@@ -114,6 +115,11 @@ export function AppLayout() {
         </div>
         <PresenceToggle />
       </main>
+
+      {/* OB-1 (doc 30 §1): asistente de bienvenida. Se auto-decide si mostrarse
+          (primera vez, flag en BD); no renderiza nada si el onboarding ya se
+          completó. Fuera del <main> para cubrir toda la ventana. */}
+      <WelcomeOverlay />
     </div>
   );
 }

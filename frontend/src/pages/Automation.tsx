@@ -9,33 +9,34 @@
 import { useCallback, useEffect, useState } from "react";
 import { api, type Approval, type AutomationExecution, type AutomationRule } from "@/lib/api";
 import { usePolling } from "@/hooks/usePolling";
+import { useT } from "@/store/useI18n";
 
-const TRIGGER_LABELS: Record<string, string> = {
-  schedule: "Programada",
-  event: "Por evento",
-  condition: "Por condición",
-  pattern: "Por patrón",
-  memory: "Por memoria",
-  webhook: "Webhook",
+const TRIGGER_KEYS: Record<string, string> = {
+  schedule: "automation.trigger.schedule",
+  event: "automation.trigger.event",
+  condition: "automation.trigger.condition",
+  pattern: "automation.trigger.pattern",
+  memory: "automation.trigger.memory",
+  webhook: "automation.trigger.webhook",
 };
 
-const ACTION_LABELS: Record<string, string> = {
-  telegram_message: "Mensaje de Telegram",
-  email_summary: "Resumen de email",
-  chat_query: "Consulta al chat",
-  agent_task: "Tarea de agente",
-  workspace: "Acción en el Workspace",
-  skill_execution: "Ejecutar skill",
-  calendar_block: "Bloque de calendario",
-  chained_rule: "Regla encadenada",
-  memory_update: "Actualizar memoria",
+const ACTION_KEYS: Record<string, string> = {
+  telegram_message: "automation.action.telegram_message",
+  email_summary: "automation.action.email_summary",
+  chat_query: "automation.action.chat_query",
+  agent_task: "automation.action.agent_task",
+  workspace: "automation.action.workspace",
+  skill_execution: "automation.action.skill_execution",
+  calendar_block: "automation.action.calendar_block",
+  chained_rule: "automation.action.chained_rule",
+  memory_update: "automation.action.memory_update",
 };
 
-const STATUS_LABEL: Record<string, string> = {
-  ok: "OK",
-  failed: "Falló",
-  skipped: "Omitida",
-  waiting_approval: "Esperando aprobación",
+const STATUS_KEY: Record<string, string> = {
+  ok: "automation.status.ok",
+  failed: "automation.status.failed",
+  skipped: "automation.status.skipped",
+  waiting_approval: "automation.status.waiting_approval",
 };
 const STATUS_COLOR: Record<string, string> = {
   ok: "text-signal-ok",
@@ -44,25 +45,26 @@ const STATUS_COLOR: Record<string, string> = {
   waiting_approval: "text-signal-warn",
 };
 
-function triggerSummary(rule: AutomationRule): string {
+function triggerSummary(rule: AutomationRule, t: (key: string, vars?: Record<string, string | number>) => string): string {
   const cfg = (rule.trigger_config ?? {}) as Record<string, unknown>;
   if (rule.trigger_type === "schedule") {
     const cron = cfg.cron as { hour?: number; minute?: number } | undefined;
     if (cron) {
       const h = String(cron.hour ?? 0).padStart(2, "0");
       const m = String(cron.minute ?? 0).padStart(2, "0");
-      return `Cada día a las ${h}:${m}`;
+      return t("automation.trigger.dailyAt", { time: `${h}:${m}` });
     }
-    if (typeof cfg.interval_minutes === "number") return `Cada ${cfg.interval_minutes} min`;
-    return "Programada";
+    if (typeof cfg.interval_minutes === "number") return t("automation.trigger.everyMin", { n: cfg.interval_minutes });
+    return t("automation.trigger.schedule");
   }
   if (rule.trigger_type === "event") {
-    return `Cuando ocurre: ${String(cfg.event_name ?? "evento")}`;
+    return t("automation.trigger.onEvent", { event: String(cfg.event_name ?? "evento") });
   }
-  return TRIGGER_LABELS[rule.trigger_type] ?? rule.trigger_type;
+  return TRIGGER_KEYS[rule.trigger_type] ? t(TRIGGER_KEYS[rule.trigger_type]) : rule.trigger_type;
 }
 
 export default function Automation() {
+  const t = useT();
   const [rules, setRules] = useState<AutomationRule[] | null>(null);
   const [executions, setExecutions] = useState<AutomationExecution[]>([]);
   const [approvals, setApprovals] = useState<Approval[]>([]);
@@ -77,9 +79,9 @@ export default function Automation() {
       setRules(r);
       setApprovals(a);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "No se pudieron cargar las automatizaciones.");
+      setError(e instanceof Error ? e.message : t("automation.loadError"));
     }
-  }, []);
+  }, [t]);
 
   const loadExecutions = useCallback(async (ruleId: number | null) => {
     try {
@@ -112,7 +114,7 @@ export default function Automation() {
       const updated = await api.toggleAutomationRule(rule.id, !rule.enabled);
       setRules((prev) => (prev ?? []).map((r) => (r.id === rule.id ? updated : r)));
     } catch (e) {
-      setError(e instanceof Error ? e.message : "No se pudo cambiar el estado de la regla.");
+      setError(e instanceof Error ? e.message : t("automation.toggleError"));
     } finally {
       setBusyRuleId(null);
     }
@@ -126,7 +128,7 @@ export default function Automation() {
       setApprovals((prev) => prev.filter((a) => a.gate_id !== gateId));
       loadExecutions(selectedRuleId);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "No se pudo resolver la aprobación.");
+      setError(e instanceof Error ? e.message : t("automation.resolveError"));
     } finally {
       setBusyGateId(null);
     }
@@ -135,9 +137,9 @@ export default function Automation() {
   return (
     <div className="h-full overflow-y-auto p-4 flex flex-col gap-5 max-w-4xl mx-auto w-full">
       <div>
-        <h1 className="text-xl font-semibold text-ink">Automatizaciones</h1>
+        <h1 className="text-xl font-semibold text-ink">{t("automation.title")}</h1>
         <p className="text-xs text-ink-faint mt-0.5">
-          Reglas que actúan por ti — todas nacen desactivadas. Actívalas cuando quieras que Aithera actúe sin preguntar.
+          {t("automation.subtitle")}
         </p>
       </div>
 
@@ -150,7 +152,7 @@ export default function Automation() {
       {approvals.length > 0 && (
         <section className="glass-surface rounded-2xl p-4">
           <h2 className="text-xs uppercase tracking-wider text-signal-warn mb-3">
-            Aprobaciones pendientes ({approvals.length})
+            {t("automation.pendingApprovals", { n: approvals.length })}
           </h2>
           <div className="flex flex-col gap-2">
             {approvals.map((a) => (
@@ -165,14 +167,14 @@ export default function Automation() {
                     disabled={busyGateId === a.gate_id}
                     className="text-xs px-2.5 py-1 rounded-lg bg-signal-ok/15 text-signal-ok hover:bg-signal-ok/25 disabled:opacity-50"
                   >
-                    ✓ Aprobar
+                    {t("automation.approve")}
                   </button>
                   <button
                     onClick={() => resolve(a.gate_id, false)}
                     disabled={busyGateId === a.gate_id}
                     className="text-xs px-2.5 py-1 rounded-lg bg-signal-error/15 text-signal-error hover:bg-signal-error/25 disabled:opacity-50"
                   >
-                    ✗ Rechazar
+                    {t("automation.reject")}
                   </button>
                 </div>
               </div>
@@ -182,11 +184,11 @@ export default function Automation() {
       )}
 
       <section className="glass-surface rounded-2xl p-4">
-        <h2 className="text-xs uppercase tracking-wider text-ink-faint mb-3">Reglas</h2>
+        <h2 className="text-xs uppercase tracking-wider text-ink-faint mb-3">{t("automation.rules.title")}</h2>
         {rules === null ? (
-          <p className="text-xs text-ink-faint px-1">Cargando…</p>
+          <p className="text-xs text-ink-faint px-1">{t("automation.rules.loading")}</p>
         ) : rules.length === 0 ? (
-          <p className="text-xs text-ink-faint px-1">Sin reglas todavía.</p>
+          <p className="text-xs text-ink-faint px-1">{t("automation.rules.empty")}</p>
         ) : (
           <div className="flex flex-col gap-1.5">
             {rules.map((rule) => (
@@ -200,8 +202,8 @@ export default function Automation() {
                 <div className="min-w-0 flex-1">
                   <p className="text-sm text-ink">{rule.name}</p>
                   <p className="text-[11px] text-ink-faint mt-0.5">
-                    {triggerSummary(rule)} → {ACTION_LABELS[rule.action_type] ?? rule.action_type}
-                    {rule.cooldown_s > 0 && ` · cooldown ${rule.cooldown_s}s`}
+                    {triggerSummary(rule, t)} → {ACTION_KEYS[rule.action_type] ? t(ACTION_KEYS[rule.action_type]) : rule.action_type}
+                    {rule.cooldown_s > 0 && ` · ${t("automation.rules.cooldown", { s: rule.cooldown_s })}`}
                   </p>
                 </div>
                 <button
@@ -216,7 +218,7 @@ export default function Automation() {
                       : "border-base-700 text-ink-faint hover:text-ink"
                   }`}
                 >
-                  {rule.enabled ? "Activada" : "Desactivada"}
+                  {rule.enabled ? t("automation.rules.enabled") : t("automation.rules.disabled")}
                 </button>
               </div>
             ))}
@@ -227,22 +229,22 @@ export default function Automation() {
       <section className="glass-surface rounded-2xl p-4">
         <div className="flex items-center justify-between mb-3">
           <h2 className="text-xs uppercase tracking-wider text-ink-faint">
-            Historial{selectedRuleId != null ? ` — ${rules?.find((r) => r.id === selectedRuleId)?.name ?? ""}` : ""}
+            {t("automation.history.title")}{selectedRuleId != null ? ` — ${rules?.find((r) => r.id === selectedRuleId)?.name ?? ""}` : ""}
           </h2>
           {selectedRuleId != null && (
             <button onClick={() => setSelectedRuleId(null)} className="text-[11px] text-accent hover:text-accent-soft">
-              Ver todo
+              {t("automation.history.viewAll")}
             </button>
           )}
         </div>
         {executions.length === 0 ? (
-          <p className="text-xs text-ink-faint px-1">Sin ejecuciones todavía.</p>
+          <p className="text-xs text-ink-faint px-1">{t("automation.history.empty")}</p>
         ) : (
           <div className="flex flex-col gap-1">
             {executions.map((ex) => (
               <div key={ex.id} className="flex items-center gap-3 px-1 py-1.5 text-xs">
                 <span className={`shrink-0 w-28 ${STATUS_COLOR[ex.status] ?? "text-ink-dim"}`}>
-                  {STATUS_LABEL[ex.status] ?? ex.status}
+                  {STATUS_KEY[ex.status] ? t(STATUS_KEY[ex.status]) : ex.status}
                 </span>
                 <span className="text-ink-faint shrink-0">{ex.trigger_source}</span>
                 <span className="text-ink-dim truncate flex-1">{ex.error || ex.result || "—"}</span>

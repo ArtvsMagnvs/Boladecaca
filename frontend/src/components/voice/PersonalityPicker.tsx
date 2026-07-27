@@ -9,8 +9,10 @@
 // las reglas de honestidad ni el formato de texto plano de la voz.
 import { useCallback, useEffect, useState } from "react";
 import { api, type PersonalityCatalog } from "@/lib/api";
+import { useT } from "@/store/useI18n";
 
 export default function PersonalityPicker() {
+  const t = useT();
   const [catalog, setCatalog] = useState<PersonalityCatalog | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
@@ -22,9 +24,9 @@ export default function PersonalityPicker() {
     try {
       setCatalog(await api.getPersonalities());
     } catch {
-      setMsg({ kind: "err", text: "No se pudo cargar las personalidades." });
+      setMsg({ kind: "err", text: t("settings.voz.personality.loadError") });
     }
-  }, []);
+  }, [t]);
 
   useEffect(() => { void load(); }, [load]);
 
@@ -34,7 +36,7 @@ export default function PersonalityPicker() {
     try {
       setCatalog(await api.selectPersonality(id));
     } catch (e) {
-      setMsg({ kind: "err", text: (e as Error).message || "No se pudo cambiar." });
+      setMsg({ kind: "err", text: (e as Error).message || t("settings.voz.personality.changeError") });
     } finally {
       setBusy(null);
     }
@@ -49,16 +51,16 @@ export default function PersonalityPicker() {
       setCatalog(r);
       setDraft("");
       setShowCustom(false);
-      setMsg({ kind: "ok", text: "Personalidad creada y activada." });
+      setMsg({ kind: "ok", text: t("settings.voz.personality.created") });
     } catch (e) {
-      setMsg({ kind: "err", text: (e as Error).message || "No se pudo crear." });
+      setMsg({ kind: "err", text: (e as Error).message || t("settings.voz.personality.createError") });
     } finally {
       setImproving(false);
     }
   };
 
   if (!catalog) {
-    return <p className="text-xs text-ink-dim">Cargando personalidades…</p>;
+    return <p className="text-xs text-ink-dim">{t("settings.voz.personality.loading")}</p>;
   }
 
   const hasCustom = !!catalog.custom_prompt.trim();
@@ -66,8 +68,7 @@ export default function PersonalityPicker() {
   return (
     <div className="flex flex-col gap-3">
       <p className="text-xs text-ink-dim">
-        Cómo habla Aithera contigo. Cambia el tono y el carácter, nunca lo que sabe
-        hacer ni su honestidad.
+        {t("settings.voz.personality.intro")}
       </p>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
@@ -88,7 +89,7 @@ export default function PersonalityPicker() {
                 {p.name}
                 {p.id === "aithera" && (
                   <span className="ml-2 text-[10px] px-1.5 py-0.5 rounded bg-base-700 text-ink-dim">
-                    por defecto
+                    {t("settings.voz.personality.default")}
                   </span>
                 )}
               </p>
@@ -108,12 +109,12 @@ export default function PersonalityPicker() {
           }`}
         >
           <p className={`text-sm font-medium ${catalog.active === "custom" ? "text-accent" : "text-ink"}`}>
-            {hasCustom ? "La mía" : "+ Crear la mía"}
+            {hasCustom ? t("settings.voz.personality.mine") : t("settings.voz.personality.createMine")}
           </p>
           <p className="text-[11px] text-ink-faint mt-0.5 leading-snug">
             {hasCustom
-              ? "Tu personalidad personalizada."
-              : "Descríbela con tus palabras: Aithera la pule por dentro."}
+              ? t("settings.voz.personality.mineDesc")
+              : t("settings.voz.personality.createMineDesc")}
           </p>
         </button>
       </div>
@@ -123,21 +124,20 @@ export default function PersonalityPicker() {
           onClick={() => { setDraft(""); setShowCustom((v) => !v); }}
           className="self-start text-[11px] text-ink-dim hover:text-ink underline underline-offset-2"
         >
-          {showCustom ? "Cancelar" : "Reescribir la mía"}
+          {showCustom ? t("settings.voz.personality.cancel") : t("settings.voz.personality.rewrite")}
         </button>
       )}
 
       {showCustom && (
         <div className="glass-surface rounded-xl p-3 flex flex-col gap-2">
           <label className="text-xs text-ink-dim">
-            Describe cómo quieres que te hable. Con tus palabras, sin
-            tecnicismos — una IA lo convertirá en una personalidad bien formada.
+            {t("settings.voz.personality.describeLabel")}
           </label>
           <textarea
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
             rows={4}
-            placeholder="Ej: que sea breve y con sentido del humor seco, que no me dore la píldora y que me hable como un colega de trabajo con mucha experiencia."
+            placeholder={t("settings.voz.personality.describePlaceholder")}
             className="form-input text-xs"
           />
           <div className="flex items-center gap-2">
@@ -146,13 +146,13 @@ export default function PersonalityPicker() {
               disabled={improving || !draft.trim()}
               className="text-xs px-3 py-1.5 rounded-lg bg-accent/15 text-accent border border-accent/30 hover:bg-accent/25 disabled:opacity-50"
             >
-              {improving ? "Puliendo con IA…" : "Crear y activar"}
+              {improving ? t("settings.voz.personality.polishing") : t("settings.voz.personality.createAndActivate")}
             </button>
             <button
               onClick={() => setShowCustom(false)}
               className="text-xs px-3 py-1.5 rounded-lg bg-base-700 text-ink-dim border border-base-600 hover:bg-base-600"
             >
-              Cancelar
+              {t("settings.voz.personality.cancel")}
             </button>
           </div>
         </div>
@@ -160,7 +160,7 @@ export default function PersonalityPicker() {
 
       {hasCustom && catalog.active === "custom" && !showCustom && (
         <details className="text-[11px] text-ink-faint">
-          <summary className="cursor-pointer hover:text-ink-dim">Ver el prompt resultante</summary>
+          <summary className="cursor-pointer hover:text-ink-dim">{t("settings.voz.personality.viewPrompt")}</summary>
           <pre className="mt-2 whitespace-pre-wrap bg-base-900/50 rounded-lg p-2 text-[10px] leading-relaxed">
             {catalog.custom_prompt}
           </pre>

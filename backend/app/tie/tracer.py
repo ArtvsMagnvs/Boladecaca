@@ -213,6 +213,21 @@ def get_meta(trace_id: str) -> Optional[dict]:
         db.close()
 
 
+def get_outcome(trace_id: str) -> Optional[str]:
+    """El texto de resultado ya escrito por `record_end`. [A·VOZ-4] Lo necesita
+    el reporte async de las misiones en segundo plano: el evento `mission.*` solo
+    trae metadatos (nunca contenido, doc 17), así que el texto se lee de la traza."""
+    db = SessionLocal()
+    try:
+        row = db.get(OrchestratorTrace, trace_id)
+        return row.outcome if row else None
+    except Exception as e:
+        logger.error(f"[tracer] get_outcome({trace_id}) falló: {type(e).__name__}: {e}")
+        return None
+    finally:
+        db.close()
+
+
 def pending_trace_ids() -> list[str]:
     """Trazas sin terminar (running|waiting) — las que `resume_pending()` del
     executor recarga al arrancar el backend (doc 14 §3.4.3)."""

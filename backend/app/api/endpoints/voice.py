@@ -162,7 +162,11 @@ async def synthesize(request: SynthesizeRequest) -> Response:
             detail="El texto solo contenia emoticonos; no hay nada que sintetizar en voz.",
         )
 
-    # V0.83: Kokoro (TTS local EN PROCESO, devuelve WAV). Bloqueante -> to_thread.
+    # A·VOZ-5: Kokoro (TTS local EN PROCESO, sin Docker, devuelve WAV).
+    # Bloqueante -> to_thread. DEGRADACIÓN GRACIOSA (doc 32): si Kokoro falla
+    # (no instalado, modelo sin descargar, o fallo de carga), NO devolvemos 502
+    # — caemos a EdgeTTS con log. Una voz de peor calidad es infinitamente mejor
+    # que voz muda.
     if request.provider == "kokoro":
         audio_data = await asyncio.to_thread(
             kokoro_client.synthesize_wav, text, request.voice_id or "ef_dora"
@@ -172,6 +176,16 @@ async def synthesize(request: SynthesizeRequest) -> Response:
                 content=audio_data,
                 media_type="audio/wav",
                 headers={"Content-Disposition": 'inline; filename="speech.wav"'},
+            )
+        print(f"[voz] Kokoro falló ({kokoro_client.last_error}); fallback a EdgeTTS.")
+        audio_data = await edgetts_client.synthesize_mp3(
+            text, _edge_voice_or_default(request.voice_id)
+        )
+        if audio_data:
+            return Response(
+                content=audio_data,
+                media_type="audio/mpeg",
+                headers={"Content-Disposition": 'inline; filename="speech.mp3"'},
             )
         raise HTTPException(
             status_code=502,
@@ -264,7 +278,8 @@ async def synthesize_base64(request: SynthesizeRequest) -> JSONResponse:
             detail="El texto solo contenia emoticonos; no hay nada que sintetizar en voz.",
         )
 
-    # V0.83: Kokoro (TTS local en proceso, WAV).
+    # A·VOZ-5: Kokoro (TTS local en proceso, WAV). Degradación graciosa a
+    # EdgeTTS si falla (doc 32) — nunca voz muda.
     if request.provider == "kokoro":
         audio_data = await asyncio.to_thread(
             kokoro_client.synthesize_wav, text, request.voice_id or "ef_dora"
@@ -276,6 +291,18 @@ async def synthesize_base64(request: SynthesizeRequest) -> JSONResponse:
                 "voice_id": request.voice_id,
                 "format": "wav",
                 "source": "kokoro",
+            })
+        print(f"[voz] Kokoro falló ({kokoro_client.last_error}); fallback a EdgeTTS.")
+        audio_data = await edgetts_client.synthesize_mp3(
+            text, _edge_voice_or_default(request.voice_id)
+        )
+        if audio_data:
+            audio_b64 = base64.b64encode(audio_data).decode("utf-8")
+            return JSONResponse(content={
+                "audio": f"data:audio/mpeg;base64,{audio_b64}",
+                "voice_id": request.voice_id,
+                "format": "mp3",
+                "source": "edgetts",
             })
         raise HTTPException(
             status_code=502,
@@ -529,61 +556,116 @@ def elevenlabs_delete_config():
 
 
 # ----------------------------------------------------------------------
-# V0.83: proveedores Kokoro (TTS local en proceso) y EdgeTTS (Microsoft,
-# gratis). Se añaden junto a ElevenLabs; no lo sustituyen.
+# A·VOZ-5 (doc 32): Kokoro = voz LOCAL de máxima calidad, SIN Docker, vía
+# `kokoro-onnx` (ONNX Runtime, sin PyTorch). Se añade junto a ElevenLabs/EdgeTTS.
 # ----------------------------------------------------------------------
 
-# [2026-07-21] Instalación de Kokoro con SEGUIMIENTO REAL. El endpoint anterior
-# lanzaba `pip install` con Popen + DEVNULL: si pip fallaba (p.ej. una versión
-# de Python no soportada por la librería), el usuario no se enteraba jamás —
-# el botón habría sido un agujero negro. Ahora un hilo captura la salida y
-# /kokoro/status informa de "instalando…", del éxito, o del ERROR REAL.
-_KOKORO_INSTALL: dict = {"status": "idle", "detail": None}  # idle|installing|done|failed
+# La instalación tiene DOS fases con seguimiento real (a diferencia del stub
+# anterior, que solo hacía `pip install kokoro` y dejaba el modelo "al primer
+# uso" sin barra ni control): (1) pip install de la librería `kokoro-onnx` +
+# `soundfile`, (2) descarga del modelo ONNX cuantizado (~80 MB) y el banco de
+# voces (~28 MB) a %APPDATA%/Aithera/kokoro/. Un hilo captura la salida y el
+# progreso; /kokoro/status informa de cada fase, del éxito o del ERROR REAL.
+_KOKORO_INSTALL: dict = {
+    "status": "idle",        # idle|installing|downloading|done|failed
+    "detail": None,
+    "progress": 0,           # 0-100 durante la descarga del modelo
+}
+
+
+def _download_with_progress(url: str, dest: "Path", label: str) -> None:
+    """Descarga `url` a `dest` (atómico: baja a .part y renombra al final),
+    actualizando `_KOKORO_INSTALL['progress']`. Lanza si falla."""
+    import urllib.request
+
+    tmp = dest.with_suffix(dest.suffix + ".part")
+    with urllib.request.urlopen(url, timeout=60) as resp:
+        total = int(resp.headers.get("Content-Length") or 0)
+        done = 0
+        with open(tmp, "wb") as f:
+            while True:
+                chunk = resp.read(256 * 1024)
+                if not chunk:
+                    break
+                f.write(chunk)
+                done += len(chunk)
+                if total:
+                    _KOKORO_INSTALL["progress"] = int(done * 100 / total)
+                _KOKORO_INSTALL["detail"] = f"Descargando {label}…"
+    os.replace(tmp, dest)
 
 
 def _kokoro_install_worker() -> None:
     import subprocess
     import sys
+    from app.voice import kokoro_voice as kv
 
     try:
-        r = subprocess.run(
-            [sys.executable, "-m", "pip", "install", "kokoro",
-             "--disable-pip-version-check"],
-            capture_output=True, text=True, timeout=1800,
-        )
-        if r.returncode == 0:
-            _KOKORO_INSTALL.update(status="done", detail=None)
-        else:
-            tail = (r.stderr or r.stdout or "").strip()[-400:]
-            _KOKORO_INSTALL.update(
-                status="failed",
-                detail=tail or f"pip terminó con código {r.returncode}",
+        # Fase 1: librería (idempotente — si ya está, pip no hace nada).
+        if not kv.library_installed():
+            _KOKORO_INSTALL.update(status="installing", detail="Instalando kokoro-onnx…")
+            r = subprocess.run(
+                [sys.executable, "-m", "pip", "install", "kokoro-onnx", "soundfile",
+                 "--disable-pip-version-check"],
+                capture_output=True, text=True, timeout=1800,
             )
+            if r.returncode != 0:
+                tail = (r.stderr or r.stdout or "").strip()[-400:]
+                _KOKORO_INSTALL.update(
+                    status="failed",
+                    detail=tail or f"pip terminó con código {r.returncode}",
+                )
+                return
+
+        # Fase 2: modelo + voces (~108 MB). Solo lo que falte.
+        kv.KOKORO_DIR.mkdir(parents=True, exist_ok=True)
+        _KOKORO_INSTALL.update(status="downloading", progress=0)
+        if kv.model_path() is None:
+            _download_with_progress(
+                kv.MODEL_URL, kv.KOKORO_DIR / kv.MODEL_FILENAME, "modelo (~80 MB)"
+            )
+        if kv.voices_path() is None:
+            _download_with_progress(
+                kv.VOICES_URL, kv.KOKORO_DIR / kv.VOICES_FILENAME, "voces (~28 MB)"
+            )
+        _KOKORO_INSTALL.update(status="done", detail=None, progress=100)
     except Exception as e:
         _KOKORO_INSTALL.update(status="failed", detail=f"{type(e).__name__}: {e}")
 
 
 @router.get("/kokoro/status")
 def kokoro_status() -> JSONResponse:
-    """¿Está la librería Kokoro instalada (in-process, sin Docker)? Incluye el
-    estado de una instalación en curso lanzada desde la UI."""
-    available = kokoro_client.is_available()
+    """Estado de Kokoro (voz local de alta calidad): librería + modelo
+    descargado + instalación/descarga en curso lanzada desde la UI."""
+    from app.voice import kokoro_voice as kv
+
+    lib = kv.library_installed()
+    model = kv.model_downloaded()
+    available = lib and model
     inst = _KOKORO_INSTALL["status"]
     if available:
-        msg = "Kokoro instalado (voz local offline)."
+        msg = "Kokoro listo (voz local de máxima calidad, funciona sin conexión)."
     elif inst == "installing":
-        msg = "Instalando Kokoro… (pip; tarda unos minutos)"
+        msg = "Instalando la librería kokoro-onnx… (pip; unos minutos)"
+    elif inst == "downloading":
+        msg = f"Descargando el modelo de voz… ({_KOKORO_INSTALL.get('progress', 0)}%)"
     elif inst == "done":
         msg = ("Instalación terminada. Vuelve a seleccionar Kokoro; si no "
                "aparece, reinicia el backend.")
     elif inst == "failed":
         msg = f"La instalación falló: {_KOKORO_INSTALL['detail']}"
+    elif lib and not model:
+        msg = ("La librería está, falta el modelo de voz (~108 MB). "
+               "Pulsa 'Instalar Kokoro' para descargarlo.")
     else:
-        msg = ("Kokoro no está instalado. Pulsa 'Instalar Kokoro' (descarga "
-               "por pip; el modelo ~330 MB baja al primer uso).")
+        msg = ("Kokoro no está instalado. Pulsa 'Instalar Kokoro' — descarga "
+               "~108 MB una vez (librería + modelo).")
     return JSONResponse(content={
         "available": available,
+        "library_installed": lib,
+        "model_downloaded": model,
         "install_status": inst,
+        "progress": _KOKORO_INSTALL.get("progress", 0),
         "message": msg,
     })
 
@@ -596,21 +678,21 @@ def kokoro_voices() -> JSONResponse:
 
 @router.post("/kokoro/install")
 def kokoro_install() -> JSONResponse:
-    """Lanza la instalación de la librería `kokoro` (pip, en un hilo con la
-    salida capturada). Idempotente: si ya está instalada o instalándose, lo
-    dice en vez de duplicar el proceso. El progreso se consulta en /status."""
+    """Lanza la instalación de Kokoro (pip `kokoro-onnx` + descarga del modelo),
+    en un hilo con la salida/progreso capturados. Idempotente: si ya está listo
+    o en curso, lo dice en vez de duplicar el proceso. Progreso en /status."""
     import threading
 
     if kokoro_client.is_available():
-        return JSONResponse(content={"started": False, "message": "Kokoro ya está instalado."})
-    if _KOKORO_INSTALL["status"] == "installing":
+        return JSONResponse(content={"started": False, "message": "Kokoro ya está listo."})
+    if _KOKORO_INSTALL["status"] in ("installing", "downloading"):
         return JSONResponse(content={"started": False, "message": "Ya hay una instalación en curso."})
-    _KOKORO_INSTALL.update(status="installing", detail=None)
+    _KOKORO_INSTALL.update(status="installing", detail=None, progress=0)
     threading.Thread(target=_kokoro_install_worker, daemon=True).start()
     return JSONResponse(content={
         "started": True,
-        "message": "Instalando Kokoro en segundo plano (unos minutos). El "
-                   "estado se actualiza solo en esta pantalla.",
+        "message": "Instalando Kokoro en segundo plano (librería + modelo, "
+                   "~108 MB). El estado y el progreso se actualizan aquí.",
     })
 
 
@@ -693,10 +775,33 @@ def _cfg_set(key: str, value: str) -> None:
         db.close()
 
 
+# Idioma que denota el ID de una voz de EdgeTTS ("pt-BR-…" → pt) o de Kokoro
+# (prefijo: e=es a/b=en f=fr p=pt). Devuelve None si no se puede deducir (voces
+# de ElevenLabs, que son opacas y además multilingües — a esas no se las toca).
+_KOKORO_PREFIX_LANG = {"e": "es", "a": "en", "b": "en", "f": "fr", "p": "pt"}
+
+
+def _voice_language(voice_id: str, provider: Optional[str]) -> Optional[str]:
+    if not voice_id:
+        return None
+    if provider == "kokoro" or ("_" in voice_id and len(voice_id.split("_")[0]) <= 2):
+        return _KOKORO_PREFIX_LANG.get(voice_id[:1].lower())
+    # EdgeTTS: "es-ES-ElviraNeural" → "es"
+    head = voice_id.split("-", 1)[0].lower()
+    return head if head in ("es", "en", "fr", "pt") else None
+
+
 @router.get("/defaults", response_model=VoiceDefaults)
 def voice_defaults() -> VoiceDefaults:
     """La voz que Aithera debe usar AHORA. Si el usuario no ha elegido ninguna,
     asigna (y persiste) la mejor del idioma configurado — nunca devuelve vacío.
+
+    [2026-07-24 FIX] La voz SIGUE al idioma. EL BUG (reportado): al cambiar el
+    idioma de la app, la voz guardada NO se reevaluaba — una voz portuguesa
+    heredada de antes se quedaba y leía el español con acento portugués. Ahora,
+    si la voz guardada pertenece a OTRO idioma que el de la app (deducible en
+    EdgeTTS/Kokoro), se reasigna a la voz por defecto del idioma actual. Las voces
+    de ElevenLabs (opacas y multilingües) no se tocan.
 
     Lo llama el frontend al arrancar: así el chat habla desde el primer mensaje,
     sin pasar por el Centro de Voz."""
@@ -707,6 +812,16 @@ def voice_defaults() -> VoiceDefaults:
     voice = _cfg_get(_VOICE_KEY)
     provider = _cfg_get(_PROVIDER_KEY)
     assigned = False
+
+    # ¿La voz guardada es de OTRO idioma? → reasignar a la del idioma actual.
+    if voice:
+        v_lang = _voice_language(voice, provider)
+        if v_lang is not None and v_lang != lang:
+            voice = _DEFAULT_VOICE_BY_LANG[lang]
+            provider = "edgetts"
+            _cfg_set(_VOICE_KEY, voice)
+            _cfg_set(_PROVIDER_KEY, provider)
+            assigned = True
 
     if not voice:
         voice = _DEFAULT_VOICE_BY_LANG[lang]

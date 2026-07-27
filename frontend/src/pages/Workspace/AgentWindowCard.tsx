@@ -36,12 +36,16 @@ import { useModeloIAOptions } from "./useModeloIAOptions";
 import { SkillPickerPopup } from "./SkillPickerPopup";
 import { HelpButton, windowShortcuts } from "./HelpPanel";
 import { useDragResize, MIN_CARD_W, MIN_CARD_H, type CardLayout, type Rect } from "./useWindowCard";
+// Alias 'tr' (no 't'): este archivo usa 't' como variable de tool en
+// '.map((t) => …)' — evita sombrear/confundir.
+import { useT } from "@/store/useI18n";
 
 const EMOJI_CHOICES = ["🤖", "🧠", "⚙️", "🔧", "📊", "🔍", "✉️", "📅", "🗂️", "⚡"];
 const POLL_MS = 1800;
 
-const STATUS_LABEL: Record<string, string> = {
-  pending: "Pendiente", running: "En progreso", completed: "Completada", failed: "Fallida", cancelled: "Cancelada",
+const STATUS_KEY: Record<string, string> = {
+  pending: "agents.status.pending", running: "agents.status.running", completed: "agents.status.completed",
+  failed: "agents.status.failed", cancelled: "agents.status.cancelled",
 };
 const STATUS_COLOR: Record<string, string> = {
   pending: "text-ink-faint", running: "text-accent", completed: "text-signal-ok", failed: "text-signal-error", cancelled: "text-ink-faint",
@@ -79,6 +83,7 @@ export function AgentWindowCard({
   agentId, layout, bounds, onInteractStart, onCommit, onMinimize, onToggleExpanded, onAgentChanged,
   onGone,
 }: Props) {
+  const tr = useT();
   const [liveH, setLiveH] = useState<number | null>(null);
   const handleCommit = useCallback((patch: Partial<CardLayout>) => { setLiveH(null); onCommit(patch); }, [onCommit]);
   const { nodeRef, headerHandlers, resizeHandlers } = useDragResize({
@@ -184,7 +189,7 @@ export function AgentWindowCard({
       });
       setEditing(false);
     } catch (e) {
-      setEditError(e instanceof Error ? e.message : "No se pudo guardar el agente.");
+      setEditError(e instanceof Error ? e.message : tr("workspace.agentCard.saveFailed"));
     } finally {
       setEditSaving(false);
     }
@@ -223,23 +228,23 @@ export function AgentWindowCard({
     <>
       <ErrorBanner message={editError} />
       <div>
-        <label className={fieldLabel}>Nombre</label>
+        <label className={fieldLabel}>{tr("agents.field.name")}</label>
         <input value={name} onChange={(e) => setName(e.target.value)} className={fieldInput} autoFocus />
       </div>
       <div>
-        <label className={fieldLabel}>Descripción</label>
-        <textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={2} className={`${fieldInput} resize-none`} placeholder="Qué hace este agente" />
+        <label className={fieldLabel}>{tr("agents.field.description")}</label>
+        <textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={2} className={`${fieldInput} resize-none`} placeholder={tr("agents.descPlaceholder")} />
       </div>
       <div>
-        <label className={fieldLabel}>Modelo IA</label>
+        <label className={fieldLabel}>{tr("workspace.agentCard.model")}</label>
         <select value={agentType} onChange={(e) => setAgentType(e.target.value)} className={fieldInput}>
           {modeloOptions.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
         </select>
       </div>
       <div>
         <div className="flex items-center justify-between mb-1.5">
-          <label className={fieldLabel} style={{ margin: 0 }}>Skills</label>
-          <button onClick={() => setSkillPickerOpen(true)} className="text-[11px] text-accent hover:text-accent-soft">+ Skill</button>
+          <label className={fieldLabel} style={{ margin: 0 }}>{tr("workspace.agentCard.skills")}</label>
+          <button onClick={() => setSkillPickerOpen(true)} className="text-[11px] text-accent hover:text-accent-soft">{tr("workspace.agentCard.addSkill")}</button>
         </div>
         {skills.length > 0 ? (
           <div className="flex flex-wrap gap-1.5">
@@ -250,10 +255,10 @@ export function AgentWindowCard({
               </span>
             ))}
           </div>
-        ) : <p className="text-[11px] text-ink-faint">Sin skills. Añade con "+ Skill".</p>}
+        ) : <p className="text-[11px] text-ink-faint">{tr("workspace.agentCard.noSkillsAdd")}</p>}
       </div>
       <div>
-        <label className={fieldLabel}>Herramientas permitidas</label>
+        <label className={fieldLabel}>{tr("agents.field.tools")}</label>
         <div className="flex flex-col gap-1 max-h-32 overflow-y-auto">
           {tools.map((t) => (
             <label key={t.tool_id} className="flex items-center gap-2 text-xs text-ink-dim">
@@ -261,11 +266,11 @@ export function AgentWindowCard({
               {t.name}
             </label>
           ))}
-          {tools.length === 0 && <p className="text-[11px] text-ink-faint">Cargando catálogo…</p>}
+          {tools.length === 0 && <p className="text-[11px] text-ink-faint">{tr("workspace.agentCard.loadingCatalog")}</p>}
         </div>
       </div>
       <div>
-        <label className={fieldLabel}>Timeout (segundos)</label>
+        <label className={fieldLabel}>{tr("workspace.agentCard.timeoutSeconds")}</label>
         <input
           type="number"
           value={maxExecutionTime}
@@ -274,9 +279,9 @@ export function AgentWindowCard({
         />
       </div>
       <div className="flex gap-2 pt-1">
-        <button onClick={() => setEditing(false)} className={`${btnGhost} flex-1`}>Cancelar</button>
+        <button onClick={() => setEditing(false)} className={`${btnGhost} flex-1`}>{tr("common.cancel")}</button>
         <button onClick={saveEdit} disabled={!name.trim() || editSaving} className={`${btnPrimary} flex-1`}>
-          {editSaving ? "Guardando…" : "Guardar"}
+          {editSaving ? tr("agents.saving") : tr("common.save")}
         </button>
       </div>
     </>
@@ -286,24 +291,24 @@ export function AgentWindowCard({
     <>
       {agent.description && <p className="text-xs text-ink-dim">{agent.description}</p>}
       <div>
-        <label className={fieldLabel}>Skills</label>
+        <label className={fieldLabel}>{tr("workspace.agentCard.skills")}</label>
         {agentSkills.length > 0 ? (
           <div className="flex flex-wrap gap-1.5">
             {agentSkills.map((s) => <span key={s} className="text-[11px] px-2 py-0.5 rounded bg-base-700/60 text-ink-dim">{s}</span>)}
           </div>
-        ) : <p className="text-[11px] text-ink-faint">Sin skills.</p>}
+        ) : <p className="text-[11px] text-ink-faint">{tr("workspace.agentCard.noSkills")}</p>}
       </div>
       <div>
-        <label className={fieldLabel}>Permisos / herramientas</label>
+        <label className={fieldLabel}>{tr("agents.field.tools")}</label>
         {agentTools.length > 0 ? (
           <div className="flex flex-wrap gap-1.5">
             {agentTools.map((t) => <span key={t} className="text-[11px] px-2 py-0.5 rounded bg-accent/10 text-accent">{t}</span>)}
           </div>
-        ) : <p className="text-[11px] text-ink-faint">Sin herramientas permitidas.</p>}
+        ) : <p className="text-[11px] text-ink-faint">{tr("workspace.agentCard.noToolsAllowed")}</p>}
       </div>
       <div>
-        <label className={fieldLabel}>Timeout</label>
-        <p className="text-xs text-ink-dim">{agent.max_execution_time ?? "—"}s por tarea</p>
+        <label className={fieldLabel}>{tr("workspace.agentCard.timeout")}</label>
+        <p className="text-xs text-ink-dim">{tr("workspace.agentCard.perTask", { n: agent.max_execution_time ?? "—" })}</p>
       </div>
     </>
   );
@@ -312,12 +317,12 @@ export function AgentWindowCard({
     <div className="flex-1 min-w-0 min-h-0 flex flex-col">
       <div className="px-4 py-2 border-b border-base-700/40 shrink-0">
         <p className="text-[10.5px] text-ink-faint">
-          Aithera todavía no razona en vivo — esto llega con el TIE (V1.0). Por ahora: estado real + resultado real de cada ejecución.
+          {tr("workspace.agentCard.notReasoningYet")}
         </p>
       </div>
       <div className="flex-1 min-h-0 overflow-y-auto px-4 py-3 flex flex-col gap-3">
         {executions.length === 0 && (
-          <p className="text-xs text-ink-faint text-center py-8">Sin ejecuciones todavía. Lanza una tarea abajo.</p>
+          <p className="text-xs text-ink-faint text-center py-8">{tr("workspace.agentCard.noExecutions")}</p>
         )}
         {executions.map((ex) => {
           const calls = parseToolCalls(ex.tool_calls);
@@ -325,12 +330,12 @@ export function AgentWindowCard({
           return (
             <div key={ex.id} className="flex flex-col gap-1.5">
               <div className="self-end max-w-[85%] bg-accent/12 text-ink rounded-xl rounded-tr-sm px-3 py-2 text-xs">
-                {ex.task_description || "(sin descripción)"}
+                {ex.task_description || tr("agents.execution.noDescription")}
               </div>
               <div className="self-start max-w-[85%] glass-surface rounded-xl rounded-tl-sm px-3 py-2 text-xs flex flex-col gap-1.5">
                 <div className={`flex items-center gap-1.5 ${STATUS_COLOR[ex.status] ?? "text-ink-dim"}`}>
                   {busy && <span className="h-2 w-2 rounded-full bg-current animate-pulse" />}
-                  <span>{STATUS_LABEL[ex.status] ?? ex.status}</span>
+                  <span>{STATUS_KEY[ex.status] ? tr(STATUS_KEY[ex.status]) : ex.status}</span>
                 </div>
                 {ex.result && <p className="text-ink-dim whitespace-pre-wrap">{ex.result}</p>}
                 {ex.error_message && <p className="text-signal-error">{ex.error_message}</p>}
@@ -354,10 +359,10 @@ export function AgentWindowCard({
           onChange={(e) => setTaskInput(e.target.value)}
           onKeyDown={(e) => { if (e.key === "Enter" && !sending) sendTask(); }}
           className={fieldInput}
-          placeholder="Describe la tarea…"
+          placeholder={tr("workspace.agentCard.taskPlaceholder")}
         />
         <button onClick={sendTask} disabled={!taskInput.trim() || sending} className={btnPrimary}>
-          {sending ? "…" : "Enviar"}
+          {sending ? "…" : tr("chat.send")}
         </button>
       </div>
     </div>
@@ -379,7 +384,7 @@ export function AgentWindowCard({
         className={`flex items-center gap-2.5 px-3.5 py-2.5 border-b border-base-700/60 shrink-0 select-none ${
           layout.expanded ? "" : "cursor-grab active:cursor-grabbing"
         }`}
-        title="Arrastra para mover · doble clic para expandir"
+        title={tr("workspace.projectCard.dragToMove")}
       >
         {agent && (
           <span onPointerDown={(e) => e.stopPropagation()}>
@@ -387,7 +392,7 @@ export function AgentWindowCard({
               <button
                 onClick={(e) => { e.stopPropagation(); setIconPickerOpen((v) => !v); }}
                 className="h-8 w-8 rounded-full border-2 agent-ring-active bg-base-800 flex items-center justify-center text-base relative shrink-0"
-                title="Cambiar icono"
+                title={tr("workspace.agentCard.changeIcon")}
               >
                 {agent.is_active && <span className="agent-ring-glow" aria-hidden />}
                 <span className="relative z-[1]">{agent.icon || "🤖"}</span>
@@ -409,15 +414,15 @@ export function AgentWindowCard({
           </span>
         )}
         <div className="min-w-0 flex-1">
-          <h2 className="text-sm font-semibold text-ink truncate">{agent?.name ?? "Cargando…"}</h2>
+          <h2 className="text-sm font-semibold text-ink truncate">{agent?.name ?? tr("common.loading")}</h2>
           {agent && <p className="text-[11px] text-ink-faint truncate">{modeloLabel}</p>}
         </div>
         <span onClick={(e) => e.stopPropagation()} onPointerDown={(e) => e.stopPropagation()}>
-          <HelpButton open={helpOpen} onToggle={() => setHelpOpen((v) => !v)} extra={windowShortcuts(layout.expanded)} />
+          <HelpButton open={helpOpen} onToggle={() => setHelpOpen((v) => !v)} extra={windowShortcuts(layout.expanded, tr)} />
         </span>
         {agent && !editing && (
           <button onClick={(e) => { e.stopPropagation(); startEditing(); }} className="text-[11px] px-2 py-1 rounded-lg border border-base-700 text-ink-dim hover:border-accent/40 hover:text-accent shrink-0">
-            Editar
+            {tr("common.edit")}
           </button>
         )}
         {agent && (
@@ -425,18 +430,18 @@ export function AgentWindowCard({
             onClick={(e) => { e.stopPropagation(); updateAgent({ is_active: !agent.is_active }); }}
             className={`text-[11px] px-2 py-1 rounded-lg border shrink-0 ${agent.is_active ? "border-accent/40 bg-accent/15 text-accent" : "border-base-700 text-ink-faint"}`}
           >
-            {agent.is_active ? "Activo" : "Inactivo"}
+            {agent.is_active ? tr("agents.field.active") : tr("workspace.agentCard.inactive")}
           </button>
         )}
-        <button onClick={(e) => { e.stopPropagation(); onToggleExpanded(); }} className="text-ink-faint hover:text-ink text-xs px-1.5 shrink-0" title={layout.expanded ? "Restaurar" : "Expandir"}>
+        <button onClick={(e) => { e.stopPropagation(); onToggleExpanded(); }} className="text-ink-faint hover:text-ink text-xs px-1.5 shrink-0" title={layout.expanded ? tr("workspace.projectCard.restore") : tr("workspace.projectCard.expand")}>
           {layout.expanded ? "⤡" : "⤢"}
         </button>
-        <button onClick={(e) => { e.stopPropagation(); onMinimize(); }} className="text-ink-faint hover:text-ink text-sm px-1.5 shrink-0" title="Cerrar">—</button>
+        <button onClick={(e) => { e.stopPropagation(); onMinimize(); }} className="text-ink-faint hover:text-ink text-sm px-1.5 shrink-0" title={tr("workspace.projectCard.minimize")}>—</button>
       </div>
 
       {/* Cuerpo */}
       {!agent ? (
-        <div className="flex-1 flex items-center justify-center text-ink-faint text-sm">Cargando agente…</div>
+        <div className="flex-1 flex items-center justify-center text-ink-faint text-sm">{tr("workspace.agentCard.loadingAgent")}</div>
       ) : layout.expanded ? (
         // Expandida: dos columnas lado a lado (info | chat), como el W2d original.
         <div className="flex-1 min-h-0 flex">

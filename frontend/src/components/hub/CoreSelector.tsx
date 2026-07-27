@@ -22,50 +22,65 @@ import { PoopSphere } from "@/components/hub/PoopSphere";
 import { RasenganSphere } from "@/components/hub/RasenganSphere";
 import { DEFAULT_CORE_DESIGN, type CoreDesignSettings, type CoreModelId } from "@/components/hub/coreDesign";
 import { useAppStore, type AICoreState } from "@/store/useAppStore";
+import { useT } from "@/store/useI18n";
 
 export type { CoreModelId } from "@/components/hub/coreDesign";
 
 interface CoreModel {
   id: CoreModelId;
-  label: string;
-  /** Texto corto que aparece en el boton cuando esta seleccionado. */
-  shortLabel: string;
-  /** Descripcion de una linea para el item del dropdown. */
-  hint: string;
+  /** Clave i18n de la etiqueta completa (item del dropdown). */
+  labelKey: string;
+  /** Clave i18n del texto corto que aparece en el boton cuando esta seleccionado. */
+  shortLabelKey: string;
+  /** Clave i18n de la descripcion de una linea para el item del dropdown. */
+  hintKey: string;
   /** Color del dot indicador en el boton (cuando esta activo). */
   dotClass: string;
 }
 
+// [I18N-6] "Rasengan" (jutsu de Naruto) se deja igual en los 4 idiomas — es
+// el nombre propio de la referencia, no se traduce (como "Aithera").
 const CORE_MODELS: CoreModel[] = [
   {
     id: "aithera_seed",
-    label: "Semilla de Aithera",
-    shortLabel: "Semilla",
-    hint: "Logo vivo inicial, dorado y centrado",
+    labelKey: "hub.core.model.aithera_seed.label",
+    shortLabelKey: "hub.core.model.aithera_seed.short",
+    hintKey: "hub.core.model.aithera_seed.hint",
     dotClass: "bg-amber-300",
   },
   {
     id: "blue_orb",
-    label: "Orbe azul",
-    shortLabel: "Orbe azul",
-    hint: "Nucleo clasico con shaders procedurales",
+    labelKey: "hub.core.model.blue_orb.label",
+    shortLabelKey: "hub.core.model.blue_orb.short",
+    hintKey: "hub.core.model.blue_orb.hint",
     dotClass: "bg-accent",
   },
   {
     id: "poop_sphere",
-    label: "Bola de caca",
-    shortLabel: "Bola de caca",
-    hint: "Emoji cartoon con moscas orbitando",
+    labelKey: "hub.core.model.poop_sphere.label",
+    shortLabelKey: "hub.core.model.poop_sphere.short",
+    hintKey: "hub.core.model.poop_sphere.hint",
     dotClass: "bg-amber-400",
   },
   {
     id: "rasengan",
-    label: "Rasengan",
-    shortLabel: "Rasengan",
-    hint: "Jutsu de Naruto: esfera azul giratoria",
+    labelKey: "hub.core.model.rasengan.label",
+    shortLabelKey: "hub.core.model.rasengan.short",
+    hintKey: "hub.core.model.rasengan.hint",
     dotClass: "bg-sky-300",
   },
 ];
+
+// [I18N-6] Mapa reutilizable id->clave de etiqueta completa, para que otros
+// componentes (CoreDesignPanel) muestren el mismo nombre traducido sin
+// duplicar el diccionario ni depender de CORE_MODEL_LABELS (coreDesign.ts,
+// que es un módulo de datos puro y no puede usar useT()).
+export const CORE_MODEL_LABEL_KEYS: Record<CoreModelId, string> = {
+  aithera_seed: "hub.core.model.aithera_seed.label",
+  blue_orb: "hub.core.model.blue_orb.label",
+  poop_sphere: "hub.core.model.poop_sphere.label",
+  rasengan: "hub.core.model.rasengan.label",
+};
 
 const STORAGE_KEY = "aithera.coreModel";
 
@@ -245,6 +260,7 @@ export function CoreModelView({
   linkToChat = false,
   onNavigateToChat,
 }: CoreModelViewProps) {
+  const t = useT();
   const coreState = useAppStore((s) => s.coreState);
 
   const inner = (
@@ -271,8 +287,8 @@ export function CoreModelView({
           if (e.key === "Enter" || e.key === " ") onNavigateToChat();
         }}
         className="cursor-pointer outline-none rounded-full"
-        aria-label="Abrir chat"
-        title="Abrir chat"
+        aria-label={t("hub.core.openChat")}
+        title={t("hub.core.openChat")}
       >
         {inner}
       </div>
@@ -295,6 +311,7 @@ interface CoreSelectorButtonProps {
  * padre guarda el estado y se lo pasa en `value` + `onChange`.
  */
 export function CoreSelectorButton({ value, onChange }: CoreSelectorButtonProps) {
+  const t = useT();
   const [open, setOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
@@ -334,12 +351,12 @@ export function CoreSelectorButton({ value, onChange }: CoreSelectorButtonProps)
         ].join(" ")}
         aria-haspopup="listbox"
         aria-expanded={open}
-        title="Cambiar nucleo 3D"
+        title={t("hub.core.changeButton")}
       >
         <span
           className={`h-1.5 w-1.5 rounded-full ${current.dotClass}`}
         />
-        <span>{current.shortLabel}</span>
+        <span>{t(current.shortLabelKey)}</span>
         <svg
           width="9"
           height="9"
@@ -399,9 +416,9 @@ export function CoreSelectorButton({ value, onChange }: CoreSelectorButtonProps)
                     }`}
                   />
                   <span className="min-w-0">
-                    <span className="block text-sm leading-tight">{m.label}</span>
+                    <span className="block text-sm leading-tight">{t(m.labelKey)}</span>
                     <span className="block text-[10px] text-ink-faint mt-0.5 leading-snug">
-                      {m.hint}
+                      {t(m.hintKey)}
                     </span>
                   </span>
                 </button>

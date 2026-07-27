@@ -11,6 +11,11 @@
 // el codigo que lo use debe comprobar `window.aithera?.pickFolder` antes.
 const { contextBridge, ipcRenderer } = require("electron");
 
+// [2026-07-25] `pickFiles` se suma por el mismo motivo que `pickFolder`: adjuntar
+// ARCHIVOS reales a un proyecto (Project.docs) necesita rutas absolutas, y eso
+// solo lo puede dar el diálogo nativo. Sigue siendo una superficie mínima y
+// explícita (dos funciones concretas), no un API de filesystem genérico.
 contextBridge.exposeInMainWorld("aithera", {
   pickFolder: () => ipcRenderer.invoke("dialog:pick-folder"),
+  pickFiles: () => ipcRenderer.invoke("dialog:pick-files"),
 });

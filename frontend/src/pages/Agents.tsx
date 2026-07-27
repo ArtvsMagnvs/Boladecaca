@@ -14,15 +14,16 @@ import { motion, AnimatePresence } from "framer-motion";
 import { api, type Agent, type AgentExecution, type ToolInfo } from "@/lib/api";
 import { useAppStore } from "@/store/useAppStore";
 import { useConfirm } from "@/components/ConfirmDialog";
+import { useT } from "@/store/useI18n";
 
 type Status = "idle" | "saving" | "loading" | "error" | "executing";
 
-const AGENT_TYPE_OPTIONS = [
-  { id: "generic", label: "Generico" },
-  { id: "architect", label: "Arquitecto" },
-  { id: "code", label: "Asistente de codigo" },
-  { id: "research", label: "Investigacion" },
-  { id: "custom", label: "Personalizado" },
+const AGENT_TYPE_KEYS = [
+  { id: "generic", key: "agents.type.generic" },
+  { id: "architect", key: "agents.type.architect" },
+  { id: "code", key: "agents.type.code" },
+  { id: "research", key: "agents.type.research" },
+  { id: "custom", key: "agents.type.custom" },
 ];
 
 const STATUS_COLOR: Record<string, string> = {
@@ -33,15 +34,16 @@ const STATUS_COLOR: Record<string, string> = {
   cancelled: "text-signal-warn",
 };
 
-const STATUS_LABEL: Record<string, string> = {
-  pending: "Pendiente",
-  running: "Ejecutando",
-  completed: "Completado",
-  failed: "Fallido",
-  cancelled: "Cancelado",
+const STATUS_KEY: Record<string, string> = {
+  pending: "agents.status.pending",
+  running: "agents.status.running",
+  completed: "agents.status.completed",
+  failed: "agents.status.failed",
+  cancelled: "agents.status.cancelled",
 };
 
 export default function Agents() {
+  const t = useT();
   const [confirm, confirmDialog] = useConfirm();
   // --- Estado global de la pagina ---
   const [agents, setAgents] = useState<Agent[] | null>(null);
@@ -93,10 +95,10 @@ export default function Agents() {
       setTools(t?.tools || []);
       setStatus("idle");
     } catch (e) {
-      setErrorMsg(`Error cargando: ${(e as Error).message}`);
+      setErrorMsg(t("agents.error.load", { msg: (e as Error).message }));
       setStatus("error");
     }
-  }, []);
+  }, [t]);
 
   useEffect(() => {
     refreshAgents();
@@ -145,7 +147,7 @@ export default function Agents() {
 
   const saveAgent = async () => {
     if (!formName.trim()) {
-      setErrorMsg("El nombre es obligatorio");
+      setErrorMsg(t("agents.nameRequired"));
       setStatus("error");
       return;
     }
@@ -171,7 +173,7 @@ export default function Agents() {
       await refreshAgents();
       setStatus("idle");
     } catch (e) {
-      setErrorMsg(`Error guardando: ${(e as Error).message}`);
+      setErrorMsg(t("agents.error.save", { msg: (e as Error).message }));
       setStatus("error");
     }
   };
@@ -179,16 +181,16 @@ export default function Agents() {
   const deleteAgent = async () => {
     if (!selectedId) return;
     if (!(await confirm({
-      title: `Eliminar agente "${formName}"`,
-      message: "Esto borra también su historial de ejecuciones.",
-      confirmLabel: "Eliminar",
+      title: t("agents.deleteConfirm.title", { name: formName }),
+      message: t("agents.deleteConfirm.message"),
+      confirmLabel: t("agents.deleteConfirm.confirmLabel"),
     }))) return;
     try {
       await api.deleteAgent(selectedId);
       setSelectedId(null);
       await refreshAgents();
     } catch (e) {
-      setErrorMsg(`Error borrando: ${(e as Error).message}`);
+      setErrorMsg(t("agents.error.delete", { msg: (e as Error).message }));
       setStatus("error");
     }
   };
@@ -219,7 +221,7 @@ export default function Agents() {
       pollCancelRef.current?.();          // corta el sondeo anterior, si lo hubiera
       pollCancelRef.current = pollExecution(ex.id);
     } catch (e) {
-      setErrorMsg(`Error lanzando tarea: ${(e as Error).message}`);
+      setErrorMsg(t("agents.error.launch", { msg: (e as Error).message }));
       setStatus("error");
       pulseError();
     }
@@ -323,7 +325,7 @@ export default function Agents() {
         setCoreState("idle");
       }
     } catch (e) {
-      setErrorMsg(`Error cancelando: ${(e as Error).message}`);
+      setErrorMsg(t("agents.error.cancel", { msg: (e as Error).message }));
     }
   };
 
@@ -333,7 +335,7 @@ export default function Agents() {
       setExecutions((prev) => prev.filter((e) => e.id !== execId));
       if (activeExecId === execId) setActiveExecId(null);
     } catch (e) {
-      setErrorMsg(`Error eliminando: ${(e as Error).message}`);
+      setErrorMsg(t("agents.error.remove", { msg: (e as Error).message }));
     }
   };
 
@@ -359,9 +361,9 @@ export default function Agents() {
         style={{ gridColumn: "1 / -1" }}
       >
         <div>
-          <h1 className="text-xl font-semibold text-ink">Agentes</h1>
+          <h1 className="text-xl font-semibold text-ink">{t("agents.title")}</h1>
           <p className="text-xs text-ink-faint mt-0.5">
-            Crea agentes con herramientas y lanza tareas sobre ellos.
+            {t("agents.subtitle")}
           </p>
         </div>
         <div className="flex gap-2">
@@ -369,7 +371,7 @@ export default function Agents() {
             onClick={() => setSelectedId(null)}
             className="text-xs px-3 py-1.5 rounded-lg bg-accent/15 hover:bg-accent/25 text-accent transition-colors"
           >
-            + Nuevo agente
+            {t("agents.newAgent")}
           </button>
         </div>
       </div>
@@ -380,13 +382,13 @@ export default function Agents() {
         style={{ minHeight: 0 }}
       >
         <h3 className="text-xs uppercase tracking-wider text-ink-faint mb-3 px-1">
-          Lista ({agents?.length ?? 0})
+          {t("agents.list.title", { n: agents?.length ?? 0 })}
         </h3>
         {agents === null ? (
-          <div className="text-xs text-ink-faint px-2">Cargando...</div>
+          <div className="text-xs text-ink-faint px-2">{t("agents.list.loading")}</div>
         ) : agents.length === 0 ? (
           <div className="text-xs text-ink-faint px-2 py-4">
-            Aun no hay agentes. Pulsa "+ Nuevo agente" para crear uno.
+            {t("agents.list.empty")}
           </div>
         ) : (
           <ul className="space-y-1">
@@ -429,61 +431,61 @@ export default function Agents() {
       >
         <div className="flex items-center justify-between mb-5">
           <h2 className="text-lg font-medium text-ink">
-            {selectedId ? `Editar: ${formName || "(sin nombre)"}` : "Nuevo agente"}
+            {selectedId ? t("agents.editTitle", { name: formName || t("agents.noName") }) : t("agents.newTitle")}
           </h2>
           {selectedId && (
             <button
               onClick={deleteAgent}
               className="text-xs px-3 py-1.5 rounded-lg bg-signal-error/15 text-signal-error hover:bg-signal-error/25 transition-colors"
             >
-              Eliminar
+              {t("agents.delete")}
             </button>
           )}
         </div>
 
         <div className="grid grid-cols-2 gap-4">
-          <Field label="Nombre *">
+          <Field label={t("agents.field.name")}>
             <input
               value={formName}
               onChange={(e) => setFormName(e.target.value)}
-              placeholder="ej. Architect"
+              placeholder={t("agents.namePlaceholder")}
               className="form-input"
             />
           </Field>
-          <Field label="Tipo">
+          <Field label={t("agents.field.type")}>
             <select
               value={formType}
               onChange={(e) => setFormType(e.target.value)}
               className="form-input"
             >
-              {AGENT_TYPE_OPTIONS.map((o) => (
-                <option key={o.id} value={o.id}>{o.label}</option>
+              {AGENT_TYPE_KEYS.map((o) => (
+                <option key={o.id} value={o.id}>{t(o.key)}</option>
               ))}
             </select>
           </Field>
         </div>
 
-        <Field label="Descripcion">
+        <Field label={t("agents.field.description")}>
           <input
             value={formDesc}
             onChange={(e) => setFormDesc(e.target.value)}
-            placeholder="Que hace este agente"
+            placeholder={t("agents.descPlaceholder")}
             className="form-input"
           />
         </Field>
 
-        <Field label="System prompt">
+        <Field label={t("agents.field.systemPrompt")}>
           <textarea
             value={formPrompt}
             onChange={(e) => setFormPrompt(e.target.value)}
-            placeholder="Eres un agente especializado en..."
+            placeholder={t("agents.promptPlaceholder")}
             rows={4}
             className="form-input resize-y"
           />
         </Field>
 
         <div className="grid grid-cols-2 gap-4">
-          <Field label="Timeout maximo (segundos)">
+          <Field label={t("agents.field.timeout")}>
             <input
               type="number"
               min={1}
@@ -493,7 +495,7 @@ export default function Agents() {
               className="form-input"
             />
           </Field>
-          <Field label="Activo">
+          <Field label={t("agents.field.active")}>
             <label className="flex items-center gap-2 h-10 px-3 rounded-lg bg-base-900/40 cursor-pointer">
               <input
                 type="checkbox"
@@ -502,14 +504,14 @@ export default function Agents() {
                 className="h-4 w-4 accent-accent"
               />
               <span className="text-sm text-ink">
-                {formActive ? "Si" : "No"}
+                {formActive ? t("agents.yes") : t("agents.no")}
               </span>
             </label>
           </Field>
         </div>
 
         {/* Tools multi-select */}
-        <Field label="Herramientas permitidas">
+        <Field label={t("agents.field.tools")}>
           <div className="grid grid-cols-2 gap-2">
             {tools.map((tool) => {
               const checked = formTools.includes(tool.tool_id);
@@ -556,11 +558,11 @@ export default function Agents() {
                         }}
                         className="text-[10px] text-accent hover:underline mt-0.5"
                       >
-                        {expandedTools.has(tool.tool_id) ? "ver menos" : "ver más"}
+                        {expandedTools.has(tool.tool_id) ? t("agents.seeLess") : t("agents.seeMore")}
                       </button>
                     )}
                     <p className="text-[10px] text-accent mt-0.5">
-                      {tool.actions.length} accion{tool.actions.length !== 1 ? "es" : ""}
+                      {t("agents.actionsCount", { n: tool.actions.length })}
                     </p>
                   </div>
                 </label>
@@ -589,10 +591,10 @@ export default function Agents() {
             className="ml-auto px-5 py-2 rounded-lg bg-accent text-base-950 font-medium text-sm hover:bg-accent-glow transition-colors disabled:opacity-50"
           >
             {status === "saving"
-              ? "Guardando..."
+              ? t("agents.saving")
               : selectedId
-              ? "Guardar cambios"
-              : "Crear agente"}
+              ? t("agents.saveChanges")
+              : t("agents.create")}
           </button>
         </div>
       </section>
@@ -603,12 +605,12 @@ export default function Agents() {
         style={{ minHeight: 0 }}
       >
         <h3 className="text-xs uppercase tracking-wider text-ink-faint mb-3">
-          Ejecucion
+          {t("agents.execution.title")}
         </h3>
 
         {!selectedId ? (
           <div className="text-xs text-ink-faint px-2 py-4">
-            Selecciona un agente de la izquierda para poder lanzar tareas.
+            {t("agents.execution.selectPrompt")}
           </div>
         ) : (
           <>
@@ -617,7 +619,7 @@ export default function Agents() {
               <textarea
                 value={taskInput}
                 onChange={(e) => setTaskInput(e.target.value)}
-                placeholder="Describe la tarea para el agente..."
+                placeholder={t("agents.execution.taskPlaceholder")}
                 rows={3}
                 className="form-input resize-y text-sm"
               />
@@ -626,19 +628,19 @@ export default function Agents() {
                 disabled={!taskInput.trim() || status === "executing"}
                 className="w-full px-3 py-2 rounded-lg bg-accent text-base-950 font-medium text-sm hover:bg-accent-glow transition-colors disabled:opacity-50"
               >
-                {status === "executing" ? "Lanzando..." : "Ejecutar"}
+                {status === "executing" ? t("agents.execution.launching") : t("agents.execution.run")}
               </button>
             </div>
 
             {/* Historial */}
             <div className="mt-5 flex-1 flex flex-col min-h-0">
               <h4 className="text-[10px] uppercase tracking-wider text-ink-faint mb-2">
-                Historial ({executions.length})
+                {t("agents.execution.history", { n: executions.length })}
               </h4>
               <div className="flex-1 overflow-y-auto space-y-2 pr-1">
                 {executions.length === 0 && (
                   <p className="text-xs text-ink-faint px-2 py-2">
-                    Aun no hay ejecuciones para este agente.
+                    {t("agents.execution.empty")}
                   </p>
                 )}
                 {executions.map((ex) => (
@@ -689,6 +691,7 @@ function ExecutionCard({
   onCancel: () => void;
   onDelete: () => void;
 }) {
+  const t = useT();
   const isRunning = execution.status === "running" || execution.status === "pending";
   const toolCalls: { tool_id: string; action: string; ok: boolean }[] = (() => {
     try {
@@ -709,15 +712,15 @@ function ExecutionCard({
     >
       <div className="flex items-start justify-between gap-2">
         <p className="text-xs text-ink line-clamp-2 flex-1">
-          {execution.task_description || "(sin descripcion)"}
+          {execution.task_description || t("agents.execution.noDescription")}
         </p>
         <span className={`text-[10px] font-medium shrink-0 ${STATUS_COLOR[execution.status] || "text-ink-faint"}`}>
-          {STATUS_LABEL[execution.status] || execution.status}
+          {STATUS_KEY[execution.status] ? t(STATUS_KEY[execution.status]) : execution.status}
         </span>
       </div>
       {toolCalls.length > 0 && (
         <p className="text-[10px] text-ink-faint mt-1.5">
-          {toolCalls.length} tool{toolCalls.length !== 1 ? "s" : ""}: {toolCalls.map((tc) => tc.tool_id).join(", ")}
+          {t("agents.execution.toolsCount", { n: toolCalls.length, list: toolCalls.map((tc) => tc.tool_id).join(", ") })}
         </p>
       )}
       {execution.status === "completed" && execution.result && (
@@ -738,7 +741,7 @@ function ExecutionCard({
           }}
           className="mt-2 text-[10px] px-2 py-1 rounded bg-signal-warn/15 text-signal-warn hover:bg-signal-warn/25"
         >
-          Cancelar
+          {t("agents.execution.cancel")}
         </button>
       )}
       {!isRunning && (
@@ -749,7 +752,7 @@ function ExecutionCard({
           }}
           className="mt-2 text-[10px] px-2 py-1 rounded bg-base-700/30 text-ink-faint hover:bg-base-700/60"
         >
-          Eliminar
+          {t("agents.execution.delete")}
         </button>
       )}
     </div>

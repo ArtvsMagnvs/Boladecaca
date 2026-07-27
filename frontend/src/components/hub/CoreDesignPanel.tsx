@@ -1,6 +1,8 @@
 import { useState } from "react";
 import type { CoreDesignSettings, CoreModelId } from "@/components/hub/coreDesign";
-import { CORE_MODEL_LABELS, DEFAULT_CORE_DESIGN } from "@/components/hub/coreDesign";
+import { DEFAULT_CORE_DESIGN } from "@/components/hub/coreDesign";
+import { CORE_MODEL_LABEL_KEYS } from "@/components/hub/CoreSelector";
+import { useT } from "@/store/useI18n";
 
 interface CoreDesignPanelProps {
   model: CoreModelId;
@@ -11,19 +13,19 @@ interface CoreDesignPanelProps {
 
 interface SliderSpec {
   key: keyof CoreDesignSettings;
-  label: string;
+  labelKey: string;
   min: number;
   max: number;
   step: number;
 }
 
 const SLIDERS: SliderSpec[] = [
-  { key: "scale", label: "Escala", min: 0.72, max: 1.28, step: 0.01 },
-  { key: "brightness", label: "Brillo", min: 0.65, max: 1.45, step: 0.01 },
-  { key: "glow", label: "Glow", min: 0, max: 1.8, step: 0.01 },
-  { key: "speed", label: "Velocidad", min: 0, max: 2, step: 0.01 },
-  { key: "energy", label: "Energía", min: 0.45, max: 1.8, step: 0.01 },
-  { key: "particles", label: "Partículas", min: 0, max: 2, step: 0.01 },
+  { key: "scale", labelKey: "hub.designLab.scale", min: 0.72, max: 1.28, step: 0.01 },
+  { key: "brightness", labelKey: "hub.designLab.brightness", min: 0.65, max: 1.45, step: 0.01 },
+  { key: "glow", labelKey: "hub.designLab.glow", min: 0, max: 1.8, step: 0.01 },
+  { key: "speed", labelKey: "hub.designLab.speed", min: 0, max: 2, step: 0.01 },
+  { key: "energy", labelKey: "hub.designLab.energy", min: 0.45, max: 1.8, step: 0.01 },
+  { key: "particles", labelKey: "hub.designLab.particles", min: 0, max: 2, step: 0.01 },
 ];
 
 function formatValue(value: number) {
@@ -31,6 +33,7 @@ function formatValue(value: number) {
 }
 
 export function CoreDesignPanel({ model, value, onChange, onReset }: CoreDesignPanelProps) {
+  const t = useT();
   // Arranca minimizado: en el Hub solo se ve un botón pequeño y discreto; el
   // panel completo (dev-only) se despliega al pulsarlo.
   const [open, setOpen] = useState(false);
@@ -40,7 +43,7 @@ export function CoreDesignPanel({ model, value, onChange, onReset }: CoreDesignP
       <button
         type="button"
         onClick={() => setOpen(true)}
-        aria-label="Abrir Design Lab (herramienta de desarrollo)"
+        aria-label={t("hub.designLab.openAria")}
         title="Design Lab · dev only"
         className="rounded-full border border-amber-300/25 bg-base-900/70 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.2em] text-amber-200/80 shadow-lg backdrop-blur-md transition-colors hover:border-amber-300/50 hover:text-amber-100"
       >
@@ -52,7 +55,7 @@ export function CoreDesignPanel({ model, value, onChange, onReset }: CoreDesignP
   return (
     <section
       className="w-full max-w-[520px] rounded-2xl border border-amber-300/15 bg-base-900/70 px-4 py-3 shadow-2xl backdrop-blur-md"
-      aria-label="Panel interno de diseño del núcleo"
+      aria-label={t("hub.designLab.panelAria")}
     >
       <div className="mb-3 flex items-center justify-between gap-3">
         <div className="min-w-0">
@@ -60,7 +63,7 @@ export function CoreDesignPanel({ model, value, onChange, onReset }: CoreDesignP
             Design Lab · dev only
           </p>
           <p className="mt-0.5 truncate text-xs text-ink-faint">
-            Ajustando: <span className="text-ink">{CORE_MODEL_LABELS[model]}</span>
+            {t("hub.designLab.adjusting")} <span className="text-ink">{t(CORE_MODEL_LABEL_KEYS[model])}</span>
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -69,13 +72,13 @@ export function CoreDesignPanel({ model, value, onChange, onReset }: CoreDesignP
             onClick={onReset}
             className="rounded-full border border-base-700/80 px-3 py-1 text-[10px] uppercase tracking-wider text-ink-dim transition-colors hover:border-amber-300/40 hover:text-amber-100"
           >
-            Reset
+            {t("hub.designLab.reset")}
           </button>
           <button
             type="button"
             onClick={() => setOpen(false)}
-            aria-label="Minimizar Design Lab"
-            title="Minimizar"
+            aria-label={t("hub.designLab.minimizeAria")}
+            title={t("hub.designLab.minimize")}
             className="rounded-full border border-base-700/80 px-2.5 py-1 text-sm leading-none text-ink-dim transition-colors hover:border-amber-300/40 hover:text-amber-100"
           >
             —
@@ -87,7 +90,7 @@ export function CoreDesignPanel({ model, value, onChange, onReset }: CoreDesignP
         {SLIDERS.map((slider) => (
           <label key={slider.key} className="block">
             <div className="mb-1 flex items-center justify-between gap-2">
-              <span className="text-[11px] text-ink-dim">{slider.label}</span>
+              <span className="text-[11px] text-ink-dim">{t(slider.labelKey)}</span>
               <span className="font-mono text-[10px] text-amber-100/80">
                 {formatValue(value[slider.key])}
               </span>
@@ -106,7 +109,7 @@ export function CoreDesignPanel({ model, value, onChange, onReset }: CoreDesignP
       </div>
 
       <div className="mt-3 flex items-center justify-between gap-3 text-[10px] text-ink-faint">
-        <span>Se guarda solo para este núcleo.</span>
+        <span>{t("hub.designLab.savedPerModel")}</span>
         <code className="rounded bg-base-950/70 px-2 py-1 font-mono text-[9px] text-ink-faint">
           {JSON.stringify(value, Object.keys(DEFAULT_CORE_DESIGN))}
         </code>

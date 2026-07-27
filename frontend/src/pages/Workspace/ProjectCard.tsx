@@ -9,15 +9,18 @@
 // perezoso igual, con su propio umbral de tamano (iconos/completa).
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { api, type Project, type Task, type Milestone, type WorkspaceProgress } from "@/lib/api";
-import { pct, MS_STATUS_LABEL } from "./shared";
+import { pct, MS_STATUS_KEY } from "./shared";
 import { TaskList } from "./TaskList";
-import { TaskBoard, KANBAN_SHORTCUTS, type TaskColumnKey, type TaskUpdatePatch } from "./TaskBoard";
+import { TaskBoard, kanbanShortcuts, type TaskColumnKey, type TaskUpdatePatch } from "./TaskBoard";
 import { TaskPopup } from "./TaskPopup";
 import { MilestonePopup } from "./MilestonePopup";
 import { AgentsSection } from "./AgentsSection";
 import { AutomationSection } from "./AutomationSection";
 import { HelpButton, windowShortcuts } from "./HelpPanel";
 import { useDragResize, MIN_CARD_W, MIN_CARD_H, type CardLayout, type Rect } from "./useWindowCard";
+// Alias 'tr' (no 't'): este archivo ya usa 't' como variable de tarea en
+// varios '.map((t) => …)' — evita sombrear/confundir.
+import { useT } from "@/store/useI18n";
 
 interface Props {
   project: Project;
@@ -25,6 +28,8 @@ interface Props {
   layout: CardLayout;
   bounds: { width: number; height: number };
   onInteractStart: () => void;
+  /** [2026-07-25] ¿Es la tarjeta al frente? Solo para el borde de foco. */
+  isFront?: boolean;
   onCommit: (patch: Partial<CardLayout>) => void;
   onMinimize: () => void;
   onToggleExpanded: () => void;
@@ -38,10 +43,11 @@ interface Props {
 }
 
 export function ProjectCard({
-  project, allProjects, layout, bounds, onInteractStart, onCommit,
+  project, allProjects, layout, bounds, onInteractStart, isFront, onCommit,
   onMinimize, onToggleExpanded, isOverShelf, onEditProject, onProjectsRefresh,
   onOpenAgentWindow, agentsRefreshTick,
 }: Props) {
+  const tr = useT();
   // Alto "en vivo" mientras se arrastra un asa de resize — separado del
   // layout.h ya confirmado (el que vive en el padre + localStorage). Pedido
   // explicito: el contenido se reorganiza MIENTRAS se redimensiona, no solo
@@ -171,9 +177,9 @@ export function ProjectCard({
   return (
     <div
       ref={nodeRef}
-      className={`glass-surface rounded-2xl border border-base-700 shadow-glass flex flex-col overflow-hidden ${
-        layout.expanded ? "absolute inset-0" : "absolute top-0 left-0"
-      }`}
+      className={`glass-surface rounded-2xl shadow-glass flex flex-col overflow-hidden border ${
+        isFront ? "border-accent/45" : "border-base-700"
+      } ${layout.expanded ? "absolute inset-0" : "absolute top-0 left-0"}`}
       style={{ ...rectStyle, zIndex: layout.zIndex }}
       onPointerDownCapture={onInteractStart}
     >
@@ -184,7 +190,7 @@ export function ProjectCard({
         className={`flex items-center gap-2 px-3.5 py-2.5 border-b border-base-700/60 shrink-0 select-none ${
           layout.expanded ? "" : "cursor-grab active:cursor-grabbing"
         }`}
-        title="Arrastra para mover · doble clic para expandir"
+        title={tr("workspace.projectCard.dragToMove")}
       >
         <div className="min-w-0 flex-1 flex items-center gap-2">
           <span className="text-sm font-semibold text-ink truncate">{project.name}</span>
@@ -196,30 +202,30 @@ export function ProjectCard({
           <HelpButton
             open={helpOpen}
             onToggle={() => setHelpOpen((v) => !v)}
-            extra={[...windowShortcuts(layout.expanded), ...(layout.expanded ? KANBAN_SHORTCUTS : [])]}
+            extra={[...windowShortcuts(layout.expanded, tr), ...(layout.expanded ? kanbanShortcuts(tr) : [])]}
           />
         </span>
-        <button onClick={(e) => { e.stopPropagation(); onEditProject(); }} className="text-ink-faint hover:text-ink text-xs px-1.5 shrink-0" title="Editar proyecto">✎</button>
-        <button onClick={(e) => { e.stopPropagation(); onToggleExpanded(); }} className="text-ink-faint hover:text-ink text-xs px-1.5 shrink-0" title={layout.expanded ? "Restaurar" : "Expandir"}>
+        <button onClick={(e) => { e.stopPropagation(); onEditProject(); }} className="text-ink-faint hover:text-ink text-xs px-1.5 shrink-0" title={tr("workspace.projectCard.editProject")}>✎</button>
+        <button onClick={(e) => { e.stopPropagation(); onToggleExpanded(); }} className="text-ink-faint hover:text-ink text-xs px-1.5 shrink-0" title={layout.expanded ? tr("workspace.projectCard.restore") : tr("workspace.projectCard.expand")}>
           {layout.expanded ? "⤡" : "⤢"}
         </button>
-        <button onClick={(e) => { e.stopPropagation(); onMinimize(); }} className="text-ink-faint hover:text-ink text-sm px-1.5 shrink-0" title="Minimizar a la estantería">—</button>
+        <button onClick={(e) => { e.stopPropagation(); onMinimize(); }} className="text-ink-faint hover:text-ink text-sm px-1.5 shrink-0" title={tr("workspace.projectCard.minimize")}>—</button>
       </div>
 
       {/* Cuerpo */}
       <div className="flex-1 min-h-0 overflow-y-auto px-4 py-3.5 flex flex-col gap-3.5">
         {loading ? (
-          <p className="text-xs text-ink-faint py-4">Cargando…</p>
+          <p className="text-xs text-ink-faint py-4">{tr("common.loading")}</p>
         ) : (
           <>
             <div className="flex items-center justify-between gap-2">
-              <button onClick={() => setTaskEdit(null)} className="text-xs px-2.5 py-1 bg-accent/15 text-accent rounded-lg border border-accent/30 hover:bg-accent/25">+ Tarea</button>
+              <button onClick={() => setTaskEdit(null)} className="text-xs px-2.5 py-1 bg-accent/15 text-accent rounded-lg border border-accent/30 hover:bg-accent/25">{tr("workspace.projectCard.addTask")}</button>
               <span className="text-[10px] text-ink-faint">{project.status}</span>
             </div>
 
             <div>
               <div className="flex justify-between items-center text-[11px] mb-1.5">
-                <span className="text-ink-dim truncate">{activeMilestone ? activeMilestone.name : "Progreso"}</span>
+                <span className="text-ink-dim truncate">{activeMilestone ? activeMilestone.name : tr("workspace.projectCard.progress")}</span>
                 <span className="text-ink font-medium shrink-0 ml-2">
                   {activeMilestone?.progress ? `${activeMilestone.progress.done}/${activeMilestone.progress.total} · ` : ""}{pct(activeRatio)}%
                 </span>
@@ -232,22 +238,22 @@ export function ProjectCard({
             {showMilestones && (
               <section>
                 <div className="flex items-center justify-between mb-1.5">
-                  <h3 className="text-xs font-medium text-ink-dim">Milestones</h3>
-                  <button onClick={() => setMilestoneEdit(null)} className="text-[11px] text-accent hover:text-accent-soft">+ Milestone</button>
+                  <h3 className="text-xs font-medium text-ink-dim">{tr("workspace.projectCard.milestones")}</h3>
+                  <button onClick={() => setMilestoneEdit(null)} className="text-[11px] text-accent hover:text-accent-soft">{tr("workspace.projectCard.addMilestone")}</button>
                 </div>
                 <div className="flex flex-col gap-1">
                   {milestones.map((m) => (
                     <button key={m.id} onClick={() => setMilestoneEdit(m)} className="text-left glass-surface rounded-lg px-2.5 py-1.5 hover:border-accent/30 border border-transparent transition-all">
                       <div className="flex items-center justify-between gap-2">
                         <div className="flex items-center gap-1.5 min-w-0">
-                          <span className={`text-[9px] px-1 py-0.5 rounded shrink-0 ${m.status === "active" ? "bg-accent/15 text-accent" : m.status === "done" ? "bg-signal-ok/15 text-signal-ok" : "bg-base-700/60 text-ink-faint"}`}>{MS_STATUS_LABEL[m.status] ?? m.status}</span>
+                          <span className={`text-[9px] px-1 py-0.5 rounded shrink-0 ${m.status === "active" ? "bg-accent/15 text-accent" : m.status === "done" ? "bg-signal-ok/15 text-signal-ok" : "bg-base-700/60 text-ink-faint"}`}>{MS_STATUS_KEY[m.status] ? tr(MS_STATUS_KEY[m.status]) : m.status}</span>
                           <span className="text-xs text-ink truncate">{m.name}</span>
                         </div>
                         {m.progress && <span className="text-[10px] text-ink-faint shrink-0 tabular-nums">{pct(m.progress.ratio)}%</span>}
                       </div>
                     </button>
                   ))}
-                  {milestones.length === 0 && <p className="text-[11px] text-ink-faint px-1">Sin milestones.</p>}
+                  {milestones.length === 0 && <p className="text-[11px] text-ink-faint px-1">{tr("workspace.projectCard.noMilestones")}</p>}
                 </div>
               </section>
             )}
@@ -287,7 +293,7 @@ export function ProjectCard({
                 ) : (
                   <section>
                     <h3 className="text-xs font-medium text-ink-dim mb-1.5">
-                      Tareas {activeMilestone ? <span className="text-ink-faint font-normal">· {activeMilestone.name}</span> : ""}
+                      {tr("workspace.projectCard.tasks")} {activeMilestone ? <span className="text-ink-faint font-normal">· {activeMilestone.name}</span> : ""}
                     </h3>
                     <TaskList tasks={tasks} activeMilestoneId={activeMilestone?.id ?? null} onToggle={toggleTaskDone} onOpen={(t) => setTaskEdit(t)} />
                   </section>
@@ -295,7 +301,7 @@ export function ProjectCard({
 
                 {recentTasks.length > 0 && (
                   <section>
-                    <h3 className="text-xs font-medium text-ink-dim mb-1.5">Actividad reciente</h3>
+                    <h3 className="text-xs font-medium text-ink-dim mb-1.5">{tr("workspace.projectCard.recentActivity")}</h3>
                     <div className="flex flex-col gap-1">
                       {recentTasks.map((t) => (
                         <div key={t.id} className="text-[11px] text-ink-faint flex items-center gap-2">

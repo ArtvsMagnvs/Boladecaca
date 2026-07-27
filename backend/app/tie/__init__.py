@@ -41,6 +41,7 @@ from app.tie import intents
 from app.tie import tracer
 from app.tie import executor
 from app.tie import responder
+from app.tie import conversation
 from app.tie.missions import new_mission
 
 # --- Pipeline (la interfaz de orquestación) ---
@@ -53,14 +54,24 @@ from app.tie.capabilities_map import summary as capabilities_summary
 
 def register_handlers() -> None:
     """Cablea el TIE con el ApprovalGate y el bus de eventos: gates de NODO
-    (executor, T3) + gate del PLAN (pipeline, T4). Lo llama el `lifespan`.
-    Idempotente."""
+    (executor, T3) + gate del PLAN (pipeline, T4) + reporte de misiones en
+    segundo plano (conversation, A·VOZ-4). Lo llama el `lifespan`. Idempotente."""
     executor.register_gate_handlers()
     register_plan_handlers()
+    conversation.register_handlers()
 
 # `classify` promovido al top-level por comodidad (lo usan el pipeline y quien
 # quiera "entender" un mensaje sin ejecutarlo — p.ej. el AE al decidir delegar).
 classify = intents.classify
+# [A·VOZ-6] El pre-clasificador determinista (0 LLM) también se expone: el
+# Orquestador lo usa para NO mostrar "analizando" ni pagar el round-trip del
+# clasificador en la charla obvia (una charla no debe parecer una misión).
+fast_precheck = intents.fast_precheck
+# [2026-07-24] Respuesta determinista sobre los datos propios (proyectos,
+# agentes, reglas, tareas): SQL + plantilla, 0 LLM, 0 alucinación. El
+# Orquestador la consulta ANTES de clasificar.
+from app.tie import quick_answers as _quick_answers  # noqa: E402
+quick_answer = _quick_answers.try_answer
 
 __all__ = [
     # contratos
@@ -83,6 +94,8 @@ __all__ = [
     "list_runtimes",
     # intent + misiones + trazas
     "classify",
+    "fast_precheck",
+    "quick_answer",
     "new_mission",
     "tracer",
     # motor de ejecución del grafo (T3): run/cancel/resume_pending/register_gate_handlers

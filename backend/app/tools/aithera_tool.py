@@ -86,6 +86,9 @@ class AitheraTool(BaseTool):
             "toggle_rule": self._toggle_rule,
             # Email
             "create_auto_reply_rule": self._create_auto_reply_rule,
+            # Configuración de la app (idioma, modelo del chat)
+            "set_language": self._set_language,
+            "set_chat_model": self._set_chat_model,
         }.get(action)
         if not handler:
             return {"success": False, "result": None, "error": f"Acción desconocida: {action}"}
@@ -163,6 +166,18 @@ class AitheraTool(BaseTool):
                         "action": "'auto_send'|'create_draft'|'alert_only' (default auto_send)",
                         "reply_template": "string opcional", "ai_prompt": "string opcional",
                         "autonomy": "'propose'|'auto' (default propose)"}},
+            # ---- Configuración de la app ----
+            {"id": "set_language", "description": (
+                "Cambia el IDIOMA de la aplicación (interfaz y respuestas del chat). "
+                "Úsalo cuando el usuario diga 'cambia el idioma a X' / 'ponte en inglés'."),
+             "requires_confirmation": False,
+             "params": {"language": "código o nombre: es/en/fr/pt o 'español'/'inglés'/'francés'/'portugués'"}},
+            {"id": "set_chat_model", "description": (
+                "Fija el MODELO PRINCIPAL del chat (capacidad CHAT) en la política de "
+                "Inteligencia activa. Úsalo cuando el usuario diga 'pon Minimax como modelo "
+                "del chat' / 'usa Claude para el chat a partir de ahora'."),
+             "requires_confirmation": True,
+             "params": {"model": "nombre del modelo o proveedor (p.ej. 'minimax', 'MiniMax-M3', 'claude')"}},
         ]
 
     # ------------------------------------------------------------------
@@ -203,9 +218,17 @@ class AitheraTool(BaseTool):
             open_tasks = (db.query(Task)
                           .filter(Task.project_id == project.id, Task.status != "done")
                           .order_by(Task.priority.desc()).limit(20).all())
+            # [2026-07-25] `repo_path` y `docs` viajan en la respuesta: son el
+            # material del proyecto (carpeta local, archivos adjuntos, enlaces).
+            # Sin ellos, un agente que consulta su proyecto no sabía qué
+            # documentos tiene a mano para leerlos con `filesystem`/`document`.
+            docs = project.docs if isinstance(project.docs, list) else []
             return {"success": True, "result": {
                 "id": project.id, "name": project.name, "status": project.status,
                 "progress": project.progress, "current_version": project.current_version,
+                "repo_path": project.repo_path,
+                "files": [d for d in docs if isinstance(d, dict) and d.get("kind") == "file"],
+                "links": [d for d in docs if isinstance(d, dict) and d.get("kind") != "file"],
                 "milestones": [{"id": m.id, "name": m.name, "status": m.status} for m in milestones],
                 "open_tasks": [{"id": t.id, "title": t.title, "status": t.status} for t in open_tasks],
             }, "error": None}
@@ -507,3 +530,57 @@ class AitheraTool(BaseTool):
         from .email_tool import EmailTool
 
         return await EmailTool().execute("add_auto_reply_rule", params)
+
+    # ------------------------------------------------------------------
+    # Configuración de la app (idioma, modelo del chat)
+    # ------------------------------------------------------------------
+
+    async def _set_language(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Cambia `Config.app_language`. Acepta código (es/en/fr/pt) o nombre en
+        varios idiomas. El frontend lee este Config al arrancar/refrescar; el
+        idioma de respuesta del chat lo aplica `app.core.language` al instante."""
+        from app.db.database import Config, SessionLocal
+
+        raw = str(params.get("language") or "").strip().lower()
+        alias = {
+            "es": "es", "español": "es", "espanol": "es", "spanish": "es", "castellano": "es",
+            "en": "en", "inglés": "en", "ingles": "en", "english": "en",
+            "fr": "fr", "francés": "fr", "frances": "fr", "french": "fr", "français": "fr",
+            "pt": "pt", "portugués": "pt", "portugues": "pt", "portuguese": "pt", "português": "pt",
+        }
+        code = alias.get(raw) or (raw[:2] if raw[:2] in ("es", "en", "fr", "pt") else None)
+        if not code:
+            return {"success": False, "result": None,
+                    "error": f"idioma no soportado: {params.get('language')!r}. Usa es/en/fr/pt."}
+        db = SessionLocal()
+        try:
+            row = db.query(Config).filter(Config.key == "app_language").first()
+            if row:
+                row.value = code
+            else:
+                db.add(Config(key="app_language", value=code))
+            db.commit()
+        finally:
+            db.close()
+        return {"success": True, "result": {"app_language": code}, "error": None}
+
+    async def _set_chat_model(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Fija el modelo PRIMARIO de la capacidad CHAT en la política activa del
+        MEL — el mismo camino que Ajustes → Inteligencia (`set_policy_primary`),
+        sin reimplementar nada."""
+        from app.mel import (Capability, active_policy_name, resolve_model_name,
+                             set_policy_primary)
+
+        want = str(params.get("model") or "").strip()
+        if not want:
+            return {"success": False, "result": None, "error": "falta el parámetro 'model'"}
+        ref = resolve_model_name(want)   # fuzzy: "minimax" -> ModelRef, o None
+        if ref is None:
+            return {"success": False, "result": None,
+                    "error": f"no reconozco el modelo {want!r}. Dime uno de los conectados en Ajustes → Proveedores."}
+        active = active_policy_name() or "economy"
+        try:
+            set_policy_primary(active, Capability.CHAT.value, ref.key)
+        except Exception as e:
+            return {"success": False, "result": None, "error": f"no se pudo fijar el modelo: {type(e).__name__}: {e}"}
+        return {"success": True, "result": {"chat_model": ref.key, "policy": active}, "error": None}

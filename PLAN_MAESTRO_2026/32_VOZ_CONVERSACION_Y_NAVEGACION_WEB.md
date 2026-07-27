@@ -231,6 +231,40 @@ Pasos exactos:
 (o falla), me lo dice sin que yo pregunte. Una charla intercalada no espera a la
 misión.
 
+> **✅ HECHO (backend, 2026-07-24)**. Implementación:
+> - `ChatRequest.conversational: bool = False` (append-only) → hilo por el
+>   endpoint `/api/chat/stream` → `orchestrator.handle_stream(conversational=)` →
+>   `tie.handle_stream(conversational=)`. Default `False` = modo texto clásico
+>   intacto (no-regresión verificada por test).
+> - **`app/tie/conversation.py`** (NEW, interno del TIE, vigilado por
+>   `test_module_boundaries`): registro de misiones de fondo (mission_id →
+>   contexto de entrega) + acuse determinista (0 LLM, para el < 2 s) + UN handler
+>   suscrito a `mission.completed`/`mission.failed` que, SOLO para misiones
+>   registradas, construye el reporte NL desde el outcome de la traza y lo
+>   entrega. Las misiones de primer plano/AE/WPMS (que emiten los mismos eventos)
+>   se ignoran.
+> - **Decisión de diseño clave — event-driven, no `await` inline**: una misión
+>   con paso sensible se PAUSA en el gate del plan y termina MUCHO después (otra
+>   petición HTTP, tras aprobar). El bus captura esa terminación tardía igual de
+>   bien que la inmediata; un `await` inline no podría. El caso "waiting" se avisa
+>   aparte (`on_gate_pending`: "necesito tu permiso para X", sin bloquear el
+>   diálogo) y la misión se mantiene registrada para el reporte final al aprobar.
+> - **Entrega por el canal**: Telegram/externo vía `core/notify.py` (R5); chat
+>   web (Electron, sin push por SSE ya cerrado) vía cola sondeable +
+>   `ChatMessage` persistido → `GET /api/chat/pending-reports?session_id=&after=`
+>   (cursor `seq`). En voz, ese mismo texto se locuta.
+> - Multi-objetivo (Orquestador) en conversación: acuse YA + orquestación entera
+>   en 2.º plano + reporte del `run.outcome` consolidado por el canal.
+> - Tests: `test_voz4_background.py` (6 — acuse sin esperar a la misión, reporte
+>   al terminar por cola+notify+ChatMessage, modo texto clásico inalterado, charla
+>   sin crear misión, el bus ignora misiones no registradas, gate del plan avisa
+>   sin bloquear). Suite backend: **992 passed**.
+> - **PENDIENTE (frontend, entrelazado con el onboarding/i18n de doc 30)**: el
+>   chat de VOZ debe poner `conversational: true`, y `Chat.tsx` debe sondear
+>   `/api/chat/pending-reports` (patrón de `Missions.tsx`) para pintar el reporte
+>   como burbuja con enlace "ver la misión". El backend está completo y testeado;
+>   solo falta el cableado de UI.
+
 ---
 
 ## A·VOZ-5 — Kokoro-onnx opcional (voz local de máxima calidad, SIN Docker)
@@ -274,6 +308,59 @@ Pasos exactos:
 instala sola (pip + modelo, con progreso) sin Docker/admin/reboot; la voz local
 suena; desactivarlo vuelve a EdgeTTS.
 
+> **Cierre A·VOZ-5 (2026-07-24, Opus)** — hecho desde Cowork; commit desde
+> Claude Code. **La pregunta clave ("¿hay problemas serios para que Kokoro
+> funcione sin Docker?") — respondida y verificada en vivo: NO los hay.** La
+> investigación del stub anterior (paquete `kokoro` de PyTorch) daba dos miedos
+> reales: (a) conflicto de numpy y cadena `misaki→spacy→thinc→blis` que no
+> compila en 3.13; (b) la fricción "espeak not installed" en Windows. **Ambos
+> desaparecen con `kokoro-onnx` 0.5.0**, confirmado instalándolo de verdad en
+> el sandbox:
+> - **Deps alineadas, no en conflicto**: `kokoro-onnx` requiere `numpy>=2.0.2`
+>   y `onnxruntime>=1.20.1` — exactamente lo que el backend YA corre (chromadb
+>   trae onnxruntime, el stack va en numpy 2.x). Instala **sin torch, sin spacy,
+>   sin misaki** (verificado: `find_spec('torch'|'spacy'|'misaki')` → None).
+>   Python 3.10–3.13 ✅.
+> - **espeak empaquetado**: la dep `espeakng-loader` trae la librería espeak-ng
+>   como wheel por plataforma (**incluye `win_amd64`**, 9.2 MB). El usuario NO
+>   instala espeak aparte. Y `kokoro-onnx` cablea la DLL+datos **por sí solo**
+>   (su `tokenizer.py` llama a `EspeakWrapper.set_data_path`/`set_library` con
+>   las rutas de `espeakng_loader`) → el "phontab not found" que aparece si se
+>   hace a mano ya está resuelto dentro de la librería.
+> - **G2P verificado en vivo** con una frase ES con nombres propios (criterio
+>   del doc): "Hola Alejandro, soy Aithera. Nos vemos en Madrid el jueves." →
+>   IPA correcta `ola alexandɾo soɪ aɪteɾa nos βemos en maðɾið el xweβes`.
+>
+> **Implementación**: (1) `app/voice/kokoro_voice.py` reescrito sobre
+> `kokoro_onnx.Kokoro` — carga PEREZOSA (no en el arranque), thread-safe, modelo
+> en `%APPDATA%/Aithera/kokoro/` (override `AITHERA_KOKORO_DIR`), `is_available()`
+> = librería instalada **Y** modelo descargado, `synthesize_wav` → WAV 24 kHz
+> mono; mapa voz→idioma; voces curadas (ES primero) + FR/PT. (2)
+> `endpoints/voice.py`: instalador en 2 fases con seguimiento real —
+> `pip install kokoro-onnx soundfile` + descarga del modelo **cuantizado int8
+> ~80 MB** y voces ~28 MB con **barra de progreso** (estados
+> idle/installing/downloading/done/failed), descarga atómica (.part→rename);
+> `/kokoro/status` expone `library_installed`/`model_downloaded`/`progress`. (3)
+> **Degradación graciosa**: `provider=kokoro` que falla (sin lib, sin modelo, o
+> fallo de carga) **cae a EdgeTTS con log**, ya no devuelve 502 — nunca voz muda.
+> (4) Frontend `VoicePanel.tsx`: comentario obsoleto ("Kokoro no soporta 3.13")
+> corregido; el banner de instalación ya consumía `status.message` (que ahora
+> lleva el progreso). **Tests**: `test_kokoro_voice.py` (17 — disponibilidad
+> lib+modelo, mapa de idiomas, síntesis WAV con doble de kokoro-onnx, error
+> paths, `/kokoro/status` en 3 estados, idempotencia del instalador, worker
+> mockeado SIN red llega a `done`, y el fallback a EdgeTTS en `/synthesize` y
+> `/synthesize/base64`). Suite de voz: **44 passed** (kokoro + voice + text_clean
+> + elevenlabs), sin romper nada. `py_compile` limpio. `requirements.txt`
+> actualizado (nota vieja de "Kokoro imposible" reemplazada por la realidad
+> kokoro-onnx). **Pendiente de verificación EN VIVO en Windows** (criterio de
+> cierre "la voz local suena"): la síntesis de audio real con el modelo
+> descargado — en el sandbox el modelo (~108 MB) excede el throughput/tiempo por
+> llamada, así que la inferencia ONNX end-to-end se prueba en la máquina del
+> usuario (instalar desde Ajustes → Voz, sintetizar una frase, confirmar que
+> suena y que al desactivar Kokoro vuelve EdgeTTS). Todo lo que era RIESGO
+> (deps, numpy, G2P/espeak en Windows) está cerrado; lo que queda es la
+> comprobación auditiva, que por naturaleza es en vivo.
+
 ---
 
 ## A·VOZ-6 — Pulido de latencia STT/TTS y verificación del win recuperado
@@ -298,6 +385,59 @@ Pasos exactos:
 
 **Criterio de cierre**: medición `[voz-perfil]` con TTFB < 2s en charla; la 1.ª
 frase de voz suena antes de terminar de generar el texto.
+
+> **Cierre A·VOZ-6 (2026-07-24, Opus)** — hecho desde Cowork; commit desde Claude
+> Code. **Bug real del usuario cazado y corregido de raíz**: "preguntas simples
+> como '¿cómo estás?' seguían entrando en misiones, se quedaban en 'analizando'
+> y tardaban muchísimo". La auditoría del flujo `chat.py → orchestrator.handle_stream
+> → tie.handle_stream` reveló DOS regresiones de latencia en el hot path del
+> chat/voz que el fast-path de A·VOZ-2 no cubría del todo:
+> 1. **"analizando" prematuro y engañoso**: `orchestrator.handle_stream` emitía
+>    `("status","analizando")` SIEMPRE, ANTES de clasificar — así que hasta un
+>    saludo mostraba "analizando" y parecía una misión. Y `tie.handle_stream`
+>    lo emitía OTRA VEZ. **Fix**: el orquestador hace ahora `fast_precheck`
+>    (0 LLM, exportado en el barrel) PRIMERO — la charla obvia se delega directa
+>    al TIE con el intent ya resuelto, **sin "analizando" y sin tocar el
+>    clasificador LLM**. `tie.handle_stream` mueve el `("status","analizando")`
+>    a DESPUÉS del check de camino corto: solo las MISIONES lo muestran (donde
+>    cubre la latencia real del planner). Un "¿cómo estás?" ya no dice
+>    "analizando" — arranca a responder.
+> 2. **Prefetch del MOS desperdiciado**: `tie.handle_stream` hacía
+>    `await _prefetch_context(text)` (consulta al MOS, presupuesto 300 ms) ANTES
+>    de decidir el camino corto, y el camino corto **lo descartaba** (arma su
+>    propio contexto dentro de `NullRuntime.stream_task`/`build_system_prompt`).
+>    Latencia muerta en CADA turno de charla. **Fix**: el prefetch se computa
+>    solo cuando la ejecución ya es una misión (camino complejo/de fondo, que sí
+>    lo consume). El camino corto no lo paga.
+> **Profiling añadido** (para "verificar el win recuperado", el objetivo de esta
+> sesión): `[tie-perfil] classify LLM: {ms}ms modelo=...` (en `intents.classify`
+> — si un mensaje NO trivial tarda, se ve si es que el modelo de `classify` está
+> mal enrutado: debería ser rápido/local) y `[tie-perfil] camino corto, primer
+> token: {ms}ms` (en `_short_path_stream` — el TTFT real; si es alto en charla,
+> el cuello es el modelo de CHAT, ya NO el TIE, que en ese camino no pone traza,
+> status ni prefetch). Junto al `[voz-perfil]` del frontend (VZ5) dan el desglose
+> completo STT / classify / primer token / voz. **UI de Voz** (petición del
+> usuario, misma sesión): cada sistema de voz (EdgeTTS/ElevenLabs/Kokoro) muestra
+> etiquetas "de un vistazo" (Gratis · Voces básicas · Sin descargas / Voces
+> premium · Suscripción / Gratis · Voces avanzadas · Requiere descarga), cada
+> una EN SU MARCO para no mezclarse, color por TIPO de rasgo (verde=gratis,
+> ámbar=fricción, acento=nivel de voz, neutro=sin fricción), proveedor activo
+> resaltado; se quitó "sin Docker" de los textos visibles y el tooltip obsoleto
+> de Kokoro ("no soportado en Python 3.13"). Tests: `test_charla_obvia_no_clasifica_
+> ni_muestra_analizando` (orquestador), `test_handle_stream_camino_corto_solo_
+> tokens_sin_status` + `test_camino_corto_no_paga_prefetch_de_contexto` (TIE) +
+> el test existente de no-reclasificar actualizado a un mensaje no-trivial. Suite
+> tie/orchestrator: **106 passed** (72 + 34), `py_compile`/`tsc` limpios.
+> **Pendiente de medición EN VIVO en Windows** (criterio de cierre): con el
+> backend relanzado (código nuevo), mirar `[tie-perfil]`/`[voz-perfil]` en una
+> charla real — TTFB < 2 s. **Nota importante de diagnóstico**: si tras estos
+> cambios "¿cómo estás?" SIGUE lento en la máquina del usuario, el cuello ya NO
+> es el TIE (código probado sin status/prefetch/misión en charla) sino el modelo
+> de CHAT de la política MEL activa — el `[tie-perfil] camino corto, primer token`
+> lo dirá; la acción sería enrutar CHAT a un modelo rápido/local en Ajustes →
+> Inteligencia. Pasos 2 (STT `tiny`) y 3 (Silero VAD) del plan quedan como mejora
+> incremental opcional, no bloqueante: el cuello estructural (classify/status/
+> prefetch en el hot path) es lo que esta sesión eliminó.
 
 ---
 
@@ -350,6 +490,254 @@ Pasos exactos:
 **Criterio de cierre**: en una charla de varios turnos, el MOS se consulta 1 vez
 por sesión (no por mensaje), medido por `ctx-sesión HIT`; una memoria guardada a
 mitad de sesión aparece en el siguiente turno (no se pierde).
+
+> **Cierre A·VOZ-7 (2026-07-24, Opus)** — hecho desde Cowork; commit desde Claude
+> Code. Implementado como **superset SEGURO del "1 vez por sesión" literal**, por
+> el "matiz importante" del propio plan (project_memory_should_never_skip): se
+> cachea el contexto del MOS por sesión, pero con guardas que impiden que una
+> memoria relevante quede fuera. **Implementación**:
+> - `chat_service._mos_context_session(query, session_id, project_id)`: envuelve
+>   la llamada real al MOS (`_mos_context_block`, presupuesto 300 ms intacto) con
+>   una caché `_SESSION_CTX[session_id] = (query, ctx, expiry, mem_version)`. Un
+>   turno es **HIT** (0 consultas al MOS, reusa el snapshot) solo si: no ha
+>   expirado (TTL `TIE_SESSION_CTX_TTL_S`, default 600 s), la **versión de
+>   escritura de memoria no cambió**, y el **tema de la consulta es el mismo**
+>   (Jaccard ≥ 0.5 de tokens de contenido, `_same_topic`). Si algo de eso falla →
+>   **MISS**: re-consulta y refresca. Emite `[voz-perfil] ctx-sesión HIT/MISS`.
+> - `memory_router.write_version()` (NEW): contador monótono que sube en CADA
+>   `store()` (usuario, agente, ingesta, resumen nocturno — el punto único de
+>   escritura). Es lo que hace que una memoria guardada a mitad de charla entre
+>   en el turno siguiente (la regla "memoria fresca nunca invisible", C-1b). Es
+>   un CONTADOR, no un evento: funciona en contexto sync y no depende de que un
+>   handler llegue a tiempo.
+> - `session_id` enhebrado hasta `build_system_prompt` desde los 4 caminos de
+>   chat: `answer()` (no-stream), `chat.py::/stream`, `NullRuntime.stream_task`
+>   (el camino real del chat de Electron) y `NullRuntime.execute_task`. Solo la
+>   **charla general** cachea así (con `session_id` y **sin** `project_id`): las
+>   misiones usan el enricher por-nodo (su propia caché de 60 s de T2) y los
+>   chats de proyecto no comparten el caché de charla (aislamiento C-1b intacto).
+> **Por qué el superset y no el literal**: congelar el contexto de la sesión al
+> PRIMER turno haría que, tras un "hola" (contexto casi vacío), una pregunta
+> posterior "¿cómo va mi proyecto X?" reutilizara ese vacío y se saltara la
+> memoria del proyecto — justo lo que el plan advierte que no debe pasar. Con la
+> guarda de tema + versión, una charla de varios turnos SOBRE LO MISMO paga UNA
+> consulta (el win real y medible: HITs consecutivos), y un cambio de tema o una
+> memoria nueva vuelven a consultar (la corrección). El perfil del usuario
+> (`_profile_block`, hechos deterministas) NO se cachea aquí — se lee entero cada
+> turno, así que la identidad del usuario siempre está fresca. Tests:
+> `test_session_context.py` (10 — HIT mismo tema/sesión = 1 consulta; MISS por
+> cambio de sesión, cambio de tema, escritura en memoria, y TTL expirado; sin
+> `session_id` o con `project_id` no cachea; unidad de `_same_topic`). Suite
+> chat/tie/orchestrator: **75 passed** (+10 skip de ChromaDB del entorno).
+> `py_compile` limpio. **Pendiente de medición EN VIVO en Windows** (criterio de
+> cierre): con el backend relanzado, ver `[voz-perfil] ctx-sesión HIT` a partir
+> del 2.º turno de una charla y confirmar que guardar algo en memoria a mitad
+> aparece en el turno siguiente. **Beneficio esperado, además de menos consultas
+> al MOS**: al no cambiar el bloque de memoria turno a turno, el prefijo del
+> system prompt es estable → los proveedores con caché de prompt (Anthropic, etc.)
+> dejan de invalidarlo cada turno, bajando coste y TTFT (la razón original de
+> Hermes). Con esto, **el BLOQUE A (voz/conversación) queda completo** salvo las
+> mejoras incrementales opcionales de A·VOZ-6 (STT `tiny`, Silero VAD).
+
+---
+
+## A·VOZ-8 — Idioma real y latencia de voz: causas raíz (2026-07-24, Opus)
+**Modelo: Opus · Esfuerzo: Alto** — *(petición directa del usuario tras 7+ sesiones
+de voz: "busca los motivos reales y soluciónalos de raíz, no parches")*
+
+Dos quejas persistentes, auditadas hasta la causa raíz (no síntoma):
+
+**(1) "El chat SIEMPRE responde en español (con acento del idioma elegido), y las
+voces de prueba de otros idiomas leen español con acento".** Tres causas reales
+distintas, las tres arregladas:
+- **Directiva de idioma ineficaz** (causa del chat en español): I18N-9 SÍ inyectaba
+  "responde SIEMPRE en English", pero (a) escrita EN ESPAÑOL y (b) enterrada tras un
+  prompt 95% español (base + personalidad `_AITHERA_PROMPT` + capacidades, todo en
+  español). Un modelo local (llama3, etc.) ancla al idioma dominante e ignora una
+  orden suelta. **Fix**: `language.py::language_directive()` reescrita EN EL IDIOMA
+  OBJETIVO ("You MUST write EVERY response in English…", "tu DOIS écrire…", "DEVES
+  escrever…") y `build_system_prompt` la coloca LA PRIMERA del prompt. Verificado:
+  el prompt empieza por `CRITICAL — RESPONSE LANGUAGE` / `CRITIQUE` / `CRÍTICO`.
+- **STT forzado a español** (`Chat.tsx` bucle de conversación línea 592 hardcodeaba
+  `transcribeVoice(blob, "es", …)`): al hablar en inglés, Whisper transcribía como
+  español mal fonetizado. **Fix**: usa `uiLangRef.current` (idioma de interfaz), vía
+  un ref para que el `useCallback` del bucle no quede con un idioma obsoleto.
+- **Preview de voces siempre en español** (`VoicePanel`: `previewText: DEFAULT_PREVIEW`
+  fijo): probar una voz francesa leía la frase ESPAÑOLA con acento francés — justo
+  lo reportado. **Fix**: `previewForLang(lang)` — cada voz lee una frase de SU idioma
+  (es/en/fr/pt/ja/zh).
+
+**(2) "La voz va lenta tras 7 sesiones".** Dos causas estructurales reales:
+- **I/O de memoria bloqueante y en serie en el hot path**: `build_system_prompt`
+  llamaba `_preferences_block` (búsqueda ChromaDB SÍNCRONA, ~150 ms embebiendo la
+  query) y `_profile_block` (lectura de BD síncrona) DIRECTAMENTE dentro de una
+  función async — bloqueaban el event loop Y corrían en serie con la consulta al MOS.
+  Cada turno pagaba la SUMA. **Fix**: `_memory_blocks_session` calcula los tres
+  bloques con `asyncio.gather` y las lecturas sync van a `to_thread` — coste = MÁXIMO,
+  no suma, y sin bloquear el loop. (Además unifica la caché por sesión de A·VOZ-7:
+  el bundle entero se cachea, no solo el MOS; `_mos_context_session` → `_memory_blocks_session`).
+- **La voz usaba el modelo PESADO de la política de calidad del usuario**: si el chat
+  está en "custom→claude/opus" o un local lento, cada respuesta hablada tardaba
+  segundos. El propio código ya sabía que "en la máquina del usuario el local barato
+  tarda 100s+/paso" (por eso `TIE_TOOL_POLICY="speed"`). **Fix**: la respuesta de VOZ
+  (`conversational=True`) se enruta por `VOICE_CHAT_POLICY` (default **"speed"**, el
+  modelo más rápido MEDIDO de esa máquina) vía `policy_override`; el chat de TEXTO
+  mantiene la política de calidad del usuario. `AgentTask.conversational` (append-only)
+  lleva el flag desde el camino corto hasta `NullRuntime.stream_task`. Un modelo
+  explícito del usuario (`model_hint`) siempre manda sobre la política de voz.
+
+Tests: `test_voice_latency.py` (3 — voz usa política rápida, texto no, modelo
+explícito manda) + `test_i18n_language.py` actualizado (directiva nativa por idioma,
+prompt empieza por ella) + `test_session_context.py` migrado al bundle
+`_memory_blocks_session`. Suite chat/tie/orchestrator/voz: **126 passed** (49 + 77),
+`py_compile`/`tsc` limpios. Verificado en el sandbox: la directiva sale la primera y
+en el idioma correcto en en/fr/pt. **Pendiente de medición EN VIVO en Windows**:
+`[voz-perfil]` con la política de voz activa (esperado: `llm_1er_token` mucho menor
+si su chat estaba en un modelo pesado), y confirmar que al elegir inglés/francés el
+chat responde y la voz lee EN ESE idioma. **Honestidad sobre el límite**: si el
+usuario NO tiene ningún modelo rápido conectado (solo un local lento y sin nube), la
+latencia del propio modelo es un límite de hardware que ninguna optimización de
+software elimina — pero el reparto a "speed" garantiza que se usa el más rápido
+disponible, y el `[voz-perfil]` lo hará visible.
+
+---
+
+## A·VOZ-9 — Arreglo de RAÍZ: proyectos reales, self-operación, voz↔idioma (2026-07-24, Opus)
+**Petición furiosa del usuario tras que A·VOZ-8 NO arreglara los problemas de fondo.**
+Auditoría honesta de por qué "7+ sesiones y sigue roto": las sesiones optimizaron el
+*overhead* del pipeline pero nunca cablearon dos huecos estructurales. Corregidos de raíz:
+
+1. **Aithera inventaba proyectos ("Proyecto 1/2") en vez de ver los reales** (OT Saas,
+   Waterquest, Quicky Dungeons…). CAUSA: el system prompt decía "conoces los proyectos
+   del usuario" pero NUNCA se los inyectaba — el modelo los alucinaba desde memoria
+   semántica vacía, o escalaba a una misión que se perdía buscando "código AZUL". FIX:
+   `chat_service._workspace_block()` lee la tabla SQL `projects` (fuente de verdad del
+   WPMS) y la mete SIEMPRE en el prompt, fresca cada turno (query barata, en hilo,
+   paralela). Cabecera "NO inventes proyectos que no estén en esta lista".
+2. **El clasificador NO conocía la tool `aithera`** (self-operación) y **el toolloop NO
+   mostraba sus acciones al modelo** (`build_catalog` usaba `list_tools()` SIN
+   `include_internal=True` — la tool estaba permitida pero invisible). Así, "crea un
+   proyecto/agente/regla", "abre X", "cambia el idioma", "pon Minimax de modelo" no
+   llegaban nunca a `aithera_tool`. FIX: (a) `build_catalog(include_internal=True)` — el
+   cable que faltaba; (b) el clasificador conoce "aithera" y enruta las peticiones de
+   self-operación al camino de acción directa (rápido); (c) `aithera_tool` gana
+   `set_language` y `set_chat_model` (las dos que faltaban de la lista del usuario; el
+   resto —proyectos/agentes/reglas/cron— ya existían).
+3. **La voz no seguía al idioma** (acento portugués con español seleccionado). CAUSA:
+   `/voice/defaults` devolvía la voz guardada SIN comprobar el idioma — una voz pt
+   heredada se quedaba. FIX: si la voz guardada es de otro idioma (deducible en
+   EdgeTTS/Kokoro), se reasigna a la del idioma actual; una voz propia del idioma o una
+   de ElevenLabs (opaca/multilingüe) se conserva.
+
+Tests: `test_projects_and_config.py` (11 — workspace block con proyectos reales, prompt
+los incluye, toolloop muestra las acciones de aithera, clasificador conoce aithera,
+`set_language` real, voz reasigna por idioma en 3 casos + detección de idioma de voz).
+Suite tie/orquestador/memoria/voz/mel: **126 passed** (los 6 fallos de `test_new_tools`
+son de `pyautogui`/desktop sin display, preexistentes y ajenos). `app.main` importa OK,
+`tsc` limpio. Verificado en vivo (SQLite real): con OT Saas/Waterquest/Quicky Dungeons en
+la BD, `build_system_prompt` y `aithera.list_projects` devuelven los REALES; `set_language`
+cambia el Config; la voz portuguesa heredada se reasigna a española. **Método corregido**:
+esta vez la verificación es DEL FLUJO (dato real → prompt/tool → resultado), no pieza a
+pieza. **Límite honesto**: el cumplimiento del modelo (responder en el idioma, elegir la
+tool correcta) depende del modelo activo; el prompt y el cableado ya son correctos, que era
+lo que fallaba de raíz.
+
+---
+
+## A·VOZ-10 — Respuestas DETERMINISTAS de datos propios + acuse de misión (2026-07-24, Opus)
+**El arreglo DEFINITIVO tras el segundo fallo reportado** ("Dime qué proyectos tengo" →
+"no tengo acceso a la lista de proyectos", aun con el workspace inyectado en el prompt
+de A·VOZ-9). Lección aceptada: **confiar en que el LLM lea bien el prompt NO es un
+arreglo de raíz** — es el patrón que usan los asistentes de producción (Alexa/Siri/
+las actions de GPT) el correcto: una pregunta sobre DATOS PROPIOS del sistema se
+responde con SQL + plantilla, jamás con un LLM.
+
+- **`app/tie/quick_answers.py`** (NEW): `try_answer(text)` — si el mensaje es un
+  LISTADO claro sobre datos propios (proyectos / agentes / reglas / tareas, en
+  es/en/fr/pt), responde DIRECTO de la BD: 0 LLM, 0 alucinación, instantáneo, en el
+  idioma de la app (catálogo `strings.py`, claves `quick.*` en 4 idiomas).
+  Conservador (mismo criterio que `fast_precheck`): exige sustantivo + indicador de
+  pregunta, rechaza verbos de acción ("crea/abre/borra/renombra…" van al
+  clasificador → `aithera_tool`), y ante la duda devuelve None. Cableado en los 3
+  puntos de entrada: `orchestrator.handle_stream` (el camino real del chat, ANTES
+  de clasificar), `tie.handle_stream` y `_run_pipeline` (Gateway/Telegram).
+- **Acuse INMEDIATO de misión** (petición explícita): en modo texto, `_stream_body`
+  emite YA `"Entendido, me pongo con ello: {goal}. Te cuento en cuanto lo tenga."`
+  (clave `pipeline.ack_mission`, 4 idiomas) ANTES de ejecutar — tanto en acción
+  directa como en el camino complejo. El chat NUNCA se queda mudo mientras una
+  misión tarda minutos. (El modo conversación/voz ya tenía su acuse de A·VOZ-4.)
+- **Paridad i18n reparada de paso**: las claves `conversation.*` (A·VOZ-4) faltaban
+  en PT — añadidas; test de paridad del catálogo ahora pasa con las 4 lenguas
+  idénticas en claves.
+
+Tests: `test_quick_answers.py` (17 — 6 variantes de listado devuelven los proyectos
+REALES; sin proyectos lo dice sin inventar; respuesta en idioma de la app; 7 frases
+de acción NO disparan; el flujo REAL del orquestador responde sin llamar al
+clasificador —monkeypatch que explota si se llama—, sin "analizando" y sin misión;
+el acuse es el PRIMER texto de una misión). Regresión completa:
+**126 passed** (quick + projects_config + tie_handle + orchestrator_chat +
+boundaries + i18n_strings + orchestrator + gateway) + 45 (voice_latency +
+session_context + i18n_language + tie_contracts). `app.main` importa OK.
+Verificado end-to-end con datos reales (OT Saas/Waterquest/Quicky Dungeons en BD):
+el mensaje EXACTO del usuario ("Dime qué proyectos tengo.") devuelve los 3 con
+estado y progreso, instantáneo. Un test de A·VOZ-6 se actualizó (su mensaje de
+ejemplo "enséñame el estado del proyecto Aithera" ahora lo cubre el fast-path
+determinista — comportamiento deseado, mensaje del test cambiado a uno de email).
+
+---
+
+## A·VOZ-11 — Las acciones NUNCA degradan a charla, y Aithera nunca finge (2026-07-25, Opus)
+**Fallo real con log del usuario.** Creó el proyecto "Cordyceps" bien, pero al pedir
+"crea en este proyecto una milestone MVP y un agente Investigador" Aithera **dijo que
+lo había hecho y era falso**; al preguntarle, **volvió a mentir** tirando del historial.
+El log da la causa exacta:
+
+```
+17:35:20 classify LLM: 5781ms modelo='llama3'
+17:35:20 [intents] sin JSON parseable, fallback conversational
+```
+
+**Causa raíz (tres defectos encadenados, los tres arreglados de forma GLOBAL):**
+
+1. **Las acciones dependían de que un LLM frágil produjera JSON.** El clasificador
+   (llama3 local) falló → el fail-safe `conversational` (correcto para charla) tiró la
+   intención de ACCIÓN → el turno acabó en chat **sin herramientas** → el modelo fingió.
+   **FIX**: `app/tie/action_intent.py` (NEW) — detector DETERMINISTA (0 LLM) de "esto es
+   una orden sobre Aithera": verbo de acción (es/en/fr/pt, por prefijo, cubre conjugaciones
+   y enclíticos: "créame", "ponle", "asígnale") **+** sustantivo de dominio (proyecto,
+   hito/milestone, tarea, agente, regla/recordatorio, idioma, modelo). Cableado como RED DE
+   SEGURIDAD en `intents.classify`, en **los 4 caminos** donde se perdía la intención:
+   sin JSON · error del proveedor · excepción · **y clasificación floja** (el LLM dice
+   "conversational" para una orden, o acierta el tipo pero olvida la tool `aithera` → se
+   corrige/añade sin pisar lo que sí detectó). **No es un parche**: los sustantivos se
+   mapean a las acciones del catálogo y `assert_covers_catalog()` + un test verifican la
+   cobertura CONTRA el catálogo real — si mañana se añade una acción a `aithera_tool` sin
+   mapear, **el test falla** en vez de degradar en silencio. El planner, el grafo, el MEL,
+   el orquestador y el multi-objetivo siguen intactos: la versatilidad no se toca.
+2. **El chat podía fingir ejecución e inventar datos.** **FIX**: `DEFAULT_SYSTEM_PROMPT`
+   gana dos reglas absolutas — *"NUNCA FINJAS HABER ACTUADO"* (con los ejemplos exactos
+   prohibidos: "he creado", "ya está hecho", "creo la milestone"…, y la instrucción de
+   decir la verdad si la ejecución no se pudo hacer) y *"NO INVENTES DATOS"* (solo existen
+   los proyectos/agentes/reglas del contexto; **no** dar por hecho algo porque se hablara
+   antes en la conversación — exactamente la segunda mentira del log).
+3. **El bucle de herramientas no podía ejecutar "en ESTE proyecto".** No sabía a qué
+   proyecto se refería ni tenía los IDs (`create_milestone` exige `project_id`), así que
+   agotaba iteraciones. **FIX**: `_direct_action_path` inyecta en `task.context` (a) el
+   workspace REAL con IDs y (b) los últimos turnos de la conversación → resuelve
+   referencias ("este proyecto", "ese agente") sin adivinar. Genérico para cualquier
+   acción, presente o futura. `session_id` enhebrado hasta ahí (también en misiones de fondo).
+
+**Verificado reproduciendo el fallo exacto**: con el clasificador devolviendo texto no-JSON
+(el caso del log), la orden ahora sale como `EXECUTE` + `requires_tools=['aithera']` +
+`is_direct_action=True` — va a las herramientas, ya no a charla. Y el bucle recibe
+`[id 1] Cordyceps` + el historial. Tests: `test_action_intent.py` (36 — cobertura del
+catálogo, 17 órdenes detectadas, 9 mensajes de charla/listado que NO se fuerzan, los 4
+caminos de fallo del clasificador, corrección de tipo, tool olvidada, contra-prueba de
+charla intacta, contexto real en el bucle, prompt anti-mentira). Regresión: **76 passed**
+(action_intent + quick_answers + projects_config + checkpoints) + **112** (con tie_handle,
+orchestrator_chat, boundaries) + **108** (contracts, i18n, session_ctx, voice_latency,
+orchestrator, gateway, audit_s2). `app.main` importa. Nota: un fallo de `test_checkpoints`
+era `apscheduler` ausente del sandbox — instalado, **12/12 passed**.
 
 ---
 
@@ -511,9 +899,9 @@ verificados en vivo, con los gates disparando en los puntos sensibles.
 | A·VOZ-2 | Voz/Orq | Pre-clasificador barato (charla sin LLM) | **Opus** | Medio | ✅ **prioritario** |
 | A·VOZ-3 | Voz/Orq | Charla no crea misión/traza | Sonnet | Medio | ✅ |
 | A·VOZ-4 | Voz/Orq | Misiones en 2.º plano + reporte async | **Opus** | Alto | ✅ **prioritario** |
-| A·VOZ-5 | Voz | Kokoro-onnx opcional (sin Docker) | Opus | Alto | ➖ opcional |
-| A·VOZ-6 | Voz | Pulido STT/TTS + medir TTFB<2s | Sonnet | Medio | ✅ |
-| A·VOZ-7 | Voz/Orq | Contexto de sesión cacheado (no re-consultar el MOS cada turno) | **Opus** | Medio | ✅ |
+| ✅ A·VOZ-5 | Voz | Kokoro-onnx opcional (sin Docker) | Opus | Alto | ➖ opcional |
+| ✅ A·VOZ-6 | Voz | Pulido STT/TTS + medir TTFB<2s | Sonnet | Medio | ✅ |
+| ✅ A·VOZ-7 | Voz/Orq | Contexto de sesión cacheado (no re-consultar el MOS cada turno) | **Opus** | Medio | ✅ |
 | B·WEB-1 | Web | Abrir medios/URL en navegador real ⭐ | Sonnet | Bajo | ✅ **prioritario** |
 | B·WEB-2 | Web | Clic por visión (fallback) | Opus | Alto | ✅ |
 | C·WEB-3 | Web+ | Bucle agentic DOM+visión (set-of-mark) | Opus | Muy Alto | ➖ post-1.0 |

@@ -1938,6 +1938,44 @@ Alembic es la fuente de verdad desde V0.4.
 | DeepSeek | `DeepSeekProvider` | DeepSeek API | `deepseek-v4-flash` | Compatible OpenAI |
 | OpenRouter | `OpenRouterProvider` | OpenRouter API | `""` (libre) | Compatible OpenAI |
 | Grok (xAI) | `GrokProvider` | xAI API | `grok-4.3` | Compatible OpenAI |
+| Claude Code | `ClaudeCodeProvider` | CLI local (`claude -p`) | `sonnet` | **Sin API key** — usa la sesión Pro/Max del CLI. No apto para chat/classify/agentic (MEL) |
+| Codex (OpenAI) | `CodexProvider` | CLI local (`codex exec`) | `""` (modelo de la cuenta) | **Sin API key** — usa la sesión de ChatGPT (`codex login`) o `--with-api-key`. Repo oficial `openai/codex` (Apache-2.0). No apto para chat/classify/agentic (MEL) |
+
+(Más proveedores por API: Kimi/GLM/Qwen. La tabla histórica listaba 8; hoy hay
+13 en `PROVIDER_CLASSES`.)
+
+**Proveedores por CLI (Claude Code, Codex)** — `claude_code_provider.py` /
+`codex_provider.py`: NO hablan HTTP con una API; ejecutan el binario que el
+usuario ya tiene instalado y logueado (`claude` / `codex`) en modo NO
+interactivo. En `NO_KEY_PROVIDERS` (sin API key). Botón "Activar" de 1 clic en
+Ajustes → Proveedores (comprueba el CLI y lo deja enrutando). `is_local=False`
+en el MEL (servicio de pago con sesión en la nube, jamás cuenta como local) y
+`UNFIT_CAPABILITIES` = {chat, classify, agentic} (arrancan un proceso por
+llamada, lentos, sin streaming; aptos para programar/razonar/redactar/analizar
+en segundo plano). **Disponibilidad de Codex por plan** (página de precios
+oficial de OpenAI, 2026-07-24): incluido en Free/Go/Plus/Pro/Business/Edu/
+Enterprise; el README del repo lista un conjunto más estrecho (sin Free/Go), así
+que la UI dice "incluido en tu plan de ChatGPT" y ofrece la API key como
+alternativa si el login con ChatGPT no funcionara.
+
+**Instalar + login asistidos (2026-07-24, `app/api/endpoints/codex_setup.py` +
+`components/settings/CodexSetup.tsx`)**: para que CUALQUIER usuario lo active sin
+terminal — botón **"Instalar Codex"** → `npm install -g @openai/codex` (paquete
+OFICIAL del registro npm, en un hilo con progreso; MISMO patrón que la
+instalación de Kokoro/Ollama; NO se usa el instalador `curl … | sh` — ejecutar un
+script remoto es justo lo que se evita) + botón **"Iniciar sesión"** → lanza
+`codex login`, que abre el NAVEGADOR del usuario para que inicie sesión con su
+cuenta de ChatGPT (Aithera NUNCA teclea las credenciales — auto-rellenar la
+contraseña no es posible ni permitido; es el mismo modelo del OAuth de Google que
+ya existe). Éxito detectado por `~/.codex/auth.json`; si el navegador no se abre,
+la UI muestra la URL para abrirla a mano. Guía rápida (comandos exactos) SIEMPRE
+visible como respaldo. Endpoints: `GET/POST /api/codex/{status,install,login}`.
+**Verificado en vivo con codex-cli 0.145.0**: `npm install` real OK (~7 min, el
+worker da 30), `codex --version` OK, `/status` reflejando installed/authenticated,
+y el `codex exec` real sin sesión → 401 detectado con la pista `codex login`
+(hallazgos en vivo aplicados: `stdin=DEVNULL` para que "Reading additional input
+from stdin…" no cuelgue; el error y la pista se muestran por la COLA del stderr,
+no el banner).
 
 `backend/app/ai/providers/openai_compatible.py` es la base para los que usan
 formato OpenAI (DeepSeek, OpenRouter, Grok, y MiniMax lo reutiliza parcialmente).

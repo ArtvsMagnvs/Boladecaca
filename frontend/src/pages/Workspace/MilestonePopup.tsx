@@ -5,12 +5,14 @@
 import { useState } from "react";
 import type { Milestone } from "@/lib/api";
 import { Modal, ErrorBanner, fieldLabel, fieldInput, btnPrimary, btnGhost } from "./Modal";
+import { MS_STATUS_KEY } from "./shared";
+import { useT } from "@/store/useI18n";
 
 const STATUSES = [
-  { value: "planned", label: "Planificado" },
-  { value: "active", label: "Activo" },
-  { value: "done", label: "Completado" },
-  { value: "archived", label: "Archivado" },
+  { value: "planned", labelKey: MS_STATUS_KEY.planned },
+  { value: "active", labelKey: MS_STATUS_KEY.active },
+  { value: "done", labelKey: MS_STATUS_KEY.done },
+  { value: "archived", labelKey: MS_STATUS_KEY.archived },
 ];
 
 interface Props {
@@ -23,6 +25,7 @@ interface Props {
 }
 
 export function MilestonePopup({ milestone, projectId, onSave, onDelete, onComplete, onClose }: Props) {
+  const tr = useT();
   const [name, setName] = useState(milestone?.name ?? "");
   const [version, setVersion] = useState(milestone?.version ?? "");
   const [description, setDescription] = useState(milestone?.description ?? "");
@@ -45,7 +48,7 @@ export function MilestonePopup({ milestone, projectId, onSave, onDelete, onCompl
         target_date: targetDate ? new Date(targetDate).toISOString() : null,
       });
     } catch (e) {
-      setError(e instanceof Error ? e.message : "No se pudo guardar el milestone.");
+      setError(e instanceof Error ? e.message : tr("workspace.milestonePopup.saveFailed"));
     } finally {
       setSaving(false);
     }
@@ -58,7 +61,7 @@ export function MilestonePopup({ milestone, projectId, onSave, onDelete, onCompl
     try {
       await onComplete(milestone.id);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "No se pudo completar el milestone.");
+      setError(e instanceof Error ? e.message : tr("workspace.milestonePopup.completeFailed"));
     } finally {
       setSaving(false);
     }
@@ -68,54 +71,54 @@ export function MilestonePopup({ milestone, projectId, onSave, onDelete, onCompl
 
   return (
     <Modal
-      title={milestone ? "Editar milestone" : "Nuevo milestone"}
+      title={milestone ? tr("workspace.milestonePopup.editTitle") : tr("workspace.milestonePopup.newTitle")}
       onClose={onClose}
       footer={
         <>
           {milestone && onDelete && (
             <button onClick={() => onDelete(milestone.id)} className="mr-auto px-3 py-2 text-signal-error/70 hover:text-signal-error text-sm">
-              Eliminar
+              {tr("common.delete")}
             </button>
           )}
           {canComplete && (
             <button onClick={handleComplete} disabled={saving} className="px-3 py-2 text-signal-ok/80 hover:text-signal-ok text-sm border border-signal-ok/30 rounded-xl disabled:opacity-40">
-              ✓ Completar
+              {tr("workspace.milestonePopup.complete")}
             </button>
           )}
-          <button onClick={onClose} className={btnGhost}>Cancelar</button>
+          <button onClick={onClose} className={btnGhost}>{tr("common.cancel")}</button>
           <button onClick={handleSave} disabled={!name.trim() || saving} className={btnPrimary}>
-            {saving ? "Guardando…" : "Guardar"}
+            {saving ? tr("agents.saving") : tr("common.save")}
           </button>
         </>
       }
     >
       <ErrorBanner message={error} />
       <div>
-        <label className={fieldLabel}>Nombre</label>
-        <input value={name} onChange={(e) => setName(e.target.value)} className={fieldInput} placeholder="p.ej. V0.9 — Automation Engine" autoFocus />
+        <label className={fieldLabel}>{tr("agents.field.name")}</label>
+        <input value={name} onChange={(e) => setName(e.target.value)} className={fieldInput} placeholder={tr("workspace.milestonePopup.namePlaceholder")} autoFocus />
       </div>
       <div className="grid grid-cols-2 gap-3">
         <div>
-          <label className={fieldLabel}>Versión</label>
+          <label className={fieldLabel}>{tr("workspace.milestonePopup.version")}</label>
           <input value={version ?? ""} onChange={(e) => setVersion(e.target.value)} className={fieldInput} placeholder="0.9" />
         </div>
         <div>
-          <label className={fieldLabel}>Estado</label>
+          <label className={fieldLabel}>{tr("workspace.taskPopup.statusLabel")}</label>
           <select value={status} onChange={(e) => setStatus(e.target.value)} className={fieldInput}>
-            {STATUSES.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
+            {STATUSES.map((s) => <option key={s.value} value={s.value}>{tr(s.labelKey)}</option>)}
           </select>
         </div>
         <div className="col-span-2">
-          <label className={fieldLabel}>Fecha objetivo</label>
+          <label className={fieldLabel}>{tr("workspace.milestonePopup.targetDate")}</label>
           <input type="date" value={targetDate} onChange={(e) => setTargetDate(e.target.value)} className={fieldInput} />
         </div>
       </div>
       <div>
-        <label className={fieldLabel}>Objetivo de la versión</label>
-        <textarea value={description ?? ""} onChange={(e) => setDescription(e.target.value)} rows={2} className={`${fieldInput} resize-none`} placeholder="Qué entrega esta versión" />
+        <label className={fieldLabel}>{tr("workspace.milestonePopup.versionGoal")}</label>
+        <textarea value={description ?? ""} onChange={(e) => setDescription(e.target.value)} rows={2} className={`${fieldInput} resize-none`} placeholder={tr("workspace.milestonePopup.versionGoalPlaceholder")} />
       </div>
       {milestone?.status === "done" && (
-        <p className="text-xs text-signal-ok/80">Este milestone está completado.</p>
+        <p className="text-xs text-signal-ok/80">{tr("workspace.milestonePopup.alreadyDone")}</p>
       )}
     </Modal>
   );

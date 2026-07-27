@@ -145,8 +145,9 @@ class TelegramAdapter(ChannelAdapter):
             return
         import asyncio
         from telegram.error import NetworkError, TimedOut
+        from app.core.strings import t as _t
 
-        text = message.text or "(sin respuesta)"
+        text = message.text or _t("pipeline.no_response")
         last_err = None
         for attempt in range(3):
             try:

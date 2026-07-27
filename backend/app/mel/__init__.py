@@ -66,6 +66,13 @@ def policies() -> list[dict]:
     return _policy_store.list_policies()
 
 
+def active_policy_name() -> Optional[str]:
+    """Nombre de la política activa (o None si no hay ninguna fijada todavía).
+    Lo usa `aithera_tool` para saber sobre qué política editar el modelo del chat
+    sin importar internos del MEL (disciplina modular, doc 16)."""
+    return _policy_store.active_name()
+
+
 def set_active_policy(name: str) -> bool:
     """Cambia la política activa (Settings → Inteligencia). True si existía."""
     return _policy_store.set_active(name)
@@ -213,7 +220,7 @@ __all__ = [
     "ExecutionRequest", "ExecutionResult", "ServedBy", "Usage", "DecisionTrace",
     # API pública
     "complete", "stream", "decision_trace", "recent_decisions",
-    "policies", "set_active_policy", "resolve_model_name", "ensure_ready",
+    "policies", "set_active_policy", "active_policy_name", "resolve_model_name", "ensure_ready",
     "register_handlers", "capability_report", "refresh_capability_reports",
     "list_models", "set_policy_primary", "restore_policy",
     "set_project_override", "overrides_for", "list_overrides", "clear_override",

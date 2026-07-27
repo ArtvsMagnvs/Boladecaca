@@ -19,14 +19,17 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Task, Milestone } from "@/lib/api";
 import { PRIORITY_DOT } from "./shared";
+// Alias 'tr' (no 't'): este archivo ya usa 't' como variable de tarea en
+// docenas de '.map((t) => …)' — evita sombrear/confundir.
+import { useT } from "@/store/useI18n";
 
 const CLICK_THRESHOLD_PX = 5;
 
 export type TaskColumnKey = "pending" | "in_progress" | "completed";
-const COLUMNS: Array<{ key: TaskColumnKey; label: string }> = [
-  { key: "pending", label: "Pendiente" },
-  { key: "in_progress", label: "En progreso" },
-  { key: "completed", label: "Hecha" },
+const COLUMNS: Array<{ key: TaskColumnKey; labelKey: string }> = [
+  { key: "pending", labelKey: "workspace.taskBoard.col.pending" },
+  { key: "in_progress", labelKey: "workspace.taskBoard.col.inProgress" },
+  { key: "completed", labelKey: "workspace.taskBoard.col.completed" },
 ];
 const COLUMN_KEYS = COLUMNS.map((c) => c.key);
 
@@ -69,16 +72,23 @@ interface Props {
 
 // Exportado para que ProjectCard lo combine con windowShortcuts() en su
 // propio botón (?) de cabecera — un único panel de ayuda por tarjeta.
-export const KANBAN_SHORTCUTS: Array<[string, string]> = [
-  ["N", "Nueva tarea (en la columna seleccionada)"],
-  ["Enter", "Abrir la tarea seleccionada"],
-  ["↑ / ↓", "Moverse dentro de la columna"],
-  ["← / →", "Cambiar de columna"],
-  ["1 / 2 / 3", "Mover la tarea seleccionada a Pendiente / En progreso / Hecha"],
-  ["Arrastrar", "Mover una tarjeta entre columnas o reordenarla"],
-];
+// Función (no const): necesita `t`, y no puede llamar al hook fuera de un
+// componente.
+export function kanbanShortcuts(
+  t: (key: string, vars?: Record<string, string | number>) => string,
+): Array<[string, string]> {
+  return [
+    ["N", t("workspace.kanban.newTask")],
+    ["Enter", t("workspace.kanban.openTask")],
+    ["↑ / ↓", t("workspace.kanban.moveInColumn")],
+    ["← / →", t("workspace.kanban.changeColumn")],
+    ["1 / 2 / 3", t("workspace.kanban.moveToColumn")],
+    ["Arrastrar", t("workspace.kanban.dragCard")],
+  ];
+}
 
 export function TaskBoard({ tasks, milestones, onOpen, onQuickCreate, onReorder, disabled, onToggleHelp }: Props) {
+  const tr = useT();
   const [cols, setCols] = useState<Record<TaskColumnKey, Task[]>>(() => groupTasks(tasks));
   const colsRef = useRef(cols);
   const [draggingId, setDraggingId] = useState<number | null>(null);
@@ -237,22 +247,22 @@ export function TaskBoard({ tasks, milestones, onOpen, onQuickCreate, onReorder,
       className="outline-none relative"
     >
       <div className="flex items-center justify-between mb-2">
-        <h3 className="text-xs font-medium text-ink-dim">Tareas</h3>
+        <h3 className="text-xs font-medium text-ink-dim">{tr("workspace.taskBoard.title")}</h3>
       </div>
 
       <div className="grid grid-cols-3 gap-3">
-        {COLUMNS.map(({ key, label }) => (
+        {COLUMNS.map(({ key, labelKey }) => (
           <div key={key} className="flex flex-col gap-2 min-w-0">
             <div className="flex items-center justify-between">
-              <span className="text-[11px] font-medium text-ink-dim">{label}</span>
+              <span className="text-[11px] font-medium text-ink-dim">{tr(labelKey)}</span>
               <div className="flex items-center gap-1.5">
                 <span className="text-[10px] text-ink-faint tabular-nums">{cols[key].length}</span>
                 <button
                   onClick={() => onQuickCreate(key)}
                   className="text-[11px] text-accent hover:text-accent-soft leading-none whitespace-nowrap"
-                  title={`Nueva tarea en ${label}`}
+                  title={tr("workspace.taskBoard.newTaskIn", { label: tr(labelKey) })}
                 >
-                  + Tarea
+                  {tr("workspace.taskBoard.addTask")}
                 </button>
               </div>
             </div>
@@ -275,7 +285,7 @@ export function TaskBoard({ tasks, milestones, onOpen, onQuickCreate, onReorder,
                     } ${draggingId === t.id ? "opacity-50" : ""}`}
                   >
                     <div className="flex items-start gap-1.5">
-                      <span className={`h-2 w-2 rounded-full shrink-0 mt-0.5 ${PRIORITY_DOT[t.priority] ?? "bg-ink-faint"}`} title={`Prioridad: ${t.priority}`} />
+                      <span className={`h-2 w-2 rounded-full shrink-0 mt-0.5 ${PRIORITY_DOT[t.priority] ?? "bg-ink-faint"}`} title={tr("workspace.taskBoard.priority", { priority: t.priority })} />
                       <span className="text-xs text-ink flex-1 min-w-0 break-words">{t.title}</span>
                     </div>
                     {(ms || check.length > 0 || t.due_date) && (
@@ -289,7 +299,7 @@ export function TaskBoard({ tasks, milestones, onOpen, onQuickCreate, onReorder,
                 );
               })}
               {cols[key].length === 0 && (
-                <p className="text-[10.5px] text-ink-faint px-1 py-2 text-center">Sin tareas.</p>
+                <p className="text-[10.5px] text-ink-faint px-1 py-2 text-center">{tr("workspace.taskBoard.empty")}</p>
               )}
             </div>
           </div>

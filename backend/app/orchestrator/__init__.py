@@ -15,9 +15,11 @@
 # detección viaja gratis en la llamada que el TIE ya hacía.
 from __future__ import annotations
 
+import asyncio
 from typing import Optional
 
 from app.core.logging_config import get_system_logger
+from app.core.strings import t as _t
 # Importar el modelo aquí (y no solo de forma diferida dentro de `store`) es lo
 # que registra `orchestration_runs` en `Base.metadata` a tiempo para el
 # `create_all` del arranque y de los tests. Mismo patrón que el resto de módulos.
@@ -29,6 +31,10 @@ from app.orchestrator import store as _store
 from app.orchestrator.contracts import Objective, OrchestrationRun
 
 logger = get_system_logger("orchestrator")
+
+# [A·VOZ-4] Orquestaciones multi-objetivo lanzadas en segundo plano (modo
+# conversación). Retener la referencia evita que el GC cancele la tarea.
+_BG_RUNS: set = set()
 
 
 async def handle(envelope) -> str:
@@ -65,9 +71,16 @@ async def _tie_handle(envelope) -> str:
     return await tie.handle(envelope)
 
 
-async def handle_stream(text: str, *, channel: str = "web", session_id: Optional[str] = None):
+async def handle_stream(text: str, *, channel: str = "web", session_id: Optional[str] = None,
+                        conversational: bool = False):
     """Entrada STREAMING del chat — la MISMA decisión que `handle()`, pero
     emitiendo eventos `(kind, payload)` como `tie.handle_stream`.
+
+    `conversational` [A·VOZ-4]: modo conversación (voz). Un solo encargo → se
+    delega en `tie.handle_stream(conversational=…)`, que acusa recibo y ejecuta en
+    segundo plano. Varios encargos → se acusa recibo YA y la orquestación entera
+    corre detrás, avisando al terminar (misiones de fondo, sin bloquear el
+    diálogo). En modo texto (default), comportamiento clásico e inline.
 
     [Fix 2026-07-19] EL HUECO QUE CIERRA: `/api/chat/stream` llamaba directamente
     a `tie.handle_stream`, así que el chat —la interfaz principal— NUNCA pasaba
@@ -86,17 +99,43 @@ async def handle_stream(text: str, *, channel: str = "web", session_id: Optional
 
     text = (text or "").strip()
     if not text:
-        async for ev in tie.handle_stream(text, channel=channel, session_id=session_id):
+        async for ev in tie.handle_stream(text, channel=channel, session_id=session_id,
+                                          conversational=conversational):
             yield ev
         return
 
-    yield ("status", "analizando")
+    # [A·VOZ-6] CHARLA OBVIA = 0 fricción. El pre-clasificador determinista (0 LLM)
+    # resuelve saludos/cortesía sin tocar el modelo; en ese caso NO se emite
+    # "analizando" (una charla no es una misión y no debe parecerlo) y se delega
+    # DIRECTAMENTE en el TIE con el intent ya resuelto — cero llamadas al LLM
+    # clasificador, cero status intermedio, el camino corto arranca a responder ya.
+    pre = tie.fast_precheck(text)
+    if pre is not None:
+        async for ev in tie.handle_stream(text, channel=channel, intent=pre,
+                                          session_id=session_id, conversational=conversational):
+            yield ev
+        return
+
+    # [2026-07-24] Pregunta de LISTADO sobre los datos propios ("¿qué proyectos
+    # tengo?"): respuesta DETERMINISTA de la BD, 0 LLM, 0 alucinación. Es el
+    # arreglo definitivo del fallo real reportado (el modelo decía "no tengo
+    # acceso a tus proyectos" o se los inventaba).
+    import asyncio as _asyncio
+    quick = await _asyncio.to_thread(tie.quick_answer, text)
+    if quick:
+        yield ("text", quick)
+        return
+
+    # No es charla obvia: hay que clasificar con el modelo. AHÍ sí tiene sentido
+    # "analizando" (cubre la latencia del clasificador).
+    yield ("status", _t("status.analyzing"))
 
     try:
         intent = await tie.classify(text, channel=channel)
     except Exception as e:
         logger.error(f"[orchestrator] clasificación falló, delego en el TIE: {type(e).__name__}: {e}")
-        async for ev in tie.handle_stream(text, channel=channel, session_id=session_id):
+        async for ev in tie.handle_stream(text, channel=channel, session_id=session_id,
+                                          conversational=conversational):
             yield ev
         return
 
@@ -105,11 +144,22 @@ async def handle_stream(text: str, *, channel: str = "web", session_id: Optional
         # Varios encargos (abajo) son misiones de fondo independientes; ahí el
         # historial del chat no pinta nada.
         async for ev in tie.handle_stream(text, channel=channel, intent=intent,
-                                          session_id=session_id):
+                                          session_id=session_id, conversational=conversational):
             yield ev
         return
 
     # --- Varios encargos: se hacen A LA VEZ ---
+    # [A·VOZ-4] En modo conversación, la orquestación entera va a segundo plano:
+    # acuse recibo YA y aviso al terminar (sin bloquear el diálogo por voz).
+    if conversational:
+        yield ("status", _t("orchestrator.status_multi", n=len(intent.objectives)))
+        task = asyncio.create_task(
+            _orchestrate_and_report(text, intent.objectives, channel, session_id))
+        _BG_RUNS.add(task)
+        task.add_done_callback(_BG_RUNS.discard)
+        yield ("text", tie.conversation.acuse_text())   # vía barrel, no import de interno
+        return
+
     try:
         async for ev in _orchestrate_stream(text, intent.objectives, channel):
             yield ev
@@ -125,8 +175,6 @@ async def _orchestrate_stream(text: str, objectives_hint: list[str], channel: Op
     El conductor corre en una tarea de fondo y aquí se sondea el estado
     persistido: así el usuario ve progreso real ("1 de 2 listos") en vez de
     quedarse minutos mirando un cursor parpadeando."""
-    import asyncio
-
     objetivos = await _decomposer.decompose(text, objectives_hint=objectives_hint)
     run = OrchestrationRun(
         id=OrchestrationRun.new_id(), user_message=text,
@@ -135,7 +183,7 @@ async def _orchestrate_stream(text: str, objectives_hint: list[str], channel: Op
     n = len(objetivos)
     logger.info(f"[orchestrator] chat → run {run.id}: {n} objetivos en paralelo")
 
-    yield ("status", f"son {n} encargos: los hago a la vez")
+    yield ("status", _t("orchestrator.status_multi", n=n))
 
     tarea = asyncio.create_task(_conductor.run_objectives(run))
 
@@ -162,12 +210,30 @@ async def _orchestrate_stream(text: str, objectives_hint: list[str], channel: Op
         hechos = sum(1 for o in actual.objectives if o.state in ("done", "failed", "skipped", "cancelled"))
         if hechos != ultimo_hechos and hechos < n:
             ultimo_hechos = hechos
-            yield ("status", f"{hechos} de {n} terminados")
+            yield ("status", _t("orchestrator.status_progress", done=hechos, n=n))
 
     run = await tarea
     run.outcome = await _consolidator.consolidate(run)
     _store.save(run)
-    yield ("text", run.outcome or "(sin respuesta)")
+    yield ("text", run.outcome or _t("pipeline.no_response"))
+
+
+async def _orchestrate_and_report(text: str, objectives_hint: list[str],
+                                  channel: Optional[str], session_id: Optional[str]):
+    """[A·VOZ-4] Orquestación multi-objetivo en segundo plano: ejecuta todo y, al
+    terminar, empuja el resumen consolidado por el canal (mismo camino de entrega
+    que las misiones de fondo del TIE). Best-effort: un fallo aquí no rompe nada,
+    la orquestación ya quedó guardada."""
+    import app.tie as tie
+
+    try:
+        outcome = await _orchestrate(message=text, objectives_hint=objectives_hint,
+                                     channel=channel, source="user")
+    except Exception as e:
+        logger.error(f"[orchestrator] orquestación de fondo falló: {type(e).__name__}: {e}")
+        outcome = _t("conversation.report_error")
+    report = _t("conversation.report_done", outcome=(outcome or _t("pipeline.generic_done")))
+    await tie.conversation.deliver_report(report, session_id=session_id, channel=channel)
 
 
 async def _orchestrate(*, message: str, objectives_hint: list[str],

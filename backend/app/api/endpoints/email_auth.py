@@ -52,14 +52,25 @@ router = APIRouter(prefix="/email", tags=["email"])
 
 @router.get("/status")
 def get_status():
+    # AUTH-1 (2026-07-23): un SOLO probe de estado (refresca el token si hace
+    # falta) en vez de is_connected()+get_connected_email() por separado, que
+    # podian disparar dos refrescos. `connected` mantiene su semantica previa
+    # (True sii el estado es "connected") para no romper el contrato; el email
+    # solo se pide cuando de verdad hay conexion (evita una llamada a Gmail
+    # cuando el token esta revocado/caducado).
+    state = google_auth.connection_state()
+    connected = state == "connected"
     return {
-        "connected": google_auth.is_connected(),
-        "email": google_auth.get_connected_email(),
+        "connected": connected,
+        "email": google_auth.get_connected_email() if connected else None,
         "has_credentials": google_auth.has_client_credentials(),
         "libs_available": google_auth.is_google_libs_available(),
         # V0.7 extra: indica de donde vienen las credenciales (env / db / none).
         # Asi el frontend sabe si el usuario las metio en .env o en la BD.
         "credentials_source": google_get_credentials_source(),
+        # AUTH-1 (aditivo): estado detallado para mensajes claros en la UI.
+        # connected | expired | revoked | no_token | no_credentials | libs_missing
+        "connection_state": state,
     }
 
 

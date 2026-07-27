@@ -108,6 +108,21 @@ ipcMain.handle("dialog:pick-folder", async () => {
   return result.filePaths[0];
 });
 
+// [2026-07-25] Seleccionar ARCHIVOS para adjuntarlos a un proyecto
+// (Project.docs con kind="file"). Mismo criterio que pick-folder: el navegador
+// no puede dar rutas absolutas del sistema, así que el diálogo nativo es el
+// único camino honesto. Multi-selección permitida; devuelve un array de rutas
+// (vacío si el usuario cancela). Sin lógica de negocio aquí: el backend valida
+// después que cada ruta esté dentro de HOME antes de que un agente la lea
+// (app/tools/filesystem_tool.py).
+ipcMain.handle("dialog:pick-files", async () => {
+  const result = await dialog.showOpenDialog({
+    properties: ["openFile", "multiSelections"],
+  });
+  if (result.canceled) return [];
+  return result.filePaths;
+});
+
 app.whenReady().then(() => {
   // V0.83 (Paso 4) STT: el micro se usa desde el Hub/Chat (MediaRecorder).
   // Sin este handler, Chromium pide permiso al SO y a veces lo deniega en

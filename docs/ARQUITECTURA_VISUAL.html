@@ -1,0 +1,437 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Aithera — Mapa interno · v0.9.5</title>
+<!--
+  docs/ARQUITECTURA_VISUAL.html — Mapa de la maquinaria interna de Aithera.
+  Archivo ÚNICO y autónomo (cero dependencias, cero red): se abre con doble clic.
+
+  REGLA DE ESTE DOCUMENTO: describe el CÓDIGO REAL, no el diseño deseado. Cada
+  dato (líneas, nº de tools, iteraciones, orden de las guardas) se verificó
+  contra el repo el 2026-07-25. Si el código cambia, este archivo miente — hay
+  una nota de mantenimiento al final.
+-->
+<style>
+  :root{
+    --bg:#0b0d12; --panel:#12151d; --panel2:#171b25; --line:#242a38;
+    --ink:#e7ecf5; --dim:#98a2b8; --faint:#6b7488;
+    --chat:#5ea8ff; --orq:#b98cff; --tie:#31d9a6; --mel:#ffb454;
+    --mos:#ff7ab6; --tools:#8fd94f; --data:#9aa4bb; --warn:#ffcc55; --err:#ff6b6b;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+       font:15px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Inter,system-ui,sans-serif}
+  .wrap{max-width:1240px;margin:0 auto;padding:28px 22px 80px}
+  h1{font-size:26px;margin:0 0 4px;letter-spacing:-.02em}
+  h2{font-size:19px;margin:38px 0 12px;letter-spacing:-.01em}
+  h3{font-size:15px;margin:22px 0 8px;color:var(--dim);text-transform:uppercase;
+     letter-spacing:.08em;font-weight:600}
+  p{margin:8px 0}
+  .sub{color:var(--dim);font-size:13.5px}
+  code{background:#0f1219;border:1px solid var(--line);border-radius:4px;
+       padding:1px 5px;font:12.5px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;
+       color:#cfe0ff}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px 18px}
+  .muted{color:var(--faint)}
+  hr{border:0;border-top:1px solid var(--line);margin:30px 0}
+
+  /* ---------- selector de flujo ---------- */
+  .flows{display:flex;flex-wrap:wrap;gap:8px;margin:14px 0 6px}
+  .flowbtn{background:var(--panel2);border:1px solid var(--line);color:var(--dim);
+    border-radius:10px;padding:9px 13px;cursor:pointer;font-size:13px;text-align:left;
+    transition:.15s;max-width:290px}
+  .flowbtn:hover{color:var(--ink);border-color:#39425a}
+  .flowbtn.on{border-color:var(--tie);color:var(--ink);background:#132a24}
+  .flowbtn b{display:block;font-size:13.5px;margin-bottom:2px}
+  .flowbtn span{font-size:11.5px;color:var(--faint);display:block}
+  .flowbtn.on span{color:var(--dim)}
+
+  /* ---------- mapa ---------- */
+  .mapwrap{position:relative;margin:16px 0 8px;overflow-x:auto}
+  svg#map{display:block;min-width:1080px}
+  .nd rect{fill:var(--panel2);stroke:var(--line);stroke-width:1.4;rx:9}
+  .nd text{fill:var(--dim);font-size:11.5px;font-weight:600}
+  .nd text.sm{font-size:9.5px;font-weight:500;fill:var(--faint)}
+  .nd.dim rect{opacity:.30} .nd.dim text{opacity:.32}
+  .nd.hit rect{fill:#16202e;stroke-width:2.2}
+  .nd.hit text{fill:var(--ink)}
+  .ed{stroke:var(--line);stroke-width:1.6;fill:none;opacity:.5}
+  .ed.dim{opacity:.10}
+  .ed.hit{stroke-width:2.6;opacity:1}
+  .lbl{fill:var(--faint);font-size:9.5px}
+  .lbl.hit{fill:var(--ink)}
+  .band{fill:none;stroke:var(--line);stroke-dasharray:3 4;rx:12;opacity:.55}
+  .bandlbl{fill:var(--faint);font-size:10px;letter-spacing:.10em;font-weight:700}
+
+  /* ---------- pasos del flujo ---------- */
+  .steps{display:grid;gap:8px;margin-top:14px}
+  .step{display:grid;grid-template-columns:30px 1fr;gap:12px;
+        background:var(--panel);border:1px solid var(--line);border-left:3px solid var(--tie);
+        border-radius:9px;padding:11px 14px}
+  .step .n{color:var(--tie);font-weight:700;font-size:13px;text-align:center}
+  .step b{font-size:13.5px}
+  .step p{margin:3px 0 0;font-size:12.8px;color:var(--dim)}
+  .step .cost{display:inline-block;margin-top:5px;font-size:11px;color:var(--faint)}
+  .pill{display:inline-block;font-size:10.5px;padding:1.5px 7px;border-radius:20px;
+        border:1px solid var(--line);color:var(--dim);margin-right:5px}
+  .pill.llm{border-color:#5a4a1e;color:var(--mel);background:#1d1708}
+  .pill.det{border-color:#1e4a3a;color:var(--tie);background:#0c1c17}
+  .pill.db{border-color:#2c3346;color:var(--data);background:#101420}
+  .pill.gate{border-color:#5a3a1e;color:var(--warn);background:#1d1408}
+
+  /* ---------- tablas ---------- */
+  table{width:100%;border-collapse:collapse;margin:10px 0;font-size:13px}
+  th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{color:var(--faint);font-size:11px;text-transform:uppercase;letter-spacing:.07em;font-weight:600}
+  td.num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+  .bar{height:6px;border-radius:3px;background:var(--tie);display:block;margin-top:5px}
+
+  /* ---------- componentes ---------- */
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(285px,1fr));gap:12px}
+  .comp{background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:14px}
+  .comp h4{margin:0 0 3px;font-size:14px;display:flex;align-items:center;gap:7px}
+  .dot{width:9px;height:9px;border-radius:50%;flex:none}
+  .comp p{font-size:12.7px;color:var(--dim);margin:5px 0 0}
+  .comp .path{font:11.5px ui-monospace,monospace;color:var(--faint);margin-top:7px;display:block}
+
+  .risk{border-left:3px solid var(--warn)}
+  .risk.hi{border-left-color:var(--err)}
+  .verdict{background:#141821;border:1px solid var(--line);border-left:3px solid var(--warn);
+           border-radius:9px;padding:13px 15px;margin:10px 0}
+  .verdict b{color:var(--warn)}
+  .ok{color:var(--tie)} .no{color:var(--err)}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>Aithera — la maquinaria interna</h1>
+  <p class="sub">Mapa del código real · v0.9.5 · verificado contra el repo el 2026-07-25.
+     Elige un caso de uso abajo y el mapa resalta <b>el camino exacto</b> que sigue.</p>
+
+  <!-- ============================ FLUJOS ============================ -->
+  <h2>1 · Cómo Aithera responde: elige un caso y compáralo</h2>
+  <p class="sub">Los cuatro casos entran por el <b>mismo</b> sitio (<code>POST /api/chat/stream</code>)
+     y salen por caminos radicalmente distintos. Lo que se ve apagado, no se ejecuta.</p>
+
+  <div class="flows" id="flows"></div>
+
+  <div class="mapwrap">
+    <svg id="map" viewBox="0 0 1080 620" xmlns="http://www.w3.org/2000/svg"></svg>
+  </div>
+
+  <div class="steps" id="steps"></div>
+
+  <hr>
+
+  <!-- ============================ COMPONENTES ============================ -->
+  <h2>2 · Qué es cada pieza</h2>
+  <p class="sub">Sin jerga: qué hace, y la decisión de ingeniería detrás.</p>
+  <div class="grid" id="comps"></div>
+
+  <hr>
+
+  <!-- ============================ AUDITORÍA ============================ -->
+  <h2>3 · Auditoría de complejidad — sin filtros</h2>
+  <p class="sub">Peso real medido con <code>wc -l</code> el 2026-07-25. La pregunta que
+     importa: ¿cada capa se gana su sitio, o es una respuesta a un incidente concreto?</p>
+
+  <table id="weight"></table>
+
+  <h3>Solapamientos reales</h3>
+  <div id="risks"></div>
+
+  <h3>Veredicto</h3>
+  <div id="verdicts"></div>
+
+  <hr>
+  <h2>4 · Mantenimiento de este documento</h2>
+  <div class="card">
+    <p><b>Este archivo puede quedarse obsoleto y mentir.</b> Es un mapa escrito a mano de un
+    código que cambia. Regla: si tocas el orden de las guardas de
+    <code>orchestrator.handle_stream</code> / <code>tie.handle_stream</code>, si añades o
+    quitas un módulo de <code>app/</code>, o si cambias qué capacidad del MEL usa una etapa,
+    <b>actualiza también este HTML</b> — igual que se actualiza <code>CLAUDE.md</code>.</p>
+    <p class="muted" style="margin-top:9px">Fuentes verificadas para esta versión:
+    <code>app/orchestrator/__init__.py</code>, <code>app/tie/{pipeline,intents,action_intent,quick_answers,toolloop,planner,executor,graph}.py</code>,
+    <code>app/mel/{contracts,policies,executor}.py</code>, <code>app/memory/router.py</code>,
+    <code>app/services/chat_service.py</code>, <code>app/telemetry/models.py</code>,
+    <code>app/tools/</code> (16 tools / 113 acciones), <code>app/core/config.py</code>.</p>
+  </div>
+
+</div>
+
+<script>
+/* =====================================================================
+   MAPA — nodos y aristas. Un solo mapa; los flujos resaltan un subcamino.
+   ===================================================================== */
+const N = {
+  // entrada
+  ui:    {x: 24,  y: 40,  w:150, h:44, t:"Chat / Voz (UI)",      s:"Chat.tsx · POST /api/chat/stream", c:"--chat"},
+  orq:   {x: 24,  y:126,  w:150, h:52, t:"Orquestador",          s:"¿1 encargo o varios?",           c:"--orq"},
+  // guardas deterministas
+  pre:   {x:216,  y: 34,  w:158, h:44, t:"fast_precheck",        s:"charla obvia · 0 LLM",           c:"--tie"},
+  quick: {x:216,  y: 94,  w:158, h:44, t:"quick_answers",        s:"listados · SQL, 0 LLM",          c:"--tie"},
+  act:   {x:216,  y:154,  w:158, h:44, t:"action_intent",        s:"¿es una orden? · 0 LLM",         c:"--tie"},
+  // clasificación
+  cls:   {x:216,  y:222,  w:158, h:52, t:"classify (LLM)",       s:"intent · capacidad CLASSIFY",    c:"--mel"},
+  // caminos
+  short: {x:424,  y: 34,  w:170, h:52, t:"Camino corto",         s:"chat directo, streaming",        c:"--tie"},
+  direct:{x:424,  y:150,  w:170, h:52, t:"Acción directa",       s:"1 bucle de tool-use",            c:"--tie"},
+  plan:  {x:424,  y:246,  w:170, h:52, t:"Planner → grafo",      s:"DAG validado · REASON",          c:"--tie"},
+  multi: {x:424,  y:330,  w:170, h:52, t:"Descomposición",       s:"N misiones en paralelo",         c:"--orq"},
+  // ejecución
+  loop:  {x:640,  y:150,  w:170, h:52, t:"toolloop",             s:"elegir→ejecutar→observar",       c:"--tie"},
+  gate:  {x:640,  y:246,  w:170, h:44, t:"ApprovalGate",         s:"permiso (HITL)",                 c:"--warn"},
+  exec:  {x:640,  y:306,  w:170, h:52, t:"executor",             s:"grafo + checkpoints",            c:"--tie"},
+  resp:  {x:640,  y:400,  w:170, h:44, t:"responder",            s:"síntesis · SUMMARIZE",           c:"--tie"},
+  // servicios
+  mel:   {x:862,  y: 34,  w:186, h:60, t:"MEL",                  s:"capacidad → modelo · fallback",  c:"--mel"},
+  tools: {x:862,  y:150,  w:186, h:60, t:"16 tools · 113 acc.",  s:"aithera, browser, email, fs…",   c:"--tools"},
+  mos:   {x:862,  y:250,  w:186, h:60, t:"MOS (memoria)",        s:"5 tipos · ChromaDB",             c:"--mos"},
+  // datos
+  sql:   {x:862,  y:344,  w:186, h:52, t:"SQL (verdad)",         s:"projects, tasks, agents…",       c:"--data"},
+  tel:   {x:862,  y:420,  w:186, h:52, t:"Telemetría",           s:"mission_events (traza)",         c:"--data"},
+  // salida
+  out:   {x:424,  y:470,  w:170, h:48, t:"Respuesta",            s:"texto / voz (TTS)",              c:"--chat"},
+  wsp:   {x:640,  y:470,  w:170, h:48, t:"Workspace / Misiones", s:"lo que ves en la UI",            c:"--orq"},
+};
+const BANDS = [
+  {x:206, y:14,  w:180, h:274, t:"GUARDAS (0 LLM)"},
+  {x:414, y:14,  w:190, h:378, t:"CAMINOS"},
+  {x:630, y:130, w:190, h:330, t:"EJECUCIÓN"},
+  {x:852, y:14,  w:206, h:460, t:"SERVICIOS Y DATOS"},
+];
+const E = [
+  ["ui","orq"],["orq","pre"],["orq","quick"],["orq","cls"],
+  ["cls","act"],["pre","short"],["quick","out"],["act","direct"],
+  ["cls","short"],["cls","direct"],["cls","plan"],["cls","multi"],
+  ["short","mel"],["short","mos"],["short","out"],
+  ["direct","loop"],["loop","tools"],["loop","mel"],["loop","gate"],["direct","out"],
+  ["plan","gate"],["plan","exec"],["exec","loop"],["exec","resp"],["resp","out"],
+  ["multi","plan"],["exec","wsp"],["loop","wsp"],["tools","sql"],
+  ["short","tel"],["direct","tel"],["exec","tel"],
+];
+
+/* =====================================================================
+   FLUJOS — el camino REAL de cada caso (verificado en el código)
+   ===================================================================== */
+const FLOWS = [
+  {
+    id:"listado",
+    title:'"Dime qué proyectos tengo"',
+    hint:"Listado de datos propios · 0 LLM",
+    nodes:["ui","orq","pre","quick","out","sql"],
+    edges:[["ui","orq"],["orq","pre"],["orq","quick"],["quick","out"]],
+    steps:[
+      {t:"El chat manda el mensaje", d:"<code>POST /api/chat/stream</code> → <code>orchestrator.handle_stream</code>. Un único punto de entrada para texto y voz.", tags:[["det","sin coste"]]},
+      {t:"fast_precheck: ¿es charla obvia?", d:"Heurística determinista (saludos, cortesía). Aquí dice NO y sigue.", tags:[["det","0 LLM · µs"]]},
+      {t:"quick_answers: ¿es un listado de tus datos?", d:"SÍ. Detecta sustantivo (proyecto/agente/regla/tarea) + pregunta, y <b>rechaza verbos de acción</b>. Consulta <code>SELECT</code> directo a la tabla <code>projects</code> y responde con plantilla en tu idioma.", tags:[["det","0 LLM"],["db","1 query SQL"]]},
+      {t:"Respuesta inmediata", d:"No se llama al clasificador, no se crea misión, no se toca el MEL ni el MOS. <b>Imposible que invente proyectos</b>: el texto sale de la BD.", tags:[["det","~5 ms"]]},
+    ],
+    why:"Es el patrón de Alexa/Siri: una pregunta sobre datos propios del sistema no pasa por un LLM. Nació porque el modelo respondía «no tengo acceso a tus proyectos» o los inventaba.",
+  },
+  {
+    id:"youtube",
+    title:'"Pon X canción en YouTube"',
+    hint:"Acción mecánica · 1 bucle de tools",
+    nodes:["ui","orq","pre","quick","cls","act","direct","loop","tools","mel","out","tel","gate"],
+    edges:[["ui","orq"],["orq","pre"],["orq","quick"],["orq","cls"],["cls","direct"],["direct","loop"],["loop","tools"],["loop","mel"],["loop","gate"],["direct","out"],["direct","tel"]],
+    steps:[
+      {t:"Guardas: no es charla ni listado", d:"<code>fast_precheck</code> y <code>quick_answers</code> dicen NO (hay verbo de acción). Pasa al clasificador.", tags:[["det","0 LLM"]]},
+      {t:"classify decide QUÉ es", d:"1 llamada al LLM con capacidad <b>CLASSIFY</b> (modelo rápido). Devuelve: es <code>execute</code>, necesita navegador, <b>no</b> necesita plan → es <i>acción directa</i>.", tags:[["llm","1 llamada · CLASSIFY"]]},
+      {t:"Acuse inmediato", d:'"Entendido, me pongo con ello…". El chat no se queda mudo mientras trabaja.', tags:[["det","instantáneo"]]},
+      {t:"toolloop: elegir → ejecutar → observar", d:"Bucle de máx. <b>5 iteraciones</b> (12 si escribe). En cada vuelta pide al MEL (capacidad <b>AGENTIC</b>, política rápida) qué herramienta usar, la ejecuta de verdad y observa el resultado. Aquí: <code>search</code> para la URL y <code>browser</code> para abrirla en Chrome real.", tags:[["llm","1 por iteración"],["det","tools reales"]]},
+      {t:"Permiso si toca algo sensible", d:"Abrir el navegador está en el catálogo de permisos. Si no lo tienes pre-autorizado, se pide (<code>ApprovalGate</code>); en modo Autónomo se auto-aprueba <b>dejando rastro</b>.", tags:[["gate","HITL"]]},
+      {t:"Responde con lo que pasó de verdad", d:"Regla de grounding: <code>ok=true</code> exige ≥1 herramienta ejecutada con éxito. Si no ejecutó nada, se reporta <b>fallo honesto</b>, nunca un éxito inventado.", tags:[["det","anti-teatro"]]},
+    ],
+    why:"Sin este camino, una tarea mecánica pagaba el planner (2 llamadas al modelo lento) + un grafo multi-nodo: ~8 llamadas. Aquí son 3-4 rápidas.",
+  },
+  {
+    id:"cordyceps",
+    title:'"Crea el proyecto Cordyceps, adjunta la carpeta, milestone MVP 1.0, agente Investigador con skills, tarea Investigación y que construya una mini-wiki"',
+    hint:"Petición compleja · planner + grafo + agente",
+    nodes:["ui","orq","pre","quick","cls","plan","gate","exec","loop","tools","mel","mos","resp","out","wsp","sql","tel"],
+    edges:[["ui","orq"],["orq","pre"],["orq","quick"],["orq","cls"],["cls","plan"],["plan","gate"],["plan","exec"],["exec","loop"],["loop","tools"],["loop","mel"],["tools","sql"],["exec","resp"],["resp","out"],["exec","wsp"],["exec","tel"]],
+    steps:[
+      {t:"classify ve que hay varios entregables dependientes", d:"Devuelve <code>requires_planning=true</code>: la tarea de investigación <b>necesita</b> que existan antes el proyecto, la carpeta, el agente y la tarea. Al ser encargos <i>encadenados</i> (no independientes) es UNA misión, no varias.", tags:[["llm","1 · CLASSIFY"]]},
+      {t:"Acuse + planner construye el grafo", d:"Capacidad <b>REASON</b> (modelo potente). Emite un DAG de pasos con dependencias. Se valida con Kahn: sin ciclos, dependencias existentes, y <b>cada herramienta del nodo debe existir</b> en el catálogo (no puede inventarse tools). Si el JSON sale mal: 1 reintento con el error como feedback; si vuelve a fallar, degrada honestamente.", tags:[["llm","1-2 · REASON"],["det","validación DAG"]]},
+      {t:"Gate del PLAN: ves la lista antes de que toque nada", d:"Como el plan escribe en disco y crea cosas, se aprueba <b>entero</b> antes de ejecutar. Nada se ha hecho todavía — planificar no tiene efectos. Aprobarlo autoriza sus pasos sensibles (no se te vuelve a preguntar por cada uno, con rastro de qué aprobación autorizó cada nodo).", tags:[["gate","HITL · 1 decisión"]]},
+      {t:"executor recorre el grafo con checkpoints", d:"Ejecuta los nodos listos en orden determinista. <b>Cada cambio de estado se persiste</b> en <code>orchestrator_traces</code>: si cierras Aithera a mitad, al arrancar reanuda donde iba. Un nodo que falla marca sus dependientes como omitidos y sigue con lo que sí puede.", tags:[["det","reanudable"]]},
+      {t:"Cada nodo ejecuta de verdad", d:"Nodo por nodo, el <code>toolloop</code> llama a las herramientas reales: <code>aithera</code> (crear proyecto/milestone/agente/tarea — escribe en SQL), <code>filesystem</code> (adjuntar la carpeta, leer el documento), <code>search</code>+<code>browser</code> (investigar), <code>document</code> (leer el PDF/DOCX), <code>memory</code> (guardar la wiki en el MOS etiquetada con el proyecto).", tags:[["llm","1 por iteración"],["db","escribe SQL"]]},
+      {t:"El agente arranca su propia ejecución", d:"<code>run_agent_task</code> crea una ejecución del agente Investigador. El agente delega en el TIE con <b>su</b> whitelist de herramientas y su proyecto — no hereda permisos que no tenga (frontera de autoridad).", tags:[["det","autoridad acotada"]]},
+      {t:"responder sintetiza y todo queda visible", d:"Capacidad <b>SUMMARIZE</b>: cuenta lo conseguido y <b>lo que no</b>, sin fingir. El progreso del proyecto se recalcula por evento; la misión y sus pasos quedan en Misiones, y cada etapa con su duración en <code>mission_events</code>.", tags:[["llm","1 · SUMMARIZE"],["det","progreso automático"]]},
+    ],
+    why:"Coste real: ~4 llamadas de coordinación (classify + planner + responder) más 1 por iteración de herramienta. El grafo existe para poder pausar, reanudar y explicar — no por elegancia.",
+  },
+  {
+    id:"multi",
+    title:'"Manda un email a Ana y además pon música"',
+    hint:"Varios encargos independientes · paralelo",
+    nodes:["ui","orq","pre","quick","cls","multi","plan","exec","loop","tools","mel","resp","out","wsp","tel"],
+    edges:[["ui","orq"],["orq","pre"],["orq","quick"],["orq","cls"],["cls","multi"],["multi","plan"],["plan","exec"],["exec","loop"],["loop","tools"],["loop","mel"],["exec","wsp"],["exec","resp"],["resp","out"],["exec","tel"]],
+    steps:[
+      {t:"classify detecta encargos INDEPENDIENTES", d:"La prueba que aplica: <i>¿el segundo necesita el resultado del primero?</i> Poner música no necesita que el email se envíe → son 2 objetivos, no un plan de 2 pasos.", tags:[["llm","1 · CLASSIFY"]]},
+      {t:"El Orquestador descompone", d:"Crea un <code>OrchestrationRun</code> con N objetivos y sus dependencias (si las hubiera). Es la única capa que existe por encima del TIE.", tags:[["det","sin LLM extra"]]},
+      {t:"N misiones del TIE a la vez", d:"Cada objetivo es una misión completa e independiente, con semáforo de concurrencia. Una que falle <b>no tumba</b> a las demás; el usuario ve el avance («1 de 2 terminados»).", tags:[["det","paralelo real"]]},
+      {t:"Consolidación en UNA respuesta", d:"Mandaste un mensaje: recibes una respuesta unificada que dice qué se hizo, qué espera permiso y qué falló. Si el modelo no está disponible, hay plantilla determinista.", tags:[["llm","1 · SUMMARIZE"]]},
+    ],
+    why:"Antes, dos encargos independientes acababan en una misión con pasos secuenciales y el segundo se perdía o esperaba sin motivo.",
+  },
+];
+
+/* =====================================================================
+   COMPONENTES
+   ===================================================================== */
+const COMPS = [
+  {c:"--chat", n:"Chat / Voz", p:"La entrada. Streaming SSE token a token; en voz, STT (Whisper local) → texto → misma tubería → TTS por frases con barge-in. Pestañas de sesión persistidas.", f:"frontend/src/pages/Chat.tsx · app/api/endpoints/chat.py"},
+  {c:"--orq", n:"Orquestador", p:"Decide QUÉ MISIONES hay. Si el mensaje trae varios encargos independientes, lanza una misión por encargo en paralelo y consolida. Con un solo encargo delega en el TIE sin coste extra.", f:"app/orchestrator/"},
+  {c:"--tie", n:"TIE (Task Intelligence Engine)", p:"El motor cognitivo: entender → planificar → ejecutar el grafo → responder. Dentro viven las guardas deterministas, el clasificador, el planner, el executor y el bucle de herramientas.", f:"app/tie/"},
+  {c:"--tie", n:"Guardas deterministas", p:"Tres filtros sin LLM antes de gastar un modelo: charla obvia (fast_precheck), listados de tus datos (quick_answers) y órdenes sobre Aithera (action_intent, red de seguridad si el clasificador falla).", f:"app/tie/{intents,quick_answers,action_intent}.py"},
+  {c:"--mel", n:"MEL (Model Execution Layer)", p:"Nadie pide «GPT» ni «llama3»: se pide una CAPACIDAD (chat, classify, reason, summarize, agentic…) y el MEL elige el modelo según la política activa, con fallback en cadena y cortacircuitos.", f:"app/mel/"},
+  {c:"--mos", n:"MOS (memoria)", p:"Memoria semántica en ChromaDB, 5 tipos activos (conversacional, personal, proyecto, decisión, skill). Ingesta de email/agenda, resumen nocturno y perfil destilado. Presupuesto duro de 300 ms: el chat nunca espera a la memoria.", f:"app/memory/"},
+  {c:"--tools", n:"16 herramientas · 113 acciones", p:"Lo que Aithera puede hacer de verdad: filesystem, shell, git, email, calendar, browser (Chrome real), desktop, document, search, memory, model, process, download, secrets… y aithera, con la que se opera a sí misma.", f:"app/tools/"},
+  {c:"--warn", n:"ApprovalGate + Permisos", p:"Toda acción sensible pasa por un gate persistente y reanudable. La capa de permisos permite pre-autorizar por tipo; incluso auto-aprobado deja rastro en la tabla approvals. Nunca es silencioso.", f:"app/automation/{approval,permissions}.py"},
+  {c:"--orq", n:"Workspace (WPMS)", p:"Proyectos, hitos y tareas con progreso automático por evento. Es la FUENTE DE VERDAD de tus proyectos (SQL), no la memoria semántica.", f:"app/workspace/ · frontend Workspace/"},
+  {c:"--data", n:"Misiones + Telemetría", p:"Cada misión guarda su grafo y estado (reanudable). En paralelo, mission_events registra cada etapa —intent, plan, gate, tool_call, llm_call, responder— con modelo y duración.", f:"app/tie/tracer.py · app/telemetry/"},
+  {c:"--mos", n:"Automation Engine", p:"Triggers (cron o eventos internos), condiciones y acciones. No contiene inteligencia: para lo que requiere pensar, delega en el TIE.", f:"app/automation/"},
+  {c:"--chat", n:"AVCS (núcleo visual)", p:"La esfera 3D del Hub (Three.js con shaders propios). Refleja el estado —escuchando, pensando, hablando—. Es la identidad de Aithera: idéntica en tema claro y oscuro, por decisión explícita.", f:"frontend/src/components/hub/AICore.tsx"},
+];
+
+/* =====================================================================
+   AUDITORÍA (medido con wc -l el 2026-07-25)
+   ===================================================================== */
+const WEIGHT = [
+  {m:"app/tools", f:19, l:6541, v:"Justificado", note:"16 herramientas independientes. El tamaño es superficie de capacidad, no complejidad acoplada: quitar una no afecta a las demás."},
+  {m:"app/tie", f:19, l:5463, v:"Revisar", note:"El corazón, y donde han caído casi todas las capas nuevas. 19 archivos para «entender y ejecutar» es mucho."},
+  {m:"app/mel", f:14, l:3267, v:"Revisar", note:"Muy potente (políticas, benchmark, auto-catálogo, overrides, breakers) pero para UN usuario con 2-3 modelos conectados."},
+  {m:"app/memory", f:13, l:2356, v:"Justificado", note:"Ingesta, resumen, perfil, lifecycle y router. Cada pieza tiene un job propio y medible."},
+  {m:"app/automation", f:11, l:2255, v:"Justificado", note:"El ApprovalGate lo reutilizan TIE, permisos y skills. Es cimiento, no capa."},
+  {m:"app/orchestrator", f:7, l:1159, v:"Justificado", note:"Pequeño y con una sola responsabilidad clara: repartir N encargos."},
+  {m:"app/workspace", f:4, l:474, v:"Ejemplar", note:"Hace mucho con muy poco. El modelo a imitar."},
+  {m:"app/telemetry", f:3, l:301, v:"Ejemplar", note:"Minúsculo y ya registra todo lo que hace falta para depurar una misión."},
+];
+const RISKS = [
+  {hi:true, t:"El TIE tiene DOS motores de ejecución en paralelo",
+   d:"<code>toolloop</code> (bucle de un solo nodo) y <code>executor</code>+<code>graph</code> (grafo multinodo). El camino de <i>acción directa</i> usa solo el primero; el complejo usa los dos anidados. Son dos formas distintas de «hacer pasos», con su propio manejo de errores, permisos y reintentos.",
+   p:"Un grafo de un solo nodo ES un bucle. Podría existir un único ejecutor donde el camino directo sea el caso trivial (grafo de 1 nodo). <b>Riesgo:</b> el executor tiene checkpoint/reanudación que el bucle no necesita; fusionar mal encarece el camino rápido, que es el 80%."},
+  {hi:false, t:"Cuatro puertas antes de clasificar",
+   d:"<code>fast_precheck</code>, <code>quick_answers</code>, <code>action_intent</code> y el propio <code>classify</code>. Cada una nació de un incidente real y las tres primeras son deterministas y baratas — pero son <b>tres módulos</b> respondiendo a la misma pregunta: «¿qué quiere el usuario?».",
+   p:"Un único <code>triage.py</code> determinista con una tabla de reglas (patrón → intención) en vez de tres módulos con tres heurísticas. Menos superficie, un solo sitio donde mirar. <b>Riesgo:</b> bajo; es refactor mecánico y hay tests que lo cubren."},
+  {hi:false, t:"El MEL es una plataforma para un usuario con 2-3 modelos",
+   d:"Políticas compilables, benchmark medido, auto-catálogo investigado por otro modelo, pines por proyecto, overrides por tarea, cortacircuitos y capacidades no-aptas. Con dos proveedores conectados, buena parte del espacio de decisión nunca se usa.",
+   p:"No tocar el contrato (pedir capacidades está bien y desacopla), pero congelar el crecimiento: nada nuevo en el MEL hasta 1.0. El auto-catálogo puntuando modelos con otro modelo es el candidato más claro a simplificar."},
+  {hi:false, t:"Dos memorias que hay que saber distinguir",
+   d:"El MOS (semántico, ChromaDB) y SQL (Workspace). Ya hubo un fallo real por esto: se buscaban los proyectos en la memoria semántica y se inventaban, cuando la verdad estaba en una tabla.",
+   p:"Regla ya aplicada, mantenerla explícita: <b>los hechos estructurados se leen de SQL</b>; el MOS es para lo semántico. Está resuelto, pero es el error más fácil de repetir."},
+];
+const VERDICTS = [
+  {t:"¿Hay sobreingeniería? Sí, pero localizada.",
+   d:"No es que Aithera sea barroca en general — <code>workspace</code> y <code>telemetry</code> son ejemplares. La complejidad está concentrada en <b>el TIE</b> (dos motores de ejecución + cuatro puertas de entrada) y en <b>el MEL</b> (plataforma para un escenario que aún no existe)."},
+  {t:"La causa es el método, no el criterio.",
+   d:"Cada capa se añadió como respuesta a un incidente concreto y verificada <i>en aislamiento</i> — por eso todas «pasaban los tests» mientras el flujo completo seguía roto. Los últimos fallos (proyectos inventados, acciones que no se ejecutaban) no se arreglaron con más diseño, sino <b>cableando lo que ya existía y verificando el flujo de punta a punta</b>."},
+  {t:"Recomendación para llegar a 1.0.",
+   d:"<span class='no'>No refactorizar ahora.</span> Estás a un paso de 1.0 y el sistema por fin hace lo que dice. Plan sensato: (1) <b>congelar</b> capas nuevas — todo lo que venga se resuelve cableando o borrando, no añadiendo; (2) cerrar 1.0; (3) después, dos refactors acotados y con tests ya escritos: <b>unificar las cuatro puertas en un triage</b> y <b>estudiar un único ejecutor</b>. La regla que evita reincidir: <i>si un arreglo requiere un módulo nuevo, primero busca qué módulo existente debería haberlo hecho.</i>"},
+];
+
+/* =====================================================================
+   RENDER
+   ===================================================================== */
+const svg = document.getElementById("map");
+const NS = "http://www.w3.org/2000/svg";
+const el = (t,a={}) => { const e=document.createElementNS(NS,t);
+  for(const k in a) e.setAttribute(k,a[k]); return e; };
+const cx = n => n.x + n.w/2, cy = n => n.y + n.h/2;
+
+function drawMap(){
+  svg.innerHTML = "";
+  BANDS.forEach(b=>{
+    svg.appendChild(el("rect",{class:"band",x:b.x,y:b.y,width:b.w,height:b.h}));
+    const t = el("text",{class:"bandlbl",x:b.x+9,y:b.y+15}); t.textContent=b.t; svg.appendChild(t);
+  });
+  E.forEach(([a,b])=>{
+    const A=N[a],B=N[b]; if(!A||!B) return;
+    const p = el("path",{class:"ed","data-e":a+">"+b,
+      d:`M ${A.x+A.w} ${cy(A)} C ${A.x+A.w+34} ${cy(A)}, ${B.x-34} ${cy(B)}, ${B.x} ${cy(B)}`});
+    svg.appendChild(p);
+  });
+  for(const k in N){
+    const n=N[k], g=el("g",{class:"nd","data-n":k});
+    g.appendChild(el("rect",{x:n.x,y:n.y,width:n.w,height:n.h,rx:9,
+      style:`stroke:var(${n.c})`}));
+    const t1=el("text",{x:n.x+11,y:n.y+ (n.s?20:26)}); t1.textContent=n.t; g.appendChild(t1);
+    if(n.s){ const t2=el("text",{class:"sm",x:n.x+11,y:n.y+35}); t2.textContent=n.s; g.appendChild(t2); }
+    svg.appendChild(g);
+  }
+}
+
+function paint(flow){
+  const ns=new Set(flow.nodes), es=new Set(flow.edges.map(([a,b])=>a+">"+b));
+  svg.querySelectorAll(".nd").forEach(g=>{
+    const on = ns.has(g.dataset.n);
+    g.classList.toggle("hit",on); g.classList.toggle("dim",!on);
+  });
+  svg.querySelectorAll(".ed").forEach(p=>{
+    const on = es.has(p.dataset.e);
+    p.classList.toggle("hit",on); p.classList.toggle("dim",!on);
+    if(on){ const n=p.dataset.e.split(">")[1]; p.style.stroke=`var(${N[n].c})`; }
+    else p.style.stroke="";
+  });
+  const box=document.getElementById("steps");
+  box.innerHTML = flow.steps.map((s,i)=>`
+    <div class="step">
+      <div class="n">${i+1}</div>
+      <div>
+        <b>${s.t}</b>
+        <p>${s.d}</p>
+        <div class="cost">${(s.tags||[]).map(([c,txt])=>`<span class="pill ${c}">${txt}</span>`).join("")}</div>
+      </div>
+    </div>`).join("") + `
+    <div class="step" style="border-left-color:var(--mel)">
+      <div class="n" style="color:var(--mel)">¿?</div>
+      <div><b>Por qué este camino existe</b><p>${flow.why}</p></div>
+    </div>`;
+}
+
+const fbox=document.getElementById("flows");
+FLOWS.forEach((f,i)=>{
+  const b=document.createElement("button");
+  b.className="flowbtn"+(i===0?" on":"");
+  b.innerHTML=`<b>${f.title}</b><span>${f.hint}</span>`;
+  b.onclick=()=>{ document.querySelectorAll(".flowbtn").forEach(x=>x.classList.remove("on"));
+                  b.classList.add("on"); paint(f); };
+  fbox.appendChild(b);
+});
+
+document.getElementById("comps").innerHTML = COMPS.map(c=>`
+  <div class="comp">
+    <h4><span class="dot" style="background:var(${c.c})"></span>${c.n}</h4>
+    <p>${c.p}</p><span class="path">${c.f}</span>
+  </div>`).join("");
+
+const max = Math.max(...WEIGHT.map(w=>w.l));
+document.getElementById("weight").innerHTML =
+  `<tr><th>Módulo</th><th class="num">Archivos</th><th class="num">Líneas</th><th>Veredicto</th><th>Nota</th></tr>` +
+  WEIGHT.map(w=>`<tr>
+    <td><code>${w.m}</code><span class="bar" style="width:${Math.round(w.l/max*100)}%;background:${
+      w.v==="Revisar"?"var(--warn)":w.v==="Ejemplar"?"var(--tie)":"var(--data)"}"></span></td>
+    <td class="num">${w.f}</td><td class="num">${w.l.toLocaleString("es")}</td>
+    <td style="color:${w.v==="Revisar"?"var(--warn)":w.v==="Ejemplar"?"var(--tie)":"var(--dim)"}">${w.v}</td>
+    <td class="sub">${w.note}</td></tr>`).join("");
+
+document.getElementById("risks").innerHTML = RISKS.map(r=>`
+  <div class="card risk ${r.hi?"hi":""}" style="margin-bottom:10px">
+    <b>${r.t}</b>
+    <p class="sub">${r.d}</p>
+    <p style="margin-top:8px;font-size:13px"><b style="color:var(--tie)">Alternativa más simple:</b> ${r.p}</p>
+  </div>`).join("");
+
+document.getElementById("verdicts").innerHTML = VERDICTS.map(v=>`
+  <div class="verdict"><b>${v.t}</b><p class="sub" style="margin-top:5px">${v.d}</p></div>`).join("");
+
+drawMap(); paint(FLOWS[0]);
+</script>
+</body>
+</html>

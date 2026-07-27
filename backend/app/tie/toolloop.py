@@ -107,7 +107,13 @@ def build_catalog(allowed_tools: list[str], tool_manager) -> list[dict]:
         return []
 
     catalog: list[dict] = []
-    for tool in tool_manager.list_tools():
+    # [2026-07-24 FIX] `include_internal=True`: las tools internas (aithera_tool —
+    # gestionar proyectos/agentes/reglas de la propia app) SÍ deben aparecer en el
+    # catálogo que ve el modelo. Antes se listaban sin internal, así que aithera
+    # estaba PERMITIDA (se añade a `allowed_tools` vía _internal_tool_ids) pero sus
+    # acciones NUNCA se le mostraban al modelo → el modelo no sabía que podía
+    # crear/abrir proyectos, agentes o reglas. Era EL cable que faltaba.
+    for tool in tool_manager.list_tools(include_internal=True):
         if tool["tool_id"] not in allowed_tools:
             continue
         for action in tool.get("actions", []):

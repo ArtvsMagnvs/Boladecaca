@@ -57,7 +57,8 @@ async def chat_stream(request: ChatRequest):
     # persistir el mensaje actual (que se guarda al final, en el `finally`), así
     # que el historial es exactamente "lo dicho hasta ahora".
     history = chat_service.recent_turns(request.session_id)
-    system_prompt = await chat_service.build_system_prompt(request.message, history=history)
+    system_prompt = await chat_service.build_system_prompt(
+        request.message, history=history, session_id=request.session_id)
 
     # Almacenamos el user message al principio para que quede indexado
     # aunque la IA falle o el cliente cancele el stream.
@@ -89,12 +90,14 @@ async def chat_stream(request: ChatRequest):
                     import app.orchestrator as orchestrator
 
                     origen = orchestrator.handle_stream(
-                        request.message, channel="web", session_id=request.session_id)
+                        request.message, channel="web", session_id=request.session_id,
+                        conversational=request.conversational)
                 else:
                     import app.tie as tie
 
                     origen = tie.handle_stream(
-                        request.message, channel="web", session_id=request.session_id)
+                        request.message, channel="web", session_id=request.session_id,
+                        conversational=request.conversational)
 
                 async for kind, payload in origen:
                     if not payload:
@@ -177,3 +180,18 @@ async def clear_chat_history(db: Session = Depends(get_db)):
     db.query(ChatMessage).delete()
     db.commit()
     return {"message": "Chat history cleared"}
+
+
+@router.get("/pending-reports")
+async def pending_reports(session_id: str | None = None, after: int = 0):
+    """[A·VOZ-4] Reportes de misiones en segundo plano (modo conversación) que
+    terminaron DESPUÉS de que el turno de chat cerrara su stream SSE. El chat de
+    Electron sondea esto (como Misiones sondea su grafo): cada reporte trae un
+    `seq` creciente que el cliente usa como cursor (`after`). Vacío = nada nuevo.
+
+    En voz, este mismo texto se locuta; en Telegram llega por push (notify_user).
+    El reporte también queda como ChatMessage del asistente en el historial."""
+    from app.tie import conversation
+
+    reports = conversation.pending_reports(session_id, after_seq=after)
+    return {"reports": reports}

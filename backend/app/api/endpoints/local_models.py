@@ -76,6 +76,21 @@ async def get_catalog():
     }
 
 
+@router.get("/runtime")
+async def runtime_status():
+    """[OB-2, doc 30 §1] ¿Está Ollama instalado y operativo? Chequeo LIGERO
+    (no descarga el catálogo entero) para el onboarding: si no está, la UI
+    ofrece el enlace de descarga y un botón de reintento. `install_url` sale
+    del catálogo (la familia runtime), no hardcodeado aquí."""
+    ok = await local_installer.runtime_alive()
+    install_url = None
+    for fam in LOCAL_CATALOG.values():
+        if fam.get("is_runtime"):
+            install_url = fam.get("install_url")
+            break
+    return {"ok": ok, "install_url": install_url}
+
+
 class TagBody(BaseModel):
     tag: str
 

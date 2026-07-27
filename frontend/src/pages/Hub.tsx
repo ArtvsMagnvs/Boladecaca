@@ -28,6 +28,7 @@ import { HubPanel } from "@/components/hub/HubPanel";
 import { api, type Project, type Task, type CalendarEvent } from "@/lib/api";
 import { useAppStore } from "@/store/useAppStore";
 import { shortRef } from "@/lib/modelNames";
+import { useT } from "@/store/useI18n";
 
 // V0.7 extra (Fase 4): tipos para el estado real de Email en el Hub
 interface EmailStatus {
@@ -35,6 +36,8 @@ interface EmailStatus {
   email: string | null;
   has_credentials: boolean;
   libs_available: boolean;
+  // AUTH-1: sesión caducada/revocada se distingue de "sin OAuth".
+  connection_state?: "connected" | "expired" | "revoked" | "no_token" | "no_credentials" | "libs_missing";
 }
 
 const PRIORITY_COLOR: Record<string, string> = {
@@ -64,7 +67,9 @@ interface VoiceStatusInfo {
   configured: boolean;
   voices_count: number;
   message: string;
-  source: "elevenlabs" | "espeak" | "none";
+  // "none" es un estado LOCAL (backend inalcanzable) — el backend en sí ya
+  // no lo emite desde A·VOZ-1 (EdgeTTS es fallback siempre disponible).
+  source: "elevenlabs" | "edgetts" | "none";
 }
 
 const HUB_POLL_INTERVAL_MS = 30_000;
@@ -72,6 +77,7 @@ const HUB_POLL_INTERVAL_MS = 30_000;
 export default function Hub() {
   const navigate = useNavigate();
   const { backendConnected, aiStatus, chatPrimary, chatPrimaryDown, coreState } = useAppStore();
+  const t = useT();
 
   // Datos crudos del backend (null = cargando, [] = ya cargado pero vacío)
   const [projects, setProjects] = useState<Project[] | null>(null);
@@ -156,7 +162,7 @@ export default function Hub() {
         safeSet<VoiceStatusInfo>(setVoiceStatus, {
           configured: false,
           voices_count: 0,
-          message: "Voz no disponible",
+          message: t("hub.voice.unavailable"),
           source: "none",
         }),
       );
@@ -283,21 +289,21 @@ export default function Hub() {
       {/* IZQUIERDA */}
       <div className="flex flex-col gap-4 min-h-0 overflow-y-auto pr-1">
         <HubPanel
-          title="Proyectos activos"
+          title={t("hub.projects.title")}
           count={activeProjects.length}
           action={
             <button
               onClick={() => navigate("/workspace")}
               className="text-xs text-accent hover:text-accent-glow transition-colors"
             >
-              Ver todos →
+              {t("hub.viewAll")} →
             </button>
           }
         >
           {projects === null ? (
             <LoadingDots />
           ) : activeProjects.length === 0 ? (
-            <EmptyState text="No hay proyectos activos." />
+            <EmptyState text={t("hub.projects.empty")} />
           ) : (
             <ul className="space-y-2">
               {activeProjects.map((p) => (
@@ -324,21 +330,21 @@ export default function Hub() {
         </HubPanel>
 
         <HubPanel
-          title="Tareas pendientes"
+          title={t("hub.tasks.title")}
           count={pendingTasks.length}
           action={
             <button
               onClick={() => navigate("/workspace")}
               className="text-xs text-accent hover:text-accent-glow transition-colors"
             >
-              Ver todas →
+              {t("hub.viewAllFem")} →
             </button>
           }
         >
           {tasks === null ? (
             <LoadingDots />
           ) : pendingTasks.length === 0 ? (
-            <EmptyState text="No hay tareas pendientes." />
+            <EmptyState text={t("hub.tasks.empty")} />
           ) : (
             <ul className="space-y-2">
               {pendingTasks.map((t) => (
@@ -365,21 +371,21 @@ export default function Hub() {
         </HubPanel>
 
         <HubPanel
-          title="Agentes activos"
+          title={t("hub.agents.title")}
           count={activeAgents.length}
           action={
             <button
               onClick={() => navigate("/agents")}
               className="text-xs text-accent hover:text-accent-glow transition-colors"
             >
-              Ver todos →
+              {t("hub.viewAll")} →
             </button>
           }
         >
           {agents === null ? (
             <LoadingDots />
           ) : activeAgents.length === 0 ? (
-            <EmptyState text="No hay agentes activos." />
+            <EmptyState text={t("hub.agents.empty")} />
           ) : (
             <ul className="space-y-2">
               {activeAgents.map((a) => (
@@ -416,7 +422,7 @@ export default function Hub() {
         role="button"
         tabIndex={0}
         onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") navigate("/chat"); }}
-        aria-label="Abrir chat"
+        aria-label={t("hub.aria.openChat")}
       >
         <AnimatePresence mode="wait">
           <motion.div
@@ -431,17 +437,17 @@ export default function Hub() {
                 este texto flota directamente sobre el escenario oscuro del
                 núcleo, que es idéntico en ambos temas — con text-ink normal,
                 en tema claro sería tinta oscura sobre fondo oscuro. */}
-            <p className="text-sm font-medium text-[#E8EAF0]">{coreStateLabel(coreState)}</p>
+            <p className="text-sm font-medium text-[#E8EAF0]">{coreStateLabel(coreState, t)}</p>
             <p className="text-xs text-[#9AA1B2] mt-1">
               {/* [2026-07-21] El modelo mostrado es el del CHAT según la
                   política ACTIVA (Inteligencia), no el proveedor legacy. */}
               {chatPrimary
                 ? `${shortRef(chatPrimary)}${chatPrimaryDown ? " ⚠" : ""}`
                 : aiStatus?.fallback_active && aiStatus?.primary_provider
-                ? `Fallback: ${aiStatus.provider} (por ${aiStatus.primary_provider} no disponible)`
+                ? t("hub.status.fallback", { provider: aiStatus.provider, primary: aiStatus.primary_provider })
                 : aiStatus?.provider
                 ? `${aiStatus.provider} · ${aiStatus.model ?? "sin modelo"}`
-                : "Sin proveedor activo"}
+                : t("hub.status.noProvider")}
             </p>
           </motion.div>
         </AnimatePresence>
@@ -450,21 +456,21 @@ export default function Hub() {
       {/* DERECHA */}
       <div className="flex flex-col gap-4 min-h-0 overflow-y-auto pr-1">
         <HubPanel
-          title="Próximos eventos"
+          title={t("hub.events.title")}
           count={upcomingEvents.length}
           action={
             <button
               onClick={() => navigate("/calendar")}
               className="text-xs text-accent hover:text-accent-glow transition-colors"
             >
-              Ver todos →
+              {t("hub.viewAll")} →
             </button>
           }
         >
           {events === null ? (
             <LoadingDots />
           ) : upcomingEvents.length === 0 ? (
-            <EmptyState text="No hay eventos próximos." />
+            <EmptyState text={t("hub.events.empty")} />
           ) : (
             <ul className="space-y-2">
               {upcomingEvents.map((e) => (
@@ -476,7 +482,7 @@ export default function Hub() {
                   <div className="h-1.5 w-1.5 rounded-full bg-signal-ok/60 shrink-0" />
                   <span className="text-sm truncate text-ink flex-1">{e.title}</span>
                   <span className="text-[10px] text-ink-faint shrink-0">
-                    {formatEventDate(e.start_date)}
+                    {formatEventDate(e.start_date, t)}
                   </span>
                 </li>
               ))}
@@ -485,21 +491,21 @@ export default function Hub() {
         </HubPanel>
 
         <HubPanel
-          title="Chat reciente"
+          title={t("hub.chat.title")}
           count={recentChat.length}
           action={
             <button
               onClick={() => navigate("/chat")}
               className="text-xs text-accent hover:text-accent-glow transition-colors"
             >
-              Abrir →
+              {t("hub.open")} →
             </button>
           }
         >
           {chatRecent === null ? (
             <LoadingDots />
           ) : recentChat.length === 0 ? (
-            <EmptyState text="Aún no hay conversaciones." />
+            <EmptyState text={t("hub.chat.empty")} />
           ) : (
             <ul className="space-y-2">
               {recentChat.map((m, idx) => (
@@ -508,7 +514,7 @@ export default function Hub() {
                   className="rounded-lg px-2 py-1.5 -mx-2 hover:bg-base-800/40 transition-colors"
                 >
                   <p className="text-[10px] uppercase tracking-wider text-ink-faint mb-0.5">
-                    {m.role === "user" ? "Tú" : "Aithera"}
+                    {m.role === "user" ? t("hub.chat.you") : "Aithera"}
                   </p>
                   <p className="text-sm text-ink line-clamp-2">{m.content}</p>
                 </li>
@@ -518,7 +524,7 @@ export default function Hub() {
         </HubPanel>
 
         <HubPanel
-          title="Email"
+          title={t("hub.email.title")}
           action={
             <span
               className={`text-[10px] flex items-center gap-1 ${
@@ -544,37 +550,37 @@ export default function Hub() {
         >
           {/* V0.7 extra: estado real de Email (conexion + propuestas) */}
           {emailStatus === null ? (
-            <p className="text-sm text-ink-faint">Cargando...</p>
+            <p className="text-sm text-ink-faint">{t("hub.email.loading")}</p>
           ) : emailStatus.connected ? (
             <>
               <p className="text-sm text-ink">
-                <span className="text-signal-ok">●</span> Conectado como{" "}
+                <span className="text-signal-ok">●</span> {t("hub.email.connectedAs")}{" "}
                 <span className="font-medium">{emailStatus.email}</span>
               </p>
               <div className="mt-3 grid grid-cols-3 gap-2 text-center">
                 <div className="rounded-lg bg-base-800/50 px-2 py-2">
-                  <p className="text-[9px] text-ink-faint uppercase tracking-wider">Pendientes</p>
+                  <p className="text-[9px] text-ink-faint uppercase tracking-wider">{t("hub.email.pending")}</p>
                   <p className="text-base font-medium text-ink">{proposalsCount.pending}</p>
                 </div>
                 <div className="rounded-lg bg-base-800/50 px-2 py-2">
-                  <p className="text-[9px] text-ink-faint uppercase tracking-wider">Esperando OK</p>
+                  <p className="text-[9px] text-ink-faint uppercase tracking-wider">{t("hub.email.awaitingOk")}</p>
                   <p className="text-base font-medium text-amber-300">{proposalsCount.counter_sent}</p>
                 </div>
                 <div className="rounded-lg bg-base-800/50 px-2 py-2">
-                  <p className="text-[9px] text-ink-faint uppercase tracking-wider">Confirmadas</p>
+                  <p className="text-[9px] text-ink-faint uppercase tracking-wider">{t("hub.email.confirmed")}</p>
                   <p className="text-base font-medium text-signal-ok">{proposalsCount.confirmed}</p>
                 </div>
               </div>
               {/* V0.7.3 (Sprint 4, B7): digest de hoy */}
               {digest && (
                 <div className="mt-2 flex items-center justify-between text-[10px] px-2 py-1.5 rounded-lg bg-base-800/40">
-                  <span className="text-ink-faint">Hoy:</span>
-                  <span className="text-ink-dim">{digest.triaged_total} triados</span>
+                  <span className="text-ink-faint">{t("hub.email.today")}</span>
+                  <span className="text-ink-dim">{t("hub.email.triaged", { n: digest.triaged_total })}</span>
                   <span className={digest.urgent_pending > 0 ? "text-signal-error font-medium" : "text-ink-faint"}>
-                    {digest.urgent_pending} urgentes
+                    {t("hub.email.urgent", { n: digest.urgent_pending })}
                   </span>
                   <span className={digest.drafts_awaiting > 0 ? "text-amber-300" : "text-ink-faint"}>
-                    {digest.drafts_awaiting} borradores
+                    {t("hub.email.drafts", { n: digest.drafts_awaiting })}
                   </span>
                 </div>
               )}
@@ -582,39 +588,51 @@ export default function Hub() {
                 onClick={() => navigate("/email")}
                 className="mt-3 text-[10px] px-2 py-1 rounded bg-base-800 text-ink-dim hover:bg-base-700 w-full"
               >
-                Abrir Email Assistant
+                {t("hub.email.openAssistant")}
               </button>
             </>
-          ) : emailStatus.has_credentials ? (
+          ) : (emailStatus.connection_state === "revoked" || emailStatus.connection_state === "expired") ? (
+            // AUTH-1: estuvo conectado y la sesión caducó -> mensaje claro de
+            // reconexión, no el genérico "credenciales sin OAuth".
             <>
               <p className="text-sm text-amber-300">
-                <span>●</span> Credenciales configuradas, sin OAuth activo
-              </p>
-              <p className="text-[10px] text-ink-faint mt-2">
-                Pulsa "Conectar" en Email Assistant para abrir el browser y autorizar.
+                <span>●</span> {t("hub.email.sessionExpired")}
               </p>
               <button
                 onClick={() => navigate("/email")}
                 className="mt-3 text-[10px] px-2 py-1 rounded bg-accent/15 text-accent border border-accent/30 hover:bg-accent/25 w-full"
               >
-                Ir a Email Assistant
+                {t("hub.email.reconnect")}
+              </button>
+            </>
+          ) : emailStatus.has_credentials ? (
+            <>
+              <p className="text-sm text-amber-300">
+                <span>●</span> {t("hub.email.credsNoOauth")}
+              </p>
+              <p className="text-[10px] text-ink-faint mt-2">
+                {t("hub.email.pressConnect")}
+              </p>
+              <button
+                onClick={() => navigate("/email")}
+                className="mt-3 text-[10px] px-2 py-1 rounded bg-accent/15 text-accent border border-accent/30 hover:bg-accent/25 w-full"
+              >
+                {t("hub.email.goToAssistant")}
               </button>
             </>
           ) : (
             <>
               <p className="text-sm text-ink-faint">
-                <span className="text-ink-faint">●</span> Google no conectado
+                <span className="text-ink-faint">●</span> {t("hub.email.notConnected")}
               </p>
               <p className="text-[10px] text-ink-faint mt-2">
-                Necesitas client_id + client_secret de Google Cloud Console.
-                Configuralo en Settings o pega las claves en el formulario de
-                Email Assistant.
+                {t("hub.email.needCreds")}
               </p>
               <button
                 onClick={() => navigate("/email")}
                 className="mt-3 text-[10px] px-2 py-1 rounded bg-base-800 text-ink-dim hover:bg-base-700 w-full"
               >
-                Configurar Email
+                {t("hub.email.configure")}
               </button>
             </>
           )}
@@ -622,10 +640,10 @@ export default function Hub() {
 
         {/* V0.85 (MOS M3): tarjeta Memoria — ultima ingesta, dias cubiertos, briefing de hoy */}
         <HubPanel
-          title="Memoria"
+          title={t("hub.memory.title")}
           action={
             <span className="text-[10px] text-ink-faint">
-              {memoryCard?.daysCovered ? `${memoryCard.daysCovered} días` : ""}
+              {memoryCard?.daysCovered ? t("hub.memory.days", { n: memoryCard.daysCovered }) : ""}
             </span>
           }
         >
@@ -634,26 +652,26 @@ export default function Hub() {
           ) : (
             <>
               <p className="text-sm text-ink line-clamp-2">
-                {memoryCard.summary || "Sin actividad relevante todavía."}
+                {memoryCard.summary || t("hub.memory.noActivity")}
               </p>
               <div className="mt-2 flex items-center justify-between text-[10px] px-2 py-1.5 rounded-lg bg-base-800/40">
                 <span className="text-ink-faint">
                   {memoryCard.lastIngestAt
-                    ? `Ingesta: ${formatEventDate(memoryCard.lastIngestAt)}`
-                    : "Sin ingesta todavía"}
+                    ? t("hub.memory.ingestAt", { date: formatEventDate(memoryCard.lastIngestAt, t) })
+                    : t("hub.memory.noIngest")}
                 </span>
                 <span className={memoryCard.urgentCount > 0 ? "text-signal-error font-medium" : "text-ink-faint"}>
-                  {memoryCard.urgentCount} urgentes
+                  {t("hub.memory.urgentCount", { n: memoryCard.urgentCount })}
                 </span>
               </div>
               {/* V0.87 (WPMS W4): señales del Workspace, misma tarjeta */}
               {(memoryCard.upcomingDeadlines > 0 || memoryCard.blockedTasks > 0) && (
                 <div className="mt-1.5 flex items-center gap-3 text-[10px] px-2">
                   {memoryCard.upcomingDeadlines > 0 && (
-                    <span className="text-ink-faint">{memoryCard.upcomingDeadlines} deadlines próximos</span>
+                    <span className="text-ink-faint">{t("hub.memory.deadlines", { n: memoryCard.upcomingDeadlines })}</span>
                   )}
                   {memoryCard.blockedTasks > 0 && (
-                    <span className="text-signal-warn">{memoryCard.blockedTasks} tareas bloqueadas</span>
+                    <span className="text-signal-warn">{t("hub.memory.blocked", { n: memoryCard.blockedTasks })}</span>
                   )}
                 </div>
               )}
@@ -671,7 +689,7 @@ export default function Hub() {
           label={backendConnected ? "Backend ●" : "Backend ○"}
           color={backendConnected ? "bg-signal-ok" : "bg-signal-error"}
           pulse={!backendConnected}
-          title={backendConnected ? "Backend conectado" : "Sin conexion con el backend"}
+          title={backendConnected ? t("hub.status.backendConnected") : t("hub.status.backendDisconnected")}
         />
         {/* [2026-07-21] La barra muestra el modelo del CHAT según la política
             ACTIVA (Inteligencia). El proveedor legacy queda solo de fallback
@@ -679,10 +697,10 @@ export default function Hub() {
         <SystemIndicator
           label={
             chatPrimary
-              ? `IA: ${shortRef(chatPrimary)}${chatPrimaryDown ? " ⚠" : " ✓"}`
+              ? `${t("hub.status.iaLabel")}: ${shortRef(chatPrimary)}${chatPrimaryDown ? " ⚠" : " ✓"}`
               : aiStatus?.provider
-              ? `IA: ${capitalize(aiStatus.provider)}${aiStatus.model ? ` · ${shortModelName(aiStatus.model)}` : ""}`
-              : "IA: —"
+              ? `${t("hub.status.iaLabel")}: ${capitalize(aiStatus.provider)}${aiStatus.model ? ` · ${shortModelName(aiStatus.model)}` : ""}`
+              : `${t("hub.status.iaLabel")}: —`
           }
           color={
             chatPrimary
@@ -694,20 +712,20 @@ export default function Hub() {
           title={
             chatPrimary
               ? (chatPrimaryDown
-                  ? `${shortRef(chatPrimary)} está fallando ahora; los respaldos de la política responden`
-                  : `Chat: ${shortRef(chatPrimary)} (política activa de Inteligencia)`)
+                  ? t("hub.status.chatFailing", { model: shortRef(chatPrimary) })
+                  : t("hub.status.chatActive", { model: shortRef(chatPrimary) }))
               : aiStatus
               ? `${aiStatus.provider} / ${aiStatus.model ?? ""}`
-              : "Sin proveedor"
+              : t("hub.status.noProviderShort")
           }
         />
         <SystemIndicator
-          label={`Voz: ${voiceStatus?.configured ? "ON" : "OFF"}`}
+          label={t("hub.status.voice", { state: voiceStatus?.configured ? t("hub.status.on") : t("hub.status.off") })}
           color={voiceStatus?.configured ? "bg-signal-ok" : "bg-ink-faint"}
-          title={voiceStatus?.message ?? "Sin informacion de voz"}
+          title={voiceStatus?.message ?? t("hub.status.noVoiceInfo")}
         />
         <SystemIndicator
-          label={`Núcleo: ${coreStateLabel(coreState)}`}
+          label={t("hub.status.core", { state: coreStateLabel(coreState, t) })}
           color={coreState === "error" ? "bg-signal-error" : "bg-accent/60"}
           pulse={coreState !== "idle"}
         />
@@ -754,16 +772,17 @@ function LoadingDots() {
   );
 }
 
-function coreStateLabel(state: string): string {
-  const labels: Record<string, string> = {
-    idle: "En reposo",
-    listening: "Escuchando",
-    thinking: "Pensando",
-    speaking: "Hablando",
-    processing: "Procesando",
-    error: "Error",
+function coreStateLabel(state: string, t: (key: string) => string): string {
+  const keys: Record<string, string> = {
+    idle: "hub.core.idle",
+    listening: "hub.core.listening",
+    thinking: "hub.core.thinking",
+    speaking: "hub.core.speaking",
+    processing: "hub.core.processing",
+    error: "hub.core.error",
   };
-  return labels[state] ?? state;
+  const key = keys[state];
+  return key ? t(key) : state;
 }
 
 function EmptyState({ text }: { text: string }) {
@@ -792,19 +811,19 @@ function capitalize(s: string): string {
  * Formatea la fecha de un evento de calendario (ISO string) a algo
  * compacto para el panel derecho (ej. "21 jun", "hoy 18:30", "mañana 09:00").
  */
-function formatEventDate(iso: string): string {
+function formatEventDate(iso: string, t: (key: string) => string): string {
   try {
     const d = new Date(iso);
     if (Number.isNaN(d.getTime())) return "";
     const now = new Date();
     const sameDay = d.toDateString() === now.toDateString();
     if (sameDay) {
-      return `hoy ${d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`;
+      return `${t("hub.date.today")} ${d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`;
     }
     const tomorrow = new Date(now);
     tomorrow.setDate(now.getDate() + 1);
     if (d.toDateString() === tomorrow.toDateString()) {
-      return `mañana ${d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`;
+      return `${t("hub.date.tomorrow")} ${d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`;
     }
     return d.toLocaleDateString([], { day: "2-digit", month: "short" });
   } catch {

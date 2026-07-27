@@ -11,6 +11,8 @@ import { Shelf } from "./Shelf";
 import { ProjectCard } from "./ProjectCard";
 import { AgentWindowCard } from "./AgentWindowCard";
 import { useWorkspaceLayouts } from "./useWindowCard";
+import { AGENT_Z_OFFSET } from "./layers";
+import { useT } from "@/store/useI18n";
 
 const AGENT_LAYOUTS_KEY = "aithera.workspace.agentCardLayouts";
 // V0.87 (W4): las ventanas de agente flotan SIEMPRE por encima de las
@@ -19,7 +21,8 @@ const AGENT_LAYOUTS_KEY = "aithera.workspace.agentCardLayouts";
 // useWindowCard.ts), así que sus valores numéricos podrían solaparse; este
 // offset evita que una tarjeta de proyecto "tape" una ventana de agente
 // mientras cada tipo sigue respetando su propio orden de traer-al-frente.
-const AGENT_Z_OFFSET = 100000;
+// [2026-07-25] El número vive en `layers.ts` junto al techo de las tarjetas y a
+// la capa de los popups: los tres se leen juntos o vuelven a solaparse.
 
 interface Props {
   projects: Project[];
@@ -29,6 +32,7 @@ interface Props {
 }
 
 export function WorkspaceCanvas({ projects, onCreateProject, onEditProject, onProjectsRefresh }: Props) {
+  const t = useT();
   const { getLayout, setLayout, bringToFront, openFromShelf, sendToShelf, toggleExpanded } = useWorkspaceLayouts();
   // V0.87 (W4): las tarjetas de agente reusan EXACTAMENTE la misma mecanica
   // (arrastre/resize/expandir/"estanteria") sobre su PROPIA instancia del
@@ -86,6 +90,12 @@ export function WorkspaceCanvas({ projects, onCreateProject, onEditProject, onPr
   };
 
   const openCards = projects.filter((p) => !getLayout(p.id).shelved);
+  // [2026-07-25] Cuál está al frente (mayor zIndex entre las abiertas): se usa
+  // solo para pintar el borde de foco, no altera el apilado.
+  const frontProjectId = openCards.reduce<number | null>(
+    (best, p) => (best === null || getLayout(p.id).zIndex > getLayout(best).zIndex ? p.id : best),
+    null,
+  );
 
   return (
     <div className="h-full flex gap-4">
@@ -101,13 +111,13 @@ export function WorkspaceCanvas({ projects, onCreateProject, onEditProject, onPr
 
         {projects.length === 0 && (
           <div className="absolute inset-0 flex items-center justify-center text-sm text-ink-faint">
-            Sin proyectos. Crea uno desde la estantería.
+            {t("workspace.canvas.noProjects")}
           </div>
         )}
 
         {openCards.length === 0 && projects.length > 0 && (
           <div className="absolute inset-0 flex items-center justify-center text-sm text-ink-faint pointer-events-none">
-            Todos los proyectos están en la estantería. Haz clic en uno para sacarlo.
+            {t("workspace.canvas.allShelved")}
           </div>
         )}
 
@@ -120,6 +130,12 @@ export function WorkspaceCanvas({ projects, onCreateProject, onEditProject, onPr
               project={p}
               allProjects={projects}
               layout={layout}
+              // [2026-07-25] Foco visible: la tarjeta al frente se marca con el
+              // borde de acento. Clicar una tarjeta de detrás YA la traía al
+              // frente (`onPointerDownCapture`, fase de captura, que ningún
+              // `stopPropagation` de los hijos puede bloquear), pero sin señal
+              // visual el usuario no podía saber que había pasado.
+              isFront={p.id === frontProjectId}
               bounds={bounds}
               onInteractStart={() => bringToFront(p.id)}
               onCommit={(patch) => setLayout(p.id, patch)}

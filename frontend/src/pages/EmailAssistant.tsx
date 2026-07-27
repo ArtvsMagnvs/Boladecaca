@@ -12,57 +12,61 @@
 import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import { api, type AutoReplyRule, type MeetingProposal, type ActivityEntry, type ActivityStats, type InboxEmail } from "@/lib/api";
+import { useT, useI18n, LOCALE_TAG } from "@/store/useI18n";
 
-const MATCHING_LABELS: Record<string, string> = {
-  sender_contains: "Remitente contiene",
-  subject_contains: "Asunto contiene",
-  sender_domain: "Dominio del remitente",
+// [I18N-8] Constantes a nivel de módulo: guardan la CLAVE i18n, no el texto.
+// Se resuelven con t()/tr() dentro del componente (mismo patrón que TIER_INFO
+// en Settings.tsx, I18N-7).
+const MATCHING_LABEL_KEYS: Record<string, string> = {
+  sender_contains: "email.rule.matching.senderContains",
+  subject_contains: "email.rule.matching.subjectContains",
+  sender_domain: "email.rule.matching.senderDomain",
 };
 
-const ACTION_LABELS: Record<string, string> = {
-  auto_send: "Enviar automaticamente",
-  create_draft: "Crear borrador (revision manual)",
-  alert_only: "Solo avisar (no responder)",
+const ACTION_LABEL_KEYS: Record<string, string> = {
+  auto_send: "email.rule.action.autoSend",
+  create_draft: "email.rule.action.createDraft",
+  alert_only: "email.rule.action.alertOnly",
 };
 
 // V0.7 extra: visual config para los tipos de actividad del dashboard
-const ACTIVITY_VISUAL: Record<string, { bg: string; ring: string; text: string; icon: string; label: string }> = {
-  sent:               { bg: "bg-emerald-500/10",  ring: "ring-emerald-500/30", text: "text-emerald-300", icon: "✉",  label: "Enviado" },
-  draft:              { bg: "bg-amber-500/10",    ring: "ring-amber-500/30",   text: "text-amber-300",   icon: "📝", label: "Borrador" },
-  alert:              { bg: "bg-rose-500/15",     ring: "ring-rose-500/40",    text: "text-rose-300",    icon: "🔔", label: "Alerta" },
-  urgent:             { bg: "bg-orange-500/10",   ring: "ring-orange-500/30",  text: "text-orange-300",  icon: "!",  label: "Urgente" },
-  meeting_proposal:   { bg: "bg-violet-500/10",   ring: "ring-violet-500/30",  text: "text-violet-300",  icon: "📅", label: "Propuesta reunion" },
-  meeting_confirmed:  { bg: "bg-signal-ok/15",    ring: "ring-signal-ok/40",   text: "text-signal-ok",   icon: "✓",  label: "Reunion confirmada" },
-  skipped:            { bg: "bg-base-800/30",     ring: "ring-base-700/20",    text: "text-ink-faint",   icon: "⊘",  label: "Omitido" },
-  error:              { bg: "bg-red-500/15",      ring: "ring-red-500/40",     text: "text-red-300",     icon: "⚠",  label: "Error" },
+const ACTIVITY_VISUAL: Record<string, { bg: string; ring: string; text: string; icon: string; labelKey: string }> = {
+  sent:               { bg: "bg-emerald-500/10",  ring: "ring-emerald-500/30", text: "text-emerald-300", icon: "✉",  labelKey: "email.activity.type.sent" },
+  draft:              { bg: "bg-amber-500/10",    ring: "ring-amber-500/30",   text: "text-amber-300",   icon: "📝", labelKey: "email.activity.type.draft" },
+  alert:              { bg: "bg-rose-500/15",     ring: "ring-rose-500/40",    text: "text-rose-300",    icon: "🔔", labelKey: "email.activity.type.alert" },
+  urgent:             { bg: "bg-orange-500/10",   ring: "ring-orange-500/30",  text: "text-orange-300",  icon: "!",  labelKey: "email.activity.type.urgent" },
+  meeting_proposal:   { bg: "bg-violet-500/10",   ring: "ring-violet-500/30",  text: "text-violet-300",  icon: "📅", labelKey: "email.activity.type.meetingProposal" },
+  meeting_confirmed:  { bg: "bg-signal-ok/15",    ring: "ring-signal-ok/40",   text: "text-signal-ok",   icon: "✓",  labelKey: "email.activity.type.meetingConfirmed" },
+  skipped:            { bg: "bg-base-800/30",     ring: "ring-base-700/20",    text: "text-ink-faint",   icon: "⊘",  labelKey: "email.activity.type.skipped" },
+  error:              { bg: "bg-red-500/15",      ring: "ring-red-500/40",     text: "text-red-300",     icon: "⚠",  labelKey: "email.activity.type.error" },
 };
 
 // V0.7 extra: filtros disponibles para el dashboard
 const ACTIVITY_FILTERS = [
-  { id: "all",                    label: "Todas",                  color: "ink" },
-  { id: "sent",                   label: "Enviados",               color: "emerald" },
-  { id: "draft",                  label: "Borradores",             color: "amber" },
-  { id: "alert",                  label: "Alertas",                color: "rose" },
-  { id: "urgent",                 label: "Urgentes",               color: "orange" },
-  { id: "meeting_proposal",       label: "Reuniones",              color: "violet" },
-  { id: "meeting_confirmed",      label: "Confirmadas",            color: "green" },
-  { id: "error",                  label: "Errores",                color: "red" },
+  { id: "all",                    labelKey: "email.filter.all",              color: "ink" },
+  { id: "sent",                   labelKey: "email.filter.sent",             color: "emerald" },
+  { id: "draft",                  labelKey: "email.filter.draft",            color: "amber" },
+  { id: "alert",                  labelKey: "email.filter.alert",            color: "rose" },
+  { id: "urgent",                 labelKey: "email.filter.urgent",           color: "orange" },
+  { id: "meeting_proposal",       labelKey: "email.filter.meetingProposal",  color: "violet" },
+  { id: "meeting_confirmed",      labelKey: "email.filter.meetingConfirmed", color: "green" },
+  { id: "error",                  labelKey: "email.filter.error",            color: "red" },
 ];
 
-const STATUS_LABEL: Record<string, string> = {
-  pending: "Pendiente",
-  running: "Ejecutando",
-  completed: "Completado",
-  failed: "Fallido",
-  cancelled: "Cancelado",
+const STATUS_LABEL_KEYS: Record<string, string> = {
+  pending: "email.execStatus.pending",
+  running: "email.execStatus.running",
+  completed: "email.execStatus.completed",
+  failed: "email.execStatus.failed",
+  cancelled: "email.execStatus.cancelled",
 };
 
-const PROPOSAL_STATUS_COLORS: Record<string, { bg: string; text: string; label: string }> = {
-  pending:      { bg: "bg-base-700/40",   text: "text-ink-dim",     label: "Pendiente" },
-  counter_sent: { bg: "bg-amber-500/15",  text: "text-amber-300",   label: "Esperando confirmacion" },
-  confirmed:    { bg: "bg-signal-ok/15",  text: "text-signal-ok",   label: "Confirmada" },
-  rejected:     { bg: "bg-signal-error/15", text: "text-signal-error", label: "Rechazada" },
-  expired:      { bg: "bg-base-700/40",   text: "text-ink-faint",   label: "Caducada" },
+const PROPOSAL_STATUS_COLORS: Record<string, { bg: string; text: string; labelKey: string }> = {
+  pending:      { bg: "bg-base-700/40",   text: "text-ink-dim",     labelKey: "email.proposalStatus.pending" },
+  counter_sent: { bg: "bg-amber-500/15",  text: "text-amber-300",   labelKey: "email.proposalStatus.counterSent" },
+  confirmed:    { bg: "bg-signal-ok/15",  text: "text-signal-ok",   labelKey: "email.proposalStatus.confirmed" },
+  rejected:     { bg: "bg-signal-error/15", text: "text-signal-error", labelKey: "email.proposalStatus.rejected" },
+  expired:      { bg: "bg-base-700/40",   text: "text-ink-faint",   labelKey: "email.proposalStatus.expired" },
 };
 
 // 2026-07-02: link al email real en Gmail web (por message id)
@@ -81,6 +85,9 @@ const TRIAGE_STYLES: Record<string, string> = {
 };
 
 export default function EmailAssistant() {
+  const t = useT();
+  const lang = useI18n((s) => s.lang);
+  const dateLocale = LOCALE_TAG[lang];
   const [status, setStatus] = useState<{
     connected: boolean;
     email: string | null;
@@ -149,7 +156,7 @@ export default function EmailAssistant() {
       setActivity(a.items || []);
       setActivityStats(stats);
     } catch (e) {
-      setMsg({ kind: "err", text: `Error cargando: ${(e as Error).message}` });
+      setMsg({ kind: "err", text: t("email.errLoading", { msg: (e as Error).message }) });
     } finally {
       setLoading(false);
     }
@@ -207,14 +214,14 @@ export default function EmailAssistant() {
       if (r.can_promote) {
         setMsg({
           kind: "ok",
-          text: `Feedback registrado. La regla lleva ${r.approved_count} propuestas aprobadas: ya puedes subirla a AUTO desde el panel de reglas.`,
+          text: t("email.feedback.registeredCanPromote", { n: r.approved_count }),
         });
       } else {
-        setMsg({ kind: "ok", text: "Feedback registrado." });
+        setMsg({ kind: "ok", text: t("email.feedback.registered") });
       }
       await refresh();
     } catch (e: any) {
-      setMsg({ kind: "err", text: `Error registrando feedback: ${e.message}` });
+      setMsg({ kind: "err", text: t("email.feedback.errRegistering", { msg: e.message }) });
     }
   };
 
@@ -226,17 +233,17 @@ export default function EmailAssistant() {
       const r = await api.respondFromActivity(entryId, mode);
       const extra = r.meeting
         ? r.calendar_status === "ocupado"
-          ? ` (reunion, ocupado${r.new_date_proposed ? `, propuesta: ${new Date(r.new_date_proposed).toLocaleString("es-ES", { dateStyle: "short", timeStyle: "short" })}` : ""})`
-          : " (reunion, fecha libre: aceptada)"
+          ? ` (${t("email.respond.meetingBusy")}${r.new_date_proposed ? `, ${t("email.respond.proposed")}: ${new Date(r.new_date_proposed).toLocaleString(dateLocale, { dateStyle: "short", timeStyle: "short" })}` : ""})`
+          : ` (${t("email.respond.meetingFreeAccepted")})`
         : "";
       setMsg({
         kind: "ok",
-        text: `${r.action === "borrador_creado" ? "Borrador creado en Gmail" : "Respuesta enviada"} → ${r.sent_to}${extra}: "${r.reply_preview.slice(0, 120)}..."`,
+        text: `${r.action === "borrador_creado" ? t("email.respond.draftCreated") : t("email.respond.sent")} → ${r.sent_to}${extra}: "${r.reply_preview.slice(0, 120)}..."`,
       });
       await refresh();
       await refreshActivity();
     } catch (e: any) {
-      setMsg({ kind: "err", text: `Error respondiendo: ${e.message}` });
+      setMsg({ kind: "err", text: t("email.respond.errResponding", { msg: e.message }) });
     } finally {
       setRespondingId(null);
     }
@@ -282,7 +289,7 @@ export default function EmailAssistant() {
   };
 
   const handleClearAll = async () => {
-    if (!confirm("Borrar todo el historial de actividad?")) return;
+    if (!confirm(t("email.confirmClearActivity"))) return;
     try {
       await api.clearAllActivity();
       setActivity([]);
@@ -310,7 +317,7 @@ export default function EmailAssistant() {
     if (!status?.has_credentials) {
       setMsg({
         kind: "err",
-        text: "Antes de conectar, configura client_id y client_secret en Settings > Google.",
+        text: t("email.errNoCredentials"),
       });
       return;
     }
@@ -318,23 +325,23 @@ export default function EmailAssistant() {
     setMsg(null);
     try {
       const r = await api.startEmailOAuth();
-      setMsg({ kind: "ok", text: `Conectado como ${r.email || "Google account"}` });
+      setMsg({ kind: "ok", text: t("email.connectedAs", { email: r.email || t("email.googleAccount") }) });
       refresh();
     } catch (e) {
-      setMsg({ kind: "err", text: `Error conectando: ${(e as Error).message}` });
+      setMsg({ kind: "err", text: t("email.errConnecting", { msg: (e as Error).message }) });
     } finally {
       setConnecting(false);
     }
   };
 
   const disconnectGoogle = async () => {
-    if (!confirm("Desconectar Google? Se borrara el token local.")) return;
+    if (!confirm(t("email.confirmDisconnect"))) return;
     try {
       await api.disconnectEmail();
-      setMsg({ kind: "ok", text: "Google desconectado" });
+      setMsg({ kind: "ok", text: t("email.disconnected") });
       refresh();
     } catch (e) {
-      setMsg({ kind: "err", text: `Error desconectando: ${(e as Error).message}` });
+      setMsg({ kind: "err", text: t("email.errDisconnecting", { msg: (e as Error).message }) });
     }
   };
 
@@ -344,7 +351,7 @@ export default function EmailAssistant() {
 
   const addRule = async () => {
     if (!formName.trim()) {
-      setMsg({ kind: "err", text: "El nombre es obligatorio" });
+      setMsg({ kind: "err", text: t("email.errNameRequired") });
       return;
     }
     // V0.7 extra (FIX): la plantilla es OPCIONAL si detect_meeting_with_ia=True
@@ -353,7 +360,7 @@ export default function EmailAssistant() {
     if (!formDetectMeeting && !formReplyTemplate.trim() && !formAiPrompt.trim()) {
       setMsg({
         kind: "err",
-        text: "Sin deteccion de reuniones necesitas una plantilla O un prompt de IA",
+        text: t("email.errNeedTemplateOrPrompt"),
       });
       return;
     }
@@ -366,7 +373,7 @@ export default function EmailAssistant() {
       .map((s) => s.trim())
       .filter((s) => s);
     if (emails.length === 0 && domains.length === 0) {
-      setMsg({ kind: "err", text: "Anade al menos un email o un dominio" });
+      setMsg({ kind: "err", text: t("email.errNeedEmailOrDomain") });
       return;
     }
     try {
@@ -381,7 +388,7 @@ export default function EmailAssistant() {
         autonomy: formAutonomy,  // V0.7.3: eleccion directa propose/auto
         enabled: formEnabled,
       });
-      setMsg({ kind: "ok", text: `Regla '${formName}' creada` });
+      setMsg({ kind: "ok", text: t("email.ruleCreated", { name: formName }) });
       setFormName("");
       setFormSenderEmailsText("");
       setFormSenderDomainsText("");
@@ -393,7 +400,7 @@ export default function EmailAssistant() {
       setFormAiPrompt("");
       refresh();
     } catch (e) {
-      setMsg({ kind: "err", text: `Error creando regla: ${(e as Error).message}` });
+      setMsg({ kind: "err", text: t("email.errCreatingRule", { msg: (e as Error).message }) });
     }
   };
 
@@ -405,12 +412,12 @@ export default function EmailAssistant() {
         kind: "ok",
         text:
           autonomy === "auto"
-            ? `Regla "${rule.name}" ahora es AUTOMATICA: respondera sin pedirte OK.`
-            : `Regla "${rule.name}" vuelve a modo propuesta (borradores).`,
+            ? t("email.ruleNowAuto", { name: rule.name })
+            : t("email.ruleNowPropose", { name: rule.name }),
       });
       await refresh();
     } catch (e: any) {
-      setMsg({ kind: "err", text: `Error cambiando autonomia: ${e.message}` });
+      setMsg({ kind: "err", text: t("email.errChangingAutonomy", { msg: e.message }) });
     }
   };
 
@@ -419,18 +426,18 @@ export default function EmailAssistant() {
       await api.updateAutoReplyRule(rule.id, { enabled: !rule.enabled });
       refresh();
     } catch (e) {
-      setMsg({ kind: "err", text: `Error actualizando: ${(e as Error).message}` });
+      setMsg({ kind: "err", text: t("email.errUpdating", { msg: (e as Error).message }) });
     }
   };
 
   const deleteRule = async (id: number, name: string) => {
-    if (!confirm(`Eliminar regla '${name}'?`)) return;
+    if (!confirm(t("email.confirmDeleteRule", { name }))) return;
     try {
       await api.deleteAutoReplyRule(id);
-      setMsg({ kind: "ok", text: `Regla '${name}' eliminada` });
+      setMsg({ kind: "ok", text: t("email.ruleDeleted", { name }) });
       refresh();
     } catch (e) {
-      setMsg({ kind: "err", text: `Error eliminando: ${(e as Error).message}` });
+      setMsg({ kind: "err", text: t("email.errDeleting", { msg: (e as Error).message }) });
     }
   };
 
@@ -440,7 +447,7 @@ export default function EmailAssistant() {
 
   const testRule = async () => {
     if (!testSender.trim()) {
-      setMsg({ kind: "err", text: "El remitente es obligatorio para el test" });
+      setMsg({ kind: "err", text: t("email.errSenderRequired") });
       return;
     }
     try {
@@ -454,7 +461,7 @@ export default function EmailAssistant() {
         matches: r.matches.map((m) => ({ name: m.name, reply_text: m.reply_text })),
       });
     } catch (e) {
-      setMsg({ kind: "err", text: `Error en test: ${(e as Error).message}` });
+      setMsg({ kind: "err", text: t("email.errTest", { msg: (e as Error).message }) });
     }
   };
 
@@ -476,15 +483,15 @@ export default function EmailAssistant() {
       const subjectsOf = (items: typeof r.processed) =>
         items.slice(0, 2).map((i) => `"${i.subject || "?"}"`).join(", ");
 
-      let toastText = `Procesados ${r.count} emails.`;
-      if (sentItems.length > 0) toastText += ` ${sentItems.length} enviados.`;
-      if (draftItems.length > 0) toastText += ` ${draftItems.length} borradores.`;
-      if (urgentItems.length > 0) toastText += ` ${urgentItems.length} urgente(s): ${subjectsOf(urgentItems)}.`;
-      if (alertItems.length > 0) toastText += ` ${alertItems.length} alerta(s): ${subjectsOf(alertItems)}.`;
-      if (meetingItems.length > 0) toastText += ` ${meetingItems.length} reunion(es): ${subjectsOf(meetingItems)}.`;
+      let toastText = t("email.toast.processed", { n: r.count });
+      if (sentItems.length > 0) toastText += ` ${t("email.toast.sentCount", { n: sentItems.length })}`;
+      if (draftItems.length > 0) toastText += ` ${t("email.toast.draftsCount", { n: draftItems.length })}`;
+      if (urgentItems.length > 0) toastText += ` ${t("email.toast.urgentCount", { n: urgentItems.length, subjects: subjectsOf(urgentItems) })}`;
+      if (alertItems.length > 0) toastText += ` ${t("email.toast.alertsCount", { n: alertItems.length, subjects: subjectsOf(alertItems) })}`;
+      if (meetingItems.length > 0) toastText += ` ${t("email.toast.meetingsCount", { n: meetingItems.length, subjects: subjectsOf(meetingItems) })}`;
       // FIX BUG (Tarea 1.4): call-to-action al dashboard cuando hay algo que revisar.
       if (urgentItems.length > 0 || alertItems.length > 0 || meetingItems.length > 0) {
-        toastText += " → Revisa el dashboard.";
+        toastText += ` ${t("email.toast.reviewDashboard")}`;
       }
       setMsg({ kind: "ok", text: toastText });
       // FIX BUG 1: Esperamos un poquito a que el backend termine de hacer
@@ -493,7 +500,7 @@ export default function EmailAssistant() {
       await new Promise((res) => setTimeout(res, 500));
       await Promise.all([refreshActivity(), refresh(), loadInbox()]);
     } catch (e) {
-      setMsg({ kind: "err", text: `Error procesando inbox: ${(e as Error).message}` });
+      setMsg({ kind: "err", text: t("email.errProcessingInbox", { msg: (e as Error).message }) });
     } finally {
       setProcessing(false);
     }
@@ -506,11 +513,11 @@ export default function EmailAssistant() {
       const r = await api.checkConfirmations(20);
       setMsg({
         kind: "ok",
-        text: `Revisados ${r.checked} emails: ${r.count} confirmaciones detectadas.`,
+        text: t("email.toast.confirmationsChecked", { checked: r.checked, n: r.count }),
       });
       refresh();
     } catch (e) {
-      setMsg({ kind: "err", text: `Error verificando confirmaciones: ${(e as Error).message}` });
+      setMsg({ kind: "err", text: t("email.errCheckingConfirmations", { msg: (e as Error).message }) });
     } finally {
       setChecking(false);
     }
@@ -525,9 +532,9 @@ export default function EmailAssistant() {
       <div className="max-w-4xl mx-auto space-y-4">
         {/* Cabecera */}
         <div>
-          <h1 className="text-xl font-semibold text-ink">Email Assistant</h1>
+          <h1 className="text-xl font-semibold text-ink">{t("email.title")}</h1>
           <p className="text-xs text-ink-faint mt-0.5">
-            Gestiona Gmail y configura reglas de auto-respuesta
+            {t("email.subtitle")}
           </p>
         </div>
 
@@ -551,14 +558,14 @@ export default function EmailAssistant() {
           <div className="glass-surface rounded-2xl px-4 py-3 flex items-center justify-between">
             <p className="text-xs text-ink-dim">
               <span className="inline-block w-1.5 h-1.5 rounded-full bg-signal-ok mr-2 align-middle" />
-              Conectado como{" "}
-              <span className="text-ink font-medium">{status.email || "Google account"}</span>
+              {t("email.connectedAs")}{" "}
+              <span className="text-ink font-medium">{status.email || t("email.googleAccount")}</span>
             </p>
             <button
               onClick={disconnectGoogle}
               className="text-xs px-3 py-1.5 rounded-lg bg-signal-error/15 text-signal-error border border-signal-error/30 hover:bg-signal-error/25"
             >
-              Desconectar
+              {t("email.disconnect")}
             </button>
           </div>
         )}
@@ -566,17 +573,17 @@ export default function EmailAssistant() {
         <div className="glass-surface rounded-2xl p-5">
           <div className="flex items-center justify-between">
             <div>
-              <h2 className="text-sm font-medium text-ink">Estado de Google</h2>
+              <h2 className="text-sm font-medium text-ink">{t("email.googleStatus.title")}</h2>
               <p className="text-xs text-ink-faint mt-1">
                 {status?.connected ? (
                   <>
-                    Conectado como{" "}
-                    <span className="text-ink">{status.email || "Google account"}</span>
+                    {t("email.connectedAs")}{" "}
+                    <span className="text-ink">{status.email || t("email.googleAccount")}</span>
                   </>
                 ) : status?.has_credentials ? (
-                  <>Credenciales listas (fuente: {(status as any).credentials_source || "db"}). Pulsa "Conectar con Google".</>
+                  <>{t("email.credentialsReady", { source: (status as any).credentials_source || "db" })}</>
                 ) : (
-                  <>No hay credenciales. Configuralas en Settings → Google, o en <code className="bg-base-950/50 px-1 rounded">backend/.env</code>.</>
+                  <>{t("email.noCredentials")} <code className="bg-base-950/50 px-1 rounded">backend/.env</code>.</>
                 )}
               </p>
             </div>
@@ -589,12 +596,12 @@ export default function EmailAssistant() {
                   disabled={connecting || !status?.has_credentials}
                   title={
                     !status?.has_credentials
-                      ? "Configura credenciales primero (ver Settings)"
-                      : "Abrir el browser para autorizar a Aithera"
+                      ? t("email.titleConfigureCredentialsFirst")
+                      : t("email.titleOpenBrowserAuthorize")
                   }
                   className="text-xs px-4 py-2 rounded-lg bg-accent text-base-950 font-medium hover:bg-accent-glow disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  {connecting ? "Conectando..." : "Conectar con Google"}
+                  {connecting ? t("email.connecting") : t("email.connect")}
                 </button>
               )}
               {status?.connected && (
@@ -602,7 +609,7 @@ export default function EmailAssistant() {
                   onClick={disconnectGoogle}
                   className="text-xs px-4 py-2 rounded-lg bg-signal-error/15 text-signal-error border border-signal-error/30 hover:bg-signal-error/25"
                 >
-                  Desconectar
+                  {t("email.disconnect")}
                 </button>
               )}
             </div>
@@ -611,16 +618,16 @@ export default function EmailAssistant() {
           {!status?.has_credentials && (
             <div className="mt-3 p-3 rounded-lg bg-amber-500/10 border border-amber-500/30 text-xs text-amber-300 space-y-2">
               <p>
-                Para usar Gmail necesitas obtener credenciales OAuth desde Google Cloud Console.
+                {t("email.creds.intro")}
               </p>
               <p>
-                <strong className="text-amber-200">El boton "Conectar" esta desactivado</strong>{" "}
-                porque aun no hay credenciales. Configuralas en:
+                <strong className="text-amber-200">{t("email.creds.connectDisabledStrong")}</strong>{" "}
+                {t("email.creds.connectDisabledRest")}
               </p>
               <ul className="list-disc list-inside text-ink-faint">
                 <li>
-                  <strong className="text-amber-200">Opcion 1 (recomendada):</strong> edita{" "}
-                  <code className="bg-base-950/50 px-1 rounded">backend/.env</code> y anade:
+                  <strong className="text-amber-200">{t("email.creds.option1")}</strong> {t("email.creds.option1Rest")}{" "}
+                  <code className="bg-base-950/50 px-1 rounded">backend/.env</code> {t("email.creds.option1Add")}
                   <br />
                   <code className="bg-base-950/50 px-1 rounded inline-block mt-1">
                     GOOGLE_CLIENT_ID=tu_client_id
@@ -628,17 +635,15 @@ export default function EmailAssistant() {
                     GOOGLE_CLIENT_SECRET=tu_client_secret
                   </code>
                   <br />
-                  <span className="text-[10px]">(luego reinicia el backend con Ctrl+C y vuelve a arrancarlo)</span>
+                  <span className="text-[10px]">{t("email.creds.restartHint")}</span>
                 </li>
                 <li>
-                  <strong className="text-amber-200">Opcion 2:</strong> ve a{" "}
-                  <strong className="text-amber-200">Settings → Google</strong> y pegalas
-                  en el formulario. Quedan guardadas en la BD.
+                  <strong className="text-amber-200">{t("email.creds.option2")}</strong> {t("email.creds.option2Rest")}{" "}
+                  <strong className="text-amber-200">Settings → Google</strong> {t("email.creds.option2End")}
                 </li>
               </ul>
               <p className="text-ink-faint text-[10px] italic">
-                Las reglas de auto-respuesta y la gestion manual del calendario funcionan
-                SIN necesidad de conectar Google.
+                {t("email.creds.worksWithoutGoogle")}
               </p>
             </div>
           )}
@@ -649,34 +654,30 @@ export default function EmailAssistant() {
         <div className="glass-surface rounded-2xl p-5">
           <div className="flex items-center justify-between mb-3">
             <h2 className="text-sm font-medium text-ink">
-              Procesar inbox con IA
+              {t("email.processInbox.title")}
             </h2>
             <div className="flex gap-2">
               <button
                 onClick={processInbox}
                 disabled={!status?.connected || processing}
-                title={!status?.connected ? "Conecta Google primero" : "Escanea los ultimos emails y aplica tus reglas"}
+                title={!status?.connected ? t("email.titleConnectFirst") : t("email.titleScanApplyRules")}
                 className="text-xs px-3 py-1.5 rounded-lg bg-accent text-base-950 font-medium hover:bg-accent-glow disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                {processing ? "Procesando..." : "Procesar inbox ahora"}
+                {processing ? t("email.processInbox.processing") : t("email.processInbox.run")}
               </button>
               <button
                 onClick={checkConfirmations}
                 disabled={!status?.connected || checking}
-                title="Buscar emails que confirman propuestas pendientes"
+                title={t("email.titleCheckConfirmations")}
                 className="text-xs px-3 py-1.5 rounded-lg bg-base-800 text-ink border border-base-700 hover:bg-base-700 disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                {checking ? "Buscando..." : "Verificar confirmaciones"}
+                {checking ? t("email.processInbox.checking") : t("email.processInbox.checkConfirm")}
               </button>
             </div>
           </div>
 
           <p className="text-[10px] text-ink-faint mb-3">
-            <strong className="text-ink-dim">Procesar inbox</strong> escanea tus
-            ultimos emails y aplica tus reglas: si algun email matchea una regla
-            y propone una reunion (detectado por IA, no por palabras clave), se
-            consulta tu calendario. Si estas libre, se acepta. Si estas ocupado,
-            se propone automaticamente una nueva fecha disponible.
+            <strong className="text-ink-dim">{t("email.processInbox.calloutStrong")}</strong> {t("email.processInbox.calloutRest")}
           </p>
         </div>
 
@@ -684,9 +685,9 @@ export default function EmailAssistant() {
         <div className="glass-surface rounded-2xl p-5">
           <div className="flex items-center justify-between mb-3">
             <div>
-              <h2 className="text-sm font-medium text-ink">Bandeja de entrada</h2>
+              <h2 className="text-sm font-medium text-ink">{t("email.inbox.title")}</h2>
               <p className="text-[10px] text-ink-faint mt-0.5">
-                Tus ultimos emails de Gmail. Los no leidos aparecen resaltados.
+                {t("email.inbox.desc")}
               </p>
             </div>
             <div className="flex items-center gap-1.5">
@@ -694,27 +695,27 @@ export default function EmailAssistant() {
                 onClick={handleRunTriage}
                 disabled={!status?.connected || triageLoading || inboxLoading}
                 className="text-[10px] px-2 py-1 rounded bg-accent/20 text-accent hover:bg-accent/30 disabled:opacity-50 disabled:cursor-not-allowed"
-                title="Clasifica los ultimos 30 emails en 7 categorias (heuristica + IA)"
+                title={t("email.titleTriage")}
               >
-                {triageLoading ? "Triando..." : "Triar inbox"}
+                {triageLoading ? t("email.inbox.triaging") : t("email.inbox.triage")}
               </button>
               <button
                 onClick={loadInbox}
                 disabled={!status?.connected || inboxLoading}
                 className="text-[10px] px-2 py-1 rounded bg-base-800 text-ink-dim hover:bg-base-700 disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                {inboxLoading ? "Cargando..." : "Refrescar"}
+                {inboxLoading ? t("common.loading") : t("email.inbox.refresh")}
               </button>
             </div>
           </div>
 
           {!status?.connected ? (
             <p className="text-xs text-ink-faint py-3 text-center">
-              Conecta Google para ver tu bandeja de entrada.
+              {t("email.inbox.connectFirst")}
             </p>
           ) : inbox.length === 0 ? (
             <p className="text-xs text-ink-faint py-3 text-center">
-              {inboxLoading ? "Cargando bandeja..." : "No hay emails para mostrar."}
+              {inboxLoading ? t("email.inbox.loading") : t("email.inbox.empty")}
             </p>
           ) : (
             <div className="space-y-1.5 max-h-[360px] overflow-y-auto">
@@ -729,7 +730,7 @@ export default function EmailAssistant() {
                     className={`shrink-0 w-2 h-2 mt-1.5 rounded-full ${
                       m.unread ? "bg-accent" : "bg-base-600"
                     }`}
-                    title={m.unread ? "No leido" : "Leido"}
+                    title={m.unread ? t("email.inbox.unread") : t("email.inbox.read")}
                   />
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
@@ -738,7 +739,7 @@ export default function EmailAssistant() {
                       </span>
                       {m.unread && (
                         <span className="text-[9px] px-1 py-0.5 rounded bg-accent/20 text-accent">
-                          NO LEIDO
+                          {t("email.inbox.unreadBadge")}
                         </span>
                       )}
                       {m.category && (
@@ -756,9 +757,9 @@ export default function EmailAssistant() {
                       target="_blank"
                       rel="noreferrer"
                       className={`block text-xs truncate hover:text-accent ${m.unread ? "text-ink" : "text-ink-dim"}`}
-                      title="Abrir en Gmail"
+                      title={t("email.activity.openInGmail")}
                     >
-                      {m.subject || "(sin asunto)"}
+                      {m.subject || t("email.proposals.noSubject")}
                     </a>
                     {m.snippet && (
                       <p className="text-[10px] text-ink-faint truncate mt-0.5">{m.snippet}</p>
@@ -774,10 +775,9 @@ export default function EmailAssistant() {
         <div className="glass-surface rounded-2xl p-5">
           <div className="flex items-center justify-between mb-3">
             <div>
-              <h2 className="text-sm font-medium text-ink">Dashboard de actividad</h2>
+              <h2 className="text-sm font-medium text-ink">{t("email.dashboard.title")}</h2>
               <p className="text-[10px] text-ink-faint mt-0.5">
-                Aqui ves todo lo que Aithera hizo con tus emails: respuestas enviadas,
-                borradores creados, alertas, propuestas de reunion, errores.
+                {t("email.dashboard.desc")}
               </p>
             </div>
             <div className="flex gap-1.5">
@@ -785,19 +785,19 @@ export default function EmailAssistant() {
                 onClick={refreshActivity}
                 className="text-[10px] px-2 py-1 rounded bg-base-800 text-ink-dim hover:bg-base-700"
               >
-                Refrescar
+                {t("email.dashboard.refresh")}
               </button>
               <button
                 onClick={handleMarkAllRead}
                 className="text-[10px] px-2 py-1 rounded bg-base-800 text-ink-dim hover:bg-base-700"
               >
-                Marcar todo leido
+                {t("email.dashboard.markAllRead")}
               </button>
               <button
                 onClick={handleClearAll}
                 className="text-[10px] px-2 py-1 rounded bg-base-800 text-ink-faint hover:bg-signal-error/20 hover:text-signal-error"
               >
-                Limpiar
+                {t("email.dashboard.clear")}
               </button>
             </div>
           </div>
@@ -813,12 +813,12 @@ export default function EmailAssistant() {
                     : "bg-base-900/40 hover:bg-base-900/60"
                 }`}
               >
-                <p className="text-[9px] text-ink-faint uppercase tracking-wider">Enviados</p>
+                <p className="text-[9px] text-ink-faint uppercase tracking-wider">{t("email.stats.sent")}</p>
                 <p className="text-base font-semibold text-emerald-300">
                   {activityStats.sent?.total || 0}
                 </p>
                 {(activityStats.sent?.unread || 0) > 0 && (
-                  <p className="text-[9px] text-ink-faint">{activityStats.sent.unread} sin leer</p>
+                  <p className="text-[9px] text-ink-faint">{t("email.stats.unreadCount", { n: activityStats.sent.unread })}</p>
                 )}
               </button>
               <button
@@ -829,12 +829,12 @@ export default function EmailAssistant() {
                     : "bg-base-900/40 hover:bg-base-900/60"
                 }`}
               >
-                <p className="text-[9px] text-ink-faint uppercase tracking-wider">Borradores</p>
+                <p className="text-[9px] text-ink-faint uppercase tracking-wider">{t("email.stats.drafts")}</p>
                 <p className="text-base font-semibold text-amber-300">
                   {activityStats.draft?.total || 0}
                 </p>
                 {(activityStats.draft?.unread || 0) > 0 && (
-                  <p className="text-[9px] text-ink-faint">{activityStats.draft.unread} sin leer</p>
+                  <p className="text-[9px] text-ink-faint">{t("email.stats.unreadCount", { n: activityStats.draft.unread })}</p>
                 )}
               </button>
               <button
@@ -845,13 +845,13 @@ export default function EmailAssistant() {
                     : "bg-base-900/40 hover:bg-base-900/60"
                 }`}
               >
-                <p className="text-[9px] text-ink-faint uppercase tracking-wider">Alertas</p>
+                <p className="text-[9px] text-ink-faint uppercase tracking-wider">{t("email.stats.alerts")}</p>
                 <p className="text-base font-semibold text-rose-300">
                   {activityStats.alert?.total || 0}
                 </p>
                 {(activityStats.alert?.unread || 0) > 0 && (
                   <p className="text-[9px] text-rose-300 font-medium">
-                    {activityStats.alert.unread} requieren atencion
+                    {t("email.stats.needsAttention", { n: activityStats.alert.unread })}
                   </p>
                 )}
               </button>
@@ -863,13 +863,13 @@ export default function EmailAssistant() {
                     : "bg-base-900/40 hover:bg-base-900/60"
                 }`}
               >
-                <p className="text-[9px] text-ink-faint uppercase tracking-wider">Urgentes</p>
+                <p className="text-[9px] text-ink-faint uppercase tracking-wider">{t("email.stats.urgent")}</p>
                 <p className="text-base font-semibold text-orange-300">
                   {activityStats.urgent?.total || 0}
                 </p>
                 {(activityStats.urgent?.unread || 0) > 0 && (
                   <p className="text-[9px] text-orange-300 font-medium">
-                    {activityStats.urgent.unread} sin leer
+                    {t("email.stats.unreadCount", { n: activityStats.urgent.unread })}
                   </p>
                 )}
               </button>
@@ -881,12 +881,12 @@ export default function EmailAssistant() {
                     : "bg-base-900/40 hover:bg-base-900/60"
                 }`}
               >
-                <p className="text-[9px] text-ink-faint uppercase tracking-wider">Reuniones</p>
+                <p className="text-[9px] text-ink-faint uppercase tracking-wider">{t("email.stats.meetings")}</p>
                 <p className="text-base font-semibold text-violet-300">
                   {(activityStats.meeting_proposal?.total || 0) + (activityStats.meeting_confirmed?.total || 0)}
                 </p>
                 {(activityStats.meeting_proposal?.unread || 0) > 0 && (
-                  <p className="text-[9px] text-ink-faint">{activityStats.meeting_proposal.unread} propuestas</p>
+                  <p className="text-[9px] text-ink-faint">{t("email.stats.proposalsCount", { n: activityStats.meeting_proposal.unread })}</p>
                 )}
               </button>
             </div>
@@ -895,8 +895,12 @@ export default function EmailAssistant() {
           {/* Filter chip "solo no leidos" */}
           <div className="flex items-center justify-between mb-3">
             <p className="text-[10px] text-ink-faint">
-              {activityFilter === "all" ? "Mostrando todo" : `Filtrando: ${activityFilter}`}
-              {showUnreadOnly && " (solo no leidos)"}
+              {activityFilter === "all"
+                ? t("email.activity.showingAll")
+                : t("email.activity.filtering", {
+                    label: t(ACTIVITY_FILTERS.find((f) => f.id === activityFilter)?.labelKey ?? "email.filter.all"),
+                  })}
+              {showUnreadOnly && ` ${t("email.activity.unreadOnlySuffix")}`}
             </p>
             <label className="flex items-center gap-1.5 text-[10px] text-ink-dim cursor-pointer">
               <input
@@ -905,7 +909,7 @@ export default function EmailAssistant() {
                 onChange={(e) => setShowUnreadOnly(e.target.checked)}
                 className="h-3 w-3 accent-accent"
               />
-              Solo no leidos
+              {t("email.activity.unreadOnly")}
             </label>
           </div>
 
@@ -914,10 +918,10 @@ export default function EmailAssistant() {
             <div className="py-8 text-center">
               <p className="text-3xl mb-2">📭</p>
               <p className="text-xs text-ink-faint">
-                No hay actividad registrada.
+                {t("email.activity.empty")}
               </p>
               <p className="text-[10px] text-ink-faint mt-1">
-                Pulsa "Procesar inbox ahora" para empezar.
+                {t("email.activity.emptyHint")}
               </p>
             </div>
           ) : (
@@ -943,16 +947,16 @@ export default function EmailAssistant() {
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
                         <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${vis.bg} ${vis.text} ring-1 ${vis.ring}`}>
-                          {vis.label}
+                          {t(vis.labelKey)}
                         </span>
                         {!entry.read && (
                           <span className="text-[9px] px-1 py-0.5 rounded bg-accent/20 text-accent">
-                            NUEVO
+                            {t("email.activity.new")}
                           </span>
                         )}
                         {entry.timestamp && (
                           <span className="text-[10px] text-ink-faint">
-                            {new Date(entry.timestamp).toLocaleString("es-ES", {
+                            {new Date(entry.timestamp).toLocaleString(dateLocale, {
                               day: "2-digit",
                               month: "short",
                               hour: "2-digit",
@@ -962,7 +966,7 @@ export default function EmailAssistant() {
                         )}
                       </div>
                       <p className="text-xs text-ink mt-1 truncate">
-                        <span className="text-ink-faint">De:</span>{" "}
+                        <span className="text-ink-faint">{t("email.activity.from")}</span>{" "}
                         <span className="text-ink-dim">{entry.sender_email || entry.sender || "?"}</span>
                         {entry.subject && (
                           <>
@@ -973,7 +977,7 @@ export default function EmailAssistant() {
                                 target="_blank"
                                 rel="noreferrer"
                                 className="text-ink underline decoration-dotted underline-offset-2 hover:text-accent"
-                                title="Abrir en Gmail"
+                                title={t("email.activity.openInGmail")}
                               >
                                 {entry.subject} ↗
                               </a>
@@ -986,48 +990,48 @@ export default function EmailAssistant() {
                       {/* Detalles especificos segun action_type */}
                       {entry.action_type === "sent" && details.is_meeting && (
                         <p className="text-[11px] text-emerald-300/80 mt-0.5">
-                          Reunion {details.calendar_status === "libre" ? "confirmada" : "contrapropuesta enviada"}
+                          {details.calendar_status === "libre" ? t("email.activity.meetingConfirmed") : t("email.activity.counterProposalSent")}
                           {details.proposed_new_date && (
-                            <> para {new Date(details.proposed_new_date).toLocaleString("es-ES", { dateStyle: "short", timeStyle: "short" })}</>
+                            <> {t("email.activity.forDate")} {new Date(details.proposed_new_date).toLocaleString(dateLocale, { dateStyle: "short", timeStyle: "short" })}</>
                           )}
                           {details.accepted_date && (
-                            <> para {new Date(details.accepted_date).toLocaleString("es-ES", { dateStyle: "short", timeStyle: "short" })}</>
+                            <> {t("email.activity.forDate")} {new Date(details.accepted_date).toLocaleString(dateLocale, { dateStyle: "short", timeStyle: "short" })}</>
                           )}
                         </p>
                       )}
                       {entry.action_type === "draft" && details.is_meeting && (
                         <p className="text-[11px] text-amber-300/80 mt-0.5">
-                          Borrador IA sobre reunion{" "}
-                          {details.proposed_new_date ? "con nueva fecha propuesta" : "que confirma fecha"}
+                          {t("email.activity.aiDraftMeeting")}{" "}
+                          {details.proposed_new_date ? t("email.activity.withNewDate") : t("email.activity.confirmsDate")}
                         </p>
                       )}
                       {entry.action_type === "alert" && details.is_meeting && (
                         <p className="text-[11px] text-rose-300/90 mt-0.5 font-medium">
                           {details.calendar_status === "ocupado"
-                            ? `ESTAS OCUPADO el ${details.original_date || "?"}. Sugerencia: ${details.proposed_new_date || "?"}`
-                            : `Reunion propuesta para ${details.proposed_date || details.original_date || "?"}`}
+                            ? t("email.activity.youAreBusy", { date: details.original_date || "?", suggestion: details.proposed_new_date || "?" })
+                            : t("email.activity.meetingProposedFor", { date: details.proposed_date || details.original_date || "?" })}
                         </p>
                       )}
                       {entry.action_type === "alert" && !details.is_meeting && (
                         <p className="text-[11px] text-rose-300/90 mt-0.5">
-                          {details.reason || "Email importante que requiere tu atencion"}
+                          {details.reason || t("email.activity.importantEmail")}
                         </p>
                       )}
                       {entry.action_type === "meeting_proposal" && (
                         <p className="text-[11px] text-violet-300/90 mt-0.5">
-                          Original: {details.original_date ? new Date(details.original_date).toLocaleString("es-ES", { dateStyle: "short", timeStyle: "short" }) : "?"} →
-                          Sugerencia: {details.proposed_new_date ? new Date(details.proposed_new_date).toLocaleString("es-ES", { dateStyle: "short", timeStyle: "short" }) : "?"}
+                          {t("email.activity.original")}: {details.original_date ? new Date(details.original_date).toLocaleString(dateLocale, { dateStyle: "short", timeStyle: "short" }) : "?"} →
+                          {t("email.activity.suggestion")}: {details.proposed_new_date ? new Date(details.proposed_new_date).toLocaleString(dateLocale, { dateStyle: "short", timeStyle: "short" }) : "?"}
                         </p>
                       )}
                       {entry.action_type === "meeting_confirmed" && (
                         <p className="text-[11px] text-signal-ok mt-0.5">
-                          Reunion confirmada para {details.confirmed_datetime ? new Date(details.confirmed_datetime).toLocaleString("es-ES", { dateStyle: "short", timeStyle: "short" }) : "?"}
+                          {t("email.activity.meetingConfirmedFor")} {details.confirmed_datetime ? new Date(details.confirmed_datetime).toLocaleString(dateLocale, { dateStyle: "short", timeStyle: "short" }) : "?"}
                         </p>
                       )}
                       {details.preview_reply && entry.action_type === "alert" && (
                         <details className="mt-1">
                           <summary className="text-[10px] text-ink-faint cursor-pointer hover:text-ink">
-                            Ver respuesta sugerida
+                            {t("email.activity.viewSuggestedReply")}
                           </summary>
                           <p className="text-[10px] text-ink-dim mt-1 italic whitespace-pre-wrap">
                             {details.preview_reply}
@@ -1041,50 +1045,50 @@ export default function EmailAssistant() {
                             onClick={() => handleRespondFromAlert(entry.id, "draft")}
                             disabled={respondingId === entry.id}
                             className="text-[10px] px-2 py-1 rounded bg-amber-500/15 text-amber-300 hover:bg-amber-500/25 disabled:opacity-50"
-                            title="Genera la respuesta (reunion: consulta calendario) y la deja en Borradores de Gmail"
+                            title={t("email.activity.generateDraftTitle")}
                           >
-                            {respondingId === entry.id ? "Generando..." : "✎ Generar propuesta"}
+                            {respondingId === entry.id ? t("email.activity.generating") : t("email.activity.generateProposal")}
                           </button>
                           <button
                             onClick={() => handleRespondFromAlert(entry.id, "send")}
                             disabled={respondingId === entry.id}
                             className="text-[10px] px-2 py-1 rounded bg-signal-ok/15 text-signal-ok hover:bg-signal-ok/25 disabled:opacity-50"
-                            title="Genera la respuesta y la ENVIA ya"
+                            title={t("email.activity.generateSendTitle")}
                           >
-                            {respondingId === entry.id ? "Enviando..." : "➤ Responder automaticamente"}
+                            {respondingId === entry.id ? t("email.activity.sending") : t("email.activity.respondAuto")}
                           </button>
                         </div>
                       )}
                       {/* V0.7.3 (Sprint 4, B6): feedback sobre borradores propuestos */}
                       {entry.action_type === "draft" && entry.rule_id && (
                         <div className="flex items-center gap-1 mt-1.5">
-                          <span className="text-[9px] text-ink-faint">Este borrador:</span>
+                          <span className="text-[9px] text-ink-faint">{t("email.activity.thisDraft")}</span>
                           <button
                             onClick={() => handleRuleFeedback(entry.rule_id!, "approved")}
                             className="text-[9px] px-1.5 py-0.5 rounded bg-signal-ok/15 text-signal-ok hover:bg-signal-ok/25"
-                            title="Lo envie tal cual (la regla acerto)"
+                            title={t("email.activity.feedbackApprovedTitle")}
                           >
-                            ✓ Aprobado
+                            ✓ {t("email.activity.feedbackApproved")}
                           </button>
                           <button
                             onClick={() => handleRuleFeedback(entry.rule_id!, "edited")}
                             className="text-[9px] px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-400 hover:bg-amber-500/25"
-                            title="Lo edite antes de enviarlo"
+                            title={t("email.activity.feedbackEditedTitle")}
                           >
-                            ✎ Editado
+                            ✎ {t("email.activity.feedbackEdited")}
                           </button>
                           <button
                             onClick={() => handleRuleFeedback(entry.rule_id!, "rejected")}
                             className="text-[9px] px-1.5 py-0.5 rounded bg-signal-error/15 text-signal-error hover:bg-signal-error/25"
-                            title="Lo descarte (la regla fallo)"
+                            title={t("email.activity.feedbackRejectedTitle")}
                           >
-                            ✗ Rechazado
+                            ✗ {t("email.activity.feedbackRejected")}
                           </button>
                         </div>
                       )}
                       {entry.rule_name && (
                         <p className="text-[10px] text-ink-faint mt-1">
-                          Regla aplicada: <span className="text-ink-dim">{entry.rule_name}</span>
+                          {t("email.activity.ruleApplied")}: <span className="text-ink-dim">{entry.rule_name}</span>
                         </p>
                       )}
                     </div>
@@ -1094,7 +1098,7 @@ export default function EmailAssistant() {
                         e.stopPropagation();
                         handleDismissEntry(entry.id);
                       }}
-                      title="Descartar entrada"
+                      title={t("email.activity.dismissEntry")}
                       className="shrink-0 text-ink-faint hover:text-signal-error text-lg px-1"
                     >
                       ×
@@ -1110,14 +1114,13 @@ export default function EmailAssistant() {
         <div className="glass-surface rounded-2xl p-5">
           <div className="flex items-center justify-between mb-3">
             <h2 className="text-sm font-medium text-ink">
-              Propuestas de reunion ({proposals.length})
+              {t("email.proposals.title", { n: proposals.length })}
             </h2>
           </div>
 
           {proposals.length === 0 ? (
             <p className="text-xs text-ink-faint py-3 text-center">
-              No hay propuestas registradas. Pulsa "Procesar inbox ahora" para
-              empezar.
+              {t("email.proposals.empty")}
             </p>
           ) : (
             <div className="space-y-2">
@@ -1131,26 +1134,26 @@ export default function EmailAssistant() {
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2">
                         <span className="text-sm font-medium text-ink truncate">
-                          {p.subject || "(sin asunto)"}
+                          {p.subject || t("email.proposals.noSubject")}
                         </span>
                         <span className={`text-[10px] px-1.5 py-0.5 rounded ${sc.bg} ${sc.text}`}>
-                          {sc.label}
+                          {t(sc.labelKey)}
                         </span>
                       </div>
                       <p className="text-[11px] text-ink-faint mt-0.5">
-                        De: <span className="text-ink-dim">{p.sender}</span>
+                        {t("email.activity.from")} <span className="text-ink-dim">{p.sender}</span>
                       </p>
                       <div className="text-[11px] text-ink-dim mt-1 grid grid-cols-2 gap-x-3">
                         <div>
-                          <span className="text-ink-faint">Propuso:</span>{" "}
+                          <span className="text-ink-faint">{t("email.proposals.theyProposed")}:</span>{" "}
                           {p.original_proposed_datetime
-                            ? new Date(p.original_proposed_datetime).toLocaleString("es-ES", { dateStyle: "short", timeStyle: "short" })
+                            ? new Date(p.original_proposed_datetime).toLocaleString(dateLocale, { dateStyle: "short", timeStyle: "short" })
                             : "—"}
                         </div>
                         {p.counter_proposed_datetime && (
                           <div>
-                            <span className="text-ink-faint">Propuse:</span>{" "}
-                            {new Date(p.counter_proposed_datetime).toLocaleString("es-ES", { dateStyle: "short", timeStyle: "short" })}
+                            <span className="text-ink-faint">{t("email.proposals.iProposed")}:</span>{" "}
+                            {new Date(p.counter_proposed_datetime).toLocaleString(dateLocale, { dateStyle: "short", timeStyle: "short" })}
                           </div>
                         )}
                       </div>
@@ -1162,15 +1165,15 @@ export default function EmailAssistant() {
                     </div>
                     <button
                       onClick={() => {
-                        if (confirm(`Eliminar propuesta #${p.id}?`)) {
+                        if (confirm(t("email.proposals.confirmDelete", { id: p.id }))) {
                           api.deleteProposal(p.id).then(refresh).catch((e) =>
-                            setMsg({ kind: "err", text: `Error eliminando: ${e.message}` })
+                            setMsg({ kind: "err", text: t("email.errDeleting", { msg: e.message }) })
                           );
                         }
                       }}
                       className="text-[10px] px-2 py-1 rounded bg-base-700/50 text-ink-faint hover:bg-signal-error/20 hover:text-signal-error shrink-0"
                     >
-                      Eliminar
+                      {t("email.proposals.delete")}
                     </button>
                   </div>
                 );
@@ -1183,20 +1186,19 @@ export default function EmailAssistant() {
         <div className="glass-surface rounded-2xl p-5">
           <div className="flex items-center justify-between mb-3">
             <h2 className="text-sm font-medium text-ink">
-              Reglas de auto-respuesta ({rules.length})
+              {t("email.rules.title", { n: rules.length })}
             </h2>
             <p className="text-[10px] text-ink-faint">
-              Estas reglas funcionan sin OAuth de Google. Activalas aqui y el chat
-              las respetara al responder emails.
+              {t("email.rules.desc")}
             </p>
           </div>
 
           {loading ? (
-            <p className="text-xs text-ink-faint">Cargando reglas...</p>
+            <p className="text-xs text-ink-faint">{t("email.rules.loading")}</p>
           ) : rules.length === 0 ? (
             <p className="text-xs text-ink-faint py-3">
-              No tienes reglas configuradas. Crea una abajo o desde el chat con{" "}
-              <em>"siempre responde a los emails de mi jefe con 'Recibido, gracias'"</em>.
+              {t("email.rules.empty")}{" "}
+              <em>{t("email.rules.emptyExample")}</em>.
             </p>
           ) : (
             <div className="space-y-2">
@@ -1215,7 +1217,7 @@ export default function EmailAssistant() {
                           ? "bg-signal-ok/20 text-signal-ok"
                           : "bg-base-700/50 text-ink-faint"
                       }`}>
-                        {rule.enabled ? "ACTIVA" : "INACTIVA"}
+                        {rule.enabled ? t("email.rules.active") : t("email.rules.inactive")}
                       </span>
                       {/* V0.7.3 (Sprint 4, B6): autonomia gradual */}
                       <span
@@ -1226,14 +1228,14 @@ export default function EmailAssistant() {
                         }`}
                         title={
                           rule.autonomy === "auto"
-                            ? "La regla actua sola (envia sin pedirte OK)"
-                            : "Modo propuesta: crea borradores; tu apruebas antes de enviar"
+                            ? t("email.rules.autoTitle")
+                            : t("email.rules.proposeTitle")
                         }
                       >
-                        {rule.autonomy === "auto" ? "AUTO" : "PROPUESTA"}
+                        {rule.autonomy === "auto" ? t("email.rules.auto") : t("email.rules.propose")}
                       </span>
                       {(rule.approved_count || 0) + (rule.rejected_count || 0) + (rule.edited_count || 0) > 0 && (
-                        <span className="text-[9px] text-ink-faint" title="aprobadas / editadas / rechazadas">
+                        <span className="text-[9px] text-ink-faint" title={t("email.rules.countsTitle")}>
                           ✓{rule.approved_count || 0} ✎{rule.edited_count || 0} ✗{rule.rejected_count || 0}
                         </span>
                       )}
@@ -1245,11 +1247,11 @@ export default function EmailAssistant() {
                       const domainsStr = (rule.sender_domains || []).join(", ");
                       return (
                         <p className="text-[11px] text-ink-dim mt-0.5">
-                          {emailsStr && <span>Emails: <code className="bg-base-950/50 px-1 rounded">{emailsStr}</code></span>}
-                          {domainsStr && <span> | Dominios: <code className="bg-base-950/50 px-1 rounded">{domainsStr}</code></span>}
+                          {emailsStr && <span>{t("email.rules.emails")}: <code className="bg-base-950/50 px-1 rounded">{emailsStr}</code></span>}
+                          {domainsStr && <span> | {t("email.rules.domains")}: <code className="bg-base-950/50 px-1 rounded">{domainsStr}</code></span>}
                           {!emailsStr && !domainsStr && rule.pattern && (
                             <span>
-                              {rule.matching ? MATCHING_LABELS[rule.matching] : ""}{" "}
+                              {rule.matching ? t(MATCHING_LABEL_KEYS[rule.matching]) : ""}{" "}
                               <code className="bg-base-950/50 px-1 rounded">{rule.pattern}</code>
                             </span>
                           )}
@@ -1259,11 +1261,11 @@ export default function EmailAssistant() {
                     <p className="text-[11px] text-ink-faint mt-1 italic truncate">
                       {rule.ai_prompt ? (
                         <>
-                          <span className="text-accent not-italic">IA:</span> {rule.ai_prompt}
-                          {rule.reply_template && <span className="text-ink-faint"> (fallback: plantilla)</span>}
+                          <span className="text-accent not-italic">{t("email.rules.ai")}:</span> {rule.ai_prompt}
+                          {rule.reply_template && <span className="text-ink-faint"> {t("email.rules.fallbackTemplate")}</span>}
                         </>
                       ) : (
-                        <>Respuesta: {rule.reply_template || "(solo reuniones IA)"}</>
+                        <>{t("email.rules.response")}: {rule.reply_template || t("email.rules.onlyMeetingsAI")}</>
                       )}
                     </p>
                   </div>
@@ -1272,31 +1274,31 @@ export default function EmailAssistant() {
                       <button
                         onClick={() => promoteRule(rule, "auto")}
                         className="text-[10px] px-2 py-1 rounded bg-signal-ok/15 text-signal-ok hover:bg-signal-ok/25 border border-signal-ok/30"
-                        title="Suficientes propuestas aprobadas: la regla puede actuar sola"
+                        title={t("email.rules.canPromoteTitle")}
                       >
-                        Subir a AUTO
+                        {t("email.rules.promoteToAuto")}
                       </button>
                     )}
                     {rule.autonomy === "auto" && (
                       <button
                         onClick={() => promoteRule(rule, "propose")}
                         className="text-[10px] px-2 py-1 rounded bg-base-700/50 text-ink-faint hover:bg-base-700"
-                        title="Volver a modo propuesta (borradores con tu aprobacion)"
+                        title={t("email.rules.demoteTitle")}
                       >
-                        Bajar a propuesta
+                        {t("email.rules.demoteToPropose")}
                       </button>
                     )}
                     <button
                       onClick={() => toggleRule(rule)}
                       className="text-[10px] px-2 py-1 rounded bg-base-700/50 text-ink-dim hover:bg-base-700"
                     >
-                      {rule.enabled ? "Desactivar" : "Activar"}
+                      {rule.enabled ? t("email.rules.disable") : t("email.rules.enable")}
                     </button>
                     <button
                       onClick={() => deleteRule(rule.id, rule.name)}
                       className="text-[10px] px-2 py-1 rounded bg-signal-error/10 text-signal-error hover:bg-signal-error/20"
                     >
-                      Eliminar
+                      {t("email.proposals.delete")}
                     </button>
                   </div>
                 </div>
@@ -1308,23 +1310,21 @@ export default function EmailAssistant() {
         {/* V0.7 extra (FIX): Formulario rediseñado - simple y claro */}
         <div className="glass-surface rounded-2xl p-5">
           <h2 className="text-sm font-medium text-ink mb-3">
-            Anadir regla de auto-respuesta
+            {t("email.addRule.title")}
           </h2>
           <p className="text-[10px] text-ink-faint mb-4">
-            Crea una regla en 4 pasos simples: 1) nombre, 2) emails o dominios,
-            3) accion, 4) plantilla. La IA detectara automaticamente si los emails
-            proponen una reunion y actuara en consecuencia.
+            {t("email.addRule.desc")}
           </p>
 
           {/* Paso 1: Nombre */}
           <div className="mb-3">
             <label className="block text-[10px] uppercase tracking-wider text-ink-faint mb-1">
-              1. Nombre
+              {t("email.addRule.step1")}
             </label>
             <input
               value={formName}
               onChange={(e) => setFormName(e.target.value)}
-              placeholder="ej. Respuesta a MagnoViajes"
+              placeholder={t("email.addRule.namePlaceholder")}
               className="w-full bg-base-700 border border-base-600 rounded-lg px-3 py-1.5 text-sm text-ink placeholder:text-ink-faint focus:outline-none focus:border-accent/50"
             />
           </div>
@@ -1333,8 +1333,8 @@ export default function EmailAssistant() {
           <div className="mb-3 grid grid-cols-2 gap-3">
             <div>
               <label className="block text-[10px] uppercase tracking-wider text-ink-faint mb-1">
-                2a. Emails exactos
-                <span className="text-ink-faint normal-case tracking-normal ml-1">(separados por coma)</span>
+                {t("email.addRule.step2a")}
+                <span className="text-ink-faint normal-case tracking-normal ml-1">{t("email.addRule.commaSeparated")}</span>
               </label>
               <input
                 value={formSenderEmailsText}
@@ -1343,13 +1343,13 @@ export default function EmailAssistant() {
                 className="w-full bg-base-700 border border-base-600 rounded-lg px-3 py-1.5 text-sm text-ink placeholder:text-ink-faint focus:outline-none focus:border-accent/50"
               />
               <p className="text-[9px] text-ink-faint mt-1">
-                Match exacto (case-insensitive)
+                {t("email.addRule.exactMatch")}
               </p>
             </div>
             <div>
               <label className="block text-[10px] uppercase tracking-wider text-ink-faint mb-1">
-                2b. Dominios
-                <span className="text-ink-faint normal-case tracking-normal ml-1">(separados por coma)</span>
+                {t("email.addRule.step2b")}
+                <span className="text-ink-faint normal-case tracking-normal ml-1">{t("email.addRule.commaSeparated")}</span>
               </label>
               <input
                 value={formSenderDomainsText}
@@ -1358,7 +1358,7 @@ export default function EmailAssistant() {
                 className="w-full bg-base-700 border border-base-600 rounded-lg px-3 py-1.5 text-sm text-ink placeholder:text-ink-faint focus:outline-none focus:border-accent/50"
               />
               <p className="text-[9px] text-ink-faint mt-1">
-                Match exacto del dominio
+                {t("email.addRule.exactDomainMatch")}
               </p>
             </div>
           </div>
@@ -1366,7 +1366,7 @@ export default function EmailAssistant() {
           {/* Paso 3: Accion */}
           <div className="mb-3">
             <label className="block text-[10px] uppercase tracking-wider text-ink-faint mb-1">
-              3. Que hacer cuando llega un email que matchea
+              {t("email.addRule.step3")}
             </label>
             <div className="grid grid-cols-3 gap-2">
               {(["auto_send", "create_draft", "alert_only"] as const).map((a) => (
@@ -1380,11 +1380,11 @@ export default function EmailAssistant() {
                       : "bg-base-700/50 border-base-600 text-ink-dim hover:bg-base-700"
                   }`}
                 >
-                  <strong className="block text-ink">{ACTION_LABELS[a].split(" (")[0]}</strong>
+                  <strong className="block text-ink">{t(ACTION_LABEL_KEYS[a])}</strong>
                   <span className="text-[10px] text-ink-faint">
-                    {a === "auto_send" && "Envia email automaticamente"}
-                    {a === "create_draft" && "Lo deja en Borradores para revision manual"}
-                    {a === "alert_only" && "Solo te avisa, no envia nada"}
+                    {a === "auto_send" && t("email.addRule.actionAutoSendDesc")}
+                    {a === "create_draft" && t("email.addRule.actionCreateDraftDesc")}
+                    {a === "alert_only" && t("email.addRule.actionAlertOnlyDesc")}
                   </span>
                 </button>
               ))}
@@ -1402,22 +1402,20 @@ export default function EmailAssistant() {
                 className="h-4 w-4 accent-accent"
               />
               <label htmlFor="form-detect-meeting" className="text-xs text-ink">
-                La IA detecta si el email propone una reunion
+                {t("email.addRule.detectMeeting")}
               </label>
             </div>
             <p className="text-[10px] text-ink-faint mt-1 ml-6">
-              Si el email es una reunion y estas ocupado, Aithera consulta tu
-              calendario y propone una nueva fecha automaticamente. Si no detecta
-              ninguna reunion, usa la plantilla de abajo.
+              {t("email.addRule.detectMeetingDesc")}
             </p>
           </div>
 
           {/* Paso 4: Plantilla */}
           <div className="mb-3">
             <label className="block text-[10px] uppercase tracking-wider text-ink-faint mb-1">
-              4. Plantilla de respuesta
+              {t("email.addRule.step4")}
               <span className="text-ink-faint normal-case tracking-normal ml-1">
-                ({formDetectMeeting ? "OPCIONAL" : "obligatoria"}) - solo para emails que NO son reuniones
+                ({formDetectMeeting ? t("email.addRule.optional") : t("email.addRule.mandatory")}) {t("email.addRule.step4Suffix")}
               </span>
             </label>
             <textarea
@@ -1425,19 +1423,18 @@ export default function EmailAssistant() {
               onChange={(e) => setFormReplyTemplate(e.target.value)}
               placeholder={
                 formDetectMeeting
-                  ? "Opcional. La IA genera la respuesta cuando detecta reuniones."
-                  : "ej. Recibido {sender}. Te respondo pronto."
+                  ? t("email.addRule.templatePlaceholderMeeting")
+                  : t("email.addRule.templatePlaceholder")
               }
               rows={3}
               className="w-full bg-base-700 border border-base-600 rounded-lg px-3 py-1.5 text-sm text-ink placeholder:text-ink-faint focus:outline-none focus:border-accent/50 resize-y"
             />
             <p className="text-[9px] text-ink-faint mt-1">
-              Variables disponibles: {"{sender}"}, {"{subject}"}, {"{body}"}
+              {t("email.addRule.variablesAvailable")}: {"{sender}"}, {"{subject}"}, {"{body}"}
             </p>
             {formDetectMeeting && !formReplyTemplate.trim() && (
               <p className="text-[10px] text-emerald-400 mt-1">
-                ✓ Sin plantilla: la IA generara todas las respuestas
-                automaticamente (incluso las de no-reunion).
+                {t("email.addRule.noTemplateHint")}
               </p>
             )}
           </div>
@@ -1445,29 +1442,27 @@ export default function EmailAssistant() {
           {/* V0.7.3b (Sprint 4b): Paso 4b — Respuesta generada por IA */}
           <div className="mb-3">
             <label className="block text-[10px] uppercase tracking-wider text-ink-faint mb-1">
-              4b. Respuesta generada por IA
+              {t("email.addRule.step4b")}
               <span className="text-ink-faint normal-case tracking-normal ml-1">
-                (opcional; si lo rellenas, la plantilla pasa a ser fallback)
+                {t("email.addRule.step4bHint")}
               </span>
             </label>
             <textarea
               value={formAiPrompt}
               onChange={(e) => setFormAiPrompt(e.target.value)}
-              placeholder='ej. "Responde cordialmente proponiendo una reunion otro dia. Tono cercano, en español."'
+              placeholder={t("email.addRule.aiPromptPlaceholder")}
               rows={2}
               className="w-full bg-base-700 border border-base-600 rounded-lg px-3 py-1.5 text-sm text-ink placeholder:text-ink-faint focus:outline-none focus:border-accent/50 resize-y"
             />
             <p className="text-[9px] text-ink-faint mt-1">
-              Dale una instruccion de estilo y la IA redactara cada respuesta a
-              medida (mismo idioma del email, tono natural, sin sonar a robot).
-              Si la IA no responde, se usa la plantilla del paso 4.
+              {t("email.addRule.aiPromptDesc")}
             </p>
           </div>
 
           {/* V0.7.3 (Sprint 4, B6): Paso 5 — Autonomia (eleccion directa) */}
           <div className="mb-3">
             <label className="block text-[10px] uppercase tracking-wider text-ink-faint mb-1">
-              5. Autonomia de la regla
+              {t("email.addRule.step5")}
             </label>
             <div className="grid grid-cols-2 gap-2">
               <button
@@ -1479,10 +1474,9 @@ export default function EmailAssistant() {
                     : "bg-base-700/50 border-base-600 text-ink-dim hover:bg-base-700"
                 }`}
               >
-                <strong className="block text-ink">Propuesta (recomendado)</strong>
+                <strong className="block text-ink">{t("email.addRule.autonomyProposeTitle")}</strong>
                 <span className="text-[10px] text-ink-faint">
-                  Crea borradores; tu apruebas antes de enviar. A las 5 aprobadas
-                  te ofrece subir a AUTO.
+                  {t("email.addRule.autonomyProposeDesc")}
                 </span>
               </button>
               <button
@@ -1494,10 +1488,9 @@ export default function EmailAssistant() {
                     : "bg-base-700/50 border-base-600 text-ink-dim hover:bg-base-700"
                 }`}
               >
-                <strong className="block text-ink">AUTO desde el principio</strong>
+                <strong className="block text-ink">{t("email.addRule.autonomyAutoTitle")}</strong>
                 <span className="text-[10px] text-ink-faint">
-                  Actua sola desde ya. Util para remitentes poco frecuentes
-                  (ej. la escuela) donde ganar confianza tardaria meses.
+                  {t("email.addRule.autonomyAutoDesc")}
                 </span>
               </button>
             </div>
@@ -1513,14 +1506,14 @@ export default function EmailAssistant() {
                 className="h-4 w-4 accent-accent"
               />
               <label htmlFor="form-enabled" className="text-xs text-ink">
-                Activar inmediatamente
+                {t("email.addRule.enableImmediately")}
               </label>
             </div>
             <button
               onClick={addRule}
               className="text-xs px-4 py-2 rounded-lg bg-accent text-base-950 font-medium hover:bg-accent-glow transition-colors"
             >
-              Crear regla
+              {t("email.addRule.create")}
             </button>
           </div>
         </div>
@@ -1528,15 +1521,15 @@ export default function EmailAssistant() {
         {/* Test de regla */}
         <div className="glass-surface rounded-2xl p-5">
           <h2 className="text-sm font-medium text-ink mb-3">
-            Probar reglas (dry-run, NO envia nada)
+            {t("email.testRule.title")}
           </h2>
           <p className="text-[10px] text-ink-faint mb-3">
-            Comprueba si un email matchearia alguna regla sin enviar respuesta.
+            {t("email.testRule.desc")}
           </p>
           <div className="grid grid-cols-2 gap-3">
             <div className="col-span-2">
               <label className="block text-[10px] uppercase tracking-wider text-ink-faint mb-1">
-                Remitente (header From)
+                {t("email.testRule.sender")}
               </label>
               <input
                 value={testSender}
@@ -1547,23 +1540,23 @@ export default function EmailAssistant() {
             </div>
             <div>
               <label className="block text-[10px] uppercase tracking-wider text-ink-faint mb-1">
-                Asunto
+                {t("email.testRule.subject")}
               </label>
               <input
                 value={testSubject}
                 onChange={(e) => setTestSubject(e.target.value)}
-                placeholder="Reunion manana"
+                placeholder={t("email.testRule.subjectPlaceholder")}
                 className="w-full bg-base-700 border border-base-600 rounded-lg px-3 py-1.5 text-sm text-ink placeholder:text-ink-faint focus:outline-none focus:border-accent/50"
               />
             </div>
             <div>
               <label className="block text-[10px] uppercase tracking-wider text-ink-faint mb-1">
-                Cuerpo (opcional)
+                {t("email.testRule.body")}
               </label>
               <input
                 value={testBody}
                 onChange={(e) => setTestBody(e.target.value)}
-                placeholder="primeras palabras del email"
+                placeholder={t("email.testRule.bodyPlaceholder")}
                 className="w-full bg-base-700 border border-base-600 rounded-lg px-3 py-1.5 text-sm text-ink placeholder:text-ink-faint focus:outline-none focus:border-accent/50"
               />
             </div>
@@ -1573,7 +1566,7 @@ export default function EmailAssistant() {
               onClick={testRule}
               className="text-xs px-4 py-2 rounded-lg bg-base-800 text-ink border border-base-700 hover:bg-base-700"
             >
-              Probar
+              {t("email.testRule.run")}
             </button>
           </div>
 
@@ -1586,12 +1579,12 @@ export default function EmailAssistant() {
               {testResult.would_auto_reply ? (
                 <>
                   <p className="text-xs text-signal-ok font-medium">
-                    ✓ Auto-respuesta activada ({testResult.matches.length} regla(s))
+                    {t("email.testRule.activated", { n: testResult.matches.length })}
                   </p>
                   {testResult.matches.map((m, i) => (
                     <div key={i} className="mt-2 text-xs">
                       <p className="text-ink-dim">
-                        Regla: <span className="text-ink">{m.name}</span>
+                        {t("email.testRule.rule")}: <span className="text-ink">{m.name}</span>
                       </p>
                       <p className="text-ink-faint italic mt-0.5">
                         "{m.reply_text}"
@@ -1601,7 +1594,7 @@ export default function EmailAssistant() {
                 </>
               ) : (
                 <p className="text-xs text-ink-dim">
-                  Ninguna regla matchea este email.
+                  {t("email.testRule.noMatch")}
                 </p>
               )}
             </div>

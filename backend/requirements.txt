@@ -146,15 +146,23 @@ faster-whisper==1.2.1
 # EdgeTTS: voces de Microsoft, GRATIS, sin API key, requiere internet. Ligero
 # (no descarga modelos) -> buen "por defecto" para distribuir.
 edge-tts
-# Kokoro (TTS local en proceso): NO se pinea aquí a propósito. En Python 3.13
-# su cadena de deps (misaki[en] -> spacy -> thinc -> blis) NO compila (Cython),
-# y pina numpy==1.26.4 chocando con el numpy 2.x del resto del stack. Instalarlo
-# rompería el entorno. El proveedor Kokoro del backend es import-lazy y degrada
-# con error claro si la lib no está. Si algún día se quiere Kokoro:
-#   - opción robusta: correrlo aislado vía Docker (Kokoro-FastAPI), o
-#   - en un venv de Python 3.11 (donde sí hay wheels de spacy/blis).
-# De momento el proveedor de voz recomendado es EdgeTTS (arriba): gratis, sin
-# key, sin modelos ni compilación.
+# Kokoro (TTS LOCAL de máxima calidad, sin Docker): NO se pinea aquí a propósito
+# — es OPCIONAL y se instala bajo demanda desde Ajustes → Voz (botón "Instalar
+# Kokoro": pip install kokoro-onnx soundfile + descarga del modelo ~108 MB a
+# %APPDATA%/Aithera/kokoro/). El proveedor del backend (app/voice/kokoro_voice.py)
+# es import-lazy y degrada a EdgeTTS si la lib o el modelo no están.
+# [A·VOZ-5, doc 32] Se usa `kokoro-onnx` (ONNX Runtime, SIN PyTorch), NO el
+# paquete `kokoro` de PyTorch del stub anterior. Diferencia clave:
+#   - `kokoro-onnx` requiere numpy>=2.0.2 y onnxruntime>=1.20.1 → ALINEADO con el
+#     stack (chromadb ya trae onnxruntime; el backend corre numpy 2.x). El viejo
+#     `kokoro` arrastraba misaki->spacy->thinc->blis (NO compila en 3.13, pinaba
+#     numpy==1.26.4) — ese era el conflicto, ahora eliminado de raíz.
+#   - G2P vía phonemizer-fork + espeakng-loader, que EMPAQUETA espeak-ng como
+#     wheel (incluye win_amd64): el usuario NO instala espeak aparte, y kokoro-onnx
+#     cablea la DLL/datos por sí solo (fin del "espeak not installed" en Windows).
+#   - Python 3.10-3.13 ✅. Verificado en vivo: install limpio, G2P ES con nombres
+#     propios correcto. Recomendado por defecto sigue siendo EdgeTTS (gratis, sin
+#     descargar nada); Kokoro es el salto de calidad opcional 100% local.
 
 # --- Utilidades generales ---
 requests==2.34.2

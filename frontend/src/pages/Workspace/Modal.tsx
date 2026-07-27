@@ -4,6 +4,9 @@
 // guardar es siempre visible. El popup nunca saca al usuario de su contexto
 // (patrón Linear, doc 18 §9.2).
 import { useEffect, type ReactNode } from "react";
+import { createPortal } from "react-dom";
+import { useT } from "@/store/useI18n";
+import { Z_MODAL } from "./layers";
 
 interface ModalProps {
   title: string;
@@ -14,6 +17,7 @@ interface ModalProps {
 }
 
 export function Modal({ title, onClose, children, footer, widthClass = "max-w-lg" }: ModalProps) {
+  const t = useT();
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
@@ -22,9 +26,16 @@ export function Modal({ title, onClose, children, footer, widthClass = "max-w-lg
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
 
-  return (
+  // [2026-07-25] PORTAL + capa Z_MODAL. Antes era `fixed inset-0 z-50` dentro del
+  // árbol de la tarjeta: (a) las tarjetas suben de z-index al clicarlas y pasaban
+  // de 50, tapando el popup; (b) los popups que viven DENTRO de una tarjeta
+  // (TaskPopup, MilestonePopup) quedaban atrapados en su stacking context, donde
+  // ningún z-index les habría servido. El portal los saca a `document.body` y
+  // `Z_MODAL` los pone por encima de todo el rango de tarjetas (ver layers.ts).
+  const overlay = (
     <div
-      className="fixed inset-0 z-50 flex items-start justify-center bg-black/50 backdrop-blur-sm p-6 overflow-y-auto"
+      className="fixed inset-0 flex items-start justify-center bg-black/50 backdrop-blur-sm p-6 overflow-y-auto"
+      style={{ zIndex: Z_MODAL }}
       onMouseDown={onClose}
     >
       <div
@@ -36,7 +47,7 @@ export function Modal({ title, onClose, children, footer, widthClass = "max-w-lg
           <button
             onClick={onClose}
             className="text-ink-faint hover:text-ink text-lg leading-none px-1"
-            aria-label="Cerrar"
+            aria-label={t("common.close")}
           >
             ×
           </button>
@@ -50,6 +61,10 @@ export function Modal({ title, onClose, children, footer, widthClass = "max-w-lg
       </div>
     </div>
   );
+
+  // `document.body` puede no existir en un render de servidor; en Electron
+  // siempre está, pero la guarda evita cualquier sorpresa en tests/SSR.
+  return typeof document !== "undefined" ? createPortal(overlay, document.body) : overlay;
 }
 
 // Banner de error compartido: sin esto, un fallo al guardar (nombre

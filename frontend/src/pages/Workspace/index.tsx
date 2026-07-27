@@ -9,8 +9,10 @@ import { useCallback, useEffect, useState } from "react";
 import { api, type Project } from "@/lib/api";
 import { WorkspaceCanvas } from "./WorkspaceCanvas";
 import { ProjectPopup } from "./ProjectPopup";
+import { useT } from "@/store/useI18n";
 
 export default function Workspace() {
+  const t = useT();
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
   const [projectEdit, setProjectEdit] = useState<Project | null | undefined>(undefined);
@@ -43,7 +45,7 @@ export default function Workspace() {
   };
 
   if (loading) {
-    return <div className="h-full flex items-center justify-center text-ink-dim">Cargando…</div>;
+    return <div className="h-full flex items-center justify-center text-ink-dim">{t("common.loading")}</div>;
   }
 
   return (

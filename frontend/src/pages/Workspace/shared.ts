@@ -8,11 +8,13 @@ export const PRIORITY_DOT: Record<string, string> = {
   low: "bg-ink-faint",
 };
 
-export const MS_STATUS_LABEL: Record<string, string> = {
-  planned: "Planificado",
-  active: "Activo",
-  done: "Completado",
-  archived: "Archivado",
+// Claves i18n (no texto literal): módulo puro, no puede usar useT() —
+// se resuelven con tr(MS_STATUS_KEY[status]) en el componente que las use.
+export const MS_STATUS_KEY: Record<string, string> = {
+  planned: "workspace.milestone.status.planned",
+  active: "workspace.milestone.status.active",
+  done: "workspace.milestone.status.done",
+  archived: "workspace.milestone.status.archived",
 };
 
 export function pct(ratio: number | undefined | null): number {

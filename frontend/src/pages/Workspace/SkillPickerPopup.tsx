@@ -17,6 +17,7 @@
 import { useMemo, useState } from "react";
 import catalogData from "@/data/skillsCatalog.json";
 import { Modal, fieldInput, btnPrimary, btnGhost } from "./Modal";
+import { useT } from "@/store/useI18n";
 
 interface SkillEntry {
   slug: string;
@@ -40,6 +41,7 @@ interface Props {
 }
 
 export function SkillPickerPopup({ selected, onApply, onClose }: Props) {
+  const t = useT();
   const [category, setCategory] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [picked, setPicked] = useState<Set<string>>(new Set(selected));
@@ -63,14 +65,14 @@ export function SkillPickerPopup({ selected, onApply, onClose }: Props) {
 
   return (
     <Modal
-      title="Elegir skills"
+      title={t("workspace.skillPicker.title")}
       widthClass="max-w-2xl"
       onClose={onClose}
       footer={
         <>
-          <span className="mr-auto text-xs text-ink-faint">{picked.size} seleccionadas</span>
-          <button onClick={onClose} className={btnGhost}>Cancelar</button>
-          <button onClick={() => onApply([...picked])} className={btnPrimary}>Añadir</button>
+          <span className="mr-auto text-xs text-ink-faint">{t("workspace.skillPicker.selectedCount", { n: picked.size })}</span>
+          <button onClick={onClose} className={btnGhost}>{t("common.cancel")}</button>
+          <button onClick={() => onApply([...picked])} className={btnPrimary}>{t("workspace.skillPicker.add")}</button>
         </>
       }
     >
@@ -78,7 +80,7 @@ export function SkillPickerPopup({ selected, onApply, onClose }: Props) {
         value={query}
         onChange={(e) => setQuery(e.target.value)}
         className={fieldInput}
-        placeholder="Buscar skill…"
+        placeholder={t("workspace.skillPicker.searchPlaceholder")}
         autoFocus
       />
 
@@ -87,7 +89,7 @@ export function SkillPickerPopup({ selected, onApply, onClose }: Props) {
           onClick={() => setCategory(null)}
           className={`text-[11px] px-2.5 py-1 rounded-lg border ${category === null ? "border-accent bg-accent/15 text-accent" : "border-base-700 text-ink-dim hover:border-base-600"}`}
         >
-          Todas
+          {t("workspace.skillPicker.allCategories")}
         </button>
         {catalog.categories.map((c) => (
           <button
@@ -121,7 +123,7 @@ export function SkillPickerPopup({ selected, onApply, onClose }: Props) {
           );
         })}
         {filtered.length === 0 && (
-          <p className="col-span-2 text-xs text-ink-faint text-center py-6">Sin resultados.</p>
+          <p className="col-span-2 text-xs text-ink-faint text-center py-6">{t("workspace.skillPicker.noResults")}</p>
         )}
       </div>
     </Modal>

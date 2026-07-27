@@ -7,6 +7,9 @@ import { api, type Agent, type ToolInfo } from "@/lib/api";
 import { Modal, ErrorBanner, fieldLabel, fieldInput, btnPrimary, btnGhost } from "./Modal";
 import { SkillPickerPopup } from "./SkillPickerPopup";
 import { useModeloIAOptions } from "./useModeloIAOptions";
+// Alias 'tr' (no 't'): este archivo usa 't' como variable de tool en
+// '.map((t) => …)' — evita sombrear/confundir.
+import { useT } from "@/store/useI18n";
 
 const EMOJI_CHOICES = ["🤖", "🧠", "⚙️", "🔧", "📊", "🔍", "✉️", "📅", "🗂️", "⚡"];
 
@@ -17,6 +20,7 @@ interface Props {
 }
 
 export function AgentCreatePopup({ projectId, onSave, onClose }: Props) {
+  const tr = useT();
   const [name, setName] = useState("");
   const [agentType, setAgentType] = useState("generic");
   const [description, setDescription] = useState("");
@@ -56,7 +60,7 @@ export function AgentCreatePopup({ projectId, onSave, onClose }: Props) {
       // Sin esto, un fallo (nombre duplicado, backend caido, etc.) se veia
       // como "no pasa nada al pulsar Crear" — el popup se quedaba abierto
       // sin ninguna pista de por que.
-      setError(e instanceof Error ? e.message : "No se pudo crear el agente.");
+      setError(e instanceof Error ? e.message : tr("workspace.agentCreate.createFailed"));
     } finally {
       setSaving(false);
     }
@@ -65,25 +69,25 @@ export function AgentCreatePopup({ projectId, onSave, onClose }: Props) {
   return (
     <>
     <Modal
-      title="Nuevo agente"
+      title={tr("workspace.agentCreate.title")}
       onClose={onClose}
       footer={
         <>
-          <button onClick={onClose} className={btnGhost}>Cancelar</button>
+          <button onClick={onClose} className={btnGhost}>{tr("common.cancel")}</button>
           <button onClick={handleSave} disabled={!name.trim() || saving} className={btnPrimary}>
-            {saving ? "Creando…" : "Crear"}
+            {saving ? tr("workspace.agentCreate.creating") : tr("workspace.agentCreate.create")}
           </button>
         </>
       }
     >
       <ErrorBanner message={error} />
       <div>
-        <label className={fieldLabel}>Nombre</label>
-        <input value={name} onChange={(e) => setName(e.target.value)} className={fieldInput} placeholder="Nombre del agente" autoFocus />
+        <label className={fieldLabel}>{tr("agents.field.name")}</label>
+        <input value={name} onChange={(e) => setName(e.target.value)} className={fieldInput} placeholder={tr("workspace.agentCreate.namePlaceholder")} autoFocus />
       </div>
 
       <div>
-        <label className={fieldLabel}>Icono</label>
+        <label className={fieldLabel}>{tr("workspace.agentCreate.icon")}</label>
         <div className="flex gap-1.5 flex-wrap">
           {EMOJI_CHOICES.map((e) => (
             <button
@@ -99,29 +103,29 @@ export function AgentCreatePopup({ projectId, onSave, onClose }: Props) {
 
       <div className="grid grid-cols-2 gap-3">
         <div>
-          <label className={fieldLabel}>Modelo IA</label>
+          <label className={fieldLabel}>{tr("workspace.agentCard.model")}</label>
           <select value={agentType} onChange={(e) => setAgentType(e.target.value)} className={fieldInput}>
             {modeloOptions.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
           </select>
         </div>
         <div>
-          <label className={fieldLabel}>Estado</label>
+          <label className={fieldLabel}>{tr("workspace.agentCreate.statusLabel")}</label>
           <select value={isActive ? "1" : "0"} onChange={(e) => setIsActive(e.target.value === "1")} className={fieldInput}>
-            <option value="1">Activo</option>
-            <option value="0">Inactivo</option>
+            <option value="1">{tr("agents.field.active")}</option>
+            <option value="0">{tr("workspace.agentCard.inactive")}</option>
           </select>
         </div>
       </div>
 
       <div>
-        <label className={fieldLabel}>Descripción</label>
-        <textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={2} className={`${fieldInput} resize-none`} placeholder="Qué hace este agente" />
+        <label className={fieldLabel}>{tr("agents.field.description")}</label>
+        <textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={2} className={`${fieldInput} resize-none`} placeholder={tr("agents.descPlaceholder")} />
       </div>
 
       <div>
         <div className="flex items-center justify-between mb-1.5">
-          <label className={fieldLabel} style={{ margin: 0 }}>Skills</label>
-          <button onClick={() => setSkillPickerOpen(true)} className="text-[11px] text-accent hover:text-accent-soft">+ Skill</button>
+          <label className={fieldLabel} style={{ margin: 0 }}>{tr("workspace.agentCard.skills")}</label>
+          <button onClick={() => setSkillPickerOpen(true)} className="text-[11px] text-accent hover:text-accent-soft">{tr("workspace.agentCard.addSkill")}</button>
         </div>
         {skills.length > 0 ? (
           <div className="flex flex-wrap gap-1.5">
@@ -133,12 +137,12 @@ export function AgentCreatePopup({ projectId, onSave, onClose }: Props) {
             ))}
           </div>
         ) : (
-          <p className="text-[11px] text-ink-faint">Sin skills. Añade con "+ Skill".</p>
+          <p className="text-[11px] text-ink-faint">{tr("workspace.agentCard.noSkillsAdd")}</p>
         )}
       </div>
 
       <div>
-        <label className={fieldLabel}>Herramientas permitidas</label>
+        <label className={fieldLabel}>{tr("agents.field.tools")}</label>
         <div className="flex flex-col gap-1 max-h-32 overflow-y-auto">
           {tools.map((t) => (
             <label key={t.tool_id} className="flex items-center gap-2 text-xs text-ink-dim">
@@ -146,7 +150,7 @@ export function AgentCreatePopup({ projectId, onSave, onClose }: Props) {
               {t.name}
             </label>
           ))}
-          {tools.length === 0 && <p className="text-[11px] text-ink-faint">Cargando catálogo…</p>}
+          {tools.length === 0 && <p className="text-[11px] text-ink-faint">{tr("workspace.agentCard.loadingCatalog")}</p>}
         </div>
       </div>
     </Modal>

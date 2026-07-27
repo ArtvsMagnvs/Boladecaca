@@ -3,17 +3,18 @@ import { type ReactNode } from "react";
 import { useAppStore } from "@/store/useAppStore";
 import { usePolling } from "@/hooks/usePolling";
 import { shortRef } from "@/lib/modelNames";
+import { useT } from "@/store/useI18n";
 
 interface NavItem {
   to: string;
-  label: string;
+  labelKey: string;
   icon: ReactNode;
 }
 
 const NAV_ITEMS: NavItem[] = [
   {
     to: "/",
-    label: "Hub",
+    labelKey: "nav.hub",
     icon: (
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
         <circle cx="12" cy="12" r="3" />
@@ -23,7 +24,7 @@ const NAV_ITEMS: NavItem[] = [
   },
   {
     to: "/chat",
-    label: "Chat",
+    labelKey: "nav.chat",
     icon: (
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
         <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
@@ -32,7 +33,7 @@ const NAV_ITEMS: NavItem[] = [
   },
   {
     to: "/email",
-    label: "Email Assistant",
+    labelKey: "nav.email",
     icon: (
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
         <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z" />
@@ -43,7 +44,7 @@ const NAV_ITEMS: NavItem[] = [
   {
     // V0.87 (WPMS W2a): un solo item unifica Proyectos + Tareas + Milestones.
     to: "/workspace",
-    label: "Workspace",
+    labelKey: "nav.workspace",
     icon: (
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
         <path d="M3 3h18v18H3z" rx="2" ry="2" />
@@ -53,7 +54,7 @@ const NAV_ITEMS: NavItem[] = [
   },
   {
     to: "/calendar",
-    label: "Calendario",
+    labelKey: "nav.calendar",
     icon: (
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
         <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
@@ -65,7 +66,7 @@ const NAV_ITEMS: NavItem[] = [
   },
   {
     to: "/agents",
-    label: "Agentes",
+    labelKey: "nav.agents",
     icon: (
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
         <circle cx="12" cy="8" r="4" />
@@ -76,7 +77,7 @@ const NAV_ITEMS: NavItem[] = [
   {
     // V1.0 (TIE v1, T4b): misiones — el plan, cada paso y su estado.
     to: "/missions",
-    label: "Misiones",
+    labelKey: "nav.missions",
     icon: (
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
         <circle cx="12" cy="12" r="3" />
@@ -90,7 +91,7 @@ const NAV_ITEMS: NavItem[] = [
   {
     // V0.9 (Automation Engine A3): reglas + historial + aprobaciones.
     to: "/automation",
-    label: "Automatizaciones",
+    labelKey: "nav.automation",
     icon: (
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
         <path d="M13 2 L4 14h6l-1 8 9-12h-6l1-8z" />
@@ -111,6 +112,7 @@ const navLinkClasses = (isActive: boolean) =>
 
 export function Sidebar() {
   const { backendConnected, aiStatus, chatPrimary, chatPrimaryDown, refreshBackendStatus, refreshAIStatus } = useAppStore();
+  const t = useT();
 
   // [P1] Poll de estado visibility-aware: no sondear con la ventana oculta.
   usePolling(() => {
@@ -138,7 +140,7 @@ export function Sidebar() {
             className={({ isActive }) => navLinkClasses(isActive)}
           >
             <span className="shrink-0 opacity-70">{item.icon}</span>
-            {item.label}
+            {t(item.labelKey)}
           </NavLink>
         ))}
       </nav>
@@ -160,13 +162,13 @@ export function Sidebar() {
             <circle cx="12" cy="12" r="3" />
             <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
           </svg>
-          Configuración
+          {t("nav.settings")}
         </NavLink>
 
         <div className="px-3 py-2 text-xs text-ink-faint flex flex-col gap-1">
           <div className="flex items-center gap-1.5">
             <span className={`h-1.5 w-1.5 rounded-full ${backendConnected ? "bg-signal-ok" : "bg-signal-warn"}`} />
-            {backendConnected ? "Conectado" : "Conectando..."}
+            {backendConnected ? t("common.connected") : t("common.connecting")}
           </div>
           {/* [2026-07-21] El modelo que muestra la app es el del CHAT según la
               política ACTIVA (Inteligencia) — no el proveedor legacy, que
@@ -174,7 +176,7 @@ export function Sidebar() {
           {chatPrimary ? (
             <div className={chatPrimaryDown ? "text-signal-warn" : "text-ink-faint/70"}>
               {shortRef(chatPrimary)}
-              {chatPrimaryDown && " ⚠ fallando"}
+              {chatPrimaryDown && ` ⚠ ${t("common.failing")}`}
             </div>
           ) : aiStatus?.provider ? (
             <div className="text-ink-faint/70">

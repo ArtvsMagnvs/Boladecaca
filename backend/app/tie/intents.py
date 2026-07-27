@@ -22,6 +22,7 @@ from typing import Optional
 
 from app.ai.reasoning_filter import strip_reasoning
 from app.core.logging_config import get_system_logger
+from app.tie import action_intent
 from app.tie.contracts import MEL_CAPABILITIES, Intent, IntentType
 
 logger = get_system_logger("tie.intents")
@@ -151,7 +152,17 @@ Campos del JSON (todos obligatorios):
     canción", "crea una carpeta y dentro un archivo con este texto", "búscame un vuelo
     y ábrelo" son requires_planning=FALSE — se ejecutan de corrido con herramientas,
     sin plan que revisar. Ante la duda en tareas mecánicas, requires_planning=false.
-- "requires_tools": lista de herramientas probables, subconjunto de ["filesystem","shell","git","powershell","email","calendar"].
+- "requires_tools": lista de herramientas probables, subconjunto de ["filesystem","shell","git","powershell","email","calendar","aithera","memory","search","browser"].
+    USA "aithera" siempre que el usuario quiera OPERAR LA PROPIA APP: gestionar SUS
+    proyectos, hitos, tareas, agentes, reglas de automatización o recordatorios —
+    p.ej. "crea un proyecto llamado X", "abre el proyecto Y", "en el proyecto Z crea
+    un agente con el modelo Minimax y skills de backend", "crea una regla de email
+    que…", "muéstrame/lista mis proyectos o agentes". Esas peticiones son type
+    "execute" o "create" con requires_tools=["aithera"] y requires_planning=false
+    (una acción directa, no un plan que revisar) SALVO que encadenen varios pasos
+    dependientes. Los DATOS de sus proyectos ya están en tu contexto: para "¿qué
+    proyectos tengo?" NO hace falta herramienta (respóndelo de tu contexto); "aithera"
+    es para ACTUAR (crear/abrir/modificar), no para leer lo que ya sabes.
 - "requires_browser": true si hace falta navegar por internet (buscar, rellenar formularios web).
 - "requires_computer": true si hace falta controlar el ordenador (clics, teclado en apps).
 - "requires_automation": true si esto debería convertirse en una regla automática recurrente.
@@ -349,17 +360,46 @@ async def classify(text: str, *, channel: Optional[str] = None) -> Intent:
         logger.info(f"[tie-perfil] precheck HIT (charla, 0 LLM): {text[:40]!r}")
         return pre
 
+    # [2026-07-25] RED DE SEGURIDAD DE ACCIONES. `_safe_action` se usa en TODOS
+    # los caminos de fallo de abajo: si el LLM no da JSON, devuelve error o
+    # lanza, una petición de ACCIÓN sobre Aithera NO puede degradar a charla
+    # (era el fallo real: el turno acababa en chat sin tools y el modelo fingía
+    # haber creado la milestone/agente). Determinista, 0 LLM.
+    def _safe_action() -> Optional[Intent]:
+        try:
+            return action_intent.action_intent(text)
+        except Exception:
+            return None
+
     try:
         from app.tie import router
 
+        # [A·VOZ-6 profiling] Cuánto tarda el clasificador de verdad, y con qué
+        # modelo: es lo que domina el "analizando" de un mensaje NO trivial. Si
+        # esto son decenas de segundos, el modelo de `classify` está mal
+        # enrutado (debería ser rápido/local, doc 19 §3) — se ve en el log.
+        import time as _t
+        _c0 = _t.monotonic()
         result = await router.complete(text, system_prompt=_SYSTEM_PROMPT, capability="classify")
+        _cms = int((_t.monotonic() - _c0) * 1000)
+        logger.info(f"[tie-perfil] classify LLM: {_cms}ms modelo={result.get('model')!r}")
         if result.get("error"):
+            act = _safe_action()
+            if act is not None:
+                logger.info("[intents] clasificador con error PERO el mensaje pide una acción "
+                            "sobre Aithera → intent de acción determinista (no charla)")
+                return act
             logger.info(f"[intents] clasificador devolvió error, fallback conversational: {result.get('response','')[:80]}")
             return Intent.conversational_fallback(goal=text)
 
         raw = strip_reasoning(result.get("response", "") or "")
         data = _extract_json(raw)
         if not data:
+            act = _safe_action()
+            if act is not None:
+                logger.info("[intents] sin JSON parseable PERO el mensaje pide una acción "
+                            "sobre Aithera → intent de acción determinista (no charla)")
+                return act
             logger.info("[intents] sin JSON parseable, fallback conversational")
             return Intent.conversational_fallback(goal=text)
 
@@ -375,7 +415,29 @@ async def classify(text: str, *, channel: Optional[str] = None) -> Intent:
         if intent.confidence < CONFIDENCE_FLOOR:
             intent.type = IntentType.CONVERSATIONAL
             intent.requires_planning = False
+
+        # [2026-07-25] CORRECCIÓN de una clasificación floja. Los modelos
+        # pequeños confunden una ORDEN ("créame una milestone MVP") con charla, o
+        # aciertan el tipo pero se olvidan de pedir la herramienta. Si el
+        # detector determinista ve una acción sobre Aithera:
+        #   · tipo conversational/query → se sube a EXECUTE (si no, el turno
+        #     acabaría en chat sin tools y el modelo fingiría haberlo hecho);
+        #   · falte la tool `aithera` → se añade (sin quitar las que sí detectó).
+        # NO se toca nada más del intent del LLM (objetivos, memoria, planning
+        # cuando él lo pidió): su criterio se respeta donde es fiable.
+        if _safe_action() is not None:
+            if intent.type in (IntentType.CONVERSATIONAL, IntentType.QUERY):
+                logger.info(f"[intents] el modelo dijo {intent.type.value!r} pero el mensaje "
+                            f"es una ORDEN sobre Aithera → EXECUTE con tool 'aithera'")
+                intent.type = IntentType.EXECUTE
+            if "aithera" not in (intent.requires_tools or []):
+                intent.requires_tools = list(intent.requires_tools or []) + ["aithera"]
         return intent
     except Exception as e:  # jamás romper el pipeline por el clasificador
+        act = _safe_action()
+        if act is not None:
+            logger.error(f"[intents] excepción clasificando PERO el mensaje pide una acción "
+                         f"sobre Aithera → intent determinista: {type(e).__name__}: {e}")
+            return act
         logger.error(f"[intents] excepción clasificando (fallback conversational): {type(e).__name__}: {e}")
         return Intent.conversational_fallback(goal=text)

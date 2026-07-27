@@ -2,11 +2,12 @@
 import { useState } from "react";
 import type { Project, ProjectDoc } from "@/lib/api";
 import { Modal, ErrorBanner, fieldLabel, fieldInput, btnPrimary, btnGhost } from "./Modal";
+import { useT } from "@/store/useI18n";
 
 const STATUSES = [
-  { value: "active", label: "Activo" },
-  { value: "paused", label: "Pausado" },
-  { value: "done", label: "Terminado" },
+  { value: "active", labelKey: "workspace.projectPopup.status.active" },
+  { value: "paused", labelKey: "workspace.projectPopup.status.paused" },
+  { value: "done", labelKey: "workspace.projectPopup.status.done" },
 ];
 
 interface Props {
@@ -20,6 +21,7 @@ interface Props {
 }
 
 export function ProjectPopup({ project, onSave, onDelete, onArchive, onClose }: Props) {
+  const tr = useT();
   const [name, setName] = useState(project?.name ?? "");
   const [description, setDescription] = useState(project?.description ?? "");
   const [status, setStatus] = useState(project?.status ?? "active");
@@ -43,7 +45,30 @@ export function ProjectPopup({ project, onSave, onDelete, onArchive, onClose }: 
     if (picked) setRepoPath(picked);
   };
 
-  const addDoc = () => setDocs((prev) => [...prev, { label: "", kind: "url", url_or_path: "" }]);
+  // [2026-07-25] Dos formas de adjuntar material al proyecto, con la MISMA
+  // estructura (`Project.docs`) y distinguidas por `kind`:
+  //   kind="url"  → un enlace web que se escribe a mano (documentación online,
+  //                 un board, un vídeo de referencia…).
+  //   kind="file" → un ARCHIVO real del ordenador, elegido con el diálogo
+  //                 nativo (que es el único que puede dar la ruta absoluta).
+  // Los agentes del proyecto leen estas rutas con la tool `filesystem` /
+  // `document`, que valida que estén dentro de HOME antes de abrirlas.
+  const addLink = () => setDocs((prev) => [...prev, { label: "", kind: "url", url_or_path: "" }]);
+  const canPickFiles = typeof window !== "undefined" && !!window.aithera?.pickFiles;
+  const addFiles = async () => {
+    const picked = (await window.aithera?.pickFiles()) ?? [];
+    if (!picked.length) return;
+    setDocs((prev) => [
+      ...prev,
+      // El nombre del archivo sirve de etiqueta por defecto (editable): así
+      // adjuntar 5 archivos no obliga a teclear 5 nombres.
+      ...picked.map((p) => ({
+        label: p.split(/[\\/]/).pop() || p,
+        kind: "file",
+        url_or_path: p,
+      })),
+    ]);
+  };
   const setDoc = (i: number, patch: Partial<ProjectDoc>) =>
     setDocs((prev) => prev.map((d, j) => (j === i ? { ...d, ...patch } : d)));
 
@@ -64,7 +89,7 @@ export function ProjectPopup({ project, onSave, onDelete, onArchive, onClose }: 
         docs: docs.filter((d) => d.label.trim() && d.url_or_path.trim()),
       });
     } catch (e) {
-      setError(e instanceof Error ? e.message : "No se pudo guardar el proyecto.");
+      setError(e instanceof Error ? e.message : tr("workspace.projectPopup.saveFailed"));
     } finally {
       setSaving(false);
     }
@@ -77,7 +102,7 @@ export function ProjectPopup({ project, onSave, onDelete, onArchive, onClose }: 
     try {
       await onArchive(project.id);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "No se pudo archivar el proyecto.");
+      setError(e instanceof Error ? e.message : tr("workspace.projectPopup.archiveFailed"));
     } finally {
       setArchiving(false);
     }
@@ -85,23 +110,23 @@ export function ProjectPopup({ project, onSave, onDelete, onArchive, onClose }: 
 
   return (
     <Modal
-      title={project ? "Editar proyecto" : "Nuevo proyecto"}
+      title={project ? tr("workspace.projectPopup.editTitle") : tr("workspace.projectPopup.newTitle")}
       onClose={onClose}
       footer={
         <>
           {project && onDelete && (
             <button onClick={() => onDelete(project.id)} className="mr-auto px-3 py-2 text-signal-error/70 hover:text-signal-error text-sm">
-              Eliminar
+              {tr("common.delete")}
             </button>
           )}
           {project && onArchive && !project.archived_at && (
             <button onClick={handleArchive} disabled={archiving} className="px-3 py-2 text-ink-faint hover:text-ink-dim text-sm">
-              {archiving ? "Archivando…" : "Archivar"}
+              {archiving ? tr("workspace.projectPopup.archiving") : tr("workspace.projectPopup.archive")}
             </button>
           )}
-          <button onClick={onClose} className={btnGhost}>Cancelar</button>
+          <button onClick={onClose} className={btnGhost}>{tr("common.cancel")}</button>
           <button onClick={handleSave} disabled={!name.trim() || saving} className={btnPrimary}>
-            {saving ? "Guardando…" : "Guardar"}
+            {saving ? tr("agents.saving") : tr("common.save")}
           </button>
         </>
       }
@@ -109,45 +134,45 @@ export function ProjectPopup({ project, onSave, onDelete, onArchive, onClose }: 
       <ErrorBanner message={error} />
       {project?.archived_at && (
         <p className="text-[11px] text-ink-faint bg-base-800/40 rounded-lg px-3 py-2">
-          Archivado el {project.archived_at.slice(0, 10)} — sigue consultable, ya no cuenta como activo.
+          {tr("workspace.projectPopup.archivedNote", { date: project.archived_at.slice(0, 10) })}
         </p>
       )}
       <div>
-        <label className={fieldLabel}>Nombre</label>
-        <input value={name} onChange={(e) => setName(e.target.value)} className={fieldInput} placeholder="Nombre del proyecto" autoFocus />
+        <label className={fieldLabel}>{tr("agents.field.name")}</label>
+        <input value={name} onChange={(e) => setName(e.target.value)} className={fieldInput} placeholder={tr("workspace.projectPopup.namePlaceholder")} autoFocus />
       </div>
       <div>
-        <label className={fieldLabel}>Descripción</label>
-        <textarea value={description ?? ""} onChange={(e) => setDescription(e.target.value)} rows={2} className={`${fieldInput} resize-none`} placeholder="1-2 líneas" />
+        <label className={fieldLabel}>{tr("agents.field.description")}</label>
+        <textarea value={description ?? ""} onChange={(e) => setDescription(e.target.value)} rows={2} className={`${fieldInput} resize-none`} placeholder={tr("workspace.projectPopup.descPlaceholder")} />
       </div>
       <div className="grid grid-cols-2 gap-3">
         <div>
-          <label className={fieldLabel}>Estado</label>
+          <label className={fieldLabel}>{tr("workspace.projectPopup.statusLabel")}</label>
           <select value={status} onChange={(e) => setStatus(e.target.value)} className={fieldInput}>
-            {STATUSES.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
+            {STATUSES.map((s) => <option key={s.value} value={s.value}>{tr(s.labelKey)}</option>)}
           </select>
         </div>
         <div>
-          <label className={fieldLabel}>Carpeta local</label>
+          <label className={fieldLabel}>{tr("workspace.projectPopup.localFolder")}</label>
           <div className="flex gap-1.5">
             <input value={repoPath ?? ""} onChange={(e) => setRepoPath(e.target.value)} className={fieldInput} placeholder="C:/repos/…" />
             {canPickFolder && (
-              <button type="button" onClick={pickFolder} className={`${btnGhost} px-2.5 whitespace-nowrap`} title="Elegir carpeta…">
+              <button type="button" onClick={pickFolder} className={`${btnGhost} px-2.5 whitespace-nowrap`} title={tr("workspace.projectPopup.pickFolder")}>
                 📁
               </button>
             )}
           </div>
         </div>
         <div>
-          <label className={fieldLabel}>Versión actual</label>
+          <label className={fieldLabel}>{tr("workspace.projectPopup.currentVersion")}</label>
           <input value={currentVersion ?? ""} onChange={(e) => setCurrentVersion(e.target.value)} className={fieldInput} placeholder="0.8.7" />
         </div>
         <div>
-          <label className={fieldLabel}>Versión objetivo</label>
+          <label className={fieldLabel}>{tr("workspace.projectPopup.targetVersion")}</label>
           <input value={targetVersion ?? ""} onChange={(e) => setTargetVersion(e.target.value)} className={fieldInput} placeholder="0.9" />
         </div>
         <div>
-          <label className={fieldLabel}>Repositorio GitHub</label>
+          <label className={fieldLabel}>{tr("workspace.projectPopup.githubRepo")}</label>
           <div className="flex gap-1.5">
             <input value={githubUrl ?? ""} onChange={(e) => setGithubUrl(e.target.value)} className={fieldInput} placeholder="https://github.com/…" />
             {!githubUrl && (
@@ -156,33 +181,56 @@ export function ProjectPopup({ project, onSave, onDelete, onArchive, onClose }: 
                 onClick={() => setShowCreateRepoNote((v) => !v)}
                 className={`${btnGhost} px-2.5 whitespace-nowrap text-[11px]`}
               >
-                Crear repositorio
+                {tr("workspace.projectPopup.createRepo")}
               </button>
             )}
           </div>
           {showCreateRepoNote && (
             <p className="text-[11px] text-ink-faint mt-1 leading-snug">
-              La creación automática de repositorios llega con la integración MCP de
-              GitHub (V1.2). Por ahora, crea el repo manualmente y pega aquí su URL.
+              {tr("workspace.projectPopup.createRepoNote")}
             </p>
           )}
         </div>
       </div>
       <div>
-        <label className={fieldLabel}>Tags (separados por coma)</label>
+        <label className={fieldLabel}>{tr("workspace.projectPopup.tagsLabel")}</label>
         <input value={tags} onChange={(e) => setTags(e.target.value)} className={fieldInput} placeholder="ai, desktop, backend" />
       </div>
       <div>
-        <label className={fieldLabel}>Enlaces / docs</label>
+        <label className={fieldLabel}>{tr("workspace.projectPopup.linksDocs")}</label>
         <div className="flex flex-col gap-2">
           {docs.map((d, i) => (
-            <div key={i} className="flex gap-2 group">
-              <input value={d.label} onChange={(e) => setDoc(i, { label: e.target.value })} className={`${fieldInput} py-1.5 w-1/3`} placeholder="etiqueta" />
-              <input value={d.url_or_path} onChange={(e) => setDoc(i, { url_or_path: e.target.value })} className={`${fieldInput} py-1.5 flex-1`} placeholder="url o ruta" />
+            <div key={i} className="flex gap-2 group items-center">
+              {/* Icono según el tipo: enlace web o archivo local. Deja claro de
+                  un vistazo qué es cada fila (antes todo parecía lo mismo). */}
+              <span
+                className="shrink-0 text-[13px] w-5 text-center"
+                title={d.kind === "file"
+                  ? tr("workspace.projectPopup.kindFile")
+                  : tr("workspace.projectPopup.kindUrl")}
+              >
+                {d.kind === "file" ? "📄" : "🔗"}
+              </span>
+              <input value={d.label} onChange={(e) => setDoc(i, { label: e.target.value })} className={`${fieldInput} py-1.5 w-1/3`} placeholder={tr("workspace.projectPopup.docLabelPlaceholder")} />
+              <input
+                value={d.url_or_path}
+                onChange={(e) => setDoc(i, { url_or_path: e.target.value })}
+                className={`${fieldInput} py-1.5 flex-1 ${d.kind === "file" ? "font-mono text-[12px]" : ""}`}
+                placeholder={d.kind === "file"
+                  ? tr("workspace.projectPopup.docPathPlaceholder")
+                  : tr("workspace.projectPopup.docUrlPlaceholder")}
+                title={d.url_or_path}
+              />
               <button onClick={() => setDocs((prev) => prev.filter((_, j) => j !== i))} className="text-ink-faint hover:text-signal-error px-1">×</button>
             </div>
           ))}
-          <button onClick={addDoc} className={`${btnGhost} self-start`}>+ Añadir enlace</button>
+          <div className="flex items-center gap-2">
+            <button onClick={addLink} className={btnGhost}>{tr("workspace.projectPopup.addLink")}</button>
+            {canPickFiles && (
+              <button onClick={addFiles} className={btnGhost}>{tr("workspace.projectPopup.addFiles")}</button>
+            )}
+          </div>
+          <p className="text-[11px] text-ink-faint">{tr("workspace.projectPopup.docsHint")}</p>
         </div>
       </div>
     </Modal>

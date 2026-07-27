@@ -29,6 +29,7 @@ from .providers.deepseek_provider import DeepSeekProvider
 from .providers.openrouter_provider import OpenRouterProvider
 from .providers.grok_provider import GrokProvider
 from .providers.claude_code_provider import ClaudeCodeProvider
+from .providers.codex_provider import CodexProvider
 from .providers.kimi_provider import KimiProvider
 from .providers.glm_provider import GLMProvider
 from .providers.qwen_provider import QwenProvider
@@ -54,7 +55,7 @@ def _dec(v: Optional[str]) -> Optional[str]:
 
 # Proveedores que no requieren API key: Ollama (local) y Claude Code (usa la
 # sesion ya iniciada del CLI del usuario, V1.0).
-NO_KEY_PROVIDERS = {"ollama", "claude_code"}
+NO_KEY_PROVIDERS = {"ollama", "claude_code", "codex"}
 
 # Fabrica: nombre de proveedor -> clase que lo implementa.
 PROVIDER_CLASSES = {
@@ -67,6 +68,7 @@ PROVIDER_CLASSES = {
     "openrouter": OpenRouterProvider,
     "grok": GrokProvider,
     "claude_code": ClaudeCodeProvider,
+    "codex": CodexProvider,
     "kimi": KimiProvider,
     "glm": GLMProvider,
     "qwen": QwenProvider,

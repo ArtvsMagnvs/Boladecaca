@@ -9,12 +9,14 @@
 import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api, type AutomationRule } from "@/lib/api";
+import { useT } from "@/store/useI18n";
 
 interface Props {
   projectId: number;
 }
 
 export function AutomationSection({ projectId }: Props) {
+  const t = useT();
   const [rules, setRules] = useState<AutomationRule[]>([]);
   const [busyId, setBusyId] = useState<number | null>(null);
   const navigate = useNavigate();
@@ -42,14 +44,14 @@ export function AutomationSection({ projectId }: Props) {
   return (
     <section>
       <div className="flex items-center justify-between mb-1.5">
-        <h3 className="text-xs font-medium text-ink-dim">Automatizaciones</h3>
+        <h3 className="text-xs font-medium text-ink-dim">{t("workspace.automationSection.title")}</h3>
         <button onClick={() => navigate("/automation")} className="text-[11px] text-accent hover:text-accent-soft">
-          Ver todas
+          {t("workspace.automationSection.viewAll")}
         </button>
       </div>
       {rules.length === 0 ? (
         <p className="text-[11px] text-ink-faint px-1">
-          Sin reglas para este proyecto todavía.
+          {t("workspace.automationSection.empty")}
         </p>
       ) : (
         <div className="flex flex-col gap-1">

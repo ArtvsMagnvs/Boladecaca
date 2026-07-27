@@ -8,6 +8,9 @@ declare global {
   interface Window {
     aithera?: {
       pickFolder: () => Promise<string | null>;
+      /** [2026-07-25] Selecciona uno o varios ARCHIVOS (rutas absolutas) para
+       *  adjuntarlos a un proyecto. `[]` si el usuario cancela. */
+      pickFiles: () => Promise<string[]>;
     };
   }
 }

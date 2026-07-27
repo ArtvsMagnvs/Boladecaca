@@ -10,6 +10,7 @@
 // "full" (+skills+contador de tareas). El propio AgentChip no decide el
 // nivel — lo recibe como prop desde ProjectCard, que ya calcula el tamano.
 import type { Agent, AgentExecution } from "@/lib/api";
+import { useT } from "@/store/useI18n";
 
 export type ChipSize = "icon" | "compact" | "full";
 
@@ -43,6 +44,7 @@ interface Props {
 export function AgentChip({
   agent, size, lastExecutionFailed, executions, isDragging, onOpen,
 }: Props) {
+  const t = useT();
   const ringClass = agent.is_active
     ? "agent-ring-active"
     : lastExecutionFailed
@@ -64,7 +66,7 @@ export function AgentChip({
         <span
           className="absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full bg-signal-ok border border-base-900 animate-pulse"
           aria-hidden
-          title="Trabajando…"
+          title={t("workspace.agentChip.working")}
         />
       )}
     </div>
@@ -99,7 +101,7 @@ export function AgentChip({
         <div className="flex items-center gap-1.5">
           <span className="text-xs font-medium text-ink truncate">{agent.name}</span>
           {isWorking && (
-            <span className="text-[9.5px] text-signal-ok shrink-0 animate-pulse">escribiendo…</span>
+            <span className="text-[9.5px] text-signal-ok shrink-0 animate-pulse">{t("workspace.agentChip.typing")}</span>
           )}
         </div>
         {size === "full" && (
@@ -111,17 +113,17 @@ export function AgentChip({
                 ))}
                 {extraSkills > 0 && (
                   <span className="text-[9px] px-1.5 py-0.5 rounded bg-base-700/60 text-ink-faint" title={skills.slice(SKILLS_PREVIEW).join(", ")}>
-                    +{extraSkills} más
+                    {t("workspace.agentChip.moreSkills", { n: extraSkills })}
                   </span>
                 )}
               </div>
             )}
             <div className="flex items-center gap-2 mt-1 text-[9px] text-ink-faint">
-              <span>{buckets.pending} pendientes</span>
+              <span>{t("workspace.agentChip.pending", { n: buckets.pending })}</span>
               <span>·</span>
-              <span>{buckets.running} en progreso</span>
+              <span>{t("workspace.agentChip.running", { n: buckets.running })}</span>
               <span>·</span>
-              <span>{buckets.done} terminadas</span>
+              <span>{t("workspace.agentChip.done", { n: buckets.done })}</span>
             </div>
           </>
         )}
