@@ -118,7 +118,7 @@ def _tools_available() -> list[str]:
     try:
         from app.tools import tool_manager
 
-        return sorted(t["tool_id"] for t in tool_manager.list_tools(include_internal=True))
+        return sorted(t["tool_id"] for t in tool_manager.tie_catalog())  # [P1] accesor único
     except Exception:
         return []
 
@@ -132,7 +132,7 @@ def _tools_catalog_text(allowed: Optional[set] = None) -> str:
         from app.tools import tool_manager
 
         lines = []
-        for t in tool_manager.list_tools(include_internal=True):
+        for t in tool_manager.tie_catalog():  # [P1] accesor único
             if allowed is not None and t["tool_id"] not in allowed:
                 continue
             desc = (t.get("description") or "").split(".")[0][:110]

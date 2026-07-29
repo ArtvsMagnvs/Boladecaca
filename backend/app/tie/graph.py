@@ -122,11 +122,20 @@ def _has_cycle(nodes: dict[str, TaskNode]) -> bool:
 
 
 def _tool_catalog() -> set[str]:
-    """Set de tool_ids registrados en el ToolManager (para validar node.tools)."""
+    """Set de tool_ids que el TIE reconoce (para validar node.tools).
+
+    [P1, doc 34, 2026-07] Antes llamaba a `tool_manager.list_tools()` SIN
+    `include_internal=True`, mientras que el planner (que le enseña al modelo
+    qué herramientas existen) sí lo pedía con el flag. Resultado: el planner
+    ofrecía `aithera` y este validador la rechazaba como "herramienta
+    inexistente" — el nodo #1 de causas raíz de la auditoría (doc 34 §1), 8
+    reproducciones confirmadas en vivo. Ahora usa `tool_manager.tie_catalog()`,
+    el mismo accesor único que usan planner/toolloop/capabilities_map: ya no
+    hay una segunda llamada que se pueda desincronizar."""
     try:
         from app.tools import tool_manager
 
-        return {t["tool_id"] for t in tool_manager.list_tools()}
+        return {t["tool_id"] for t in tool_manager.tie_catalog()}
     except Exception as e:
         logger.error(f"[graph] no se pudo leer el catálogo de tools: {e!r}")
         return set()

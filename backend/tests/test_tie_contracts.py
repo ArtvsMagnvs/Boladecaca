@@ -169,7 +169,17 @@ async def test_classify_json_basura_fallback(monkeypatch):
     _fake_ai(monkeypatch, "esto no es json en absoluto")
     # [A·VOZ-2] input NO trivial: un saludo cortaría en el precheck (0 LLM) y
     # nunca llegaría al camino que este test ejercita (el fallback del LLM).
-    it = await classify("resúmeme el informe del proyecto Aithera")
+    #
+    # [NEW-7, doc 34] El input de antes ("resúmeme el informe del proyecto
+    # Aithera") YA NO vale aquí: pide leer un documento real, y desde NEW-7 el
+    # detector determinista lo rescata a un intent CON herramientas en vez de
+    # dejarlo caer a charla — precisamente porque el camino corto no tiene
+    # herramientas y ahí el modelo se inventaba el resumen. Lo que este test
+    # comprueba (que el fail-safe conversational sigue existiendo cuando el LLM
+    # no da JSON) sigue siendo cierto, pero hay que ejercitarlo con un mensaje
+    # que de verdad sea charla. La regresión del rescate vive en
+    # `test_audit_new7_fabricacion.py`.
+    it = await classify("cuéntame algo interesante sobre el espacio")
     assert it.type == IntentType.CONVERSATIONAL and it.confidence == 0.0
 
 

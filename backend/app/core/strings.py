@@ -35,6 +35,9 @@ _ES: dict[str, str] = {
     "responder.no_progress": "No he podido avanzar con «{goal}».",
     "responder.failed_with_reasons": "No he podido completar «{goal}». Falló: {reasons}",
     "responder.plan_step_permission_mark": " (pide permiso)",
+    # [S11, doc 34 §S11] Un paso pidió una herramienta que no se le concedió;
+    # el resultado puede estar incompleto por eso.
+    "responder.limitations_note": "Ojo: no pude usar {tools} — el resultado puede estar incompleto en lo que dependía de eso.",
     # tie/pipeline.py — aclaraciones de modelo, estados, gate del plan
     "pipeline.model_unknown": (
         "No tengo configurado ningún modelo que se llame «{name}». "
@@ -73,11 +76,6 @@ _ES: dict[str, str] = {
     "pipeline.plan_gate_title": "Plan de {n} paso(s): {goal}",
     # orchestrator/consolidator.py — respuesta multi-objetivo
     "orchestrator.no_objectives": "No he identificado ningún encargo en tu mensaje.",
-    "orchestrator.state_done": "COMPLETADO",
-    "orchestrator.state_waiting": "ESPERANDO TU APROBACIÓN",
-    "orchestrator.state_failed": "FALLÓ",
-    "orchestrator.state_skipped": "NO SE PUDO INTENTAR",
-    "orchestrator.state_cancelled": "CANCELADO",
     "orchestrator.template_completed_header": "He completado:",
     "orchestrator.template_waiting_header": "Esperando tu aprobación:",
     "orchestrator.template_failed_header": "No he podido completar:",
@@ -86,6 +84,9 @@ _ES: dict[str, str] = {
     "status.analyzing": "analizando",
     "status.planning": "planificando",
     "status.executing": "ejecutando",
+    # [S4] latido: se emite cada TIE_HEARTBEAT_S mientras se espera al
+    # clasificador/planner/acción, para que ningún turno se quede mudo.
+    "status.still_working": "sigo trabajando",
     "orchestrator.status_multi": "son {n} encargos: los hago a la vez",
     "orchestrator.status_progress": "{done} de {n} terminados",
     # respuestas deterministas sobre los datos propios (quick_answers, 0 LLM)
@@ -97,6 +98,21 @@ _ES: dict[str, str] = {
     "quick.no_rules": "No tienes ninguna regla de automatización todavía.",
     "quick.tasks_header": "Tienes {n} tarea(s) abiertas:",
     "quick.no_tasks": "No tienes tareas abiertas ahora mismo.",
+    # grounding.py — la coletilla honesta del camino corto (S2·S6, doc 34)
+    "grounding.no_tools_note": (
+        "(Nota: en este turno no he ejecutado ninguna herramienta, así que lo "
+        "anterior sale de mi conocimiento general y no lo he verificado en tu "
+        "sistema. Si quieres que lo compruebe de verdad, dímelo.)"
+    ),
+    # Aviso FUERTE: la respuesta presenta datos concretos (listados, contenido
+    # de archivos, recuentos, fuentes) que en este camino NO puede haber leído.
+    "grounding.fabricated_note": (
+        "⚠️ AVISO IMPORTANTE: en este turno no he ejecutado ninguna herramienta, "
+        "así que NO he leído tus archivos ni visitado ninguna web. Los datos "
+        "concretos que aparecen arriba (listados, contenidos, cifras o fuentes) "
+        "son una suposición mía y lo más probable es que NO coincidan con la "
+        "realidad. Pídemelo otra vez y lo compruebo de verdad."
+    ),
     "quick.enabled": "activa",
     "quick.disabled": "inactiva",
     "pipeline.ack_mission": "Entendido, me pongo con ello: {goal}. Te cuento en cuanto lo tenga.",
@@ -121,6 +137,7 @@ _EN: dict[str, str] = {
     "responder.no_progress": "I couldn't make progress on «{goal}».",
     "responder.failed_with_reasons": "I couldn't complete «{goal}». It failed: {reasons}",
     "responder.plan_step_permission_mark": " (needs your approval)",
+    "responder.limitations_note": "Note: I couldn't use {tools} — the result may be incomplete because of that.",
     "pipeline.model_unknown": (
         "I don't have any model configured called «{name}». "
         "Models available right now: {available}. "
@@ -157,11 +174,6 @@ _EN: dict[str, str] = {
     "pipeline.no_response": "(no response)",
     "pipeline.plan_gate_title": "Plan of {n} step(s): {goal}",
     "orchestrator.no_objectives": "I didn't identify any task in your message.",
-    "orchestrator.state_done": "COMPLETED",
-    "orchestrator.state_waiting": "WAITING FOR YOUR APPROVAL",
-    "orchestrator.state_failed": "FAILED",
-    "orchestrator.state_skipped": "COULDN'T BE ATTEMPTED",
-    "orchestrator.state_cancelled": "CANCELLED",
     "orchestrator.template_completed_header": "I completed:",
     "orchestrator.template_waiting_header": "Waiting for your approval:",
     "orchestrator.template_failed_header": "I couldn't complete:",
@@ -169,6 +181,7 @@ _EN: dict[str, str] = {
     "status.analyzing": "analyzing",
     "status.planning": "planning",
     "status.executing": "executing",
+    "status.still_working": "still working",
     "orchestrator.status_multi": "that's {n} tasks: I'm doing them at the same time",
     "orchestrator.status_progress": "{done} of {n} done",
     "quick.projects_header": "You have {n} project(s):",
@@ -179,6 +192,17 @@ _EN: dict[str, str] = {
     "quick.no_rules": "You don't have any automation rules yet.",
     "quick.tasks_header": "You have {n} open task(s):",
     "quick.no_tasks": "You have no open tasks right now.",
+    "grounding.no_tools_note": (
+        "(Note: I didn't run any tool in this turn, so the above comes from my "
+        "general knowledge and I haven't verified it on your system. Tell me if "
+        "you want me to actually check it.)"
+    ),
+    "grounding.fabricated_note": (
+        "⚠️ IMPORTANT: I didn't run any tool in this turn, so I have NOT read "
+        "your files or visited any website. The specific data above (listings, "
+        "file contents, counts or sources) is a guess of mine and most likely "
+        "does NOT match reality. Ask me again and I'll actually check it."
+    ),
     "quick.enabled": "enabled",
     "quick.disabled": "disabled",
     "pipeline.ack_mission": "Got it, I'm on it: {goal}. I'll tell you as soon as it's done.",
@@ -203,6 +227,7 @@ _FR: dict[str, str] = {
     "responder.no_progress": "Je n'ai pas pu avancer sur « {goal} ».",
     "responder.failed_with_reasons": "Je n'ai pas pu terminer « {goal} ». Échec : {reasons}",
     "responder.plan_step_permission_mark": " (nécessite votre accord)",
+    "responder.limitations_note": "Attention : je n'ai pas pu utiliser {tools} — le résultat peut être incomplet à cause de ça.",
     "pipeline.model_unknown": (
         "Je n'ai aucun modèle configuré appelé « {name} ». "
         "Modèles disponibles en ce moment : {available}. "
@@ -240,11 +265,6 @@ _FR: dict[str, str] = {
     "pipeline.no_response": "(pas de réponse)",
     "pipeline.plan_gate_title": "Plan de {n} étape(s) : {goal}",
     "orchestrator.no_objectives": "Je n'ai identifié aucune tâche dans votre message.",
-    "orchestrator.state_done": "TERMINÉ",
-    "orchestrator.state_waiting": "EN ATTENTE DE VOTRE APPROBATION",
-    "orchestrator.state_failed": "ÉCHOUÉ",
-    "orchestrator.state_skipped": "N'A PAS PU ÊTRE TENTÉ",
-    "orchestrator.state_cancelled": "ANNULÉ",
     "orchestrator.template_completed_header": "J'ai terminé :",
     "orchestrator.template_waiting_header": "En attente de votre approbation :",
     "orchestrator.template_failed_header": "Je n'ai pas pu terminer :",
@@ -252,6 +272,7 @@ _FR: dict[str, str] = {
     "status.analyzing": "analyse en cours",
     "status.planning": "planification en cours",
     "status.executing": "exécution en cours",
+    "status.still_working": "toujours en cours",
     "orchestrator.status_multi": "ce sont {n} tâches : je les fais en même temps",
     "orchestrator.status_progress": "{done} sur {n} terminées",
     "quick.projects_header": "Tu as {n} projet(s) :",
@@ -262,6 +283,18 @@ _FR: dict[str, str] = {
     "quick.no_rules": "Tu n'as encore aucune règle d'automatisation.",
     "quick.tasks_header": "Tu as {n} tâche(s) ouvertes :",
     "quick.no_tasks": "Tu n'as aucune tâche ouverte pour le moment.",
+    "grounding.no_tools_note": (
+        "(Note : je n'ai exécuté aucun outil dans ce tour, donc ce qui précède "
+        "vient de mes connaissances générales et je ne l'ai pas vérifié sur ton "
+        "système. Dis-le-moi si tu veux que je le vérifie vraiment.)"
+    ),
+    "grounding.fabricated_note": (
+        "⚠️ AVERTISSEMENT : je n'ai exécuté aucun outil dans ce tour, donc je "
+        "n'ai PAS lu tes fichiers ni visité aucun site. Les données concrètes "
+        "ci-dessus (listes, contenus, chiffres ou sources) sont une supposition "
+        "de ma part et ne correspondent probablement PAS à la réalité. "
+        "Redemande-le-moi et je vérifierai pour de vrai."
+    ),
     "quick.enabled": "active",
     "quick.disabled": "inactive",
     "pipeline.ack_mission": "Compris, je m'en occupe : {goal}. Je te tiens au courant dès que c'est prêt.",
@@ -286,6 +319,7 @@ _PT: dict[str, str] = {
     "responder.no_progress": "Não consegui avançar com «{goal}».",
     "responder.failed_with_reasons": "Não consegui concluir «{goal}». Falhou: {reasons}",
     "responder.plan_step_permission_mark": " (precisa da sua autorização)",
+    "responder.limitations_note": "Atenção: não consegui usar {tools} — o resultado pode estar incompleto por causa disso.",
     "pipeline.model_unknown": (
         "Não tenho nenhum modelo configurado chamado «{name}». "
         "Modelos disponíveis neste momento: {available}. "
@@ -322,11 +356,6 @@ _PT: dict[str, str] = {
     "pipeline.no_response": "(sem resposta)",
     "pipeline.plan_gate_title": "Plano de {n} etapa(s): {goal}",
     "orchestrator.no_objectives": "Não identifiquei nenhuma tarefa na sua mensagem.",
-    "orchestrator.state_done": "CONCLUÍDO",
-    "orchestrator.state_waiting": "À ESPERA DA SUA APROVAÇÃO",
-    "orchestrator.state_failed": "FALHOU",
-    "orchestrator.state_skipped": "NÃO FOI POSSÍVEL TENTAR",
-    "orchestrator.state_cancelled": "CANCELADO",
     "orchestrator.template_completed_header": "Concluí:",
     "orchestrator.template_waiting_header": "À espera da sua aprovação:",
     "orchestrator.template_failed_header": "Não consegui concluir:",
@@ -334,6 +363,7 @@ _PT: dict[str, str] = {
     "status.analyzing": "a analisar",
     "status.planning": "a planear",
     "status.executing": "a executar",
+    "status.still_working": "ainda a trabalhar",
     "orchestrator.status_multi": "são {n} tarefas: vou fazê-las ao mesmo tempo",
     "orchestrator.status_progress": "{done} de {n} concluídas",
     "quick.projects_header": "Tens {n} projeto(s):",
@@ -344,6 +374,18 @@ _PT: dict[str, str] = {
     "quick.no_rules": "Ainda não tens nenhuma regra de automatização.",
     "quick.tasks_header": "Tens {n} tarefa(s) abertas:",
     "quick.no_tasks": "Não tens tarefas abertas neste momento.",
+    "grounding.no_tools_note": (
+        "(Nota: neste turno não executei nenhuma ferramenta, por isso o acima "
+        "vem do meu conhecimento geral e não o verifiquei no teu sistema. "
+        "Diz-me se queres que o confirme a sério.)"
+    ),
+    "grounding.fabricated_note": (
+        "⚠️ AVISO IMPORTANTE: neste turno não executei nenhuma ferramenta, por "
+        "isso NÃO li os teus ficheiros nem visitei nenhum site. Os dados "
+        "concretos acima (listagens, conteúdos, números ou fontes) são uma "
+        "suposição minha e muito provavelmente NÃO correspondem à realidade. "
+        "Pede-me outra vez e verifico a sério."
+    ),
     "quick.enabled": "ativa",
     "quick.disabled": "inativa",
     "pipeline.ack_mission": "Entendido, vou tratar disso: {goal}. Digo-te assim que estiver pronto.",

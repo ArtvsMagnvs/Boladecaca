@@ -252,3 +252,112 @@ async def test_refresh_all_reinvestiga_todos_los_configurados(monkeypatch):
     n = await research.refresh_all()
     assert n == 2   # los 2 modelos configurados, force ignora la frescura
     assert len(calls) == 3  # 1 (investigate inicial) + 2 (refresh_all)
+
+
+# ---------------------------------------------------------------------------
+# [P4, doc 34] Proveedores por CLI fuera del auto-catálogo, siempre
+# ---------------------------------------------------------------------------
+@pytest.mark.anyio
+async def test_investigate_nunca_toca_proveedores_cli(monkeypatch):
+    _fake_available(monkeypatch, [ModelRef("claude_code", "opus", False), ModelRef("codex", "gpt-5.6-sol", False)])
+    calls = {"n": 0}
+    import app.mel.executor as executor_mod
+
+    async def _complete(req):
+        calls["n"] += 1
+        return ExecutionResult(text=_VALID_JSON, ok=True,
+                               served_by=ServedBy(provider="a", model="b"), usage=Usage())
+    monkeypatch.setattr(executor_mod, "complete", _complete)
+
+    assert await research.investigate("claude_code", "opus") is False
+    assert await research.investigate("codex", "gpt-5.6-sol", force=True) is False  # ni con force
+    assert calls["n"] == 0  # nunca llegó a llamar al LLM
+
+    s = SessionLocal()
+    try:
+        assert s.query(MelCapabilityReport).count() == 0
+    finally:
+        s.close()
+
+
+@pytest.mark.anyio
+async def test_refresh_all_excluye_cli_de_los_reinvestigados(monkeypatch):
+    avail = [ModelRef("ollama", "llama3", True), ModelRef("claude_code", "opus", False)]
+    _fake_available(monkeypatch, avail)
+    _fake_complete(monkeypatch, _VALID_JSON)
+
+    n = await research.refresh_all()
+    assert n == 1  # solo ollama/llama3; claude_code/opus se salta
+
+
+# ---------------------------------------------------------------------------
+# [P4, doc 34] nightly_refresh — el job que programa el scheduler
+# ---------------------------------------------------------------------------
+@pytest.mark.anyio
+async def test_nightly_refresh_respeta_el_maximo_por_noche(monkeypatch):
+    avail = [
+        ModelRef("ollama", "llama3", True),
+        ModelRef("anthropic", "claude-opus-4-8", False),
+        ModelRef("minimax", "MiniMax-M3", False),
+    ]
+    _fake_available(monkeypatch, avail)
+    _fake_complete(monkeypatch, _VALID_JSON)
+
+    n = await research.nightly_refresh(max_models=1)
+    assert n == 1  # aunque hay 3 candidatos stale, solo investiga 1
+
+    s = SessionLocal()
+    try:
+        assert s.query(MelCapabilityReport).count() == 3  # 1 modelo × 3 capacidades del JSON
+    finally:
+        s.close()
+
+
+@pytest.mark.anyio
+async def test_nightly_refresh_no_toca_lo_que_no_esta_desactualizado(monkeypatch):
+    _fake_available(monkeypatch, [ModelRef("ollama", "llama3", True)])
+    calls = {"n": 0}
+    import app.mel.executor as executor_mod
+
+    async def _complete(req):
+        calls["n"] += 1
+        return ExecutionResult(text=_VALID_JSON, ok=True,
+                               served_by=ServedBy(provider="a", model="b"), usage=Usage())
+    monkeypatch.setattr(executor_mod, "complete", _complete)
+
+    assert await research.nightly_refresh(max_models=5) == 1
+    assert calls["n"] == 1
+    # segunda pasada nocturna: ya hay informe reciente, force=False no lo repite
+    assert await research.nightly_refresh(max_models=5) == 0
+    assert calls["n"] == 1
+
+
+@pytest.mark.anyio
+async def test_nightly_refresh_excluye_cli_de_los_candidatos(monkeypatch):
+    avail = [ModelRef("claude_code", "opus", False), ModelRef("codex", "gpt-5.6-sol", False)]
+    _fake_available(monkeypatch, avail)
+    calls = {"n": 0}
+    import app.mel.executor as executor_mod
+
+    async def _complete(req):
+        calls["n"] += 1
+        return ExecutionResult(text=_VALID_JSON, ok=True,
+                               served_by=ServedBy(provider="a", model="b"), usage=Usage())
+    monkeypatch.setattr(executor_mod, "complete", _complete)
+
+    n = await research.nightly_refresh(max_models=5)
+    assert n == 0
+    assert calls["n"] == 0
+
+
+@pytest.mark.anyio
+async def test_nightly_refresh_usa_el_setting_por_defecto(monkeypatch):
+    from app.core.config import settings
+
+    avail = [ModelRef("ollama", "llama3", True), ModelRef("anthropic", "claude-opus-4-8", False)]
+    _fake_available(monkeypatch, avail)
+    _fake_complete(monkeypatch, _VALID_JSON)
+    monkeypatch.setattr(settings, "MEL_RESEARCH_MAX_PER_NIGHT", 1)
+
+    n = await research.nightly_refresh()  # sin max_models explícito
+    assert n == 1

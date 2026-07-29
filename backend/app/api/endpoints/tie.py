@@ -63,10 +63,16 @@ def list_missions(
 
 @router.get("/missions/{trace_id}")
 def get_mission(trace_id: str):
-    """Una misión con su grafo completo: los pasos y el estado de cada uno."""
+    """Una misión con su grafo completo: los pasos y el estado de cada uno.
+
+    [S7·S8] Acepta tanto el trace_id (PK) como el mission_id (lo que anuncia
+    el chat) — `tracer.resolve_trace_id` resuelve cualquiera de los dos."""
     db = SessionLocal()
     try:
-        row = db.get(OrchestratorTrace, trace_id)
+        resolved = tracer.resolve_trace_id(trace_id)
+        if resolved is None:
+            raise HTTPException(status_code=404, detail="Mission not found")
+        row = db.get(OrchestratorTrace, resolved)
         if row is None:
             raise HTTPException(status_code=404, detail="Mission not found")
         return _mission_out(row, with_graph=True)
@@ -78,10 +84,15 @@ def get_mission(trace_id: str):
 def delete_mission(trace_id: str):
     """Borra una misión TERMINADA (botón "×" del usuario). 409 si sigue viva —
     hay que cancelarla primero (kill-switch), nunca se borra por debajo de una
-    ejecución en curso."""
-    ok, reason = tracer.delete_trace(trace_id)
+    ejecución en curso.
+
+    [S7·S8] Resuelve trace_id/mission_id igual que el resto de endpoints; sin
+    resolución, se conserva el id tal cual para que `delete_trace` devuelva su
+    "not_found" habitual (mismo contrato de siempre)."""
+    resolved = tracer.resolve_trace_id(trace_id) or trace_id
+    ok, reason = tracer.delete_trace(resolved)
     if ok:
-        return {"trace_id": trace_id, "deleted": True}
+        return {"trace_id": resolved, "deleted": True}
     if reason == "not_found":
         raise HTTPException(status_code=404, detail="Mission not found")
     if reason == "live":
@@ -92,15 +103,16 @@ def delete_mission(trace_id: str):
 @router.post("/missions/{trace_id}/cancel")
 def cancel_mission(trace_id: str):
     """Kill-switch (doc 14 §3.4.6): para la misión. El nodo en vuelo recibe
-    cancelación cooperativa; el resto queda CANCELLED."""
-    meta = tracer.get_meta(trace_id)
+    cancelación cooperativa; el resto queda CANCELLED. [S7·S8] Acepta ambos ids."""
+    resolved = tracer.resolve_trace_id(trace_id) or trace_id
+    meta = tracer.get_meta(resolved)
     if meta is None:
         raise HTTPException(status_code=404, detail="Mission not found")
     if meta["state"] in ("done", "failed", "cancelled"):
-        return {"trace_id": trace_id, "state": meta["state"], "cancelled": False,
+        return {"trace_id": resolved, "state": meta["state"], "cancelled": False,
                 "detail": "la misión ya había terminado"}
     executor.cancel(meta["mission_id"])
-    return {"trace_id": trace_id, "mission_id": meta["mission_id"], "cancelled": True}
+    return {"trace_id": resolved, "mission_id": meta["mission_id"], "cancelled": True}
 
 
 class PlanVerdict(BaseModel):
@@ -113,8 +125,9 @@ async def approve_plan(trace_id: str, payload: PlanVerdict):
     """Aprueba o rechaza el PLAN de una misión que espera visto bueno. La
     ejecución arranca en background (el POST responde al instante aunque el grafo
     tarde minutos). La lógica vive en el TIE (`tie.resolve_plan`); aquí solo se
-    traduce a HTTP."""
-    result = await resolve_plan(trace_id, payload.approved, payload.note)
+    traduce a HTTP. [S7·S8] Acepta ambos ids."""
+    resolved = tracer.resolve_trace_id(trace_id) or trace_id
+    result = await resolve_plan(resolved, payload.approved, payload.note)
     if result is None:
         raise HTTPException(status_code=404, detail="No hay un plan pendiente de aprobación para esta misión")
-    return {"trace_id": trace_id, **result}
+    return {"trace_id": resolved, **result}

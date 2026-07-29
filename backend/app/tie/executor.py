@@ -19,7 +19,9 @@ from __future__ import annotations
 import asyncio
 import time
 
+from app.core import grounding
 from app.core.logging_config import get_system_logger
+from app.core.strings import t as _t
 from app.tie import graph as graph_mod
 from app.tie import tracer
 from app.tie.contracts import Mission, NodeState, TaskGraph, TaskNode
@@ -173,6 +175,34 @@ async def resume_pending() -> int:
 # ---------------------------------------------------------------------------
 # Ejecución de un nodo
 # ---------------------------------------------------------------------------
+def _handoff_from_deps(node: TaskNode, graph: TaskGraph) -> str:
+    """[S5 · NEW-1] Lo que produjeron las dependencias de este nodo, listo para
+    entrar en su contexto.
+
+    Solo se pasa lo de los pasos que TERMINARON BIEN: el resultado de un paso
+    fallido no es material de trabajo (y el nodo ya se habría saltado si su
+    dependencia falló — `_skip_dependents`). El recorte por dependencia es
+    HONESTO: si no cabe entero, se dice cuánto queda fuera, para que el modelo
+    sepa que tiene una parte y pueda pedir el resto en vez de suponer que eso
+    era todo (era justo la confusión del caso real: el paso siguiente no sabía
+    si le faltaba contenido o si el documento era así de corto)."""
+    from app.core.config import settings
+
+    limite = settings.TIE_NODE_HANDOFF_CHARS
+    trozos: list[str] = []
+    for dep_id in node.depends_on:
+        dep = graph.nodes.get(dep_id)
+        if not dep or dep.state != NodeState.DONE or not dep.result:
+            continue
+        out = (dep.result.get("output") or "").strip() if isinstance(dep.result, dict) else ""
+        if not out:
+            continue
+        if limite > 0 and len(out) > limite:
+            out = out[:limite] + f"\n[TRUNCADO: {limite} de {len(out)} caracteres]"
+        trozos.append(f"RESULTADO DEL PASO PREVIO «{dep.goal}»:\n{out}")
+    return "\n\n".join(trozos)
+
+
 async def _execute_node(node: TaskNode, graph: TaskGraph, mission: Mission, trace_id: str) -> None:
     """Ejecuta UN nodo con el runtime que pida (memoria/tools/gate inyectados) y
     escribe su estado/resultado. Cada transición hace checkpoint."""
@@ -192,6 +222,14 @@ async def _execute_node(node: TaskNode, graph: TaskGraph, mission: Mission, trac
         # de la misión: memoria de OTROS proyectos jamás entra en este prompt.
         context = await enricher.enrich(node.context_query, memory_types=node.memory_types,
                                         project_id=mission.project_id)
+
+    # [S5 · NEW-1] LA TUBERÍA. Lo que produjeron los pasos de los que éste
+    # depende va DELANTE del contexto de memoria: es el trabajo de ESTA misión,
+    # más relevante que cualquier recuerdo. Sin esto, "lee el GDD y haz un
+    # resumen" fallaba en cuanto el planner lo partía en dos nodos — el segundo
+    # no veía el contenido del primero por ningún camino.
+    handoff = _handoff_from_deps(node, graph)
+    context = "\n\n".join([p for p in (handoff, context) if p])
 
     task = AgentTask(
         id=AgentTask.new_id(),
@@ -241,6 +279,14 @@ async def _execute_node(node: TaskNode, graph: TaskGraph, mission: Mission, trac
     node.duration_ms = int((time.monotonic() - t0) * 1000)
     node.tokens = result.tokens
     node.result = result.result if result.result is not None else ({"output": result.output} if result.output else None)
+    # [S11, doc 34 §S11] Si el paso pidió una tool que no se le concedió, esa
+    # limitación viaja hasta el checkpoint (y de ahí al responder) aunque el
+    # nodo termine con éxito: un resultado correcto puede seguir siendo
+    # incompleto por lo que no se pudo usar — nunca en silencio.
+    if result.limitations:
+        if node.result is None:
+            node.result = {}
+        node.result["limitations"] = list(result.limitations)
     # [R4] El rastro de tools del nodo entra en el checkpoint: es la auditoría de
     # lo que se ejecutó de verdad y de lo que se denegó por autoridad.
     node.tool_calls = list(result.tool_calls or [])
@@ -259,12 +305,22 @@ def _validate_result(node: TaskNode, result: AgentResult) -> dict:
     """Validación por nodo (doc 14 §3.4.7). V1.0: DETERMINISTA y barata — ¿la
     ejecución fue bien? ¿hay salida con forma? Nada de LLM aquí (eso es V1.2, y
     solo si el nodo lo declara). El veredicto es materia prima del Learner —
-    jamás teatro: si no se puede afirmar que está bien, se dice."""
+    jamás teatro: si no se puede afirmar que está bien, se dice.
+
+    [NEW-4, doc 34] Un tercer chequeo, tan barato y determinista como los dos
+    de siempre: ¿el propio nodo se rindió en su prosa? "¿corrió una tool con
+    éxito?" no es lo mismo que "¿consiguió el objetivo?" — un `list_dir` real
+    le da forma a la salida aunque el texto sea, literalmente, "no puedo
+    completar este objetivo". Sin este chequeo esa rendición quedaba DONE con
+    el check verde, contradiciendo su propio texto."""
     if not result.success:
         return {"ok": False, "method": "schema", "notes": result.error or "la ejecución falló"}
     has_output = bool(result.output) or bool(result.result)
     if not has_output:
         return {"ok": False, "method": "schema", "notes": "el nodo terminó sin producir salida"}
+    if grounding.is_surrender(result.output):
+        return {"ok": False, "method": "grounding",
+                "notes": "el nodo se rindió explícitamente en su propia respuesta"}
     return {"ok": True, "method": "schema", "notes": ""}
 
 
@@ -335,6 +391,43 @@ async def _open_checkpoint_gate(node: TaskNode, graph: TaskGraph, mission: Missi
         logger.info(f"[executor] no se pudo avisar del checkpoint (la misión sigue esperando): {e!r}")
 
 
+# ---------------------------------------------------------------------------
+# [NEW-6, doc 34 §12.9] Outcome fresco tras CUALQUIER `run()`, inicial o reanudado
+# ---------------------------------------------------------------------------
+async def finish_and_record(graph: TaskGraph, mission: Mission, trace_id: str) -> str:
+    """Cierra el ciclo de una llamada a `run()` escribiendo SIEMPRE un `outcome`
+    fresco en la traza — punto ÚNICO para que el camino INICIAL
+    (`pipeline._execute_and_respond`) y la REANUDACIÓN de un gate de nodo/
+    checkpoint (aquí abajo) no puedan divergir otra vez.
+
+    EL BUG QUE CIERRA: `_finalize()` solo escribe `mission.state` (vía
+    `tracer.set_state`); nunca toca `outcome`. Cuando un nodo abre su propio
+    gate, `_execute_and_respond` escribe `outcome = "esperando tu
+    confirmación"` y dev el control. Al resolverse el gate, `_apply_gate_
+    verdict`/`_apply_checkpoint_verdict` volvían a llamar `run()` PERO NADIE
+    volvía a sintetizar el outcome — la cabecera pasaba a "Completada"
+    (`state=done`, escrito por `_finalize`) mientras el cuerpo se quedaba con
+    el placeholder de espera para SIEMPRE. Import perezoso de `responder`
+    (vive en `tie/responder.py`, no depende de `executor` — sin ciclo)."""
+    from app.tie import responder
+
+    if mission.state == "waiting":
+        mission.outcome = _t("pipeline.waiting_confirmation")
+        tracer.record_end(trace_id, outcome=mission.outcome, state="waiting")
+        return mission.outcome
+
+    out = await responder.build(mission, graph)
+    ok = mission.state == "done"
+    tracer.record_end(trace_id, outcome=out, state=mission.state)
+    if mission.state == "cancelled":
+        tracer.emit_cancelled(mission)
+    elif ok:
+        tracer.emit_completed(mission, ok=True, nodes=len(graph.nodes))
+    else:
+        tracer.emit_failed(mission)
+    return out
+
+
 def _deliverable_summary(node: TaskNode) -> str:
     """Qué enseñarle al usuario del entregable. Lo que el nodo produjo DE VERDAD,
     recortado — nunca una frase inventada de relleno."""
@@ -368,6 +461,7 @@ async def _apply_checkpoint_verdict(trace_id: str, node_id: str, approved: bool)
         _fail_node(node, graph, mission, trace_id)
 
     await run(graph, mission, trace_id=trace_id)
+    await finish_and_record(graph, mission, trace_id)
 
 
 async def _apply_gate_verdict(trace_id: str, node_id: str, approved: bool) -> None:
@@ -396,6 +490,8 @@ async def _apply_gate_verdict(trace_id: str, node_id: str, approved: bool) -> No
         _fail_node(node, graph, mission, trace_id)
         tracer.set_state(trace_id, "running")
         await run(graph, mission, trace_id=trace_id)
+
+    await finish_and_record(graph, mission, trace_id)
 
 
 async def _on_approval_resolved(event) -> None:

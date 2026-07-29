@@ -208,9 +208,19 @@ def capability_report() -> list[dict]:
 
 
 async def refresh_capability_reports() -> int:
-    """[E1b] Re-investiga TODOS los modelos configurados actualmente (job
-    periódico cada `MEL_RESEARCH_REFRESH_DAYS`, doc 19 §5.4.4). Lo programa el
-    lifespan vía `scheduler_service.add_interval_job`."""
+    """[E1b + P4 doc 34] El job NOCTURNO del auto-catálogo — como mucho
+    `MEL_RESEARCH_MAX_PER_NIGHT` modelos por pasada, nunca proveedores por CLI,
+    solo si de verdad tocaba (`MEL_RESEARCH_REFRESH_DAYS`). Lo programa el
+    lifespan vía `scheduler_service.add_cron_job`, junto a los jobs nocturnos
+    del MOS — antes era un `add_interval_job` disparado a los 900s del
+    arranque, que podía coincidir con el usuario ya trabajando (doc 34 §4)."""
+    return await _research.nightly_refresh()
+
+
+async def refresh_capability_reports_full() -> int:
+    """[P4 doc 34] Variante COMPLETA (todos los modelos, de golpe, `force=True`)
+    para un disparo manual puntual — no la usa el scheduler. Ver
+    `research.refresh_all()`."""
     return await _research.refresh_all()
 
 
@@ -222,6 +232,7 @@ __all__ = [
     "complete", "stream", "decision_trace", "recent_decisions",
     "policies", "set_active_policy", "active_policy_name", "resolve_model_name", "ensure_ready",
     "register_handlers", "capability_report", "refresh_capability_reports",
+    "refresh_capability_reports_full",
     "list_models", "set_policy_primary", "restore_policy",
     "set_project_override", "overrides_for", "list_overrides", "clear_override",
     "set_policy_slot", "health_summary",

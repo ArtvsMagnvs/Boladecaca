@@ -125,7 +125,7 @@ ORDEN = "crea una milestone llamada MVP y un agente Investigador"
 def _fake_router(monkeypatch, response=None, error=False, raises=False):
     from app.tie import router
 
-    async def _complete(prompt, system_prompt=None, capability="chat"):
+    async def _complete(prompt, system_prompt=None, capability="chat", **kw):
         if raises:
             raise RuntimeError("proveedor caído")
         return {"response": response or "", "model": "llama3", "error": error}

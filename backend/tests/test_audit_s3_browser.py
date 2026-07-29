@@ -75,6 +75,16 @@ class _FakePage:
     async def close(self):
         self.closed = True
 
+    def is_closed(self):
+        # [S9, doc 34 §10] `_get_page` (browser_tool.py) ahora pregunta
+        # `is_closed()` antes de reutilizar una pestaña — un doble de Page sin
+        # este método parecía "siempre muerta" (Exception -> dead=True) y
+        # `_get_page` recreaba una pestaña nueva en CADA llamada, rompiendo la
+        # reutilización que estos tests de F-1 verifican. Mismo patrón LOG-1
+        # de siempre: un doble de un contrato que evoluciona debe evolucionar
+        # con él. Playwright real siempre tiene este método.
+        return self.closed
+
 
 class _FakeContext:
     def __init__(self, page_factory):
@@ -321,6 +331,14 @@ async def test_f1_el_toolloop_inyecta_la_sesion_de_la_mision(monkeypatch):
         def list_tools(self, include_internal=False):
             return [{"tool_id": "browser", "description": "nav", "actions": [
                 {"id": "open_url", "description": "abre", "requires_confirmation": False}]}]
+
+        def tie_catalog(self):
+            # [P1, doc 34] toolloop.py ahora pide tool_manager.tie_catalog();
+            # el doble debe implementar el mismo contrato que el ToolManager
+            # real, o revienta con AttributeError (LOG-1: un doble de un
+            # contrato que evoluciona debe evolucionar con él, o el test se
+            # vuelve vacuo/roto en silencio).
+            return self.list_tools(include_internal=True)
 
         def get_tool(self, tid):
             return object() if tid == "browser" else None

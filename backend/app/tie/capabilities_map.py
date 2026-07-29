@@ -124,7 +124,7 @@ def _build() -> str:
     try:
         from app.tools import tool_manager
 
-        tools = tool_manager.list_tools(include_internal=True)
+        tools = tool_manager.tie_catalog()  # [P1] accesor único, ver tool_manager.tie_catalog()
     except Exception:
         return ""
     if not tools:

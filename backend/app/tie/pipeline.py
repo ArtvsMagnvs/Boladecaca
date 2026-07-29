@@ -33,6 +33,45 @@ logger = get_system_logger("tie.pipeline")
 # action_type del gate del PLAN (distinto del gate de nodo, `tie_resume` — T3).
 PLAN_ACTION_TYPE = "tie_plan"
 
+
+# ---------------------------------------------------------------------------
+# [S3, doc 34 §10] Presupuesto de llamadas, medido — registra el CAMINO
+# ---------------------------------------------------------------------------
+async def _heartbeat_until(task: "asyncio.Future", *, every_s: int):
+    """[S4 · NEW-2] Emite ('status', "sigo trabajando") cada `every_s` mientras
+    `task` siga en vuelo, y termina en cuanto acaba.
+
+    EL PROBLEMA QUE CIERRA: el objetivo medible de S4 es que ningún turno de
+    chat pase de un minuto sin respuesta NI evento. Los deadlines por capa
+    acotan cuánto puede tardar cada llamada, pero un turno legítimamente largo
+    (planner + varios pasos) seguía dejando la pantalla muda — que es
+    exactamente lo que la campaña 00 leyó como "cuelgue" cuando no lo era.
+
+    No consume el resultado: el caller hace `await task` después (así este
+    helper no tiene que saber qué devuelve ni propagar sus excepciones).
+    `every_s <= 0` lo desactiva (un único await, sin latidos)."""
+    if every_s <= 0:
+        await asyncio.wait({task})
+        return
+    while True:
+        done, _ = await asyncio.wait({task}, timeout=every_s)
+        if done:
+            return
+        yield ("status", _t("status.still_working"))
+
+
+def _record_path(name: str, **detail) -> None:
+    """Best-effort: qué camino tomó este turno (chat/direct/planned). El stage
+    "path" es nuevo pero `mission_events` ya admite cualquier stage (cero
+    migración). Nunca lanza — mismo criterio que el resto de la telemetría
+    (doc 31): observar no puede romper el pipeline."""
+    try:
+        import app.telemetry as _telemetry
+
+        _telemetry.record("path", name=name, detail=detail or None)
+    except Exception:
+        pass
+
 # [A·VOZ-4] Tareas de fondo en vuelo. Retener la referencia es obligatorio:
 # `asyncio.create_task` sin guardar el resultado deja la task a merced del GC,
 # que puede recolectarla (y cancelar la misión) en silencio — el mismo footgun
@@ -164,6 +203,7 @@ async def handle_stream(text: str, *, channel: str = "web", intent: Optional[Int
     if intent is None:
         quick = await asyncio.to_thread(quick_answers.try_answer, text)
         if quick:
+            _record_path("chat")
             yield ("text", quick)
             return
 
@@ -175,7 +215,13 @@ async def handle_stream(text: str, *, channel: str = "web", intent: Optional[Int
     # El clasificador ya tiene su propio fast-path (0 LLM) para la charla obvia.
     try:
         if intent is None:
-            intent = await intents.classify(text, channel=channel)
+            # [S4] Con latido: `classify` ya tiene su propio deadline
+            # (TIE_CLASSIFY_DEADLINE_S), pero mientras corre la pantalla no
+            # puede quedarse muda más de TIE_HEARTBEAT_S.
+            _cls = asyncio.ensure_future(intents.classify(text, channel=channel))
+            async for ev in _heartbeat_until(_cls, every_s=settings.TIE_HEARTBEAT_S):
+                yield ev
+            intent = await _cls
     except Exception as e:
         logger.error(f"[tie] handle_stream: clasificación falló: {type(e).__name__}: {e}")
         intent = Intent.conversational_fallback(text)
@@ -297,6 +343,7 @@ async def _direct_action_path(
     from app.tools import tool_manager
 
     t0 = __import__("time").monotonic()
+    _record_path("direct")
     tools = _direct_action_tools(intent)
     runtime = get_runtime("null")
     # [2026-07-25] CONTEXTO REAL para el bucle. EL FALLO QUE CIERRA: una orden
@@ -364,6 +411,7 @@ async def _short_path_stream(text, intent, channel, memory_router, tool_manager,
 
     `conversational` [A·VOZ-8]: si viene de VOZ, la respuesta se enruta por la
     política rápida (el runtime lo lee de `task.conversational`)."""
+    _record_path("chat")
     task = AgentTask(id=AgentTask.new_id(), instruction=text, channel=channel,
                      tools=intent.requires_tools, model_hint=force_model,
                      session_id=session_id, conversational=conversational)
@@ -404,10 +452,15 @@ async def _stream_body(text, intent, mission, trace_id, channel, prefetched, for
     if intent.is_direct_action:
         yield ("text", _t("pipeline.ack_mission", goal=(intent.goal or text)[:120]) + "\n\n")
         yield ("status", _t("status.executing"))
+        # [S4] Una acción directa encadena varias llamadas a herramientas: puede
+        # tardar minutos legítimos. Con latido, nunca en silencio.
+        _act = asyncio.ensure_future(_direct_action_path(
+            text, intent, mission, trace_id, force_model=force_model,
+            channel=channel, session_id=session_id))
+        async for ev in _heartbeat_until(_act, every_s=settings.TIE_HEARTBEAT_S):
+            yield ev
         try:
-            out = await _direct_action_path(text, intent, mission, trace_id,
-                                            force_model=force_model, channel=channel,
-                                            session_id=session_id)
+            out = await _act
         except Exception as e:
             logger.error(f"[tie] acción directa falló: {type(e).__name__}: {e}")
             out = _t("pipeline.generic_problem")
@@ -420,8 +473,14 @@ async def _stream_body(text, intent, mission, trace_id, channel, prefetched, for
     yield ("status", _t("status.planning"))
     yield ("mission", trace_id)
     context = prefetched if not intent.memory_types else await _context_for(intent, text)
+    # [S4] Igual que la acción directa: planner + ejecución del grafo pueden ser
+    # minutos. El latido mantiene viva la conversación mientras tanto.
+    _cx = asyncio.ensure_future(
+        _complex_path(text, intent, mission, trace_id, context, force_model=force_model))
+    async for ev in _heartbeat_until(_cx, every_s=settings.TIE_HEARTBEAT_S):
+        yield ev
     try:
-        await _complex_path(text, intent, mission, trace_id, context, force_model=force_model)
+        await _cx
     except Exception as e:
         logger.error(f"[tie] handle_stream: pipeline complejo falló: {type(e).__name__}: {e}")
         mission.outcome = _t("pipeline.generic_problem")
@@ -618,6 +677,7 @@ async def _complex_path(
     reenvía → el MEL lo trata como override).
     `authority` (R4): frontera de la misión cuando viene de un agente; el planner
     recorta el plan a sus tools y la graba en el grafo."""
+    _record_path("planned")
     # [S2, C-1] EL FIX DE FIDELIDAD: se planifica sobre el TEXTO ORIGINAL del
     # usuario (`raw_text`), no sobre el goal reescrito por el clasificador.
     # `text` es el original en los caminos de handle; raw_text lo cubre además
@@ -671,25 +731,19 @@ async def _complex_path(
 
 async def _execute_and_respond(graph: TaskGraph, mission: Mission, trace_id: str) -> None:
     """Ejecuta el grafo y sintetiza la respuesta. Compartido por el camino normal
-    y por la reanudación tras aprobar el plan."""
+    y por la reanudación tras aprobar el plan.
+
+    [NEW-6, doc 34 §12.9] La síntesis del outcome (¿la misión sigue esperando
+    otro gate, o hay que llamar a `responder.build()`?) vive en
+    `executor.finish_and_record()` — el MISMO punto que usa la reanudación de
+    un gate de NODO/checkpoint (`_apply_gate_verdict`/`_apply_checkpoint_
+    verdict`, en `executor.py`). Antes esta función tenía su propia copia de
+    esa lógica y la reanudación tenía otra: un gate de nodo resuelto dejaba el
+    outcome con el placeholder "esperando tu confirmación" para siempre,
+    aunque `mission.state` ya hubiera avanzado a "done" — cabecera
+    "Completada", cuerpo de una misión que sigue esperando."""
     await executor.run(graph, mission, trace_id=trace_id)
-
-    if mission.state == "waiting":
-        # Un nodo abrió su propio gate (T3): la misión sigue viva en disco; el
-        # usuario responderá y el evento la reanudará.
-        mission.outcome = _t("pipeline.waiting_confirmation")
-        tracer.record_end(trace_id, outcome=mission.outcome, state="waiting")
-        return
-
-    out = await responder.build(mission, graph)
-    ok = mission.state == "done"
-    tracer.record_end(trace_id, outcome=out, state=mission.state)
-    if mission.state == "cancelled":
-        tracer.emit_cancelled(mission)
-    elif ok:
-        tracer.emit_completed(mission, ok=True, nodes=len(graph.nodes))
-    else:
-        tracer.emit_failed(mission)
+    await executor.finish_and_record(graph, mission, trace_id)
 
 
 # ---------------------------------------------------------------------------
@@ -702,6 +756,7 @@ async def _short_path(
     chat_service directo): el camino corto ya ejercita el MISMO contrato que
     usará HermesRuntime en V1.1. `model_key` (E2b): si el usuario nombró un
     modelo para este turno, va como `model_hint` (id concreto) → override del MEL."""
+    _record_path("chat")
     from app.automation import approval_gate
     from app.memory import memory_router
     from app.tools import tool_manager

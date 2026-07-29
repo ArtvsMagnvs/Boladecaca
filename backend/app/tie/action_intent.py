@@ -152,6 +152,268 @@ def action_intent(text: str) -> Optional[Intent]:
     )
 
 
+# ===========================================================================
+# [NEW-7, doc 34] Segundo detector: "esto pide LEER EL MUNDO", no solo Aithera
+# ===========================================================================
+# EL FALLO QUE CIERRA (verificación en vivo del usuario, 2026-07-28):
+#     "Lista los archivos de la carpeta Aithera, dime cuántos .py hay en
+#      backend/app/tie, y léeme las primeras líneas de pipeline.py"
+#   → [intents] sin JSON parseable, fallback conversational
+#   → camino corto (CERO herramientas) → el modelo INVENTÓ el listado, inventó
+#     el número de archivos e inventó el contenido de `pipeline.py` (imports
+#     que no existen en el archivo real).
+#
+# Es EXACTAMENTE el mismo fallo que cerró `action_intent()` el 25-jul, pero un
+# escalón más afuera: aquel rescataba las órdenes sobre la PROPIA Aithera
+# (proyectos, tareas, agentes); una petición de leer archivos, buscar en la web
+# o mirar el correo seguía cayendo al fail-safe "conversational" cuando el
+# clasificador fallaba su JSON (~40% de las veces con `llama3`, medido). Y el
+# camino corto no tiene NINGUNA herramienta: cualquier respuesta con datos
+# concretos ahí es falsa por construcción.
+#
+# MISMA DISCIPLINA que el detector de arriba: dos señales obligatorias (verbo
+# de lectura/acción + objeto del mundo), 0 LLM, y ante la duda None — un falso
+# negativo solo cuesta lo de siempre; un falso positivo mandaría una charla al
+# bucle de herramientas. Por eso "¿qué es un archivo .py?" NO dispara (no hay
+# verbo de acción) y "léeme el archivo X" SÍ.
+
+# Verbos de LEER/BUSCAR el mundo exterior, en DOS niveles — la diferencia
+# importa para no arrastrar charla al bucle de herramientas:
+#
+#   FUERTES: solo tienen sentido sobre algo real y concreto. "Lee", "lista",
+#   "abre", "descarga", "navega" piden un objeto que existe.
+#   DÉBILES: genéricos, valen igual para una pregunta conceptual. "Dime qué
+#   archivos suele tener un proyecto FastAPI" es charla, no una lectura.
+#
+# Regla: verbo FUERTE + objeto del mundo dispara. Verbo DÉBIL solo dispara si
+# además hay una RUTA o EXTENSIÓN concreta ("dime cuántos .py hay en
+# backend/app/tie" sí; "dime qué archivos hacen falta" no).
+_READ_VERB_STEMS = (
+    "lee", "leer", "leeme", "leelo", "lea", "leyendo",
+    "lista", "listar", "listame", "enumera", "enumerar",
+    "busca", "buscar", "buscame", "localiza", "localizar",
+    "revisa", "revisar", "consulta", "consultar",
+    "analiza", "analizar", "resume", "resumir", "resumeme",
+    "extrae", "extraer", "descarga", "descargar",
+    "navega", "navegar", "visita", "visitar", "abre", "abrir", "abreme",
+    "read", "list", "search", "review", "analyze", "analyse",
+    "summarize", "summarise", "extract", "download", "browse", "visit",
+    "fetch", "open", "enumerate",
+    "lis", "lire", "cherche", "chercher", "telecharge", "ouvre", "ouvrir",
+    "parcours", "resume",
+    "ler", "leia", "procura", "procurar", "baixa", "baixar", "abrir",
+)
+
+_WEAK_READ_VERB_STEMS = (
+    "muestra", "mostrar", "muestrame", "ensename", "ensena", "dime", "dame",
+    "encuentra", "encontrar", "mira", "mirar", "comprueba", "comprobar",
+    "verifica", "verificar", "cuenta", "contar", "cuantos", "cuantas",
+    "show", "tell", "give", "find", "look", "check", "verify", "count",
+    "how many",
+    "montre", "montrer", "trouve", "verifie", "compte", "combien",
+    "mostra", "mostrar", "encontra", "conta", "quantos",
+)
+
+# Objetos del MUNDO por familia de herramienta. Cada familia mapea al `tool_id`
+# real del ToolManager, para que el intent que se devuelve sea ejecutable.
+_WORLD_OBJECTS: dict[str, tuple[str, ...]] = {
+    "filesystem": (
+        "archivo", "archivos", "fichero", "ficheros", "carpeta", "carpetas",
+        "directorio", "directorios", "ruta", "rutas",
+        "file", "files", "folder", "folders", "directory", "directories", "path",
+        "dossier", "dossiers", "repertoire", "fichier", "fichiers",
+        "pasta", "pastas", "arquivo", "arquivos", "diretorio",
+    ),
+    "document": (
+        "documento", "documentos", "pdf", "docx", "xlsx", "word", "excel",
+        "hoja de calculo", "hoja", "document", "documents", "spreadsheet",
+        "gdd", "informe", "memoria", "manual", "planilha",
+    ),
+    "search": (
+        "internet", "web", "google", "online", "en la red", "en red",
+        "noticias", "news", "buscador",
+    ),
+    "browser": ("navegador", "navegando", "url", "http://", "https://", "www.", "browser"),
+    "email": (
+        "correo", "correos", "email", "emails", "e-mail", "bandeja", "inbox",
+        "mail", "gmail", "courriel", "correio",
+    ),
+    "calendar": (
+        "calendario", "agenda", "evento", "eventos", "reunion", "reuniones",
+        "calendar", "meeting", "meetings", "event", "events", "compromisso",
+    ),
+}
+
+# Extensiones que delatan un archivo CONCRETO del sistema del usuario. Su sola
+# presencia (con un verbo de lectura) ya es señal suficiente: nadie escribe
+# "pipeline.py" en una charla trivial.
+_FILE_EXTENSIONS = (
+    ".py", ".ts", ".tsx", ".js", ".jsx", ".json", ".md", ".txt", ".csv",
+    ".pdf", ".docx", ".doc", ".xlsx", ".xls", ".html", ".css", ".yml",
+    ".yaml", ".sql", ".log", ".ini", ".cfg", ".toml", ".sh", ".bat", ".ps1",
+)
+
+
+def _matches_stems(norm: str, stems: tuple[str, ...]) -> bool:
+    words = [w.strip(".,;:!?¡¿()[]{}\"'…") for w in norm.split()]
+    for w in words:
+        if w in stems:
+            return True
+        # Prefijo, para conjugaciones y enclíticos ("leerlo", "listame",
+        # "abrelo"). Mínimo 4 letras: con 3 un "le"/"ver" cualquiera colaría.
+        if any(w.startswith(stem) and len(w) - len(stem) <= 4
+               for stem in stems if len(stem) >= 4):
+            return True
+    # Las locuciones de dos palabras ("how many", "combien de") se buscan enteras.
+    return any(" " in stem and stem in norm for stem in stems)
+
+
+def _has_strong_read_verb(norm: str) -> bool:
+    return _matches_stems(norm, _READ_VERB_STEMS)
+
+
+def _has_weak_read_verb(norm: str) -> bool:
+    return _matches_stems(norm, _WEAK_READ_VERB_STEMS)
+
+
+def _looks_like_path(raw: str) -> bool:
+    """¿Hay un archivo o ruta CONCRETA en el texto? Un nombre con extensión
+    conocida, o un token con separador de ruta entre letras (`app/tie`,
+    `C:\\Users\\...`). No basta con una barra suelta ni con una fecha."""
+    low = (raw or "").lower()
+    if any(ext in low for ext in _FILE_EXTENSIONS):
+        return True
+    for tok in low.split():
+        tok = tok.strip(".,;:!?¡¿()[]{}\"'…")
+        if len(tok) < 4:
+            continue
+        for sep in ("/", "\\"):
+            if sep in tok:
+                izq, _, der = tok.partition(sep)
+                if izq[-1:].isalnum() and der[:1].isalnum():
+                    return True
+    return False
+
+
+def _world_tools(norm: str) -> list[str]:
+    return [fam for fam, words in _WORLD_OBJECTS.items()
+            if any(w in norm for w in words)]
+
+
+def looks_like_world_read(text: str) -> bool:
+    """True si el mensaje pide LEER/BUSCAR algo del mundo real (archivos, web,
+    correo, agenda) — es decir, algo que el camino corto NO puede responder sin
+    inventárselo. Determinista y conservador (ver la nota de los dos niveles de
+    verbo): un verbo genérico exige además una ruta o extensión concreta."""
+    raw = (text or "").strip()
+    norm = _norm(raw)
+    if not norm or len(norm.split()) > _MAX_WORDS:
+        return False
+    concreto = _looks_like_path(raw)
+    if _has_strong_read_verb(norm):
+        return bool(_world_tools(norm)) or concreto
+    if _has_weak_read_verb(norm):
+        return concreto      # sin un archivo/ruta real, un "dime…" es charla
+    return False
+
+
+def world_intent(text: str) -> Optional[Intent]:
+    """Intent de LECTURA DEL MUNDO listo para el camino de acción directa
+    (toolloop con las herramientas detectadas), o None.
+
+    Igual que `action_intent()`: solo actúa cuando el clasificador LLM NO ha
+    podido, y con `requires_planning=False` — leer un archivo o buscar algo es
+    una secuencia mecánica, no un plan. Lo importante no es acertar QUÉ
+    herramienta exacta hace falta (el bucle de tool-use elige del catálogo),
+    sino no acabar en el camino SIN herramientas, que es donde se fabrica."""
+    if not looks_like_world_read(text):
+        return None
+    raw = (text or "").strip()
+    tools = _world_tools(_norm(raw))
+    if not tools:
+        tools = ["filesystem"]      # se llegó aquí por una ruta/extensión concreta
+    if "document" in tools and "filesystem" not in tools:
+        tools.append("filesystem")  # leer un documento suele exigir localizarlo
+    navega = bool({"browser", "search"} & set(tools))
+    return Intent(
+        type=IntentType.EXECUTE,
+        goal=raw[:200],
+        confidence=1.0,                 # el detector es determinista
+        requires_planning=False,
+        requires_tools=tools,
+        requires_browser=navega,
+        requires_memory=False,
+        model_capability="agentic",
+        raw_text=raw,
+    )
+
+
+# ===========================================================================
+# [NEW-7b, doc 34] "guárdame un resumen" — la mitad de PERSISTIR de una tarea
+# ===========================================================================
+# EL FALLO QUE CIERRA (verificación en vivo, 2026-07-28, consecuencia directa
+# de `world_intent()` arriba): "Investiga qué es FastAPI y guárdame un resumen
+# de tres líneas" — Aithera investigó bien, pero respondió "no tengo
+# herramienta de escritura de ficheros disponible en este paso (solo búsqueda
+# web y navegador)". `world_intent()` detecta el LADO DE LECTURA del mensaje
+# ("investiga" → search/browser) pero no el lado de ESCRITURA ("guárdame") —
+# así que el intent llega al camino directo sin `filesystem`, y el bucle de
+# tool-use no tiene con qué cumplir la mitad de la orden. Es el mismo patrón
+# de fondo que S5 (NEW-1, la tubería entre pasos): la herramienta que hacía
+# falta EXISTE, pero nadie se la puso en la mano al paso que la necesitaba.
+#
+# EL ARREGLO ES DELIBERADAMENTE UNIVERSAL: no es un parche de `world_intent()`
+# — `ensure_persistence_tool()` se aplica al FINAL de `intents.classify()`
+# (`intents.py`), sobre CUALQUIER intent que salga de ahí, venga del LLM
+# (clasificación exitosa) o de un rescate determinista. Así cubre tanto "el
+# clasificador funcionó pero se olvidó de `filesystem`" (probable, ningún LLM
+# es perfecto) como "el rescate determinista no lo detectó".
+_SAVE_VERB_STEMS = (
+    "guarda", "guardame", "guardalo", "guardalos", "guardar", "guarde",
+    "anota", "anotame", "anotalo", "apunta", "apuntame", "apuntalo",
+    "save", "keep",
+    "garde", "sauvegarde", "sauvegarder", "note",
+    "salva", "salve",
+)
+
+# Modismos donde el verbo NO tiene nada que ver con persistir un dato: "guarda
+# silencio" no pide escribir un archivo. Si el objeto inmediato tras el verbo
+# es uno de estos, no cuenta — evita el falso positivo más obvio del español.
+_SAVE_IDIOM_GUARDS = (
+    "silencio", "las formas", "la calma", "la compostura", "las distancias",
+    "la distancia", "el secreto", "la linea", "cama",
+)
+
+
+def _wants_to_persist(text: str) -> bool:
+    """¿El mensaje pide GUARDAR/ANOTAR algo (un resumen, una nota, un
+    resultado)? Determinista. Conservador: exige el verbo Y descarta los
+    modismos conocidos que no hablan de guardar un dato."""
+    norm = _norm(text)
+    if not _matches_stems(norm, _SAVE_VERB_STEMS):
+        return False
+    return not any(idiom in norm for idiom in _SAVE_IDIOM_GUARDS)
+
+
+def ensure_persistence_tool(intent: Optional[Intent], text: str) -> Optional[Intent]:
+    """Si el intent YA implica hacer algo (no es charla) y el mensaje pide
+    guardar/anotar, `filesystem` se añade a `requires_tools` — sin ella el
+    camino directo/corto no tiene con qué cumplir esa mitad del encargo.
+
+    No CREA intents por su cuenta (a diferencia de `action_intent`/
+    `world_intent`): solo completa uno que ya existe. `None` o conversational
+    pasan intactos — "guarda silencio" en mitad de una charla no debe convertir
+    una respuesta trivial en una misión con herramientas."""
+    if intent is None or intent.type == IntentType.CONVERSATIONAL:
+        return intent
+    if "filesystem" in (intent.requires_tools or []):
+        return intent
+    fuente = text or intent.raw_text or ""
+    if _wants_to_persist(fuente):
+        intent.requires_tools = list(intent.requires_tools or []) + ["filesystem"]
+    return intent
+
+
 def assert_covers_catalog(catalog_action_ids: set) -> set:
     """Devuelve las acciones del catálogo de `aithera_tool` que NINGÚN sustantivo
     de dominio cubre. Vacío = cobertura total. Lo usa un test: si mañana se añade

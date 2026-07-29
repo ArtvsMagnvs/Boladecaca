@@ -37,6 +37,19 @@ logger = get_system_logger("orchestrator")
 _BG_RUNS: set = set()
 
 
+def _record_multi_path(run_id: str, n: int) -> None:
+    """[S3, doc 34 §10] Best-effort: marca que este run es una orquestación
+    multi-objetivo (la bifurcación "varios encargos a la vez" del doc 23 §0).
+    No hay una "mission" propia para el run —cada objetivo tiene la suya—, así
+    que se registra bajo el id del run explícitamente. Nunca lanza."""
+    try:
+        import app.telemetry as _telemetry
+
+        _telemetry.record("path", name="multi", detail={"objectives": n}, mission_id=run_id)
+    except Exception:
+        pass
+
+
 async def handle(envelope) -> str:
     """Punto de entrada del Gateway (misma firma que `tie.handle`: un envelope,
     un string de respuesta). Decide entre delegar en el TIE o orquestar.
@@ -181,6 +194,8 @@ async def _orchestrate_stream(text: str, objectives_hint: list[str], channel: Op
         objectives=objetivos, channel=channel, source="user",
     )
     n = len(objetivos)
+    if n >= 2:
+        _record_multi_path(run.id, n)
     logger.info(f"[orchestrator] chat → run {run.id}: {n} objetivos en paralelo")
 
     yield ("status", _t("orchestrator.status_multi", n=n))
@@ -244,6 +259,8 @@ async def _orchestrate(*, message: str, objectives_hint: list[str],
         id=OrchestrationRun.new_id(), user_message=message,
         objectives=objetivos, channel=channel, source=source,
     )
+    if len(objetivos) >= 2:
+        _record_multi_path(run.id, len(objetivos))
     logger.info(f"[orchestrator] run {run.id}: {len(objetivos)} objetivos")
 
     run = await _conductor.run_objectives(run)
@@ -268,6 +285,8 @@ async def submit(message: str, *, channel: Optional[str] = None,
         id=OrchestrationRun.new_id(), user_message=message,
         objectives=objetivos, channel=channel, source=source,
     )
+    if len(objetivos) >= 2:
+        _record_multi_path(run.id, len(objetivos))
     run = await _conductor.run_objectives(run)
     run.outcome = await _consolidator.consolidate(run)
     _store.save(run)

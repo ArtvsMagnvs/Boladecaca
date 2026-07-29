@@ -224,16 +224,48 @@ class DocumentTool(BaseTool):
             for t in doc.tables:
                 rows = [[cell.text for cell in row.cells] for row in t.rows]
                 tables.append(rows)
-            full_text = "\n".join(paragraphs)
-            if len(full_text) > MAX_TEXT_CHARS:
+
+            # [S5 · NEW-1] Cabeceras y pies. Antes se omitian EN SILENCIO (a
+            # diferencia de un PDF escaneado, que si lleva un `note` honesto
+            # explicando por que no hay texto). En un GDD con portada, el
+            # titulo del documento suele vivir justo ahi -- bastaba eso para un
+            # "solo leyo una parte" sin que interviniera ningun limite de
+            # tamano. Envuelto en try/except: una seccion rara de python-docx
+            # no puede tumbar la lectura del cuerpo, que es lo importante.
+            headers: List[str] = []
+            footers: List[str] = []
+            try:
+                for section in doc.sections:
+                    headers += [p.text for p in section.header.paragraphs if p.text.strip()]
+                    footers += [p.text for p in section.footer.paragraphs if p.text.strip()]
+            except Exception:
+                pass
+
+            partes = headers + paragraphs + footers
+            full_text = "\n".join(partes)
+            truncated = len(full_text) > MAX_TEXT_CHARS
+            if truncated:
                 full_text = full_text[:MAX_TEXT_CHARS]
+
+            # Aviso honesto SIEMPRE (mismo patron que el `note` de read_pdf):
+            # python-docx no expone cuadros de texto ni objetos incrustados, y
+            # el que lee no tiene forma de saberlo si no se le dice.
+            note = ("Extraidos cuerpo, tablas, cabeceras y pies. Los cuadros de texto y "
+                    "objetos incrustados NO se extraen: si falta contenido, puede estar ahi.")
+            if truncated:
+                note += f" Texto recortado a {MAX_TEXT_CHARS} caracteres."
+
             return {
                 "path": str(path),
                 "paragraphs": paragraphs,
                 "tables": tables,
+                "headers": headers,
+                "footers": footers,
                 "text": full_text,
                 "paragraph_count": len(paragraphs),
                 "table_count": len(tables),
+                "truncated": truncated,
+                "note": note,
             }
 
         result = await asyncio.to_thread(_do)

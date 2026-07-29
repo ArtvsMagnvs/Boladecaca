@@ -128,6 +128,22 @@ class ToolManager:
         out.sort(key=lambda t: t["tool_id"])
         return out
 
+    def tie_catalog(self) -> List[Dict[str, Any]]:
+        """[P1, doc 34] EL catalogo que ve el TIE — SIEMPRE con herramientas
+        internas (`AitheraTool` incluida), porque el Orquestador si puede operar
+        Aithera sobre si misma.
+
+        Unico punto del que deben depender el planner, el validador del grafo
+        (graph.py), el bucle de tool-use (toolloop.py) y el mapa de capacidades
+        (capabilities_map.py). Antes cada uno llamaba a
+        `list_tools(include_internal=True)` por su cuenta; uno de los cuatro
+        (graph.py, el VALIDADOR) se quedo con la llamada sin el flag, asi que el
+        planner ofrecia `aithera` y el validador la rechazaba por "herramienta
+        inexistente" — 8 reproducciones confirmadas en la campana 00 de test en
+        vivo. Con una unica funcion, ese divorcio deja de ser posible: no hay
+        una segunda llamada que se pueda desincronizar."""
+        return self.list_tools(include_internal=True)
+
     # ------------------------------------------------------------------
     # Ejecucion (V0.4 API simple + V0.5 blindaje)
     # ------------------------------------------------------------------

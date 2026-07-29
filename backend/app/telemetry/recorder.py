@@ -22,6 +22,18 @@ from app.core.logging_config import get_system_logger
 
 logger = get_system_logger("telemetry")
 
+# [S3, doc 34 §10] Qué setting de presupuesto (`app/core/config.py`) le
+# corresponde a cada nombre de camino que `telemetry.record("path", name=...)`
+# puede recibir (tie/pipeline.py + orchestrator/__init__.py). Un nombre fuera
+# de este mapa (o ningún evento "path" en absoluto) queda como "desconocido"
+# sin presupuesto — no hay nada con que comparar, así que no se marca FAIL.
+_BUDGET_SETTING_BY_PATH = {
+    "chat": "BUDGET_LLM_CHAT",
+    "direct": "BUDGET_LLM_DIRECT",
+    "planned": "BUDGET_LLM_PLANNED",
+    "multi": "BUDGET_LLM_MULTI_PER_OBJECTIVE",
+}
+
 # (mission_id, trace_id) del task actual. Default: llamada suelta (chat corto).
 _mission_ctx: ContextVar[tuple[Optional[str], Optional[str]]] = ContextVar(
     "aithera_mission_ctx", default=(None, None)
@@ -139,8 +151,19 @@ def mission_timeline(mission_id: str) -> dict:
     llm: dict[str, dict[str, Any]] = {}
     tools: dict[str, dict[str, Any]] = {}
     total_ms = 0
+    llm_calls = 0
+    slowest_llm_ms = 0
+    path_name: Optional[str] = None
     for r in rows:
+        if r.stage == "path" and path_name is None:
+            # Solo el PRIMERO: en la práctica hay como mucho un evento "path"
+            # por misión (una única bifurcación decide el camino de todo el
+            # turno) — quedarse con el primero es robusto igualmente si algún
+            # caller futuro lo registrara más de una vez.
+            path_name = r.name
         if r.stage == "llm_call":
+            llm_calls += 1
+            slowest_llm_ms = max(slowest_llm_ms, r.duration_ms or 0)
             key = f"{r.provider}:{r.model}" if r.provider else "?"
             agg = llm.setdefault(key, {"calls": 0, "ms": 0, "fails": 0})
             agg["calls"] += 1
@@ -158,11 +181,35 @@ def mission_timeline(mission_id: str) -> dict:
     if not total_ms and len(rows) >= 2 and rows[0].ts and rows[-1].ts:
         total_ms = int((rows[-1].ts - rows[0].ts).total_seconds() * 1000)
 
+    # [S3, doc 34 §10] Presupuesto de llamadas, MEDIDO: el camino que tomó este
+    # turno (si se registró) contra el techo declarado en Settings para ese
+    # camino. Sin evento "path" (misiones de antes de S3, o un camino sin
+    # mapeo) no hay con qué comparar — se informa pero no se marca en rojo.
+    budget: Optional[int] = None
+    if path_name is not None:
+        try:
+            from app.core.config import settings as _settings
+
+            attr = _BUDGET_SETTING_BY_PATH.get(path_name)
+            if attr is not None:
+                budget = getattr(_settings, attr, None)
+        except Exception:
+            budget = None
+    within_budget = True if budget is None else (llm_calls <= budget)
+
     return {
         "mission_id": mission_id,
         "events": events,
-        "summary": {"total_ms": total_ms, "llm_by_model": llm, "tools": tools,
-                    "event_count": len(events)},
+        "summary": {
+            "total_ms": total_ms, "llm_by_model": llm, "tools": tools,
+            "event_count": len(events),
+            # --- S3 (aditivo, el resto del dict no cambia) ---
+            "llm_calls": llm_calls,
+            "path": path_name or "desconocido",
+            "budget": budget,
+            "within_budget": within_budget,
+            "slowest_llm_ms": slowest_llm_ms,
+        },
     }
 
 

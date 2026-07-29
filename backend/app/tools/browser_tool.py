@@ -23,13 +23,17 @@
 # Acciones: open_url, new_tab, close_tab, google_search, click, type, scroll,
 # wait_for_element, download_file, upload_file, screenshot, get_html, get_text.
 
+import asyncio
 import base64
 import uuid
 from typing import Dict, Any, List, Optional
 
 from app.core.config import settings
+from app.core.logging_config import get_system_logger
 from .base import BaseTool
 from .filesystem_tool import _resolve_user_path, _is_path_allowed
+
+logger = get_system_logger("tools.browser")
 
 # Estado del navegador -- un unico proceso.
 _playwright = None
@@ -74,6 +78,17 @@ class _Session:
 
 _sessions: Dict[str, _Session] = {}
 
+# [S9, doc 34 §10, reabre F-1] `_ensure_browser()` no tenía ningún lock: dos
+# misiones concurrentes que llegaban con `_browser is None and
+# _persistent_context is None` pasaban AMBAS el guard y lanzaban DOS
+# `launch_persistent_context()` sobre el MISMO perfil -- Chrome bloquea el
+# segundo proceso y el pisoteo de los globals (uno machaca al otro) dejaba a
+# las DOS misiones con una referencia a un contexto muerto -> `TargetClosedError`
+# en ambas (reproducido en vivo, campaña 01, `T06-R-D5-browser-concurrente`).
+# Un único lock de módulo sirve para las dos carreras (lanzar el navegador Y
+# crear una `_Session` nueva) -- no son operaciones que compitan entre sí.
+_launch_lock = asyncio.Lock()
+
 
 def _browser_mode() -> str:
     """[2026-07-23] Modo elegido por el usuario en Ajustes → Conexiones →
@@ -106,94 +121,214 @@ def _user_chrome_profile_dir() -> Optional[str]:
     return path if os.path.isdir(path) else None
 
 
+# ---------------------------------------------------------------------------
+# [S9b, doc 34] Un navegador MUERTO se relanza — antes envenenaba el proceso
+# ---------------------------------------------------------------------------
+# EL FALLO QUE CIERRA (verificado en vivo, 2026-07-28): `_ensure_browser()`
+# comprobaba `is not None`, no si el navegador seguía VIVO. En cuanto el
+# `_persistent_context` moría por cualquier causa externa (el usuario cerró esa
+# ventana de Chrome, el proceso se cayó, Windows lo mató), la variable global
+# seguía apuntando al cadáver PARA SIEMPRE: el guard daba "ya está lanzado", no
+# se relanzaba nunca, y TODAS las misiones posteriores morían con
+# `TargetClosedError` hasta reiniciar el backend entero. El lock de S9 arregló
+# la carrera entre misiones concurrentes, pero dejó esto debajo — y es peor,
+# porque no hace falta concurrencia para caer en ello.
+#
+# DOS MECANISMOS, porque uno solo no basta:
+#   1. Chequeo barato ANTES (`_alive`): descarta el cadáver evidente sin coste.
+#   2. Reintento en el PUNTO DE USO (`_get_page`): el estado real de un proceso
+#      externo solo se conoce al usarlo — entre el chequeo y la llamada puede
+#      morir. Si Playwright dice "target closed", se resetea y se relanza UNA
+#      vez. Es el mismo patrón que ya cura una pestaña muerta, un nivel arriba.
+_CLOSED_MARKERS = ("targetclosederror", "has been closed", "target closed",
+                   "browser has been closed", "connection closed")
+
+
+def _looks_closed(exc: BaseException) -> bool:
+    """¿Esta excepción dice 'el navegador ya no está'? Por texto y no por tipo
+    a propósito: Playwright lanza `TargetClosedError` pero también `Error` a
+    secas con el mismo mensaje según por dónde se rompa."""
+    msg = f"{type(exc).__name__} {exc}".lower()
+    return any(m in msg for m in _CLOSED_MARKERS)
+
+
+def _alive(ctx_or_browser: Any) -> bool:
+    """Chequeo BARATO de vivacidad. Conservador al revés que el resto del
+    módulo: ante la duda devuelve True (que falle en el punto de uso, donde hay
+    reintento) — declarar muerto un navegador sano cerraría las pestañas del
+    usuario sin motivo."""
+    if ctx_or_browser is None:
+        return False
+    try:
+        conectado = getattr(ctx_or_browser, "is_connected", None)
+        if callable(conectado):
+            return bool(conectado())
+        # Un BrowserContext persistente no tiene `is_connected`; su `browser`
+        # sí (puede ser None en algunas versiones, y entonces no se sabe).
+        br = getattr(ctx_or_browser, "browser", None)
+        if br is not None and callable(getattr(br, "is_connected", None)):
+            return bool(br.is_connected())
+        _ = ctx_or_browser.pages      # lanza si el objeto ya está inutilizable
+        return True
+    except Exception:
+        return False
+
+
+async def _reset_browser_globals() -> None:
+    """Tira TODO el estado de navegador para que el próximo `_ensure_browser()`
+    relance de cero. Incluye `_sessions`: sus contextos apuntan al navegador
+    muerto, así que conservarlas solo propagaría el error a la misión
+    siguiente. Se llama SIEMPRE con `_launch_lock` tomado."""
+    global _playwright, _browser, _persistent_context
+    for obj in (_persistent_context, _browser):
+        try:
+            if obj is not None:
+                await obj.close()
+        except Exception:
+            pass          # ya estaba muerto: cerrarlo es cortesía, no requisito
+    try:
+        if _playwright is not None:
+            await _playwright.stop()
+    except Exception:
+        pass
+    _playwright = None
+    _browser = None
+    _persistent_context = None
+    _sessions.clear()
+    logger.info("[browser] estado reiniciado: el navegador se relanzará en la "
+                "próxima llamada")
+
+
+def _browser_ready() -> bool:
+    """¿Hay un navegador lanzado Y vivo? Lo que el guard debería haber
+    comprobado desde el principio."""
+    if _persistent_context is not None:
+        return _alive(_persistent_context)
+    if _browser is not None:
+        return _alive(_browser)
+    return False
+
+
 async def _ensure_browser():
     global _playwright, _browser, _persistent_context
-    if _browser is not None or _persistent_context is not None:
+    if _browser_ready():
         return
-    try:
-        from playwright.async_api import async_playwright
-    except ImportError as e:
-        raise RuntimeError(
-            "Playwright no esta instalado (pip install playwright && "
-            "playwright install chromium)"
-        ) from e
-    _playwright = await async_playwright().start()
-
-    # [Fix 2026-07-19] VISIBLE, no headless: si Aithera navega por ti, tienes
-    # que poder mirarlo y tomar el control. Ademas headless se bloquea como
-    # sospechoso en muchos sitios (documentado en CLAUDE.md §8).
-    headless = settings.BROWSER_HEADLESS
-    # Sin la barra "Chrome esta siendo controlado por software automatizado":
-    # es el navegador DEL USUARIO trabajando para el, no un banco de pruebas.
-    launch_kwargs = dict(headless=headless, ignore_default_args=["--enable-automation"])
-
-    mode = _browser_mode()
-
-    # [2026-07-23] Modo "user": el Chrome HABITUAL del usuario, con su sesion
-    # real. NUNCA se sustituye en silencio por el perfil dedicado si esto
-    # falla (mismo criterio que ExplicitModelUnfit/ExplicitModelUnavailable
-    # del MEL: el usuario eligio esto A PROPOSITO, si no funciona se le dice
-    # POR QUE, no se le cambia el navegador sin avisar). La causa mas comun de
-    # fallo es que su Chrome ya este abierto -- Chrome bloquea un segundo
-    # proceso sobre el mismo perfil.
-    if mode == "user":
-        user_dir = _user_chrome_profile_dir()
-        if user_dir is None:
-            raise RuntimeError(
-                "No se encontró tu perfil de Chrome en este equipo. Cambia a "
-                "'Chrome dedicado de Aithera' en Ajustes → Conexiones → Búsqueda web."
-            )
-        try:
-            _persistent_context = await _playwright.chromium.launch_persistent_context(
-                user_dir, channel="chrome", **launch_kwargs,
-            )
+    # [S9] Fast-path SIN lock arriba (ya lanzado -> no pagar el lock en el
+    # camino caliente); pero para lanzar de verdad, todo bajo el lock con
+    # RE-CHEQUEO dentro (double-checked locking): mientras esta corrutina
+    # esperaba el lock, otra puede haber terminado de lanzar ya.
+    async with _launch_lock:
+        if _browser_ready():
             return
+        # [S9b] Si había algo lanzado pero MUERTO, hay que limpiarlo antes de
+        # relanzar: si no, `_persistent_context` seguiría apuntando al cadáver.
+        if _persistent_context is not None or _browser is not None:
+            await _reset_browser_globals()
+        try:
+            from playwright.async_api import async_playwright
+        except ImportError as e:
+            raise RuntimeError(
+                "Playwright no esta instalado (pip install playwright && "
+                "playwright install chromium)"
+            ) from e
+        _playwright = await async_playwright().start()
+
+        # [Fix 2026-07-19] VISIBLE, no headless: si Aithera navega por ti, tienes
+        # que poder mirarlo y tomar el control. Ademas headless se bloquea como
+        # sospechoso en muchos sitios (documentado en CLAUDE.md §8).
+        headless = settings.BROWSER_HEADLESS
+        # Sin la barra "Chrome esta siendo controlado por software automatizado":
+        # es el navegador DEL USUARIO trabajando para el, no un banco de pruebas.
+        launch_kwargs = dict(headless=headless, ignore_default_args=["--enable-automation"])
+
+        mode = _browser_mode()
+
+        # [2026-07-23] Modo "user": el Chrome HABITUAL del usuario, con su sesion
+        # real. NUNCA se sustituye en silencio por el perfil dedicado si esto
+        # falla (mismo criterio que ExplicitModelUnfit/ExplicitModelUnavailable
+        # del MEL: el usuario eligio esto A PROPOSITO, si no funciona se le dice
+        # POR QUE, no se le cambia el navegador sin avisar). La causa mas comun de
+        # fallo es que su Chrome ya este abierto -- Chrome bloquea un segundo
+        # proceso sobre el mismo perfil.
+        if mode == "user":
+            user_dir = _user_chrome_profile_dir()
+            if user_dir is None:
+                raise RuntimeError(
+                    "No se encontró tu perfil de Chrome en este equipo. Cambia a "
+                    "'Chrome dedicado de Aithera' en Ajustes → Conexiones → Búsqueda web."
+                )
+            try:
+                _persistent_context = await _playwright.chromium.launch_persistent_context(
+                    user_dir, channel="chrome", **launch_kwargs,
+                )
+                return
+            except Exception as e:
+                raise RuntimeError(
+                    "No se pudo abrir tu Chrome habitual con tu sesión real. Lo más probable "
+                    "es que ya lo tengas abierto — Chrome no permite que dos procesos usen el "
+                    "mismo perfil a la vez. Ciérralo del todo y reintenta, o cambia a "
+                    "'Chrome dedicado de Aithera' en Ajustes → Conexiones → Búsqueda web. "
+                    f"({type(e).__name__}: {e})"
+                ) from e
+
+        # Modo "aithera" (por defecto): cadena de degradacion honesta (cada nivel
+        # se intenta en orden, el fallo de uno pasa al siguiente):
+        #   1) Chrome REAL + perfil persistente de Aithera   ← lo pedido
+        #   2) Chromium bundled + perfil persistente         (no hay Chrome)
+        #   3) Chromium efimero (modo antiguo)               (perfil bloqueado)
+        profile_dir = settings.BROWSER_PROFILE_DIR
+        for channel in ([settings.BROWSER_CHANNEL] if settings.BROWSER_CHANNEL != "chromium" else []) + [None]:
+            try:
+                import os
+                os.makedirs(profile_dir, exist_ok=True)
+                _persistent_context = await _playwright.chromium.launch_persistent_context(
+                    profile_dir, **({**launch_kwargs, "channel": channel} if channel else launch_kwargs),
+                )
+                return
+            except Exception:
+                continue
+        try:
+            _browser = await _playwright.chromium.launch(headless=headless)
         except Exception as e:
             raise RuntimeError(
-                "No se pudo abrir tu Chrome habitual con tu sesión real. Lo más probable "
-                "es que ya lo tengas abierto — Chrome no permite que dos procesos usen el "
-                "mismo perfil a la vez. Ciérralo del todo y reintenta, o cambia a "
-                "'Chrome dedicado de Aithera' en Ajustes → Conexiones → Búsqueda web. "
-                f"({type(e).__name__}: {e})"
+                f"no se pudo lanzar el navegador (¿falta 'playwright install chromium'?): {e}"
             ) from e
-
-    # Modo "aithera" (por defecto): cadena de degradacion honesta (cada nivel
-    # se intenta en orden, el fallo de uno pasa al siguiente):
-    #   1) Chrome REAL + perfil persistente de Aithera   ← lo pedido
-    #   2) Chromium bundled + perfil persistente         (no hay Chrome)
-    #   3) Chromium efimero (modo antiguo)               (perfil bloqueado)
-    profile_dir = settings.BROWSER_PROFILE_DIR
-    for channel in ([settings.BROWSER_CHANNEL] if settings.BROWSER_CHANNEL != "chromium" else []) + [None]:
-        try:
-            import os
-            os.makedirs(profile_dir, exist_ok=True)
-            _persistent_context = await _playwright.chromium.launch_persistent_context(
-                profile_dir, **({**launch_kwargs, "channel": channel} if channel else launch_kwargs),
-            )
-            return
-        except Exception:
-            continue
-    try:
-        _browser = await _playwright.chromium.launch(headless=headless)
-    except Exception as e:
-        raise RuntimeError(
-            f"no se pudo lanzar el navegador (¿falta 'playwright install chromium'?): {e}"
-        ) from e
 
 
 async def _get_session(session_id: Optional[str]) -> _Session:
     """La sesion de navegador de una mision. Con perfil persistente: contexto
     COMPARTIDO (sesiones/cookies del usuario) y pestanas propias por mision.
-    En modo respaldo: BrowserContext efimero propio (comportamiento antiguo)."""
+    En modo respaldo: BrowserContext efimero propio (comportamiento antiguo).
+
+    [S9] La CREACIÓN de una `_Session` nueva (en modo respaldo, un
+    `_browser.new_context()` real) va bajo el MISMO `_launch_lock` que
+    `_ensure_browser()` -- dos misiones concurrentes con el mismo `sid` (o
+    ambas cayendo en `_DEFAULT_SESSION`) tenían la misma carrera en pequeño:
+    las dos pasaban `sess is None`, las dos creaban un contexto, y la segunda
+    asignación pisaba a la primera en `_sessions[sid]` (contexto huérfano,
+    nunca cerrado). Fast-path sin lock si ya existe (camino caliente)."""
     await _ensure_browser()
     sid = session_id or _DEFAULT_SESSION
     sess = _sessions.get(sid)
-    if sess is None:
-        if _persistent_context is not None:
-            sess = _Session(_persistent_context, owns_context=False)
-        else:
-            sess = _Session(await _browser.new_context(), owns_context=True)
-        _sessions[sid] = sess
+    # [S9b] Una sesión que apunta al contexto COMPARTIDO de un navegador ya
+    # relanzado es basura: su `context` es el cadáver anterior. Se descarta y
+    # se recrea contra el contexto vivo. (En modo respaldo cada sesión tiene su
+    # propio contexto efímero, así que solo se comprueba que siga vivo.)
+    if sess is not None:
+        vigente = (sess.context is _persistent_context if _persistent_context is not None
+                   else _alive(sess.context))
+        if vigente:
+            return sess
+        _sessions.pop(sid, None)
+        sess = None
+    async with _launch_lock:
+        sess = _sessions.get(sid)   # re-chequeo: pudo crearla otra corrutina
+        if sess is None:
+            if _persistent_context is not None:
+                sess = _Session(_persistent_context, owns_context=False)
+            else:
+                sess = _Session(await _browser.new_context(), owns_context=True)
+            _sessions[sid] = sess
     return sess
 
 
@@ -206,13 +341,47 @@ def _session_id_of(params: Dict[str, Any]) -> Optional[str]:
 
 async def _get_page(tab_id: Optional[str], session_id: Optional[str] = None):
     """Resuelve la pestana DENTRO de la sesion de esta mision: la pedida, o la
-    activa, o crea una nueva si no hay ninguna abierta todavia."""
+    activa, o crea una nueva si no hay ninguna abierta todavia.
+
+    [S9] Si la pestaña resuelta ya está CERRADA (el usuario la cerró a mano,
+    o quedó un `TargetClosedError` residual tras un cierre externo) NO se
+    devuelve el handle muerto -- eso reventaba la siguiente llamada real de
+    Playwright con la misma excepción, tumbando la misión entera. Se descarta
+    de `sess.pages` y se crea una nueva: la misión se autocura en vez de
+    fallar por una pestaña que ya no existe."""
     sess = await _get_session(session_id)
     tid = tab_id or sess.current_tab
     if tid and tid in sess.pages:
-        return tid, sess.pages[tid]
+        page = sess.pages[tid]
+        try:
+            dead = page.is_closed()
+        except Exception:
+            dead = True
+        if not dead:
+            return tid, page
+        sess.pages.pop(tid, None)
+        if sess.current_tab == tid:
+            sess.current_tab = None
+
+    # [S9b] Abrir una pestaña es el primer sitio donde se descubre que el
+    # navegador entero murió. El chequeo previo de `_ensure_browser` puede
+    # haber pasado (murió entre medias, o `_alive` no pudo saberlo): aquí sí se
+    # sabe con certeza. Un ÚNICO reintento tras relanzar — si el segundo
+    # también falla, el error sube y la misión falla honestamente, sin bucle.
+    for intento in (1, 2):
+        try:
+            page = await sess.context.new_page()
+            break
+        except Exception as e:
+            if intento == 2 or not _looks_closed(e):
+                raise
+            logger.warning(f"[browser] el navegador estaba cerrado ({type(e).__name__}); "
+                           f"relanzando y reintentando una vez")
+            async with _launch_lock:
+                await _reset_browser_globals()
+            await _ensure_browser()
+            sess = await _get_session(session_id)
     new_id = uuid.uuid4().hex[:10]
-    page = await sess.context.new_page()
     sess.pages[new_id] = page
     sess.current_tab = new_id
     return new_id, page

@@ -166,15 +166,19 @@ def test_plantilla_vacia_en_portugues():
     assert text == "Não consegui concluir nenhuma das tarefas."
 
 
-def test_detalle_estados_en_ingles():
+def test_estados_agrupados_en_ingles():
+    """[S2·S6] Antes esto probaba `_detalle()` — el texto que se le pasaba al
+    LLM del consolidator, que ya no existe (esa reescritura se eliminó, doc 34).
+    Los estados siguen distinguiéndose para el usuario, pero por las cabeceras
+    de grupo de la plantilla, que es ahora la única salida."""
     _set_lang("en")
     objs = [
         Objective(id="o1", goal="a", state="waiting"),
         Objective(id="o2", goal="b", state="skipped"),
     ]
-    text = consolidator._detalle(_run(objs))
-    assert "WAITING FOR YOUR APPROVAL" in text
-    assert "COULDN'T BE ATTEMPTED" in text
+    text = consolidator._plantilla(_run(objs))
+    assert "Waiting for your approval:" in text
+    assert "I couldn't complete:" in text
 
 
 @pytest.mark.anyio

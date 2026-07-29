@@ -24,7 +24,14 @@ router = APIRouter(prefix="/automation", tags=["automation"])
 
 def _approval_out(a: Approval) -> dict:
     """Serializa una aprobación para la UI (sin exponer el action_payload crudo —
-    puede llevar detalles internos; la UI muestra title/summary)."""
+    puede llevar detalles internos; la UI muestra title/summary).
+
+    [S7·S8] `mission_id` es la ÚNICA excepción, expuesta como campo propio
+    (no el payload entero): es lo que permite a `Missions.tsx` correlacionar
+    un gate de tipo `tie_tool_permission` (nace en pleno vuelo del toolloop,
+    R1) con la misión que lo abrió — antes ese panel solo existía en el Chat.
+    `None` para cualquier aprobación que no lo lleve (la inmensa mayoría)."""
+    payload = a.action_payload or {}
     return {
         "gate_id": a.id,
         "kind": a.kind,
@@ -33,6 +40,7 @@ def _approval_out(a: Approval) -> dict:
         "action_type": a.action_type,
         "status": a.status,
         "channel": a.channel,
+        "mission_id": payload.get("mission_id"),
         "requested_at": a.requested_at.isoformat() if a.requested_at else None,
         "resolved_at": a.resolved_at.isoformat() if a.resolved_at else None,
     }

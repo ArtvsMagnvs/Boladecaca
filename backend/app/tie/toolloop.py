@@ -45,6 +45,12 @@ logger = get_system_logger("tie.toolloop")
 # siguientes pierden el objetivo original.
 _MAX_OBSERVATION_CHARS = 4000
 
+# [S9c] Repetición estéril: al 2.º fallo idéntico se avisa al modelo, al 3.º se
+# abandona esa vía. Dos escalones a propósito — un reintento tras un fallo
+# transitorio es legítimo; el tercero ya no aporta información nueva.
+_WARN_REPEATED_FAILURES = 2
+_MAX_REPEATED_FAILURES = 3
+
 
 @dataclass
 class ToolLoopResult:
@@ -61,6 +67,12 @@ class ToolLoopResult:
     tool_calls: list[dict] = field(default_factory=list)   # rastro para AgentResult
     iterations: int = 0
     error: Optional[str] = None
+    # [S11, doc 34 §S11] tool_ids que se pidieron pero NO se concedieron (el
+    # usuario rechazó, o no respondió a tiempo). Append-only, default vacío —
+    # cero regresión. El runtime la copia a `AgentResult.limitations` y el
+    # executor la guarda en `node.result["limitations"]`, para que el
+    # responder pueda avisar de que el resultado puede estar incompleto.
+    limitations: list[str] = field(default_factory=list)
 
 
 _SYSTEM_PROMPT = """Eres el ejecutor de un paso de Aithera. Tienes herramientas REALES a tu
@@ -113,7 +125,7 @@ def build_catalog(allowed_tools: list[str], tool_manager) -> list[dict]:
     # estaba PERMITIDA (se añade a `allowed_tools` vía _internal_tool_ids) pero sus
     # acciones NUNCA se le mostraban al modelo → el modelo no sabía que podía
     # crear/abrir proyectos, agentes o reglas. Era EL cable que faltaba.
-    for tool in tool_manager.list_tools(include_internal=True):
+    for tool in tool_manager.tie_catalog():  # [P1] accesor único, ver tool_manager.tie_catalog()
         if tool["tool_id"] not in allowed_tools:
             continue
         for action in tool.get("actions", []):
@@ -158,7 +170,8 @@ def _format_catalog(catalog: list[dict]) -> str:
 
 async def _ask_permission(entry: dict, params: dict, approval_gate, *,
                           instruction: str, wait_s: int,
-                          pre_approved: bool = False) -> tuple[bool, str]:
+                          pre_approved: bool = False,
+                          mission_id: Optional[str] = None) -> tuple[bool, str]:
     """Pide permiso al USUARIO para una acción sensible y espera su respuesta.
 
     Por qué se pregunta en vez de denegar (regla del usuario, 2026-07-19): el
@@ -195,10 +208,21 @@ async def _ask_permission(entry: dict, params: dict, approval_gate, *,
         from app.automation import permission_service
 
         if permission_service.is_tool_action_pre_authorized(entry["tool_id"], entry["action"]):
-            logger.info(
-                f"[toolloop] {entry['tool_id']}.{entry['action']} ya está autorizado "
-                f"en Ajustes → Permisos; no se pregunta"
-            )
+            # [S7·S8-c] El log decía SIEMPRE "ya está autorizado en Ajustes →
+            # Permisos" — engañoso con el perfil Autónomo activo, donde los
+            # toggles individuales NO son la causa real (autonomy_is_full()
+            # aprueba cualquier cosa, presente o futura, sin mirar el
+            # catálogo). Distinguir la causa real de una auto-aprobación.
+            if permission_service.autonomy_is_full():
+                logger.info(
+                    f"[toolloop] {entry['tool_id']}.{entry['action']} auto-aprobado por el "
+                    f"perfil Autónomo (los toggles individuales no aplican con este perfil)"
+                )
+            else:
+                logger.info(
+                    f"[toolloop] {entry['tool_id']}.{entry['action']} ya está autorizado "
+                    f"en Ajustes → Permisos; no se pregunta"
+                )
             return True, "autorizado de antemano por el usuario"
     except Exception as e:      # nunca bloquear por un fallo consultando permisos
         logger.info(f"[toolloop] no se pudo consultar el permiso (sigo preguntando): {e!r}")
@@ -216,9 +240,30 @@ async def _ask_permission(entry: dict, params: dict, approval_gate, *,
         # action_type; aquí NO lo hay a propósito: quien ejecuta es el bucle, con
         # el ToolManager y su whitelist. El gate solo aporta el SÍ/NO del usuario.
         action_type="tie_tool_permission",
-        action_payload={"tool_id": entry["tool_id"], "action": entry["action"], "params": params},
+        # [S7·S8-a] `mission_id` es ADITIVO — nada existente lo lee, cero
+        # regresión. Es lo que permite a `Missions.tsx` correlacionar este
+        # gate con la misión que lo abrió (antes solo existía en el Chat: el
+        # panel de Misiones no tenía forma de saber a qué misión pertenecía
+        # una aprobación de tipo "tie_tool_permission").
+        action_payload={"tool_id": entry["tool_id"], "action": entry["action"], "params": params,
+                        "mission_id": mission_id},
     )
+    return await _wait_gate(gate_id, wait_s, approval_gate)
 
+
+async def _wait_gate(gate_id: str, wait_s: int, approval_gate) -> tuple[bool, str]:
+    """[S11, doc 34 §S11] Espera acotada a que el usuario resuelva un gate YA
+    ABIERTO — extraído de `_ask_permission` para que el gate de CONCESIÓN de
+    tool (S11, más abajo) comparta EXACTAMENTE el mismo ciclo de sondeo +
+    expiración en vez de duplicarlo.
+
+    [Auditoría v0.9.5, A-2] Timeout → la aprobación se EXPIRA, nunca se deja
+    `pending`. Antes quedaba viva en la UI pero aprobarla después no hacía
+    NADA (la misión ya había seguido y estos `action_type` no tienen ejecutor
+    a propósito): el usuario aprobaba y el sistema lo ignoraba — una
+    aprobación cadáver. Expirarla es la semántica honesta: desaparece de
+    pendientes, queda auditada como caducada, y el modelo busca otra vía o
+    explica el límite."""
     deadline = asyncio.get_running_loop().time() + wait_s
     while asyncio.get_running_loop().time() < deadline:
         appr = approval_gate.get(gate_id)
@@ -229,15 +274,6 @@ async def _ask_permission(entry: dict, params: dict, approval_gate, *,
             return False, "el usuario ha rechazado esta acción"
         await asyncio.sleep(1.0)
 
-    # [Auditoría v0.9.5, A-2] Timeout → la aprobación se EXPIRA, nunca se deja
-    # `pending`. Antes quedaba viva en la UI pero aprobarla después no hacía
-    # NADA (la misión ya había seguido y `tie_tool_permission` no tiene
-    # ejecutor a propósito): el usuario aprobaba y el sistema lo ignoraba —
-    # una aprobación cadáver. Expirarla es la semántica honesta: desaparece de
-    # pendientes, queda auditada como caducada, y el modelo busca otra vía o
-    # explica el límite. (La alternativa —pausar el nodo como gate de T3—
-    # exigiría persistir el transcript del bucle en el checkpoint; anotada
-    # como evolución V1.1 en el doc 25, no como parche aquí.)
     expired = await approval_gate.expire(
         gate_id, note="caducada: el paso siguió sin esta acción tras esperar sin respuesta"
     )
@@ -254,10 +290,118 @@ async def _ask_permission(entry: dict, params: dict, approval_gate, *,
     )
 
 
+async def _ask_grant(tool_id: str, approval_gate, *, instruction: str, wait_s: int,
+                     mission_id: Optional[str] = None) -> tuple[bool, str]:
+    """[S11, doc 34 §S11] Pide al usuario CONCEDER una tool que este paso NO
+    tenía en su whitelist pero SÍ existe de verdad en el catálogo — la
+    capacidad completa, no una acción sensible puntual.
+
+    Distinto de `_ask_permission`: ahí el paso YA tiene la tool y pregunta por
+    UNA acción sensible de ella; aquí falta la tool entera. Por eso NO hereda
+    `pre_approved` del plan/nodo — el usuario aprobó una LISTA DE PASOS, nunca
+    vio ni pudo prever que hiciera falta esta herramienta, así que esa
+    aprobación no la cubre. El perfil Autónomo (full) sigue concediendo al
+    instante y con rastro igualmente: eso lo resuelve
+    `ApprovalGate.request_approval` por su cuenta, por el `kind` — el punto 0
+    de `is_kind_pre_authorized` es "cualquier gate, presente o futuro"
+    (D-1, doc 22/24), así que un `kind` nuevo como este no necesita entrada
+    propia en el catálogo de permisos."""
+    if approval_gate is None:
+        return False, "no hay canal de aprobación disponible en este contexto"
+
+    gate_id = await approval_gate.request_approval(
+        kind=f"tool.grant.{tool_id}",
+        title=f"La misión necesita una herramienta no concedida: {tool_id}",
+        summary=(f"Un paso de la misión quiere usar '{tool_id}', que no estaba "
+                 f"asignada a este paso.\n\nPaso: {instruction[:200]}"),
+        # Sin ejecutor a propósito, mismo criterio que `tie_tool_permission`:
+        # quien concede/ejecuta es este bucle, no el gate.
+        action_type="tie_tool_grant",
+        action_payload={"tool_id": tool_id, "mission_id": mission_id},
+    )
+    return await _wait_gate(gate_id, wait_s, approval_gate)
+
+
 def _truncate(text: str, limit: int = _MAX_OBSERVATION_CHARS) -> str:
     if len(text) <= limit:
         return text
     return text[:limit] + f"\n… [truncado: {len(text)} caracteres en total]"
+
+
+# [S5 · NEW-1] Acciones cuyo VALOR es el contenido que devuelven, no su
+# estructura. Para éstas, la observación se construye del texto plano y con un
+# presupuesto mucho mayor: recortar un GDD de 20 páginas al mismo tope que un
+# `list_dir` era una de las dos mitades del fallo "leyó solo una parte".
+_CONTENT_ACTIONS = frozenset({
+    ("document", "read_pdf"), ("document", "read_docx"), ("document", "read_xlsx"),
+    ("filesystem", "read_file"),
+    ("browser", "get_text"), ("browser", "get_html"),
+})
+
+
+def _observation(tool_id: str, action: str, payload) -> str:
+    """[S5 · NEW-1] El texto de una observación de tool para el transcript.
+
+    LOS DOS PROBLEMAS QUE CIERRA (doc 34 §S5):
+      1. El recorte actuaba sobre el JSON YA SERIALIZADO, así que el ruido de
+         estructura (comillas, `"paragraphs":`, `"tables":`) se comía parte del
+         presupuesto — y CUÁNTO contenido real sobrevivía dependía de la
+         proporción ruido/contenido de cada documento. De ahí el patrón "a
+         veces lee más, a veces menos, sin lógica visible": no era aleatorio.
+      2. Un tope único de 4000 para todas las acciones. Correcto para un
+         `list_dir`; descabezaba cualquier lectura de documento.
+
+    Para las acciones de CONTENIDO se entrega el campo `text` en plano (si lo
+    hay) con su propio presupuesto. Para el resto, exactamente lo de siempre.
+    El truncado sigue diciendo cuánto queda fuera — eso no se toca."""
+    from app.core.config import settings
+
+    if (tool_id, action) in _CONTENT_ACTIONS:
+        texto = payload.get("text") if isinstance(payload, dict) else None
+        limite = settings.TIE_OBSERVATION_CHARS_CONTENT
+        if isinstance(texto, str) and texto.strip():
+            # Metadatos útiles que NO son el contenido (path, nº de páginas…):
+            # se resumen en una línea en vez de volcar el JSON entero.
+            extras = {k: v for k, v in payload.items()
+                      if k != "text" and isinstance(v, (str, int, float, bool))}
+            cabecera = f"{extras}\n" if extras else ""
+            return cabecera + _truncate(texto, limite)
+        # Sin campo `text` (p.ej. read_xlsx, que devuelve filas): al menos se
+        # le da el presupuesto grande, aunque siga siendo JSON.
+        return _truncate(json.dumps(payload, ensure_ascii=False, default=str), limite)
+
+    return _truncate(json.dumps(payload, ensure_ascii=False, default=str))
+
+
+def _prompt_from(transcript: list[str], head_n: int, window: int) -> str:
+    """[S4, doc 34 §10] El PROMPT de esta iteración: ventana deslizante sobre el
+    transcript.
+
+    El problema que resuelve: el transcript crece con cada vuelta y se reenviaba
+    ENTERO en cada llamada — con observaciones de hasta 4000 caracteres y hasta
+    12 vueltas, el prompt de las últimas iteraciones era mayoritariamente
+    historia vieja. Cada token de más es latencia en el camino caliente, y el
+    ruido tapa el objetivo.
+
+    Qué se conserva SIEMPRE: los `head_n` bloques de cabecera (OBJETIVO +
+    CONTEXTO opcional + HERRAMIENTAS). Sin ellos el modelo pierde qué hace y
+    con qué — es justo lo que NO puede caerse de la ventana. Del resto, las
+    últimas `window` interacciones; lo omitido se declara en una línea (no se
+    borra en silencio: el modelo tiene que saber que hubo pasos anteriores).
+
+    `window <= 0` desactiva la ventana (comportamiento previo a S4). El
+    transcript completo permanece intacto en memoria para telemetría/debug."""
+    if window <= 0:
+        return "\n\n".join(transcript)
+    cabecera, cuerpo = transcript[:head_n], transcript[head_n:]
+    if len(cuerpo) <= window:
+        return "\n\n".join(transcript)
+    omitidas = len(cuerpo) - window
+    return "\n\n".join(
+        cabecera
+        + [f"[... {omitidas} interacciones anteriores omitidas ...]"]
+        + cuerpo[-window:]
+    )
 
 
 def _record_denial(tool_id, action, reason: str) -> None:
@@ -330,9 +474,43 @@ async def run(
     if context:
         transcript.append(f"CONTEXTO DISPONIBLE:\n{context}")
     transcript.append(f"HERRAMIENTAS DISPONIBLES:\n{_format_catalog(catalog)}")
+    # [S4] Los bloques de CABECERA (objetivo + contexto + catálogo) nunca salen
+    # del prompt, por muchas vueltas que dé el bucle. Su número es variable
+    # (el contexto es opcional), así que se fija aquí en vez de a mano.
+    _head_n = len(transcript)
 
     tool_calls: list[dict] = []
     by_pair = {(e["tool_id"], e["action"]): e for e in catalog}
+
+    # [S11, doc 34 §S11] `asked_grants`: tool_ids ya preguntados en ESTE bucle
+    # (concedidos o no) — se pregunta una sola vez por tool y por ejecución,
+    # nunca en cada reintento del modelo. `limitations`: los que NO se
+    # concedieron; viaja hasta `ToolLoopResult` para que la respuesta final
+    # (o el responder, si el nodo aun así tiene éxito) pueda avisar de que el
+    # resultado puede estar incompleto por esto — el caso de Cordyceps.
+    asked_grants: set[str] = set()
+    limitations: list[str] = []
+
+    # [S9c, doc 34] REPETICIÓN ESTÉRIL. El caso real (2026-07-28): con el
+    # navegador roto, el bucle gastó sus 12 vueltas pidiendo `browser.open_url`
+    # una y otra vez, recibiendo EXACTAMENTE el mismo `TargetClosedError`, y
+    # solo entonces se rindió — 12 llamadas al LLM y un minuto largo para llegar
+    # a una conclusión que ya estaba clara en la segunda.
+    #
+    # Insistir en lo idéntico no es perseverancia, es no progresar: si la misma
+    # (tool, acción, error) se repite, el bucle primero AVISA al modelo (por si
+    # tiene otra vía) y a la tercera se rinde con ese error como causa. No se
+    # corta a la primera a propósito — un reintento tras un fallo transitorio
+    # (una red que va y viene, un elemento que aún no cargó) es legítimo y es
+    # justo lo que arregla las cosas la mitad de las veces.
+    _fallos: dict[tuple, int] = {}
+
+    def _firma_fallo(tool_id, action, error) -> tuple:
+        """Identifica "el mismo fallo otra vez". El error se recorta y se
+        normaliza: dos `TargetClosedError` con distinta URL son el MISMO
+        problema, y un timeout con distinto número de milisegundos también."""
+        det = " ".join(str(error or "").lower().split())[:120]
+        return (tool_id, action, det)
 
     # [Opt latencia 2026-07-21] EL bucle domina la latencia (1 llamada/acción).
     # Se fuerza un modelo RÁPIDO: un modelo fijado (TIE_TOOL_MODEL) tiene máxima
@@ -350,7 +528,7 @@ async def run(
         _t_iter = asyncio.get_event_loop().time()
         res = await mel_complete(ExecutionRequest(
             capability=Capability.AGENTIC,
-            prompt="\n\n".join(transcript),
+            prompt=_prompt_from(transcript, _head_n, _settings.TIE_TOOL_TRANSCRIPT_WINDOW),
             system_prompt=_SYSTEM_PROMPT,
             model_override=_tool_model,
             policy_override=_tool_policy,
@@ -365,7 +543,8 @@ async def run(
                     f" (served_by={getattr(res, 'served_by', '?')})")
         if not res.ok:
             return ToolLoopResult(ok=False, tool_calls=tool_calls, iterations=iteration,
-                                  error=f"el modelo no respondió: {res.error}")
+                                  error=f"el modelo no respondió: {res.error}",
+                                  limitations=limitations)
 
         # [A-1] ¿Hay FUNDAMENTO? Al menos una tool ejecutada con éxito. Sin esto,
         # ningún answer se acepta como éxito: sería una respuesta inventada con
@@ -382,11 +561,13 @@ async def run(
                 text_out = res.text.strip()
                 if grounded:
                     return ToolLoopResult(ok=bool(text_out), answer=text_out,
-                                          tool_calls=tool_calls, iterations=iteration)
+                                          tool_calls=tool_calls, iterations=iteration,
+                                          limitations=limitations)
                 return ToolLoopResult(
                     ok=False, answer=text_out, tool_calls=tool_calls, iterations=iteration,
                     error=(text_out[:500] if text_out else "sin respuesta")
                           + " [sin fundamento: ninguna herramienta se ejecutó con éxito]",
+                    limitations=limitations,
                 )
             transcript.append(f"TU RESPUESTA:\n{res.text[:500]}")
             transcript.append('ERROR: responde SOLO con JSON, {"tool": {...}} o {"answer": "..."}.')
@@ -398,7 +579,8 @@ async def run(
             if grounded:
                 return ToolLoopResult(ok=bool(answer), answer=answer,
                                       tool_calls=tool_calls, iterations=iteration,
-                                      error=None if answer else "el modelo respondió vacío")
+                                      error=None if answer else "el modelo respondió vacío",
+                                      limitations=limitations)
             # Sin fundamento. Dos casos, con trato distinto:
             # (a) NI SIQUIERA lo intentó → se le rechaza el answer y se le exige
             #     usar herramientas (hasta agotar vueltas).
@@ -418,6 +600,7 @@ async def run(
                 ok=False, answer=answer, tool_calls=tool_calls, iterations=iteration,
                 error=(answer[:500] if answer else "el modelo respondió vacío")
                       + " [sin fundamento: ninguna herramienta se ejecutó con éxito]",
+                limitations=limitations,
             )
 
         call = data.get("tool")
@@ -429,14 +612,78 @@ async def run(
         params = call.get("params") or {}
         transcript.append(f"HAS PEDIDO: {json.dumps(call, ensure_ascii=False)[:400]}")
 
-        # ¿Está en el catálogo de este nodo? Si no, es una tool inventada o fuera
-        # de su whitelist: se rechaza con MOTIVO, y el motivo vuelve al modelo
-        # para que busque otra vía — no se corta el bucle en seco.
+        # ¿Está en el catálogo de este nodo? Si no, es una tool inventada, fuera
+        # de whitelist sin remedio, o una CONCEDIBLE (S11, doc 34 §S11): existe
+        # de verdad y el agente la tiene permitida (Authority), pero el planner
+        # no se la dio a ESTE nodo — el caso de Cordyceps/NEW-5.
         entry = by_pair.get((tool_id, action))
         if entry is None:
+            from app.tie.authority import _internal_tool_ids
+
+            tool_obj = tool_manager.get_tool(tool_id) if tool_id else None
+            en_autoridad = (
+                authority is None or authority.allowed_tools is None
+                or tool_id in authority.allowed_tools or tool_id in _internal_tool_ids()
+            )
+            # Sin canal de aprobación no hay a quién preguntar: "concedible" no
+            # significa nada ahí, así que se deniega tal cual (mismo comportamiento
+            # que antes de S11) en vez de abrir un gate que nadie puede resolver.
+            grantable = (
+                tool_obj is not None
+                and (not allowed_tools or tool_id not in allowed_tools)
+                and en_autoridad
+                and tool_id not in asked_grants
+                and approval_gate is not None
+            )
+            if grantable:
+                asked_grants.add(tool_id)
+                granted, grant_reason = await _ask_grant(
+                    tool_id, approval_gate, instruction=instruction,
+                    wait_s=approval_wait_s, mission_id=session_key,
+                )
+                tool_calls.append({"tool_id": tool_id, "action": action,
+                                   "grant_requested": True, "granted": granted,
+                                   "reason": grant_reason})
+                if granted:
+                    allowed_tools = list(allowed_tools) + [tool_id]
+                    catalog = build_catalog(allowed_tools, tool_manager)
+                    by_pair = {(e["tool_id"], e["action"]): e for e in catalog}
+                    transcript.append(
+                        f"CONCEDIDA: el usuario te ha dado acceso a '{tool_id}'; úsala."
+                    )
+                else:
+                    limitations.append(tool_id)
+                    transcript.append(
+                        f"NO CONCEDIDA: sigues sin '{tool_id}' ({grant_reason}); si el "
+                        f"resultado queda incompleto por esto, DILO en tu respuesta final."
+                    )
+                    _record_loop_event("grant_denied",
+                                       {"tool": tool_id, "reason": grant_reason[:150]})
+                continue
+
             reason = _denial_reason(tool_id, action, allowed_tools, tool_manager)
             transcript.append(f"DENEGADO: {reason}")
             tool_calls.append({"tool_id": tool_id, "action": action, "denied": True, "reason": reason})
+            # [S9c] Pedir la MISMA tool inexistente una y otra vez tampoco
+            # avanza: mismo contador que para los fallos de ejecución.
+            _firma = _firma_fallo(tool_id, action, "denegada")
+            _fallos[_firma] = _fallos.get(_firma, 0) + 1
+            if _fallos[_firma] >= _MAX_REPEATED_FAILURES:
+                logger.info(f"[toolloop] {tool_id}.{action} denegada {_fallos[_firma]} veces; "
+                            f"se abandona esa vía")
+                _record_loop_event("repeated_denial",
+                                   {"tool": f"{tool_id}.{action}", "veces": _fallos[_firma]})
+                return ToolLoopResult(
+                    ok=False, tool_calls=tool_calls, iterations=iteration,
+                    error=f"insististe {_fallos[_firma]} veces en {tool_id}.{action}: {reason}",
+                    limitations=limitations,
+                )
+            if _fallos[_firma] >= _WARN_REPEATED_FAILURES:
+                transcript.append(
+                    f"AVISO: ya has pedido {tool_id}.{action} {_fallos[_firma]} veces y no "
+                    f"existe o no está permitida. Usa otra de la lista o responde explicando "
+                    f"qué no puedes hacer."
+                )
             # [2026-07-22, #209] Las DENEGACIONES también dejan telemetría. Sin
             # esto, una misión que quema iteraciones pidiendo tools inventadas o
             # fuera de whitelist es invisible: el timeline muestra N llamadas
@@ -486,6 +733,7 @@ async def run(
                 entry, params, approval_gate,
                 instruction=instruction, wait_s=approval_wait_s,
                 pre_approved=pre_approved,
+                mission_id=session_key,
             )
             tool_calls.append({"tool_id": tool_id, "action": action,
                                "needed_approval": True, "granted": granted, "reason": reason})
@@ -521,10 +769,35 @@ async def run(
             pass
 
         if result.get("success"):
-            payload = json.dumps(result.get("result"), ensure_ascii=False, default=str)
-            transcript.append(f"RESULTADO REAL de {tool_id}.{action}:\n{_truncate(payload)}")
+            transcript.append(
+                f"RESULTADO REAL de {tool_id}.{action}:\n"
+                f"{_observation(tool_id, action, result.get('result'))}"
+            )
         else:
-            transcript.append(f"FALLÓ {tool_id}.{action}: {result.get('error')}")
+            err = result.get("error")
+            transcript.append(f"FALLÓ {tool_id}.{action}: {err}")
+            # [S9c] ¿Es la enésima vez que falla EXACTAMENTE igual?
+            firma = _firma_fallo(tool_id, action, err)
+            _fallos[firma] = _fallos.get(firma, 0) + 1
+            veces = _fallos[firma]
+            if veces >= _MAX_REPEATED_FAILURES:
+                logger.info(f"[toolloop] {tool_id}.{action} ha fallado {veces} veces con el "
+                            f"mismo error; se abandona en vez de agotar las {max_iters} vueltas")
+                _record_loop_event("repeated_failure",
+                                   {"tool": f"{tool_id}.{action}", "veces": veces,
+                                    "error": str(err)[:150]})
+                return ToolLoopResult(
+                    ok=False, tool_calls=tool_calls, iterations=iteration,
+                    error=(f"{tool_id}.{action} falló {veces} veces con el mismo error "
+                           f"y no hay forma de avanzar por esa vía: {err}"),
+                    limitations=limitations,
+                )
+            if veces >= _WARN_REPEATED_FAILURES:
+                transcript.append(
+                    f"AVISO: ya has intentado {tool_id}.{action} {veces} veces y ha fallado "
+                    f"igual las {veces}. NO lo repitas: usa otra herramienta, otro enfoque, "
+                    f"o responde explicando qué no has podido hacer y por qué."
+                )
 
     # Se agotaron las vueltas sin respuesta fundamentada. Se devuelve el fallo
     # con su rastro: el nodo quedará FAILED y el usuario verá qué se intentó.
@@ -532,6 +805,7 @@ async def run(
     return ToolLoopResult(
         ok=False, tool_calls=tool_calls, iterations=max_iters,
         error=f"no se pudo completar el paso en {max_iters} iteraciones con las herramientas disponibles",
+        limitations=limitations,
     )
 
 

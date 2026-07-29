@@ -21,6 +21,7 @@ import asyncio
 from dataclasses import dataclass
 from typing import Optional
 
+from app.core import grounding
 from app.db.database import SessionLocal
 from app.db.models import ChatMessage
 from app.memory import memory_manager, memory_router
@@ -537,6 +538,11 @@ async def answer(
         context_tags={"project_id": project_id} if project_id else {},
     ))
     text = res.text or ""   # el MEL ya aplicó strip_reasoning (B21)
+    # [S2·S6, doc 34] Este camino NO ejecuta ninguna herramienta: si el texto
+    # afirma haber enviado, leído o visitado algo, es falso por construcción.
+    # Se le añade la coletilla honesta en vez de dejarlo salir tal cual (la
+    # campaña 01 documentó 3 fabricaciones reales en 20 minutos por aquí).
+    text = grounding.with_honesty_note(text)
     model = res.served_by.model if res.served_by else None
     tokens = res.usage.tokens if res.usage else None
 

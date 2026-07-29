@@ -94,3 +94,32 @@ def test_ready_set_orden_determinista_por_prioridad():
     ready = g.ready_set(graph)
     # prioridad desc, luego id asc → a(5), m(1), z(1)
     assert [n.id for n in ready] == ["a", "m", "z"]
+
+
+# ---------------------------------------------------------------------------
+# [P1, doc 34] Invariante: el catálogo que OFRECE el planner es el mismo que
+# ACEPTA este validador. No un test de que "aithera" esté — un test de que
+# ambos consumidores no puedan divergir NUNCA, porque son la misma llamada.
+# ---------------------------------------------------------------------------
+def test_catalogo_del_planner_y_del_validador_son_el_mismo():
+    from app.tools import tool_manager
+
+    ofrecido = {t["tool_id"] for t in tool_manager.tie_catalog()}
+    aceptado = g._tool_catalog()
+    assert ofrecido == aceptado
+
+
+def test_validador_por_defecto_acepta_una_tool_interna():
+    # Sin pasar tool_catalog explícito — ejercita el camino real de producción
+    # (planner.py llama a graph_mod.validate(g) sin kwarg). Antes de P1, esto
+    # rechazaba 'aithera' con "herramienta inexistente" pese a que el planner
+    # sí la ofrecía al modelo — el bug de raíz nº1 de doc 34.
+    from app.tools import tool_manager
+
+    assert "aithera" in tool_manager.internal_tool_ids(), (
+        "la tool 'aithera' debe existir y ser interna para que este test "
+        "ejercite el caso real"
+    )
+    graph = g.build("m1", [_n("n1", tools=["aithera"])])
+    ok, reason = g.validate(graph)  # sin tool_catalog: usa _tool_catalog() real
+    assert ok is True, reason

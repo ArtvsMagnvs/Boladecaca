@@ -32,6 +32,15 @@ _RESEARCHABLE: tuple[Capability, ...] = tuple(
     c for c in Capability if c not in (Capability.RESEARCH, Capability.VISION, Capability.AGENTIC)
 )
 
+# [P4, doc 34, 2026-07] Proveedores que ejecutan un binario CLI por llamada
+# (Claude Code, Codex): investigarlos arranca un proceso y espera minutos, y en
+# la campaña 00 de test en vivo fallaron TODOS (0 informes de ~9 intentos reales
+# — claude_code/sonnet, /fable, /opus, /haiku, codex/gpt-5.6-sol, /gpt-5.6-luna,
+# /gpt-5.5, /gpt-5.4). Se quedan con la puntuación curada a mano de catalog.py;
+# el auto-catálogo nunca los toca. No es una limitación técnica — es una
+# decisión: para estos dos, "investigar" siempre cuesta caro y nunca aporta.
+_NON_RESEARCHABLE_PROVIDERS: frozenset[str] = frozenset({"claude_code", "codex"})
+
 _CAP_DESCRIPTIONS = {
     Capability.CHAT: "conversación general con memoria, tono natural",
     Capability.CLASSIFY: "etiquetar/categorizar texto corto, rápido",
@@ -110,7 +119,13 @@ async def investigate(provider: str, model: str, *, force: bool = False) -> bool
     """Investiga UN (provider, model) y persiste un informe por capacidad
     (best-effort: nunca lanza). `force=True` lo usa el job de refresco (ignora
     la comprobación de frescura — ya sabe que toca re-investigar). Devuelve True
-    si se generó/actualizó un informe."""
+    si se generó/actualizó un informe.
+
+    [P4] Los proveedores por CLI nunca se investigan, force o no — ver
+    `_NON_RESEARCHABLE_PROVIDERS`. Se comprueba ANTES que la frescura, a
+    propósito: esto no es "todavía no toca", es "nunca toca"."""
+    if provider in _NON_RESEARCHABLE_PROVIDERS:
+        return False
     if not force and not _is_stale(provider, model):
         return False
 
@@ -285,11 +300,14 @@ def register() -> None:
 
 
 async def refresh_all() -> int:
-    """Re-investiga TODOS los modelos configurados actualmente (job periódico,
-    cada MEL_RESEARCH_REFRESH_DAYS) — los proveedores cambian de versión sin
-    avisar, así que un informe viejo puede describir un modelo que ya no es el
-    mismo. `force=True`: el propio disparo del job ya es la señal de que toca.
-    Best-effort: un fallo en un modelo no detiene a los demás."""
+    """Re-investiga TODOS los modelos configurados actualmente, DE GOLPE
+    (`force=True`: el propio disparo ya es la señal de que toca). Pensado para
+    un disparo manual puntual (p.ej. tras cambiar de política), NO para el job
+    programado — eso es `nightly_refresh()` (P4, doc 34): investigar los 16 de
+    golpe es exactamente lo que competía con el usuario 45 minutos seguidos en
+    la campaña de test en vivo. Los proveedores por CLI se saltan igual (el
+    guard vive en `investigate()`, no aquí). Best-effort: un fallo en un modelo
+    no detiene a los demás."""
     from app.mel import registry
 
     refreshed = 0
@@ -301,4 +319,38 @@ async def refresh_all() -> int:
             logger.error(f"[research] refresh_all: fallo en {ref.key} (no crítico): {type(e).__name__}: {e}")
     if refreshed:
         logger.info(f"[research] refresh_all: {refreshed} modelo(s) re-investigado(s)")
+    return refreshed
+
+
+async def nightly_refresh(max_models: Optional[int] = None) -> int:
+    """[P4, doc 34] El job que SÍ programa el scheduler, cada noche junto a los
+    del MOS. A diferencia de `refresh_all()`:
+      1. Nunca proveedores por CLI (vía el guard de `investigate()`).
+      2. `force=False` — solo investiga lo que de verdad está desactualizado
+         (`_is_stale`, respeta `MEL_RESEARCH_REFRESH_DAYS`); la mayoría de las
+         noches no habrá nada que hacer y esto será un no-op barato.
+      3. Como mucho `max_models` (default `settings.MEL_RESEARCH_MAX_PER_NIGHT`,
+         1) — reparte la puesta al día en varias noches en vez de investigar
+         los 16 configurados en la misma pasada. Con esto, el peor caso ya no
+         es "45 minutos compitiendo por el proveedor": es, como mucho, UNA
+         llamada de fondo a las 04:40 con el usuario dormido.
+    Best-effort: un fallo en un modelo no detiene a los demás ni al resto de la
+    noche (recuerda: si nada se investigó, sigue habiendo margen la noche
+    siguiente — no hay prisa, doc 34 P4)."""
+    from app.mel import registry
+
+    if max_models is None:
+        max_models = settings.MEL_RESEARCH_MAX_PER_NIGHT
+
+    refreshed = 0
+    for ref in registry.list_available():
+        if refreshed >= max_models:
+            break
+        try:
+            if await investigate(ref.provider, ref.model):  # force=False a propósito
+                refreshed += 1
+        except Exception as e:
+            logger.error(f"[research] nightly_refresh: fallo en {ref.key} (no crítico): {type(e).__name__}: {e}")
+    if refreshed:
+        logger.info(f"[research] nightly_refresh: {refreshed} modelo(s) re-investigado(s) (máx {max_models}/noche)")
     return refreshed

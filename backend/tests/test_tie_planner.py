@@ -33,7 +33,7 @@ def _fake_router(monkeypatch, responses):
     modelo). Devuelve el contador de llamadas."""
     calls = {"i": 0}
 
-    async def _complete(prompt, *, system_prompt=None, capability="chat"):
+    async def _complete(prompt, *, system_prompt=None, capability="chat", **kw):
         i = calls["i"]
         calls["i"] += 1
         r = responses[min(i, len(responses) - 1)]

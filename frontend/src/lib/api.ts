@@ -615,6 +615,9 @@ export interface Approval {
   action_type: string;
   status: "pending" | "approved" | "rejected" | "expired";
   channel: string | null;
+  // [S7·S8] Solo presente en gates que lo declaran (p.ej. tie_tool_permission,
+  // R1) — permite a Missions.tsx correlacionar un gate con su misión.
+  mission_id: string | null;
   requested_at: string | null;
   resolved_at: string | null;
 }

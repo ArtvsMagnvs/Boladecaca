@@ -38,9 +38,26 @@ _AITHERA_AGENT_ACTIONS = {"assign_tools", "run_agent_task"}
 
 # Tools cuyo alcance es el sistema de archivos: si la misión tiene una carpeta
 # de proyecto asignada, no pueden salirse de ella.
+#
+# [2026-07-27, doc 34 — bug reportado en vivo] Este dict solo cubría
+# `filesystem`/`git`. `document` (lectura/escritura de .docx/.xlsx/.pdf) y
+# `download` (descarga a disco) escriben archivos exactamente igual que
+# `filesystem.write_file`, pero como no estaban aquí, un agente con carpeta de
+# proyecto asignada podía escribir un .docx fuera de esa carpeta sin que
+# `Authority.check()` lo viera — el caso real: un agente del proyecto
+# "Cordyceps" escribió `Cordyceps_Wiki.docx` en `C:\Users\...\` en vez de
+# dentro de la carpeta del proyecto. `browser` se añade también, pero SOLO
+# para sus dos acciones que bajan algo a disco (`download_file`/
+# `upload_file`, únicas con parámetro `path`); navegar/hacer clic/escribir en
+# una web sigue sin restricción de carpeta a propósito (el usuario lo pidió
+# explícitamente: "aunque hagan búsquedas web fuera de la carpeta" — internet
+# es externo por naturaleza, el disco local no).
 _PATH_PARAMS = {
     "filesystem": ("path", "src", "dest"),
     "git": ("repo_path",),
+    "document": ("path",),
+    "download": ("path",),
+    "browser": ("path",),
 }
 
 

@@ -2666,7 +2666,900 @@ suite completa pytest, batería `mission_lab.py` + baseline, commit de todo.
 
 ---
 
-*Última actualización: 2026-07-21 — **bloque UX + MEL-UI + OBSERVABILIDAD (§25)**; antes: 2026-07-20 — **V1.0 bloque ORQUESTRATOR (R1-R7) CERRADO,
+## 26. Auditoría global del runtime — campañas de test en vivo + S1 (2026-07-27)
+
+Doc `PLAN_MAESTRO_2026/34_AUDITORIA_GLOBAL_RUNTIME.md` — auditoría global pedida
+por el usuario tras una sesión real con 5 fallos (catálogo de tools divergente,
+narración sin anclar, coste sin medir, auto-catálogo del MEL compitiendo con el
+usuario, camino caliente lento). Propuesta P1-P5 sin capas nuevas, plan de
+sesiones S1-S5 (luego S1-S9 tras la campaña 01), y protocolo de campañas de
+test en vivo para MiniMax M3 (doc 34 §11, regla de oro: **nunca toca código**).
+
+- **Campaña 00** (`test-lab/campanya-00-baseline/`, MiniMax M3): 18 tests. Su
+  RESUMEN.md tuvo 3 falsos positivos (verificados y refutados por Claude
+  contrastando contra la evidencia CRUDA que el propio MiniMax archivó —
+  `timing.txt`/`log.txt`/`execution-final.json`: el "cuelgue" era timeout de
+  cliente de 30s + falta de deadline arriba de los 180s del provider (→NEW-2);
+  la "mentira" del approval era verdadera esa vez, pero reveló que la
+  narración del chat no se deriva del estado (refuerza P2); los "89
+  tool_calls" eran `len()` sobre un string JSON de 89 caracteres, la llamada
+  real fue 1). Minado el log completo (nadie lo había revisado entero):
+  **LOG-1** — dos tests de `test_tie_planner.py` (`test_enricher_presupuesto_
+  agotado_devuelve_vacio`, `test_enricher_error_del_mos_no_rompe`) llevaban
+  desde S2-extra probando un `TypeError` de binding en vez de lo que decían
+  probar (`context()` ganó `project_id` y solo se actualizó UNO de los tres
+  fakes) — el presupuesto de latencia del enricher, protección central del
+  camino caliente, sin cobertura real. **LOG-2**: la suite de tests escribe en
+  `logs/system.log` de producción (127 líneas de fakes mezcladas con actividad
+  real). **LOG-3**: fallo real nocturno del dedup del MOS + un pin de proyecto
+  huérfano a un modelo no configurado. §11.7 (reglas R1-R8) nace de los 3
+  falsos positivos, para que no se repitan en campañas futuras.
+- **Campaña 01** (`test-lab/campanya-01-cobertura/`): Bloque R completo (9/9,
+  con `VEREDICTO.md`+`telemetry.json` en todos). Bloques N/X no alcanzados —
+  el propio Bloque R encontró algo más grave: **fabricación de resultados de
+  tool en el CAMINO CORTO** (confirmado 3 veces en 20 min — fuentes web con
+  cita nunca visitadas, estructura de `backend/app` inventada al 0% de
+  coincidencia con el disco, resumen de documento sin leerlo — pasa cuando
+  `classify` falla su JSON con `llama3`, ~40% de las veces en la máquina del
+  usuario, y el camino corto no tiene el guardarraíl de A-1/S1 porque nunca se
+  diseñó con tools). Nace **P6/S6**. Otros hallazgos: el panel de Misiones NO
+  ofrece el gate de permiso de tool (solo existe en el Chat) → **S7**, junto
+  con permisos individuales inertes bajo el perfil Autónomo sin aviso en la
+  UI y un mensaje de log que atribuye la causa equivocada; `GET /api/tie/
+  missions/{mission_id}` 404 con el id real, 200 con `trace_id` (reabre la
+  tarea #208) → **S8**; fuga de sesión de navegador entre misiones
+  concurrentes reproducida en vivo pese al fix de F-1/S3 → **S9** (reabre).
+  El aislamiento de `mem_personal` por proyecto, pendiente desde la campaña
+  00, esta vez sí se probó bien: **sin fuga observada** (aunque sin barrera
+  estructural — el chat nunca manda `project_id`, deuda anotada, no bug).
+- **S1 EJECUTADA (2026-07-27, Sonnet)**: **P1** — `tool_manager.tie_catalog()`
+  (accesor único con `include_internal=True`) usado por los 4 sitios que antes
+  llamaban por separado (`graph.py` tenía el bug: le faltaba el flag, así que
+  el planner ofrecía `aithera` y el validador la rechazaba — 8 reproducciones
+  confirmadas). Test de invariante nuevo (el catálogo que el planner OFRECE es
+  la MISMA llamada que el que el validador ACEPTA — no pueden divergir).
+  **P4** — `mel/research.py` excluye proveedores por CLI del auto-catálogo
+  (`claude_code`/`codex`, fallaban siempre y costaban minutos); nace
+  `nightly_refresh()` (como mucho `MEL_RESEARCH_MAX_PER_NIGHT`=1 modelo,
+  `force=False`); el job pasa de dispararse a los 900s del ARRANQUE del
+  backend a un cron nocturno (04:40, junto a los del MOS). Decisión explícita
+  documentada sobre el resto de fallos JSON del research (no CLI): se deja
+  best-effort a propósito — tras las dos correcciones de alcance, el peor caso
+  ya es "como mucho una llamada perdida cada 14 días de madrugada", no "45
+  minutos compitiendo con el usuario". **NEW-3**: resuelta SIN código — la
+  campaña 01 verificó en vivo que la hipótesis del mismatch de `mission_id`
+  no se reproduce; el problema real (el gate de permiso de tool no tiene UI en
+  Misiones) es distinto y se movió a S7. **Hallazgo real de la verificación**:
+  2 test-doubles de `ToolManager` (patrón LOG-1 — un doble de un contrato que
+  evoluciona debe evolucionar con él) no implementaban `tie_catalog()`,
+  corregidos. Verificado en el sandbox: ~370 tests relevantes en verde;
+  `test_product_contracts.py` 8/13 en aislamiento (los 5 restantes tienen un
+  `approval_wait_s=120` real por diseño, ajeno a P1/P4, no ejecutable en el
+  presupuesto de este sandbox). **Pendiente en Windows**: suite completa +
+  verificación en vivo repitiendo los 8 encargos del 25-jul. El plan de
+  sesiones completo (S1-S9) vive en doc 34 §10; siguiente sesión: **S6**
+  (grounding en el camino corto, Opus) — la más urgente de las que quedan.
+- **S10 EJECUTADA (2026-07-27, Sonnet)** — no era parte del plan S1-S9, la
+  encontró el usuario probando P1 en vivo: creó un agente en el proyecto
+  "Cordyceps" con `filesystem`+`browser`, le pidió leer el GDD del proyecto y
+  escribir un documento de investigación — el agente escribió
+  `Cordyceps_Wiki.docx` **fuera** de la carpeta del proyecto, en
+  `C:\Users\Alejandro\`. Causa raíz: `app/tie/authority.py::_PATH_PARAMS` (lo
+  que `Authority._check_path_scope()` usa para saber qué parámetros de qué
+  tools tienen que quedarse dentro de `Authority.repo_path`, R4 doc 23) solo
+  cubría `filesystem`/`git` — `document` (#218, lectura/escritura de
+  `.docx`/`.xlsx`/`.pdf`) y `download` escriben a disco igual que
+  `filesystem.write_file` pero nunca pasaban por la frontera de proyecto.
+  **Arreglo**: `_PATH_PARAMS` gana `document`/`download`/`browser` — esta
+  última SOLO para sus 2 acciones con parámetro `path`
+  (`download_file`/`upload_file`); navegar/buscar/hacer clic en la web sigue
+  sin restricción a propósito (petición explícita del usuario: "aunque hagan
+  búsquedas web fuera de la carpeta" — internet es externo, el disco local
+  no). El resto del mecanismo (`_check_path_scope`, `commonpath` contra `..`)
+  no cambió. **Caveat**: solo se activa si el proyecto tiene `repo_path`
+  configurado (📁 en `ProjectPopup.tsx`, opcional desde V0.87 W2e) — sin
+  carpeta asignada no hay frontera que imponer, por diseño ya documentado.
+  Tests nuevos en `test_agent_execution.py` (3, mismo estilo que los de
+  `filesystem` ya existentes): repro exacta del bug, descargas, y que
+  `browser` solo restringe la descarga (no la navegación). Verificado en el
+  sandbox: los 3 nuevos + los 16 del archivo en verde. Documentado en doc 34
+  §10 (nueva sesión S10). No se creó ningún documento "Cordyceps Wiki" real —
+  era solo el caso de prueba del usuario, no un encargo. **Pendiente en
+  Windows**: repetir el escenario exacto (agente con `document` asignado,
+  proyecto con carpeta) y confirmar que el archivo aterriza dentro.
+- **Doc 34 reestructurado (2026-07-28, Fable 5)**, petición del usuario: cada
+  sesión pendiente lleva un **«Diseño ejecutable»** contrastado contra el
+  código (archivo, función, cambio exacto, tests) para que el modelo que la
+  ejecute implemente y verifique, no diseñe. Dos **fusiones**: **S2·S6** (el
+  mismo grounding aplicado a las 3 capas que redactan prosa) y **S7·S8** (el
+  panel de Misiones y su API; el fix de S7 necesita el id único de S8). Al
+  diseñar se encontraron **dos causas raíz** que estaban como "hay que
+  investigar": **S5** — `executor._execute_node` construye el contexto de un
+  nodo SOLO con memoria del MOS; el resultado de los nodos de los que depende
+  (`node.depends_on`) no se le pasa por ningún camino, así que "lee X y haz Y"
+  solo funciona si ambas cosas caen en el mismo nodo (no hay tubería, y esa es
+  la causa real de "el contenido no llegó a la sesión"); **S9** —
+  `browser_tool._ensure_browser()` no tiene lock, así que dos misiones
+  concurrentes lanzan dos navegadores sobre el mismo perfil persistente, Chrome
+  bloquea el segundo y los globals se pisan → `TargetClosedError` en AMBAS.
+  El **§11 (protocolo de campañas)** pasa de MiniMax a **Claude** y gana 4
+  bloques nuevos: **REG** (regresión de cada sesión cerrada, abre toda
+  campaña), **F** (entradas variadas: erratas, idioma mezclado, mensajes
+  kilométricos, contradicción, referencia al turno anterior, ambigüedad…),
+  **N** (las 10 áreas nunca probadas) y **X** (adversarial: inyección desde
+  web/archivo, traversal, doble aprobación en carrera).
+- ✅ **S2·S6 EJECUTADA (2026-07-28, Fable 5) — narración anclada en las TRES
+  capas** (P2 de la campaña 00 + P6 de la campaña 01, fusionadas). Los dos
+  fallos que cierra: (a) el email del 25-jul que SE ENVIÓ y el chat dijo
+  "necesito tu confirmación" sin que existiera ninguna aprobación donde
+  confirmarlo; (b) las 3 fabricaciones del camino corto de la campaña 01
+  (fuentes web con cita nunca visitadas, estructura de `backend/app` inventada
+  al 0% de coincidencia, resumen de un documento sin leerlo).
+  **`app/core/grounding.py` NUEVO** (funciones puras, 0 LLM, ES+EN):
+  `claims_completed_action` · `claims_pending_approval` ·
+  `claims_future_action` · `with_honesty_note`. **Desviación deliberada del
+  diseño** (que lo situaba en `app/tie/`): lo usan tres módulos —
+  `tie/responder`, `orchestrator/consolidator` y `services/chat_service`— y los
+  internos del TIE no se importan desde fuera (doc 16); `app/core/` es la capa
+  compartida, como `strings.py`/`events.py`. **Capa 1 — consolidator SIN LLM en
+  ningún caso**: fuera `_SYSTEM_PROMPT`, `_detalle()` y la llamada a
+  `mel_complete`; los `outcome` que el responder ya redactó se concatenan de
+  forma determinista (el cap por outcome sube 400→1200 chars: lo que era una
+  plantilla de respaldo es ahora LA respuesta). El propio código YA reconocía
+  que esa pasada no aportaba con 1 objetivo — se extiende a N. **Capa 2 —
+  `responder._is_grounded()`**: si el texto dice que falta el visto bueno y
+  NINGÚN nodo está en `WAITING_APPROVAL` (fuente: el grafo, que el executor
+  persiste en cada transición), se descarta y sale la plantilla determinista.
+  **Capa 3 — camino corto**: `chat_service.answer()` y
+  `NullRuntime.stream_task()` añaden la coletilla honesta; en streaming se
+  acumulan los chunks y se juzga la respuesta ENTERA al terminar (una
+  afirmación puede repartirse entre chunks). **El riesgo atendido es el
+  ruido**: los patrones NUNCA marcan verbos cognitivos ("he pensado", "he
+  entendido") ni acciones sobre la propia conversación ("he leído tu
+  mensaje"), y una promesa seguida de su cumplimiento ("voy a leer… lo he
+  leído y dice X") tampoco se marca — 14 de los 34 tests son negativos por
+  esto. **Simplificación sobre el diseño**: la 2.ª comprobación del responder
+  ("afirma acción sin ningún paso hecho") se retiró por código muerto —
+  `build()` ya desvía a `_template_failure` sin nodos DONE. **Limpieza
+  propia**: quitar `_detalle()` dejó huérfanas 5 claves i18n × 4 idiomas
+  (`orchestrator.state_*`), retiradas; su test se actualizó al contrato nuevo
+  en vez de borrarse (patrón LOG-1). Tests: `test_audit_s2s6_grounding.py`
+  NUEVO (34) + 191 de las áreas tocadas en verde. **Comprobación de
+  mutación**: desactivando el grounding del runtime, el test del streaming
+  falla — ejercita el código real. **Pendiente en Windows**: suite completa +
+  criterio de cierre en vivo (los 3 casos de T05 y el caso del email).
+- ✅ **S3 EJECUTADA (2026-07-28, Sonnet) — presupuesto de llamadas LLM por
+  camino, MEDIDO** (P3, doc 34 §10): hasta ahora "va lento" no tenía número —
+  había que reconstruir del log a mano qué camino tomó un turno. `tie/
+  pipeline.py` gana `_record_path()` (best-effort, `telemetry.record("path",
+  name=...)`), llamado en las CUATRO funciones reales que deciden el camino de
+  un turno: `_short_path`/`_short_path_stream` (+ el precheck/quick_answer) →
+  "chat", `_direct_action_path` → "direct", `_complex_path` → "planned"
+  (cubre a la vez el chat complejo, la degradación a corto tras un plan
+  inválido, y `submit_mission` — los tres pasan por la misma función).
+  `orchestrator/__init__.py` gana `_record_multi_path()` en los 3 sitios donde
+  un mensaje se confirma multi-objetivo (`_orchestrate`, `_orchestrate_stream`,
+  `submit`), registrado bajo el id del propio run (no hay "mission" para la
+  orquestación en sí, cada objetivo tiene la suya). **4 presupuestos nuevos**
+  en `config.py` (env-overridables): `BUDGET_LLM_CHAT=0` (el camino corto
+  nunca crea mission_id, techo teórico) · `BUDGET_LLM_DIRECT=6` ·
+  `BUDGET_LLM_PLANNED=12` · `BUDGET_LLM_MULTI_PER_OBJECTIVE=8`.
+  `telemetry.mission_timeline()` extendida de forma ADITIVA (el `summary` que
+  ya devolvía gana `llm_calls`/`path`/`budget`/`within_budget`/
+  `slowest_llm_ms`; sin evento "path" queda "desconocido" sin presupuesto —
+  nunca se marca en rojo por falta de dato). `scripts/mission_lab.py` gana
+  `_budget_check()` (import directo de `app.telemetry`, mismo patrón que
+  `mission_report.py`: comparten entorno/BD) con PASS/FAIL impreso por
+  escenario y `sys.exit(1)` si alguno se pasa, más `--baseline <json>` que
+  compara contra la pasada anterior (llamadas y duración) y deja el archivo
+  actualizado — convierte "va lento" en un número comparable entre campañas.
+  **Hallazgo real durante la implementación**: `_short_path()` (la variante
+  NO-streaming que usa `handle()`, distinta de `_short_path_stream` del chat
+  de Electron) se había quedado sin instrumentar en la primera pasada — el
+  test `test_camino_corto_registra_path_chat` lo cazó de inmediato. **Segundo
+  hallazgo, higiene de tests (patrón LOG-1)**: `mission_events` es una tabla
+  GLOBAL que otros archivos de test también escriben sin conocer la fixture de
+  éste; limpiar solo al SALIR dejaba que el residuo de un archivo anterior
+  (p.ej. un test de orquestador multi-objetivo) se colara en el primer test de
+  éste cuando corrían juntos en la misma sesión de pytest — arreglado limpiando
+  también al ENTRAR. Tests: `test_telemetry_budget.py` NUEVO (9 — las 4
+  bifurcaciones reales con el pipeline real y fakes solo en la frontera del
+  LLM/planner, `mission_timeline()` con eventos sintéticos en ambos sentidos
+  de `within_budget`, "desconocido" sin romper, contrato aditivo congelado,
+  presupuesto "multi" usa el setting per-objective). **Comprobación de
+  mutación**: desactivando `_telemetry.record("path", ...)` los 4 tests de
+  bifurcación fallan — ejercitan código real. Suite: 9/9 nuevos + 180/180 del
+  subconjunto orchestrator/tie/telemetry en verde (un fallo puntual de OTRO
+  test por una tarea de fondo en vuelo, no reproducido en repeticiones — mismo
+  tipo de flake fire-and-forget ya conocido en el proyecto, no una regresión).
+  **Pendiente en Windows**: `mission_lab.py --baseline` contra el backend real
+  (aquí solo se probó con eventos sintéticos en SQLite, sin backend HTTP en
+  marcha en el sandbox).
+- ✅ **S4 EJECUTADA (2026-07-28) — camino caliente rápido + DEADLINES**
+  (P5 + NEW-2, doc 34 §10). **El contexto de NEW-2**: no había ni un `timeout`
+  ni un `wait_for` en `mel/executor.py`, `tie/intents.py` ni `tie/router.py` —
+  el único límite del camino caliente eran los 180 s del provider de Ollama y,
+  con cadena de fallback, 180 s **por salto**; sin plazo, el chat podía pasar
+  minutos en "analizando" sin escribir una línea (lo que la campaña 00 leyó
+  como "cuelgue": no lo era, el event loop seguía vivo — era falta de plazo).
+  **(1) Clasificador con modelo/política propios**: `TIE_CLASSIFY_MODEL`
+  (default `""`) + `TIE_CLASSIFY_POLICY` (default `"speed"`);
+  `router.complete()` gana `model_override`/`policy_override` opcionales
+  (default None → request idéntico al de antes para planner/responder, con
+  test de no-regresión) e `intents.classify()` los resuelve con el MISMO
+  patrón que `toolloop.run` ya usaba (modelo fijo manda; si no, la política
+  rápida). El clasificador deja de heredar la política de CALIDAD del usuario
+  — corría en el camino caliente de CADA mensaje no trivial. **(2) Ventana
+  deslizante del transcript** (`toolloop._prompt_from`, función pura): el
+  prompt se acota a la cabecera (objetivo + contexto + catálogo, SIEMPRE — sin
+  ellos el modelo pierde qué hace y con qué) + las últimas
+  `TIE_TOOL_TRANSCRIPT_WINDOW` (8) interacciones, declarando en una línea
+  cuántas se omitieron; el transcript completo sigue íntegro en memoria para
+  telemetría. Antes crecía sin límite y se reenviaba entero (4000 chars × 12
+  vueltas ≈ 50k). **(3) Deadlines por capa**: `MEL_REQUEST_DEADLINE_S` (120)
+  en `_try_one` con razón PROPIA `"timeout"` (no la genérica `"transient"`:
+  agotar el plazo es un diagnóstico distinto de un fallo de red) añadida a
+  `_BREAKER_REASONS`, así un proveedor colgado se salta durante `OPEN_S` en
+  vez de costar el plazo en cada mensaje; `MEL_STREAM_FIRST_CHUNK_S` (60) vía
+  `_with_first_chunk_deadline()` — plazo SOLO al primer chunk (cortar una
+  respuesta que ya avanza sería peor) y **reusando el `except` que ya
+  existía** para registrar/abrir breaker/emitir el error, sin un segundo
+  camino de degradación; `TIE_CLASSIFY_DEADLINE_S` (60) degradando por el
+  MISMO camino que ya existía para su error. **(4) Latido del stream**
+  (`pipeline._heartbeat_until`, `TIE_HEARTBEAT_S`=15, clave i18n
+  `status.still_working` ×4 idiomas) en los tres puntos donde un turno podía
+  quedarse mudo (classify, acción directa, camino complejo) — observa pero no
+  consume: el caller sigue haciendo `await task`, así que una excepción del
+  trabajo llega intacta. **NO se tocó el punto 2 del diseño (thrash de
+  Ollama)**: el propio diseño lo marcaba "VERIFICAR antes de tocar" y su
+  verificación exige `ollama ps` contra el backend real — cambiar una política
+  del MEL por una corazonada no es un arreglo. **Hallazgo real (patrón LOG-1,
+  tercera vez en este bloque)**: añadir dos kwargs a `router.complete` rompió
+  test-doubles de 4 archivos que fijaban la firma vieja; solo UNO reventó su
+  test y de forma engañosa (el `TypeError` lo tragaba el fail-safe de
+  `classify` y el intent degradaba a charla — parecía "el clasificador no
+  detecta el modelo", no "el doble está roto"). Los 6 dobles corregidos con
+  `**kw`. Tests: `test_audit_s4_hotpath.py` (NUEVO, 18). **Comprobación de
+  mutación**: sin el `wait_for` del MEL el test cuelga y falla; sin la
+  propagación de overrides fallan los dos de classify. Regresión: **420
+  passed** (subconjunto tie/mel/telemetry/audit/orchestrator). **Pendiente en
+  Windows**: el thrash de Ollama (`ollama ps` × 3 mensajes) y el objetivo
+  medible contra el `summary` de S3 (classify < 3 s p95, paso de toolloop
+  < 4 s p95, ningún turno > 60 s sin evento).
+- ✅ **S5 EJECUTADA (2026-07-28) — el resultado de una tool llega ENTERO al
+  paso siguiente** (NEW-1, doc 34 §10). **El fallo que cierra** (campaña 00,
+  T13): el agente leyó el GDD con `read_docx` → `"ok": true` — y acto seguido
+  respondió *"el paso que debía redactar el resumen falló porque el contenido
+  completo no llegó a cargarse en la sesión"*. Era LITERALMENTE cierto: **no
+  había tubería**. `executor._execute_node` construía el contexto del nodo SOLO
+  con memoria del MOS; el `output` de los nodos de los que depende
+  (`node.depends_on`) no llegaba por ningún camino. "Lee X y haz Y con ello"
+  —el caso de uso central de un asistente— solo funcionaba si ambas cosas caían
+  en el MISMO nodo (el toolloop sí ve sus propias observaciones); en cuanto el
+  planner las separaba, el segundo trabajaba a ciegas y, como la honestidad SÍ
+  funciona, el fallo quedaba invisible detrás de una disculpa educada.
+  **(1) La tubería** (`executor._handoff_from_deps`, NEW): los `output` de las
+  dependencias en DONE se anteponen al contexto de memoria (el trabajo de ESTA
+  misión pesa más que un recuerdo); solo lo que salió BIEN (el resultado de un
+  paso fallido no es material de trabajo); recorte por dependencia con
+  `TIE_NODE_HANDOFF_CHARS` (12000) y marca `[TRUNCADO: X de Y caracteres]` —
+  honestidad deliberada: el paso siguiente debe SABER que le falta contenido
+  para pedirlo, en vez de suponer que el documento era así de corto.
+  **(2) Observación con cabeza, no con tijera** (`toolloop._observation`, NEW):
+  las acciones cuyo VALOR es el contenido (`document.read_*`,
+  `filesystem.read_file`, `browser.get_text/get_html`) entregan el campo `text`
+  en PLANO con presupuesto propio (`TIE_OBSERVATION_CHARS_CONTENT`, 24000) más
+  una línea de metadatos; el resto sigue igual (JSON a 4000). Esto explica el
+  "a veces lee más, a veces menos, sin patrón visible": el recorte actuaba
+  sobre el JSON YA SERIALIZADO, así que cuánto contenido real sobrevivía
+  dependía de la proporción ruido-de-estructura/contenido de cada documento —
+  no era aleatorio. **(3) `read_docx` honesto** (`document_tool`): extrae
+  además cabeceras y pies (try/except, para que una sección rara no tumbe la
+  lectura del cuerpo) y añade `note`+`truncated`, mismo patrón que el `note` de
+  `read_pdf`. Antes los omitía EN SILENCIO: en un GDD con portada el título
+  vive justo ahí, y bastaba para un "leyó solo una parte" sin que interviniera
+  ningún límite de tamaño. **Hallazgo de la comprobación de mutación (y test
+  nacido de él)**: al desactivar `_observation` en su punto de llamada, los
+  tests de la función pura seguían pasando — la lógica podía ser correcta y
+  estar DESCONECTADA; se añadió un test que ejecuta `toolloop.run` REAL sobre
+  un archivo REAL de ~20k y mira el prompt de la 2.ª vuelta. Tests:
+  `test_audit_s5_handoff.py` (NUEVO, 13). Regresión: **433 passed**
+  (420 de S4 + 13). **Pendiente en Windows**: repetir el caso real (agente con
+  `document` en un proyecto con carpeta, "lee el GDD y hazme un resumen") y
+  confirmar que el paso 2 trabaja sobre el contenido del paso 1.
+- 📋 **Verificación en vivo del usuario (2026-07-28) — 3 hallazgos NUEVOS**
+  (doc 34 §12.4, ninguno tocado todavía). Confirmados como CORRECTOS: el email
+  de S2·S6 (enviado de verdad, contado con su `message_id`, **sin** decir
+  "necesito tu confirmación" — el fallo del 25-jul, cerrado), los dos casos de
+  fabricación del camino corto (honestos y sin coletilla sobrante — el riesgo
+  de ruido del fix no se materializó), el DOCX de S10 dentro de la carpeta del
+  proyecto, y el catálogo de S1. De la MISMA misión salen tres cosas nuevas:
+  **NEW-4** — un nodo puede quedar "Hecha" contradiciendo su propio texto
+  ("No puedo completar este objetivo…" con check verde): `_validate_result`
+  pregunta "¿corrió alguna tool con éxito?", no "¿logró el objetivo?", así que
+  una prosa de rendición fundamentada por un `list_dir` cuela como resultado
+  válido → sesión propia (candidata: reusar `core/grounding.py` para detectar
+  la rendición y degradar a FAILED, determinista y sin LLM). **NEW-5** — un
+  agente con `browser`/`search` asignadas y el nodo recibió solo
+  `document`+`filesystem`; dos causas posibles (el planner no las asignó, o
+  `Authority`/el recorte del toolloop las quitó) → medir el `plan` persistido
+  antes de tocar; relacionado con S11 pero NO es lo mismo (allí la tool no
+  está; aquí sí está y no llega). **NEW-6** — cabecera "Completada" con cuerpo
+  "estoy esperando tu confirmación para un paso": el grounding no aplica (ese
+  texto lo escribe `_execute_and_respond`, no un LLM); misma familia que la
+  ventana de desfase de T5 pero sin autocorregirse → S7·S8.
+- ✅ **S7·S8 EJECUTADA (2026-07-28) — gate de permiso de tool visible en
+  Misiones + identificador único de misión** (fusión de la antigua S7 +
+  S8, doc 34 §10). **1 · `resolve_trace_id`** (`tie/tracer.py`, nuevo): PK
+  primero, si no hay fila cae a buscar por `mission_id` (la más reciente).
+  Los 4 endpoints de `/api/tie/missions/*` (`get`/`delete`/`cancel`/
+  `approve-plan`) lo llaman al entrar — cualquiera de los dos ids funciona
+  en cualquiera de los cuatro (antes solo el `trace_id` PK, y el chat
+  anuncia el `mission_id`: el mismatch real detrás de lo que NEW-3
+  hipotetizaba de otra forma). **2 · `mission_id` en el gate de tool**:
+  `toolloop._ask_permission` gana el parámetro (viene de `session_key`,
+  que ya era `mission.id`) y lo añade al `action_payload` — aditivo, cero
+  regresión. **3 · el panel en Misiones — desviación necesaria sobre el
+  diseño**: el diseño original asumía que `GET /api/automation/approvals`
+  exponía `action_payload` para filtrar por él en el frontend, pero
+  `_approval_out()` lo oculta a propósito desde A1 ("puede llevar detalles
+  internos"). Arreglo: `_approval_out()` gana un campo `mission_id` PROPIO
+  (la única excepción nombrada del payload crudo, nunca el resto).
+  `Missions.tsx` gana una tercera variante de panel de gate (mismo patrón
+  visual que el del plan/nodo), resuelta con el `api.resolveApproval`
+  genérico de A1 — sin backend nuevo, sin websockets, mismo sondeo de 2s
+  ya existente. **4 · el log dice la causa real**: `_ask_permission`
+  distingue `permission_service.autonomy_is_full()` ("auto-aprobado por el
+  perfil Autónomo, los toggles no aplican") del toggle individual; en
+  Ajustes → Permisos, un aviso ÚNICO (no uno por toggle,
+  `settings.permisos.togglesInertNote`) cuando el perfil activo es `full`.
+  Tests: `test_audit_s7s8_missions.py` (NUEVO, 14 — resolución de id por
+  PK/mission_id/inexistente, los 4 endpoints con ambos ids incl.
+  no-regresión del `trace_id` real y 404 con id inventado, `approve_plan`
+  aislando `resolve_plan` con un fake para probar solo la resolución del
+  id, el gate con `mission_id` real y con `None` sin `session_key`, el
+  endpoint de aprobaciones exponiendo `mission_id` y sin exponer el resto
+  del payload, el log distinguiendo perfil Autónomo de toggle vía
+  `caplog`). **Comprobación de mutación** (4 mutaciones independientes,
+  restauradas y verificadas byte a byte): neutralizar `resolve_trace_id`
+  tumba las 5 pruebas de resolución (incluida `delete_mission`, que cae a
+  su `"not_found"` de siempre — la regresión exacta que evita); quitar
+  `mission_id` del payload del gate tumba 2; quitar el campo de
+  `_approval_out` tumba 2 (`KeyError`); revertir el mensaje del log tumba
+  1. Regresión: **479 passed, 6 skipped** (subconjunto tie/mel/telemetry/
+  audit/action_intent/orchestrator/automation) + `test_module_boundaries`
+  10/10 + `tsc --noEmit` limpio. **NEW-6 (doc 34 §12.4) NO queda cerrado
+  por esta sesión** pese a vivir en su bucket: su causa es el desfase
+  `state`/`outcome` de `_execute_and_respond` (misma familia que la
+  ventana de T5), ajena a la resolución de ids y a la visibilidad del
+  gate — sigue pendiente, sesión propia. **Pendiente en Windows**:
+  aprobar/rechazar un gate de permiso de tool desde `/missions` sin volver
+  al Chat; el aviso de "Autónomo" visible en Ajustes → Permisos.
+
+---
+
+- ✅ **S9 EJECUTADA (2026-07-28) — lock en el lanzamiento del navegador +
+  autocuración de pestañas muertas** (reabre F-1, doc 24 §22): causa raíz ya
+  localizada por lectura de código en el diseño de esta sesión —
+  `_ensure_browser()` no tenía ningún lock, así que dos misiones lanzadas
+  con segundos de diferencia (reproducido en vivo en la campaña 01,
+  T06-R-D5-browser-concurrente) pasaban AMBAS el guard "¿ya está lanzado?" y
+  arrancaban DOS `launch_persistent_context()` sobre el MISMO perfil —
+  Chrome bloquea el segundo proceso, y las dos misiones se quedan con una
+  referencia rota (`TargetClosedError`). **`tools/browser_tool.py`**: lock
+  de módulo `_launch_lock = asyncio.Lock()`, con **double-checked locking**
+  en `_ensure_browser()` (guard rápido SIN lock si ya está lanzado — cero
+  coste en el camino caliente — y, si no, entra al lock con el MISMO guard
+  REPETIDO dentro, para que una corrutina que esperó no relance nada) y en
+  `_get_session()` (misma protección para la creación de un `BrowserContext`
+  en modo respaldo — un único lock cubre las dos carreras, porque no
+  compiten entre sí). **Pestaña muerta se autocura**: `_get_page()` ahora
+  comprueba `page.is_closed()` (o trata una EXCEPCIÓN de esa llamada como
+  "muerta" también — un `TargetClosedError` residual cuenta igual que el
+  caso limpio); si está muerta, se descarta de `sess.pages` y se crea una
+  pestaña nueva en vez de devolver un handle que reventaría en la siguiente
+  llamada real de Playwright. **Hallazgo real de la regresión (LOG-1, otra
+  vez)**: el `_FakePage` de `test_audit_s3_browser.py` (S3) no tenía
+  `is_closed()` — con el cambio, CUALQUIER llamada a esa página fake lanzaba
+  `AttributeError`, mi propio `except Exception: dead = True` la trataba
+  como "siempre muerta", y `_get_page` recreaba una pestaña en CADA llamada,
+  rompiendo `test_f1_la_misma_mision_reutiliza_su_pestana`. Arreglado
+  añadiendo `is_closed()` al doble (Playwright real siempre lo tiene) — el
+  fallo era del doble, no de la lógica nueva. **Nota de entorno de test, no
+  de producción**: un `asyncio.Lock()` de módulo se vincula al event loop en
+  el que se usa por primera vez; pytest-anyio crea un loop nuevo por test,
+  así que el fixture de los tests nuevos RECREA `_launch_lock` en cada test
+  (en producción es irrelevante — un único loop de por vida del proceso).
+  Tests: `test_audit_s9_browser_lock.py` NUEVO (7 — la regresión exacta del
+  hallazgo con 5 corrutinas concurrentes acabando en 1 solo lanzamiento,
+  no-regresión de llamada ya-lanzada, la misma carrera en pequeño para
+  `_get_session` con el mismo sid, no-regresión de sids distintos con
+  contextos propios —F-1 intacto—, pestaña muerta se recrea, pestaña viva se
+  reutiliza sin cambios, `is_closed()` que LANZA se trata como muerta).
+  **Comprobación de mutación** (3 mutaciones independientes, restauradas y
+  verificadas byte a byte): quitar el lock de `_ensure_browser` tumba el
+  test de concurrencia; quitar el de `_get_session` tumba el suyo; quitar el
+  chequeo de página muerta tumba los 2 de `_get_page`. Regresión:
+  `test_audit_s3_browser.py`+`test_audit_s9_browser_lock.py` 17/17,
+  **458 passed, 6 skipped** en el subconjunto browser/tie/mel/audit/
+  orchestrator/automation (los fallos de `test_new_tools.py::test_desktop_*`
+  son del sandbox, sin `pyautogui`/display, ajenos a este cambio).
+  `test_module_boundaries` 10/10. **Pendiente en Windows**: repetir el
+  experimento exacto de la campaña 01 — dos misiones con `browser` lanzadas
+  con <20s de diferencia por la UI — y confirmar que ninguna colisiona (no
+  reproducible contra Chrome/Chromium real en este sandbox, sin navegador
+  instalado).
+
+- ✅ **NEW-7 CERRADO (2026-07-28) — fabricación SIN verbo delator en el camino
+  corto** (doc 34 §12.5, hallazgo de la verificación en vivo del usuario): el
+  chat respondió a "Lista los archivos de la carpeta Aithera, dime cuántos .py
+  hay en backend/app/tie, y léeme las primeras líneas de pipeline.py" con un
+  listado inventado, un recuento falso ("Total de archivos .py: 7") y un bloque
+  de código con imports que NO existen en el archivo real — sin ninguna nota de
+  honestidad. **Dos causas independientes, dos capas.** (1) **La raíz**
+  (`tie/action_intent.py` + `tie/intents.py`): `action_intent()` (25-jul)
+  rescataba del fail-safe `conversational` las órdenes sobre la PROPIA Aithera,
+  pero una petición de leer archivos/web/correo seguía degradando a charla — y
+  el camino corto NO tiene herramientas, así que ahí el modelo solo puede
+  inventar (con `llama3` el JSON del clasificador falla ~40% de las veces,
+  medido en la campaña 01). Nace `world_intent()`, su hermano: detector
+  determinista (0 LLM) de "esto pide leer el mundo", con los verbos en **dos
+  niveles** para no arrastrar charla al bucle de tools — un verbo FUERTE ("lee",
+  "lista", "abre", "navega") basta con un objeto del mundo; uno DÉBIL y genérico
+  ("dime", "muestra", "cuántos") exige además una RUTA o EXTENSIÓN concreta.
+  Esa distinción separa "dime cuántos .py hay en backend/app/tie" (sí) de "dime
+  qué archivos suele tener un proyecto FastAPI" (no) — el falso positivo real
+  que motivó los dos niveles. Se consulta en los CUATRO puntos donde el intent
+  podía degradar a charla: los 3 fallos del clasificador (error, sin JSON,
+  excepción) y —nuevo— el **suelo de confianza** (existe para no actuar sobre
+  una corazonada, pero "charla sin herramientas" tampoco es un default seguro
+  cuando el usuario ha nombrado un archivo concreto). `action_intent()` mantiene
+  la prioridad: una orden sobre Aithera es más específica. (2) **El respaldo**
+  (`core/grounding.py`): S2·S6 anclaba VERBOS ("he leído"), y este texto no usa
+  ninguno — presenta los datos y ya está. `presents_unverifiable_evidence()` no
+  mira verbos sino la FORMA: contenido de un archivo concreto (bloque de código
+  + ruta/nombre real), listado de directorio (3+ líneas con extensión),
+  recuento de ficheros, o bibliografía web (2+ enlaces citados). Cuando dispara,
+  la nota deja de ser la coletilla suave y pasa a un **aviso fuerte**
+  (`grounding.fabricated_note`, 4 idiomas). Nace `note_for()` como punto ÚNICO
+  de decisión, para que la variante con streaming (`runtime.stream_task`, que
+  solo puede añadir al final) y la que no (`with_honesty_note`) no diverjan.
+  **El riesgo atendido es el ruido**: 14 de los 41 tests son negativos — un
+  ejemplo de código pedido no dispara, ni una mención suelta a `main.py`, ni un
+  enlace único, ni la negativa honesta que el propio usuario vio funcionar bien
+  en la misma pasada. **Hallazgo de la regresión**:
+  `test_classify_json_basura_fallback` falló porque usaba "resúmeme el informe
+  del proyecto Aithera" para probar el fail-safe — ese input ahora se rescata a
+  un intent CON herramientas, que es lo correcto (resumir un informe nunca leído
+  ERA el bug); el test afirmaba el contrato viejo y se actualizó a un mensaje
+  que de verdad es charla, en vez de debilitar el código. Tests:
+  `test_audit_new7_fabricacion.py` NUEVO (41). **Comprobación de mutación** (2
+  mutaciones, restauradas y verificadas byte a byte): desactivar el rescate del
+  intent tumba los 2 tests de clasificación; desactivar el detector de evidencia
+  tumba los 2 de la nota. Regresión: **402 passed, 4 skipped** en el subconjunto
+  tie/audit/intent/grounding/orchestrator/chat/module_boundaries. **Pendiente en
+  Windows**: repetir el mensaje EXACTO y confirmar que el log ya no dice
+  "fallback conversational" y que la respuesta trae el listado REAL o falla
+  honestamente, nunca uno inventado.
+
+- ✅ **S9b EJECUTADA (2026-07-28) — un navegador MUERTO se relanza** (hallazgo
+  de la verificación en vivo de S9 por el usuario): tras S9, tres misiones
+  seguidas con navegador seguían muriendo con `TargetClosedError` ("El
+  navegador (BrowserContext) está cerrado en esta sesión"). S9 arregló la
+  CARRERA entre misiones concurrentes; debajo quedaba algo peor y que ni
+  siquiera necesita concurrencia: **`_ensure_browser()` comprobaba `is not
+  None`, no si el navegador seguía VIVO**. En cuanto `_persistent_context`
+  moría por una causa externa (el usuario cierra esa ventana de Chrome, el
+  proceso se cae), la global apuntaba al cadáver PARA SIEMPRE — el guard decía
+  "ya está lanzado", no se relanzaba nunca, y ninguna misión posterior podía
+  navegar hasta reiniciar el backend entero. **Dos mecanismos, porque uno solo
+  no basta**: (1) chequeo barato ANTES (`_alive()` + `_browser_ready()`, que
+  sustituye al `is not None` del guard) descarta el cadáver evidente sin coste,
+  con `_reset_browser_globals()` limpiando también `_sessions` (sus contextos
+  apuntan al muerto) y `_get_session` descartando una sesión que ya no apunta
+  al contexto vigente; (2) reintento en el PUNTO DE USO (`_get_page`), porque
+  el estado real de un proceso externo solo se conoce al usarlo — entre el
+  chequeo y la llamada puede morir. UN solo reintento: si el navegador nuevo
+  también falla, el error sube y la misión falla honestamente, nunca un bucle.
+  `_looks_closed()` decide por TEXTO y no por tipo (Playwright lanza
+  `TargetClosedError` pero también `Error` a secas con el mismo mensaje), y
+  distingue un fallo de red de un navegador muerto — confundirlos relanzaría
+  Chrome cerrando las pestañas del usuario por un timeout cualquiera.
+  `browser_tool.py` gana además su `logger` (no tenía ninguno). **Dos hallazgos
+  del propio proceso**: (a) la primera versión del test de reintento NO lo
+  ejercitaba — el chequeo previo ya curaba el caso antes de llegar ahí, y la
+  mutación lo destapó (el doble ahora MIENTE: `is_connected()` dice True y
+  `new_page()` revienta, que es el caso real que ningún chequeo previo puede
+  cubrir); (b) LOG-1 por tercera vez en este bloque: el `_FakeContext` de
+  `test_audit_s9_browser_lock.py` no tenía `pages` ni `is_connected` (Playwright
+  real SIEMPRE los tiene), así que `_alive()` lo daba por muerto y
+  `_ensure_browser` relanzaba en cada llamada — el doble estaba incompleto, no
+  la lógica nueva. Tests: `test_audit_s9b_browser_muerto.py` NUEVO (14 — los dos
+  detectores con sus casos negativos, el guard que fallaba, relanzar tras morir,
+  no relanzar estando vivo, sesiones viejas descartadas, el reintento real, sin
+  bucle si el relanzamiento también falla, y que un error de red NO dispara
+  relanzamiento). **Comprobación de mutación** (2, restauradas y verificadas
+  byte a byte): volver el guard a `is not None` tumba 3; quitar el reintento
+  tumba 1. Regresión: **436 passed, 6 skipped** en el subconjunto browser/tie/
+  mel/audit/intent/grounding/orchestrator/automation. **Pendiente en Windows**:
+  repetir las 3 misiones de navegador que fallaron y confirmar que ahora
+  navegan; y cerrar a mano la ventana de Chrome de Aithera a mitad de sesión
+  para ver que la siguiente misión la relanza sola.
+
+- ✅ **S9c EJECUTADA (2026-07-28) — bucle estéril + texto externo sucio** (las
+  dos cosas que quedaron observadas al cerrar S9b; ninguna es del navegador).
+  **(1) Repetición estéril** (`tie/toolloop.py`): con el navegador roto, el
+  bucle gastó sus 12 vueltas pidiendo `browser.open_url` una y otra vez con
+  EXACTAMENTE el mismo error — 12 llamadas al LLM para una conclusión que ya
+  estaba clara en la segunda. Contador por **firma de fallo** `(tool_id, action,
+  error normalizado y recortado a 120 chars)`, de modo que dos
+  `TargetClosedError` con distinta URL son el MISMO problema (y dos timeouts con
+  distinto número de ms, también). **Dos escalones**: al 2.º fallo idéntico se
+  AVISA al modelo en el transcript ("no lo repitas: otra vía, u explica el
+  límite"), al 3.º se abandona devolviendo el error REAL como causa. No se corta
+  a la primera a propósito — un reintento tras un fallo transitorio es legítimo
+  y tiene su test de no-regresión. El mismo contador cubre las DENEGACIONES
+  repetidas (insistir en una tool inexistente), que era la otra forma
+  documentada de girar en vacío (#209). Ambos dejan evento de telemetría
+  (`repeated_failure`/`repeated_denial`). **(2) Texto externo sucio**
+  (`app/core/sanitize.py` NUEVO + `tools/search_tool.py`): una búsqueda de
+  vídeos trajo resultados REALES pero con los enlaces rotos —
+  `…iy35dCK0iaI￼Ritmos`—; ese `￼` (U+FFFC) es invisible en el JSON y en el log,
+  y el modelo lo pega dentro del enlace markdown. Viene de los `description` del
+  proveedor. Funciones puras en la capa compartida (el problema no es de la
+  búsqueda: es de cualquier texto externo — web, documento, email):
+  `strip_invisible()` quita invisibles conocidos + categorías `Cc`/`Cf`
+  conservando `\n\r\t`; **`clean_url()` CORTA por el invisible en vez de
+  quitarlo** — dentro de una URL no es ruido, es la FRONTERA (limpiar produce
+  `…iaIRitmos`, un enlace igual de roto pero más difícil de ver; me equivoqué en
+  la primera versión y lo cazó el test); `clean_external()` recorre dicts/listas
+  respetando números/booleanos/None. Aplicado en los DOS normalizadores de
+  `search_tool` (Brave y SerpAPI), en la frontera, una vez. **El riesgo atendido
+  es pasarse**: 4 de los 21 tests comprueban que acentos, emojis, CJK y saltos
+  de línea salen intactos. Tests: `test_audit_s9c_bucle_y_texto.py` NUEVO (21).
+  **Comprobación de mutación** (3): quitar el corte por fallo repetido tumba su
+  test; hacer que `clean_url` limpie en vez de cortar tumba 2; la tercera
+  —`search_tool` deja de sanear— **NO se detectó al primer intento** (los tests
+  probaban la función pura pero nadie comprobaba que la tool la USARA: lógica
+  correcta y desconectada, mismo hallazgo que en S9b), así que se añadió un test
+  que ejercita `_search_brave` REAL contra una respuesta HTTP sucia. Regresión:
+  **500 passed, 7 skipped** (el único fallo, `test_document_tool::
+  test_path_fuera_de_home_rechazado`, es del sandbox — ruta `C:\Windows` sobre
+  Linux — ajeno a estos cambios). **Pendiente en Windows**: repetir una búsqueda
+  de vídeos y comprobar que los enlaces del chat abren de verdad.
+
+- ✅ **NEW-7b EJECUTADA (2026-07-28) — el verbo de guardar en el mismo mensaje
+  ya no se pierde** (verificación en vivo, hallazgo distinto de NEW-7 §12.5
+  aunque de la misma familia): *"Investiga qué es FastAPI y guárdame un
+  resumen de tres líneas"* investigó bien (`world_intent()` de NEW-7 detectó
+  la lectura) pero al llegar al paso de guardar respondió que no tenía
+  herramienta de escritura disponible — la orden de guardar iba en el MISMO
+  mensaje y se perdía porque `world_intent()` solo reconoce verbos de LECTURA
+  ("lee", "lista", "busca"), nunca de ESCRITURA ("guarda", "anota"): la tool
+  ni siquiera se pedía. **`app/tie/action_intent.py::_wants_to_persist(text)`**
+  (determinista, sin LLM): exige un verbo de guardar Y descarta los modismos
+  que no hablan de persistir un dato ("guarda silencio", "guarda las
+  distancias", "guarda la calma/compostura/cama"). `ensure_persistence_tool
+  (intent, text)` añade `filesystem` a `requires_tools` cuando el intent YA
+  implica hacer algo y el mensaje pide guardar, sin pisar lo que ya hubiera.
+  **Aplicado universalmente**: `app/tie/intents.py::classify()` se parte en un
+  wrapper delgado que llama al cuerpo original (renombrado `_classify_core()`)
+  y pasa CUALQUIER resultado por `ensure_persistence_tool()` — cubre los tres
+  caminos que producen un intent (LLM con éxito, rescate determinista, fallback
+  conversational) con un solo punto de aplicación, porque el LLM también puede
+  olvidar `filesystem` en un intent por lo demás correcto. Tests:
+  `test_audit_new7b_persistencia.py` NUEVO (25 — detector puro en positivo/
+  negativo, integración con `Intent` sin duplicar ni tocar conversational, y 3
+  end-to-end contra `classify()` real: el mensaje EXACTO del fallo, un LLM que
+  acierta pero olvida `filesystem` mockeando `app.mel.complete`, y la
+  no-regresión de que lectura pura no gana `filesystem` porque sí).
+  **Comprobación de mutación** (3, restauradas y verificadas byte a byte):
+  desactivar la llamada del wrapper tumba el end-to-end del mensaje real;
+  forzar el guardia de modismos a `True` tumba los 5 negativos; forzar la
+  detección de verbo a `False` tumba los 7 positivos + el de integración.
+  Regresión: **117 tests en verde** (`test_audit_new7_fabricacion.py` 41,
+  `test_tie_contracts.py` 17, `test_tie_handle.py` 25, `test_tie_planner.py`+
+  `test_audit_new7b_persistencia.py` 34), sin ningún roto por el split
+  `classify()`/`_classify_core()`. **Pendiente en Windows**: repetir el
+  mensaje exacto y confirmar que Aithera guarda el resumen (o pregunta la
+  ruta) en vez de decir que no tiene herramienta disponible.
+
+- ✅ **NEW-4 EJECUTADA (2026-07-28) — un nodo con rendición explícita ya no
+  queda "Hecha"** (verificación en vivo, doc 34 §12.4/§12.9): un paso de una
+  misión real respondió literalmente *"No puedo completar este objetivo: las
+  herramientas disponibles en este paso NO incluyen ninguna de búsqueda web ni
+  navegador"* y la UI lo mostró con el check verde. Causa: `_validate_result`
+  (T3, `tie/executor.py`) pregunta "¿corrió una tool con éxito y hay salida
+  con forma?", nunca "¿el nodo consiguió su objetivo?" — un `list_dir` real le
+  dio forma a la salida, así que su prosa de rendición coló como resultado
+  válido. **`core/grounding.py` gana `is_surrender(text)`**: detecta una
+  rendición EXPLÍCITA y DECLARATIVA ("no puedo completar este objetivo", "no
+  dispongo de las herramientas necesarias", "unable to complete this"…) solo
+  en los primeros 200 caracteres — mirar solo la cabecera es lo que evita
+  marcar un resultado PARCIAL honesto ("hice X, no pude con Y, pero el resto
+  está completo") como si fuera rendición total. `_validate_result` gana un
+  tercer chequeo, tan determinista y barato como los dos que ya tenía: si
+  `is_surrender(result.output)`, el nodo se degrada a FAILED con
+  `method="grounding"` en vez de DONE — el recovery de T3 (dependientes
+  transitivos → SKIPPED) hace el resto sin tocar nada más. Tests:
+  `test_audit_new4_rendicion.py` NUEVO (18 — 8 rendiciones positivas ES/EN
+  incluido el mensaje real, 5 negativos con resultados honestos/parciales, 1
+  caso de rendición mencionada al final de un texto largo que NO dispara, y 3
+  de integración con el executor real vía runtime fake). **Comprobación de
+  mutación** (2, restauradas y verificadas byte a byte): quitar el chequeo de
+  `_validate_result` tumba el test de integración; forzar `is_surrender` a
+  `False` tumba los 8 positivos + el de integración. Regresión: **128 tests en
+  verde** (`test_audit_new4_rendicion` 18, `test_tie_executor` 16,
+  `test_audit_s2s6_grounding` 34, `test_module_boundaries`+
+  `test_audit_new7_fabricacion`+`test_tie_planner` 60), sin roturas por el
+  nuevo import de `app.core.grounding` en `tie/executor.py` (mismo patrón que
+  `tie/responder.py`). **Pendiente en Windows**: repetir el escenario —una
+  misión con un paso al que le falten herramientas necesarias, forzando una
+  respuesta de rendición— y confirmar que el nodo queda en rojo (FAILED), no
+  en verde.
+
+- ✅ **NEW-6 EJECUTADA (2026-07-28) — "Completada" con texto de espera de
+  aprobación** (verificación en vivo, doc 34 §12.4/§12.10): una misión
+  mostraba cabecera "Completada" con el cuerpo *"He empezado y estoy
+  esperando tu confirmación para un paso"* — la plantilla `pipeline.
+  waiting_confirmation`. Causa: `_finalize()` (T3) solo escribe `mission.
+  state` en la traza, NUNCA `outcome`. Cuando un nodo abre su propio gate,
+  `pipeline._execute_and_respond` escribe el placeholder de espera; al
+  resolverse el gate, la reanudación es EVENT-DRIVEN y vive en `executor.py`
+  (`_apply_gate_verdict`/`_apply_checkpoint_verdict`) y volvía a llamar
+  `run()` SIN pasar por `pipeline._execute_and_respond` — nadie volvía a
+  sintetizar el `outcome`: el estado avanzaba a "done" pero el cuerpo se
+  quedaba con el placeholder para siempre. **`executor.finish_and_record
+  (graph, mission, trace_id)`** (NUEVO): punto ÚNICO que decide el outcome
+  final tras CUALQUIER `run()` — si `mission.state == "waiting"` escribe el
+  placeholder, si no llama a `responder.build()` y emite el evento
+  `mission.*` correspondiente. Los TRES callers pasan a compartir la MISMA
+  función: `_apply_gate_verdict`/`_apply_checkpoint_verdict` (antes ninguno
+  sintetizaba nada) la ganan tras su `run()`; `pipeline._execute_and_respond`
+  se reescribe para DELEGAR en ella en vez de llevar su propia copia — la
+  duplicación era la grieta por la que se coló el bug. Dirección de
+  dependencia respetada (`pipeline.py` → `executor.py`, nunca al revés — el
+  helper vive en `executor.py` para evitar un ciclo). Tests:
+  `test_audit_new6_outcome_fresco.py` NUEVO (6 — las 2 ramas puras de
+  `finish_and_record`, la regresión EXACTA con gate de nodo aprobado y
+  rechazado, el mismo caso con un CHECKPOINT, no-regresión sin gates); se
+  mockea `app.mel.complete` porque sin mock `router.complete()` tarda ~1.7s
+  en agotar la cadena de proveedores en el sandbox. **Comprobación de
+  mutación** (3, restauradas y verificadas byte a byte): quitar la llamada en
+  `_apply_gate_verdict` tumba 2 tests; quitarla en `_apply_checkpoint_verdict`
+  tumba 1; vaciar `finish_and_record()` por dentro tumba 3. Regresión: **84
+  tests en verde** (`test_audit_new6_outcome_fresco` 6 + `test_tie_executor`
+  16 + `test_audit_new4_rendicion` 18 + `test_tie_handle`+`test_tie_e2e` 28 +
+  `test_module_boundaries`+`test_tie_perf` 16). **Pendiente en Windows**:
+  forzar una misión con un plan de 2+ pasos donde el segundo pida permiso,
+  aprobarlo desde `/missions`, y confirmar que la cabecera pasa a
+  "Completada" CON un resumen real — nunca con el texto de espera.
+
+- 🔎 **NEW-5 DIAGNOSTICADA, NO CERRADA (2026-07-29) — tools del agente que no
+  llegan al nodo** (doc 34 §12.4): a diferencia de las demás sesiones de este
+  bloque, el propio doc 34 exige medir contra la BD real ANTES de tocar
+  código ("Hay que medirlo antes de tocar"), y este entorno no tiene acceso al
+  Postgres real del usuario — así que esta sesión es solo trazado de código +
+  una herramienta de medición, sin fix todavía. **Trazado completo**:
+  `agent.allowed_tools` (BD) → `agent_manager._delegate_to_tie()` (pasa la
+  lista intacta) → `Authority.allowed_tools` → `planner._generate_graph()`,
+  que filtra en DOS puntos — el catálogo OFRECIDO al LLM ya viene recortado a
+  `permitidas`, y tras el JSON del LLM un recorte determinista
+  `n.tools = [t for t in n.tools if t in permitidas]` que SOLO puede QUITAR
+  una tool no permitida, nunca una que sí lo esté — y `graph.validate()`
+  (chequeo "tools ⊆ catálogo") tampoco trunca nada, RECHAZA el plan entero si
+  un nodo referencia una tool fuera de catálogo. **No se encontró ningún
+  camino de código que quite en silencio una tool que SÍ estuviera en
+  `allowed_tools`** — esto debilita la hipótesis (b) del doc ("Authority/el
+  recorte del toolloop las quitó") y refuerza la (a) ("el planner no se las
+  asignó al nodo pese a tenerlas en el catálogo" — calidad de planificación,
+  no bug de seguridad), salvo que el propio agente no tuviera esas tools en
+  BD en el momento real de la prueba (discrepancia de datos, no de código).
+  **`backend/scripts/diagnose_new5.py`** (NUEVO, read-only, no toca nada):
+  para las últimas N misiones con `browser`/`search` en `authority.
+  allowed_tools`, imprime por nodo lo PERMITIDO vs lo ASIGNADO por el planner
+  (`node.tools`, persistido en `orchestrator_traces.plan`) vs lo REALMENTE
+  LLAMADO (`node.tool_calls`) — la medición exacta que doc 34 pide, sin
+  necesitar tocar el backend en marcha. Verificado en el sandbox contra una
+  BD SQLite de prueba construida a mano con el patrón exacto reportado:
+  reproduce el aviso `⚠ SIN browser/search asignadas` cuando
+  `authority.allowed_tools` las tenía pero el nodo no. **Pendiente en
+  Windows**: correr `cd backend && python scripts/diagnose_new5.py` (o con
+  `--limit 40` si la misión de la prueba quedó más atrás) y, con el resultado
+  real, decidir si el fix es de prompting del planner (más tools por defecto
+  para pasos de "recolectar información", o instrucción más explícita) o si
+  aparece el patrón (c) no contemplado en el doc original (el nodo SÍ tenía
+  las tools asignadas pero el toolloop nunca las llamó — un problema
+  distinto, de juicio del modelo en ejecución, no de planificación).
+
+- ✅ **S11 EJECUTADA (2026-07-29) — gate de concesión de tool ausente +
+  advertencia de incompletitud** (doc 34 §S11, último punto del plan S1-S11):
+  el caso Cordyceps/NEW-5 desde el otro lado — cuando el modelo pide una tool
+  REAL que no está en la whitelist del nodo (pero el agente SÍ la tiene
+  permitida vía `Authority.allowed_tools`), el bucle ya no la deniega en
+  silencio: abre un gate de CONCESIÓN (`tool.grant.<id>`, una sola vez por
+  tool y por ejecución del bucle, `asked_grants`) preguntando "¿te la doy, o
+  sigues sin ella?" — el mismo tipo de pausa que ya existía para acciones
+  sensibles, extendido a capacidades ausentes. **`toolloop._ask_grant`**
+  (NUEVO) + **`_wait_gate`** (extraído de `_ask_permission`, que pasa a
+  delegar en él — un solo ciclo de sondeo/expiración para los dos tipos de
+  gate). Concedida → se añade a `allowed_tools`, se recalculan `catalog`/
+  `by_pair`, y el bucle CONTINÚA (conceder no ejecuta nada por su cuenta: el
+  modelo re-pide la misma tool en la vuelta siguiente, ya disponible).
+  Rechazada → `ToolLoopResult.limitations` (campo nuevo, append-only) →
+  `AgentResult.limitations` → `node.result["limitations"]` (executor) →
+  `responder._with_limitations_note()` (NUEVO: advertencia determinista final,
+  nunca la escribe el LLM, aplicada una sola vez en `build()` tras
+  `_synthesize()` — cubre tanto la síntesis real como su propio respaldo
+  `_template_success`). Clave i18n `responder.limitations_note` en los 4
+  idiomas. **Desviación de seguridad necesaria, no estaba en el diseño
+  original**: el gate SOLO se ofrece si la tool está dentro de `Authority.
+  allowed_tools` (lo que el AGENTE tiene permitido, R4) — no basta con que
+  exista en el ToolManager; sin este límite, un "sí" del usuario habría
+  abierto una vía para saltarse la frontera de autoridad de la misión.
+  **Hallazgo real de la regresión** (no del diseño): un test YA EXISTENTE sin
+  `authority` ni `approval_gate` empezó a fallar — sin canal de aprobación
+  disponible el código abría igualmente un gate "fantasma" que nadie podía
+  resolver; corregido exigiendo `approval_gate is not None` en `grantable`
+  (mismo comportamiento que antes de S11 cuando no hay a quién preguntar).
+  Tests: `tests/test_audit_s11_grant.py` (NUEVO, 8 — gate se abre con una tool
+  real fuera de whitelist, se pregunta UNA sola vez pese a 3 reintentos,
+  aprobado ejecuta con éxito, rechazado deja `limitations` + advertencia en la
+  respuesta final, tool inventada NO abre gate, acción inválida de una tool
+  YA permitida tampoco abre gate, **fuera de `Authority.allowed_tools` NO es
+  concedible** —la frontera de seguridad añadida—, perfil Autónomo auto-concede
+  con rastro real en `approvals`). **Comprobación de mutación** (4,
+  restauradas y verificadas byte a byte): quitar el bound de `Authority`
+  tumba el test de frontera; quitar `asked_grants` tumba el de "una sola
+  vez"; quitar `approval_gate is not None` tumba la regresión real de
+  `test_tie_toolloop.py`; desactivar `_with_limitations_note` tumba el test
+  del responder. Regresión: ~370 tests en verde en el sandbox (toolloop,
+  executor, mel, automation, orchestrator, module_boundaries, product_
+  contracts 9/13 en aislamiento — los 4 restantes exigen un
+  `approval_wait_s=120` real, límite ya documentado desde S1), sin roturas
+  nuevas salvo la ya corregida. **Con esto se cierra el plan S1-S11 completo
+  salvo NEW-5** (pendiente de medición contra la BD real). **Pendiente en
+  Windows**: repetir el caso EXACTO de Cordyceps (agente con `document` NO
+  asignado a un paso, proyecto con carpeta, pedirle que lea un archivo local
+  real) y confirmar que Aithera PARA a preguntar en vez de seguir en
+  silencio; si se rechaza, que la respuesta final lleve la advertencia de
+  incompletitud.
+
+---
+
+*Última actualización: 2026-07-29 — **S11 ejecutada (§26)**: gate de
+concesión cuando una tool real permitida al agente no llegó al nodo — el
+bucle pregunta "¿te la doy, o sigues sin ella?" en vez de denegar en
+silencio; rechazada, la respuesta final avisa siempre de la limitación
+(`responder._with_limitations_note`, i18n). Acotado por `Authority.
+allowed_tools` para no abrir un agujero de seguridad. 8 tests nuevos + 4
+mutaciones confirmadas + ~370 de regresión en verde (sandbox). **Cierra el
+plan S1-S11 completo salvo NEW-5**, que sigue pendiente de medir contra la
+BD real.*
+
+*Anterior: 2026-07-29 — **NEW-5 diagnosticada, NO cerrada (§26)**:
+trazado estático completo de la cadena `agent.allowed_tools`→`Authority`→
+`planner`→`graph.validate()` sin encontrar ningún camino de código que quite
+en silencio una tool permitida — debilita la hipótesis "recorte de
+seguridad" y refuerza "el planner no la asignó pese a tenerla disponible".
+Sin acceso a la BD Postgres real desde este entorno (el propio doc 34 exige
+medir antes de tocar), se creó `backend/scripts/diagnose_new5.py` (read-only,
+verificado contra SQLite de prueba) para que el usuario mida la misión real
+y decida el fix. Ningún cambio de comportamiento todavía — la única sesión
+de este bloque que se detiene antes del fix por falta de evidencia.*
+
+*Anterior: 2026-07-28 — **NEW-6 ejecutada (§26)**: la reanudación
+de un gate de nodo o checkpoint ya sintetiza un outcome fresco en vez de
+dejar el placeholder de espera para siempre — `executor.finish_and_record()`,
+punto único compartido por los 3 callers que antes tenían lógica duplicada (o
+ninguna). 6 tests nuevos + 84 de regresión en verde (sandbox), 3 mutaciones
+confirmadas. **Con esto quedan cerrados 7 de los 8 hallazgos de la
+verificación en vivo del 28-jul salvo NEW-5**, que sigue pendiente de medir
+contra la BD real.*
+
+*Anterior: 2026-07-28 — **NEW-4 ejecutada (§26)**: un nodo con
+rendición explícita en su propia respuesta ya no queda "Hecha" —
+`core/grounding.is_surrender()` (cabecera del texto, conservador ante
+resultados parciales honestos) + tercer chequeo en `_validate_result`. 18
+tests nuevos + 128 de regresión en verde (sandbox), 2 mutaciones confirmadas.*
+
+*Anterior: 2026-07-28 — **NEW-7b ejecutada (§26)**: el verbo de
+guardar/anotar en el mismo mensaje que pedía investigar ya no se pierde —
+`ensure_persistence_tool()` aplicado universalmente en `classify()`. 25 tests
+nuevos + 117 de regresión en verde (sandbox), 3 mutaciones confirmadas.*
+
+*Anterior: 2026-07-28 — **S9c ejecutada (§26)**: el toolloop deja
+de insistir en lo que ya falló idéntico (contador por firma de fallo, aviso al
+2.º y abandono al 3.º, también para denegaciones repetidas) y el texto que
+entra de fuera se sanea en la frontera (`app/core/sanitize.py`, con URLs que se
+CORTAN por el invisible en vez de limpiarse). 21 tests nuevos + 500 de
+regresión en verde (sandbox), 3 mutaciones confirmadas.*
+
+*Anterior: 2026-07-28 — **S9b ejecutada (§26)**: un navegador
+muerto se relanza en vez de envenenar el proceso — el guard comprobaba
+`is not None` en vez de vivacidad, así que un Chrome cerrado por fuera
+condenaba TODAS las misiones posteriores hasta reiniciar el backend. Chequeo
+de vivacidad + reintento en el punto de uso. 14 tests nuevos + 436 de
+regresión en verde (sandbox), 2 mutaciones confirmadas.*
+
+*Anterior: 2026-07-28 — **NEW-7 cerrado (§26)**: la fabricación
+del camino corto SIN verbo delator (listados, contenido de archivos, cifras)
+— dos capas: `world_intent()` evita que una petición de leer el mundo degrade
+a charla sin herramientas cuando el clasificador falla, y
+`presents_unverifiable_evidence()` marca con un aviso fuerte lo que aun así
+se cuele. 41 tests nuevos + 402 de regresión en verde (sandbox), 2 mutaciones
+confirmadas. Pendiente en Windows: repetir el mensaje exacto del fallo.*
+
+*Anterior: 2026-07-28 — **S9 ejecutada (§26)**: lock de
+lanzamiento del navegador (`_launch_lock`, double-checked locking en
+`_ensure_browser`/`_get_session`) + autocuración de pestañas muertas en
+`_get_page` — cierra la fuga de sesión entre misiones concurrentes que la
+campaña 01 reprodujo en vivo (F-1 reabierto, doc 24 §22). 7 tests nuevos +
+458 de regresión en verde (sandbox), 3 mutaciones confirmadas. Pendiente en
+Windows: repetir el experimento con dos misiones reales de navegador.*
+
+*Anterior: 2026-07-28 — **S7·S8 ejecutada (§26)**: gate de
+permiso de tool visible en Misiones + identificador único de misión.
+`tracer.resolve_trace_id` hace que cualquiera de los dos ids (trace_id PK o
+mission_id, lo que anuncia el chat) funcione en los 4 endpoints de
+`/api/tie/missions/*`; el gate de tool (`tie_tool_permission`) lleva
+`mission_id` en su payload y `Missions.tsx` gana un tercer panel para
+resolverlo sin volver al Chat (con una desviación necesaria: `_approval_out`
+solo expone ESE campo del payload crudo, nunca el resto, porque A1 lo oculta
+a propósito); el log de una auto-aprobación ya distingue "perfil Autónomo"
+de un toggle individual, con aviso a juego en Ajustes → Permisos. 14 tests
+nuevos + 479 de regresión en verde (sandbox), 4 mutaciones confirmadas.
+NEW-6 (el desfase estado/texto de una misión) vivía en el bucket de esta
+sesión pero tiene causa distinta — sigue pendiente, sesión propia. Siguiente:
+**S9** (fuga de sesión de navegador entre misiones concurrentes).*
+
+*Anterior: 2026-07-28 — **S5 ejecutada (§26)**: la TUBERÍA entre
+pasos. El resultado de un nodo llega íntegro al siguiente (`_handoff_from_deps`,
+con recorte honesto que declara cuánto falta); la observación de una lectura se
+entrega en texto plano con presupuesto propio en vez de JSON descabezado a 4000
+(eso explicaba el "a veces lee más, a veces menos"); y `read_docx` extrae
+cabeceras/pies y avisa de lo que NO lee. 13 tests nuevos + 433 de regresión en
+verde (sandbox). **Además, verificación en vivo del usuario**: S2·S6, S10 y S1
+confirmados contra su backend real — y de esa misma pasada salen 3 hallazgos
+nuevos sin tocar (NEW-4/5/6, doc 34 §12.4).*
+
+*Anterior: 2026-07-28 — **S4 ejecutada (§26)**: camino caliente +
+DEADLINES. El clasificador deja de heredar la política de calidad del usuario
+(`TIE_CLASSIFY_MODEL/POLICY`, `router.complete` con overrides opcionales); el
+transcript del toolloop deja de reenviarse entero (ventana deslizante que
+conserva SIEMPRE objetivo y catálogo); y las tres capas del camino caliente
+ganan plazo (petición del MEL con razón propia `timeout` que abre el breaker,
+primer chunk de streaming, clasificador) más un latido cada 15 s para que
+ningún turno se quede mudo. 18 tests nuevos + 420 de regresión en verde
+(sandbox). NO se tocó el thrash de Ollama: su propio diseño exige verificarlo
+en vivo antes.*
+
+*Anterior: 2026-07-28 — **S3 ejecutada (§26)**: presupuesto de
+llamadas LLM por camino, medido — `telemetry.record("path", ...)` en las 4
+bifurcaciones reales del pipeline/orquestador (chat/direct/planned/multi),
+`mission_timeline()` extendida de forma aditiva (`llm_calls`/`path`/`budget`/
+`within_budget`/`slowest_llm_ms`), `mission_lab.py --baseline` para comparar
+campañas con números. 9 tests nuevos + 180 de regresión en verde (sandbox).*
+
+*Anterior: 2026-07-28 — **doc 34 reestructurado + S2·S6 ejecutada
+(§26)**: cada sesión pendiente con diseño ejecutable contrastado contra el
+código, fusiones S2·S6 y S7·S8, dos causas raíz localizadas (la tubería de
+resultados entre nodos que no existe; el lanzamiento del navegador sin lock),
+protocolo de campañas migrado a Claude con 4 bloques nuevos (REG·F·N·X). En
+código: **narración anclada en las 3 capas** — `app/core/grounding.py` nuevo,
+consolidator sin LLM, responder que descarta un "falta tu confirmación" falso,
+y coletilla honesta en el camino corto. 34 tests nuevos + 191 de regresión en
+verde (sandbox).*
+
+*Anterior: 2026-07-27 — **S1 + S10 del bloque de auditoría del
+runtime ejecutadas (§26)**: P1 (catálogo único) + P4 (auto-catálogo MEL
+nocturno, sin CLI) + S10 (frontera de proyecto para `document`/`download`/
+`browser`-descarga, bug reportado en vivo por el usuario) cerrados en código,
+NEW-3 resuelto sin código. Plan de sesiones ampliado a S1-S10 tras la
+campaña 01 de test en vivo. Suite backend (subset relevante, sandbox): ~370
+tests verdes + 3 nuevos de S10.*
+
+*Última actualización anterior: 2026-07-21 — **bloque UX + MEL-UI + OBSERVABILIDAD (§25)**; antes: 2026-07-20 — **V1.0 bloque ORQUESTRATOR (R1-R7) CERRADO,
 bump `0.9.2` → `0.9.5`, tag `v0.9.5`** (ver §21) + **bloque CORRECCIÓN S1
 ejecutada** (ver §22). Suite backend: **751 passed** (pre-S1; re-verificar).
 Bloques cerrados: V0.2 → V0.7.3 → V0.8 → V0.85 (MOS) → V0.87 (WPMS) → V0.9

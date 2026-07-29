@@ -114,7 +114,11 @@ def classify_failure(*, exc: Exception | None = None, detail: str = "") -> tuple
 
 # Razones que cuentan para abrir el breaker (fallos del PROVEEDOR, no de config
 # ni del request). Auth/quota/request_invalid no abren el breaker.
-_BREAKER_REASONS = frozenset({"transient", "unknown"})
+# [S4] "timeout" (deadline propio del MEL, ver executor._try_one) SÍ cuenta: un
+# proveedor que agota el plazo una y otra vez es inservible ahora mismo, y
+# saltárselo durante OPEN_S es exactamente lo que hace que el chat responda con
+# el siguiente candidato en vez de pagar el plazo entero en cada mensaje.
+_BREAKER_REASONS = frozenset({"transient", "unknown", "timeout"})
 
 
 class CircuitBreaker:

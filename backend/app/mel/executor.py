@@ -208,15 +208,29 @@ async def _try_one(req: ExecutionRequest, ref: ModelRef) -> tuple[Optional[dict]
     """Intenta UN candidato. Devuelve (payload|None, error, reason). `payload` =
     {text, tokens} si OK. Aplica 1 reintento del mismo modelo ante respuesta
     vacía (doc 19 §8.1)."""
+    from app.core.config import settings
+
+    deadline = settings.MEL_REQUEST_DEADLINE_S
     for attempt in (1, 2):
         try:
             # [R6.5a] `messages` SOLO se pasa cuando de verdad hay historial.
             # Sin él, la llamada es byte a byte la de siempre — así el cambio es
             # ADITIVO de verdad: nada que envuelva o sustituya a `registry`
             # (tests, futuros decoradores) tiene que enterarse de nada.
-            raw = (await registry.execute(ref, req.prompt, req.system_prompt, messages=req.messages)
-                   if req.messages
-                   else await registry.execute(ref, req.prompt, req.system_prompt))
+            call = (registry.execute(ref, req.prompt, req.system_prompt, messages=req.messages)
+                    if req.messages
+                    else registry.execute(ref, req.prompt, req.system_prompt))
+            # [S4 · NEW-2] DEADLINE por petición. Antes el único límite era el
+            # del propio provider (180 s en Ollama) y, con cadena de fallback,
+            # eran 180 s POR SALTO — un proveedor colgado podía costar minutos.
+            raw = await (asyncio.wait_for(call, timeout=deadline) if deadline > 0 else call)
+        except asyncio.TimeoutError:
+            # Razón propia (no la genérica "transient"): un proveedor que agota
+            # el plazo es un diagnóstico distinto de un error de red, y así se
+            # ve tal cual en `mel_executions`/telemetría. Abre el breaker igual.
+            logger.warning(f"[executor] {ref.provider}:{ref.model} superó el plazo de "
+                           f"{deadline}s ({req.capability.value}) — salto al siguiente")
+            return None, f"deadline de {deadline}s superado", "timeout"
         except Exception as e:
             action, reason = classify_failure(exc=e)
             return None, f"{type(e).__name__}: {e}", reason
@@ -234,6 +248,31 @@ async def _try_one(req: ExecutionRequest, ref: ModelRef) -> tuple[Optional[dict]
             continue
         return None, "empty_response", "empty_response"
     return None, "empty_response", "empty_response"
+
+
+async def _with_first_chunk_deadline(origen: AsyncIterator[str], deadline_s: int,
+                                     ref: ModelRef) -> AsyncIterator[str]:
+    """[S4 · NEW-2] Envuelve un stream aplicando plazo SOLO al primer chunk.
+
+    Si el primer chunk no llega a tiempo, lanza `asyncio.TimeoutError` — la
+    recoge el `except` de `stream()`, que ya sabe registrar el fallo, abrir el
+    breaker y emitir un chunk de error honesto. No se inventa aquí un segundo
+    camino de degradación: se reusa el que ya existe."""
+    it = origen.__aiter__()
+    primero = True
+    while True:
+        try:
+            nxt = it.__anext__()
+            raw = await (asyncio.wait_for(nxt, timeout=deadline_s)
+                         if (primero and deadline_s > 0) else nxt)
+        except StopAsyncIteration:
+            return
+        except asyncio.TimeoutError:
+            logger.warning(f"[executor] {ref.provider}:{ref.model} no emitió el primer chunk "
+                           f"en {deadline_s}s — se corta")
+            raise
+        primero = False
+        yield raw
 
 
 async def stream(req: ExecutionRequest) -> AsyncIterator[str]:
@@ -269,12 +308,20 @@ async def stream(req: ExecutionRequest) -> AsyncIterator[str]:
     # Aquí, en el único punto por el que sale texto en streaming, se corta una
     # vez y protege a toda la aplicación.
     guard = RepetitionGuard()
+    # [S4 · NEW-2] DEADLINE del PRIMER chunk. Es el que importa: si el modelo no
+    # ha empezado a escribir en este plazo, el usuario lleva todo ese rato
+    # mirando un cursor. Los siguientes chunks NO llevan plazo (ya fluye:
+    # cortar a mitad de una respuesta que avanza sería peor). Se lee ANTES del
+    # try para que el `except` pueda nombrarlo sin riesgo de NameError.
+    from app.core.config import settings
+
+    first_s = settings.MEL_STREAM_FIRST_CHUNK_S
     try:
         # Mismo criterio que en `complete`: sin historial, la llamada de siempre.
         origen = (registry.stream(ref, req.prompt, req.system_prompt, messages=req.messages)
                   if req.messages
                   else registry.stream(ref, req.prompt, req.system_prompt))
-        async for raw in origen:
+        async for raw in _with_first_chunk_deadline(origen, first_s, ref):
             visible = filt.feed(raw)
             if visible:
                 yield visible
@@ -291,7 +338,13 @@ async def stream(req: ExecutionRequest) -> AsyncIterator[str]:
             yield tail
         breakers.record_success(ref.provider)
     except Exception as e:
-        _, reason = classify_failure(exc=e)
+        # [S4] Un deadline vencido se nombra como tal ("timeout"), no como el
+        # genérico "transient": es un diagnóstico distinto (el proveedor no
+        # respondió A TIEMPO, no que la red fallara) y así se lee en la
+        # telemetría. `str(TimeoutError())` es vacío, de ahí el texto propio.
+        es_timeout = isinstance(e, asyncio.TimeoutError)
+        reason = "timeout" if es_timeout else classify_failure(exc=e)[1]
+        detalle = f"no empezó a responder en {first_s}s" if es_timeout else str(e)
         breakers.record_failure(ref.provider, reason)
         # [#212] El fallo de streaming tampoco puede ser invisible: antes este
         # camino no dejaba NINGÚN rastro en telemetría (solo el texto de error
@@ -299,8 +352,8 @@ async def stream(req: ExecutionRequest) -> AsyncIterator[str]:
         _record_async(req, ref, ok=False,
                       latency_ms=int((time.monotonic() - t0) * 1000),
                       fallback_reason=reason, trace_id=trace.id,
-                      error=f"{type(e).__name__}: {e}")
-        yield f"[MEL: error de streaming en {ref.provider}: {e}]"
+                      error=f"{type(e).__name__}: {detalle}")
+        yield f"[MEL: error de streaming en {ref.provider}: {detalle}]"
 
 
 # ---------------------------------------------------------------------------

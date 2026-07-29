@@ -38,7 +38,7 @@ def _fake_router(monkeypatch, responses):
     modelo — la clave de los tests de fidelidad."""
     calls = {"i": 0, "prompts": [], "systems": []}
 
-    async def _complete(prompt, *, system_prompt=None, capability="chat"):
+    async def _complete(prompt, *, system_prompt=None, capability="chat", **kw):
         calls["prompts"].append(prompt)
         calls["systems"].append(system_prompt or "")
         i = calls["i"]
@@ -77,7 +77,7 @@ async def test_c1_classify_estampa_raw_text_con_el_texto_original(monkeypatch):
     mensaje ORIGINAL, intacto, y ningún JSON del modelo puede pisarlo."""
     from app.tie import intents
 
-    async def _complete(prompt, *, system_prompt=None, capability="chat"):
+    async def _complete(prompt, *, system_prompt=None, capability="chat", **kw):
         return {"response": json.dumps({
             "type": "execute", "goal": "REESCRITURA TOTALMENTE DISTINTA",
             "confidence": 0.9, "requires_planning": True,

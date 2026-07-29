@@ -439,3 +439,42 @@ def test_rutas_fuera_del_repo_se_deniegan():
     # Y el `..` tampoco cuela.
     traversal = os.path.join("C:", os.sep, "repos", "mio", "..", "otro", "x.py")
     assert a.check("filesystem", "read_file", {"path": traversal}) is not None
+
+
+def test_documentos_fuera_del_repo_se_deniegan():
+    """[2026-07-27, doc 34] Regresión del bug reportado en vivo: un agente del
+    proyecto "Cordyceps" con carpeta asignada escribió `Cordyceps_Wiki.docx`
+    fuera de esa carpeta porque `document` no estaba en `_PATH_PARAMS`. Mismo
+    caso que `filesystem`, pero con la tool de documentos de oficina."""
+    a = Authority(repo_path=os.path.join("C:", os.sep, "repos", "cordyceps"))
+    dentro = os.path.join("C:", os.sep, "repos", "cordyceps", "wiki.docx")
+    fuera = os.path.join("C:", os.sep, "Users", "Alejandro", "Cordyceps_Wiki.docx")
+    assert a.check("document", "write_docx", {"path": dentro}) is None
+    assert a.check("document", "write_docx", {"path": fuera}) is not None
+    # Lectura también queda dentro de la carpeta, no solo la escritura.
+    assert a.check("document", "read_pdf", {"path": fuera}) is not None
+
+
+def test_descargas_fuera_del_repo_se_deniegan():
+    """`download.download_url` baja archivos a disco igual que `filesystem.
+    write_file` — mismo alcance de carpeta."""
+    a = Authority(repo_path=os.path.join("C:", os.sep, "repos", "cordyceps"))
+    dentro = os.path.join("C:", os.sep, "repos", "cordyceps", "logo.png")
+    fuera = os.path.join("C:", os.sep, "Users", "Alejandro", "Downloads", "logo.png")
+    assert a.check("download", "download_url", {"url": "https://x.com/logo.png", "path": dentro}) is None
+    assert a.check("download", "download_url", {"url": "https://x.com/logo.png", "path": fuera}) is not None
+
+
+def test_browser_solo_restringe_descarga_no_navegacion():
+    """`browser` solo queda acotado por carpeta en sus acciones que escriben a
+    disco (`download_file`/`upload_file`, único parámetro `path`); navegar,
+    hacer clic o buscar en la web sigue sin restricción — internet es externo
+    por naturaleza, el disco local no (petición explícita del usuario)."""
+    a = Authority(repo_path=os.path.join("C:", os.sep, "repos", "cordyceps"))
+    fuera = os.path.join("C:", os.sep, "Users", "Alejandro", "descarga.pdf")
+    # Descargar a disco SÍ queda acotado a la carpeta del proyecto.
+    assert a.check("browser", "download_file", {"tab_id": "t1", "selector": "a", "path": fuera}) is not None
+    # Navegar, buscar y hacer clic NO tienen `path`: sin restricción de carpeta.
+    assert a.check("browser", "open_url", {"tab_id": "t1", "url": "https://youtube.com"}) is None
+    assert a.check("browser", "google_search", {"tab_id": "t1", "query": "cordyceps"}) is None
+    assert a.check("browser", "click", {"tab_id": "t1", "selector": "#play"}) is None

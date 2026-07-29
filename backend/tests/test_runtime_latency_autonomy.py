@@ -211,6 +211,11 @@ async def test_toolloop_fuerza_politica_rapida_no_la_de_calidad(monkeypatch):
             return [{"tool_id": "browser", "description": "nav", "actions": [
                 {"id": "open_url", "description": "abre", "requires_confirmation": False}]}]
 
+        def tie_catalog(self):
+            # [P1, doc 34] mismo contrato que ToolManager real — ver la nota
+            # gemela en test_audit_s3_browser.py.
+            return self.list_tools(include_internal=True)
+
         def get_tool(self, tid):
             return object() if tid == "browser" else None
 

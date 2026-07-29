@@ -15,6 +15,7 @@
 # tocar este módulo. "classify" es una capacidad barata (doc 19 §3).
 from __future__ import annotations
 
+import asyncio
 import json
 import re
 import unicodedata
@@ -350,7 +351,17 @@ async def classify(text: str, *, channel: Optional[str] = None) -> Intent:
     [A·VOZ-2] La charla obvia se resuelve ANTES de tocar el LLM: `fast_precheck`
     (0 LLM, determinista) corta el round-trip del clasificador para ~la mayoría
     de turnos conversacionales. Es el arreglo de latencia — un "hola" ya no
-    espera una llamada completa al modelo antes de responder."""
+    espera una llamada completa al modelo antes de responder.
+
+    [NEW-7b, doc 34] `ensure_persistence_tool` se aplica al final, sobre
+    CUALQUIER salida de `_classify_core` (venga del LLM o de un rescate
+    determinista) — "guárdame un resumen" necesita `filesystem` sin importar
+    por qué camino se clasificó el mensaje."""
+    intent = await _classify_core(text, channel=channel)
+    return action_intent.ensure_persistence_tool(intent, text)
+
+
+async def _classify_core(text: str, *, channel: Optional[str] = None) -> Intent:
     text = (text or "").strip()
     if not text:
         return Intent.conversational_fallback(goal="")
@@ -371,8 +382,33 @@ async def classify(text: str, *, channel: Optional[str] = None) -> Intent:
         except Exception:
             return None
 
+    # [NEW-7, doc 34] MISMA red de seguridad, un escalón más afuera: una
+    # petición de LEER EL MUNDO (archivos, web, correo, agenda) tampoco puede
+    # degradar a charla — el camino corto no tiene NINGUNA herramienta, así que
+    # ahí el modelo solo puede inventarse el listado, el número o el contenido
+    # (verificado en vivo el 28-jul: inventó los imports de `pipeline.py`).
+    # Se consulta DESPUÉS de `_safe_action`: una orden sobre la propia Aithera
+    # es más específica y manda si ambas coinciden.
+    def _safe_rescue() -> Optional[Intent]:
+        act = _safe_action()
+        if act is not None:
+            return act
+        try:
+            return action_intent.world_intent(text)
+        except Exception:
+            return None
+
     try:
+        from app.core.config import settings as _settings
         from app.tie import router
+
+        # [S4·P5] Modelo/política del clasificador — MISMO patrón que el bucle de
+        # tool-use (`toolloop.run`): un modelo fijado manda; si no, la política
+        # rápida. `classify` corre en el camino caliente de CADA mensaje no
+        # trivial, así que no puede heredar la política de CALIDAD del usuario
+        # (custom→opus = decenas de segundos para un parseo estructurado).
+        _cls_model = _settings.TIE_CLASSIFY_MODEL or None
+        _cls_policy = None if _cls_model else (_settings.TIE_CLASSIFY_POLICY or None)
 
         # [A·VOZ-6 profiling] Cuánto tarda el clasificador de verdad, y con qué
         # modelo: es lo que domina el "analizando" de un mensaje NO trivial. Si
@@ -380,14 +416,22 @@ async def classify(text: str, *, channel: Optional[str] = None) -> Intent:
         # enrutado (debería ser rápido/local, doc 19 §3) — se ve en el log.
         import time as _t
         _c0 = _t.monotonic()
-        result = await router.complete(text, system_prompt=_SYSTEM_PROMPT, capability="classify")
+        # [S4 · NEW-2] DEADLINE del clasificador. Sin él, un proveedor lento
+        # podía dejar el turno entero en "analizando" durante minutos (el único
+        # tope era el del propio provider, y por salto de cadena). Al vencer se
+        # degrada por el MISMO camino que ya existía para su error — no hay una
+        # segunda forma de fallar que mantener.
+        _deadline = _settings.TIE_CLASSIFY_DEADLINE_S
+        _call = router.complete(text, system_prompt=_SYSTEM_PROMPT, capability="classify",
+                                model_override=_cls_model, policy_override=_cls_policy)
+        result = await (asyncio.wait_for(_call, timeout=_deadline) if _deadline > 0 else _call)
         _cms = int((_t.monotonic() - _c0) * 1000)
         logger.info(f"[tie-perfil] classify LLM: {_cms}ms modelo={result.get('model')!r}")
         if result.get("error"):
-            act = _safe_action()
+            act = _safe_rescue()
             if act is not None:
                 logger.info("[intents] clasificador con error PERO el mensaje pide una acción "
-                            "sobre Aithera → intent de acción determinista (no charla)")
+                            "o una lectura real → intent determinista (no charla)")
                 return act
             logger.info(f"[intents] clasificador devolvió error, fallback conversational: {result.get('response','')[:80]}")
             return Intent.conversational_fallback(goal=text)
@@ -395,10 +439,10 @@ async def classify(text: str, *, channel: Optional[str] = None) -> Intent:
         raw = strip_reasoning(result.get("response", "") or "")
         data = _extract_json(raw)
         if not data:
-            act = _safe_action()
+            act = _safe_rescue()
             if act is not None:
                 logger.info("[intents] sin JSON parseable PERO el mensaje pide una acción "
-                            "sobre Aithera → intent de acción determinista (no charla)")
+                            "o una lectura real → intent determinista (no charla)")
                 return act
             logger.info("[intents] sin JSON parseable, fallback conversational")
             return Intent.conversational_fallback(goal=text)
@@ -413,6 +457,15 @@ async def classify(text: str, *, channel: Optional[str] = None) -> Intent:
         # Umbral de confianza (doc 11 B.1): por debajo, se trata como charla — pero
         # se conservan los campos detectados en `raw` para la traza.
         if intent.confidence < CONFIDENCE_FLOOR:
+            # [NEW-7] …salvo que el mensaje pida DEMOSTRABLEMENTE leer el mundo
+            # real. El suelo existe para no actuar sobre una corazonada; pero
+            # "charla sin herramientas" tampoco es un default seguro cuando el
+            # usuario ha pedido un archivo concreto: ahí el modelo se lo inventa.
+            rescate = _safe_rescue()
+            if rescate is not None:
+                logger.info(f"[intents] confianza {intent.confidence:.2f} < suelo PERO el "
+                            f"mensaje pide una lectura real → intent determinista (no charla)")
+                return rescate
             intent.type = IntentType.CONVERSATIONAL
             intent.requires_planning = False
 
@@ -434,10 +487,10 @@ async def classify(text: str, *, channel: Optional[str] = None) -> Intent:
                 intent.requires_tools = list(intent.requires_tools or []) + ["aithera"]
         return intent
     except Exception as e:  # jamás romper el pipeline por el clasificador
-        act = _safe_action()
+        act = _safe_rescue()
         if act is not None:
             logger.error(f"[intents] excepción clasificando PERO el mensaje pide una acción "
-                         f"sobre Aithera → intent determinista: {type(e).__name__}: {e}")
+                         f"o una lectura real → intent determinista: {type(e).__name__}: {e}")
             return act
         logger.error(f"[intents] excepción clasificando (fallback conversational): {type(e).__name__}: {e}")
         return Intent.conversational_fallback(goal=text)

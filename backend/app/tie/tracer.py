@@ -197,6 +197,35 @@ def trace_id_for_mission(mission_id: str) -> Optional[str]:
         db.close()
 
 
+def resolve_trace_id(any_id: str) -> Optional[str]:
+    """[S7·S8] Resuelve un identificador de misión sea cual sea su FORMA: el
+    `trace_id` real (PK de `orchestrator_traces`, lo que usan internamente los
+    endpoints) o el `mission_id` (lo que anuncia el chat/lo que trae una misión
+    nacida de `submit_mission`). Antes `GET /api/tie/missions/{id}` solo
+    aceptaba el primero — el chat podía anunciar un id que el endpoint
+    rechazaba con 404 (el mismatch real que motivó S8, distinto al de NEW-3).
+
+    PK primero (ruta más barata); si no hay fila, cae a buscar por
+    `mission_id` — la más reciente, mismo criterio que
+    `trace_id_for_mission`. Devuelve el trace_id real, o None si ninguno de
+    los dos encaja."""
+    db = SessionLocal()
+    try:
+        row = db.get(OrchestratorTrace, any_id)
+        if row is not None:
+            return row.id
+        row = (db.query(OrchestratorTrace)
+                 .filter(OrchestratorTrace.mission_id == any_id)
+                 .order_by(OrchestratorTrace.created_at.desc())
+                 .first())
+        return row.id if row else None
+    except Exception as e:
+        logger.error(f"[tracer] resolve_trace_id({any_id}) falló: {type(e).__name__}: {e}")
+        return None
+    finally:
+        db.close()
+
+
 def get_meta(trace_id: str) -> Optional[dict]:
     """Metadatos de la traza (mission_id, channel, state) — el executor los
     necesita al reanudar (la Mission de V1.0 es implícita: vive aquí)."""

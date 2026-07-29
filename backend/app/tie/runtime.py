@@ -17,6 +17,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Any, AsyncIterator, Optional
 
+from app.core import grounding
 from app.core.logging_config import get_system_logger
 from app.tie.authority import Authority
 
@@ -86,6 +87,12 @@ class AgentResult:
     duration_ms: Optional[int] = None
     learned: list[str] = field(default_factory=list)  # candidatos a memoria/skill (V1.1)
     error: Optional[str] = None
+    # [S11, doc 34 §S11] tool_ids que el paso pidió pero NO se le concedieron
+    # (existían y el agente las tenía permitidas, pero no estaban asignadas a
+    # este nodo y el usuario no las concedió a mitad de ejecución). Append-only,
+    # default vacío — cero regresión. La copia el executor a
+    # `node.result["limitations"]` para que el responder pueda avisar.
+    limitations: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -232,6 +239,7 @@ class NullRuntime(AgentRuntime):
             return AgentResult(
                 task_id=task.id, success=loop_res.ok, output=loop_res.answer,
                 tool_calls=loop_res.tool_calls, error=loop_res.error, duration_ms=dur,
+                limitations=loop_res.limitations,
             )
 
         # camino de chat (el 100% del camino corto de V1.0/T1)
@@ -292,9 +300,27 @@ class NullRuntime(AgentRuntime):
                 model_override=_model_override_from_hint(task.model_hint),  # [E2b] override explícito
                 policy_override=voice_policy,
             )
+            # [S2·S6, doc 34] Se acumula lo emitido para poder juzgar la
+            # respuesta ENTERA al final: una afirmación de acción puede
+            # repartirse entre varios chunks, así que mirarlos de uno en uno
+            # no serviría. Solo se guarda el texto del turno (no crece sin
+            # límite: es una respuesta de chat).
+            emitido: list[str] = []
             async for chunk in mel_stream(req):
                 if chunk:
+                    emitido.append(chunk)
                     yield AgentChunk(task_id=task.id, kind="text", payload=chunk)
+            # Este camino no ejecuta NINGUNA herramienta: si el texto dice que
+            # visitó una web, leyó un archivo o promete hacerlo "ahora", es
+            # falso por construcción. La coletilla honesta va como un chunk
+            # más, así que el usuario la ve llegar con el resto.
+            # [NEW-7] `note_for` decide CUÁL toca (la coletilla suave, el aviso
+            # fuerte de fabricación, o ninguna) — el mismo punto de decisión que
+            # usa `with_honesty_note` en el camino sin streaming, para que las
+            # dos variantes no puedan divergir.
+            nota = grounding.note_for("".join(emitido))
+            if nota:
+                yield AgentChunk(task_id=task.id, kind="text", payload=f"\n\n{nota}")
         except Exception as e:
             logger.error(f"[NullRuntime] stream_task falló: {type(e).__name__}: {e}")
             yield AgentChunk(task_id=task.id, kind="status", payload=f"error: {e}")

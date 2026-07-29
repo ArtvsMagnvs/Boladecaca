@@ -14,7 +14,7 @@ import { usePolling } from "@/hooks/usePolling";
 import { useConfirm } from "@/components/ConfirmDialog";
 import { useT } from "@/store/useI18n";
 
-import { api, type Mission, type MissionDetail, type NodeState, type TaskNode } from "@/lib/api";
+import { api, type Approval, type Mission, type MissionDetail, type NodeState, type TaskNode } from "@/lib/api";
 import { MiniMarkdown } from "@/lib/miniMarkdown";
 
 const STATE_KEY: Record<string, string> = {
@@ -74,6 +74,11 @@ export default function Missions() {
   // line-clamp-3 sin ninguna forma de ver el resto. Un Set con los ids de los
   // pasos expandidos — se resetea solo al cambiar de misión (abajo).
   const [expandedNodes, setExpandedNodes] = useState<Set<string>>(new Set());
+  // [S7·S8] El gate de PERMISO DE TOOL (nace en pleno vuelo del toolloop, R1,
+  // posterior a T4b) no toca ni `graph.state` ni `node.state` — hasta ahora
+  // solo existía panel para resolverlo en el Chat. Se correlaciona con la
+  // misión seleccionada por `mission_id` (S7·S8-2/3).
+  const [toolGate, setToolGate] = useState<Approval | null>(null);
   const selectedRef = useRef<string | null>(null);
   selectedRef.current = selected;
 
@@ -82,6 +87,7 @@ export default function Missions() {
       const list = await api.getMissions();
       setMissions(list);
       const sel = selectedRef.current;
+      let currentDetail: MissionDetail | null = null;
       if (sel) {
         // [Fix 2026-07-19] Una seleccion que ya no existe (recien borrada) no
         // puede tumbar la carga entera. Antes, su 404 caia al `catch` de abajo
@@ -89,7 +95,8 @@ export default function Missions() {
         // blanco, aunque el resto estuviera perfectamente. Ahora se suelta la
         // seleccion muerta y se sigue.
         if (list.some((m) => m.trace_id === sel)) {
-          setDetail(await api.getMission(sel));
+          currentDetail = await api.getMission(sel);
+          setDetail(currentDetail);
         } else {
           selectedRef.current = null;
           setSelected(null);
@@ -97,6 +104,16 @@ export default function Missions() {
         }
       } else if (list.length && !sel) {
         setSelected(list[0].trace_id);
+      }
+      if (currentDetail && isLive(currentDetail.state)) {
+        const pending = await api.getApprovals();
+        setToolGate(
+          pending.find(
+            (a) => a.action_type === "tie_tool_permission" && a.mission_id === currentDetail!.mission_id
+          ) ?? null
+        );
+      } else {
+        setToolGate(null);
       }
       setError(null);
     } catch (e) {
@@ -119,6 +136,7 @@ export default function Missions() {
   useEffect(() => {
     if (!selected) return;
     setExpandedNodes(new Set());
+    setToolGate(null);
     api.getMission(selected).then(setDetail).catch(() => undefined);
   }, [selected]);
 
@@ -330,6 +348,34 @@ export default function Missions() {
                       className="text-xs px-3 py-2 rounded-lg bg-signal-error/10 text-signal-error border border-signal-error/30 hover:bg-signal-error/20 disabled:opacity-50"
                     >
                       {t("missions.nodeGate.reject")}
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* [S7·S8] Gate de PERMISO DE TOOL — se abre en pleno vuelo del
+                  toolloop (R1), no forma parte del plan ni de un nodo, así que
+                  no toca `graph.state` ni `node.state`: hasta ahora solo tenía
+                  botones en el Chat. Se correlaciona por `mission_id`
+                  (S7·S8-2/3). Mismo patrón de resolución que los otros dos. */}
+              {toolGate && (
+                <div className="rounded-2xl p-5 bg-signal-warn/10 border border-signal-warn/30">
+                  <h3 className="text-sm font-medium text-signal-warn">{t("missions.toolGate.title")}</h3>
+                  <p className="text-xs text-ink-dim mt-1">{toolGate.summary || toolGate.title}</p>
+                  <div className="flex gap-2 mt-4">
+                    <button
+                      onClick={() => act(() => api.resolveApproval(toolGate.gate_id, true))}
+                      disabled={busy}
+                      className="text-xs px-3 py-2 rounded-lg bg-signal-ok/15 text-signal-ok border border-signal-ok/30 hover:bg-signal-ok/25 disabled:opacity-50"
+                    >
+                      {t("missions.toolGate.approve")}
+                    </button>
+                    <button
+                      onClick={() => act(() => api.resolveApproval(toolGate.gate_id, false))}
+                      disabled={busy}
+                      className="text-xs px-3 py-2 rounded-lg bg-signal-error/10 text-signal-error border border-signal-error/30 hover:bg-signal-error/20 disabled:opacity-50"
+                    >
+                      {t("missions.toolGate.reject")}
                     </button>
                   </div>
                 </div>

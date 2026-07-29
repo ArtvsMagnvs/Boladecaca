@@ -106,7 +106,7 @@ async def test_classify_accion_si_llama_al_llm(monkeypatch):
 
     llamado = {"n": 0}
 
-    async def _fake_complete(text, *, system_prompt=None, capability=None):
+    async def _fake_complete(text, *, system_prompt=None, capability=None, **kw):
         llamado["n"] += 1
         return {"response": '{"type":"execute","goal":"abrir youtube","confidence":0.9,'
                             '"requires_browser":true}', "error": False}

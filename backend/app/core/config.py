@@ -109,6 +109,76 @@ class Settings:
     # acción y lo dice — la aprobación NO se cancela: queda pendiente en la UI.
     # Con el permiso pre-autorizado (A3b) la espera es instantánea.
     TIE_TOOL_APPROVAL_WAIT_S = int(os.getenv("TIE_TOOL_APPROVAL_WAIT_S", "120"))
+    # [S4, doc 34 §10] Ventana deslizante del transcript del bucle de tool-use.
+    # El transcript CRECE con cada iteracion y se reenviaba ENTERO en cada
+    # llamada (observaciones de 4000 chars x 12 vueltas = ~50k chars al final):
+    # el prompt de las ultimas vueltas era mayoritariamente historia vieja e
+    # irrelevante, y cada token de mas es latencia. El PROMPT se acota a los
+    # bloques de cabecera (objetivo + contexto + catalogo, SIEMPRE) + las
+    # ultimas N interacciones; el transcript completo se conserva en memoria
+    # para telemetria/debug. 0 = sin ventana (comportamiento anterior).
+    TIE_TOOL_TRANSCRIPT_WINDOW = int(os.getenv("TIE_TOOL_TRANSCRIPT_WINDOW", "8"))
+    # [S4·P5] Modelo/politica FIJOS para el clasificador de intents. Mismo patron
+    # y mismo motivo que TIE_TOOL_MODEL/TIE_TOOL_POLICY del bucle: `classify`
+    # corre en el camino caliente de CADA mensaje no trivial y domina el
+    # "analizando". Con la politica de calidad del usuario (custom -> opus) eso
+    # son decenas de segundos para una tarea que es puro parseo estructurado.
+    # Vacio = sin modelo fijo, manda TIE_CLASSIFY_POLICY ("speed": el modelo
+    # mas RAPIDO medido de esta maquina con suelo de calidad estructurada).
+    TIE_CLASSIFY_MODEL = os.getenv("TIE_CLASSIFY_MODEL", "").strip()
+    TIE_CLASSIFY_POLICY = os.getenv("TIE_CLASSIFY_POLICY", "speed").strip()
+
+    # [S4 · NEW-2, doc 34 §10] DEADLINES del camino caliente. Antes NO habia ni
+    # un `timeout` ni un `wait_for` en mel/executor.py, tie/intents.py ni
+    # tie/router.py: el unico limite eran los 180 s del provider de Ollama, y
+    # con cadena de fallback eran 180 s POR SALTO. Sin plazo, el chat podia
+    # pasar minutos en "analizando" sin escribir una linea — lo que la campaña
+    # 00 leyo como "cuelgue" (no lo era: el event loop seguia vivo; era falta
+    # de plazo). 0 desactiva el deadline correspondiente.
+    #   · REQUEST: una llamada completa a un proveedor. Vencer = fallo
+    #     "timeout" -> breaker + salto al siguiente candidato de la cadena.
+    #   · STREAM_FIRST_CHUNK: solo el PRIMER chunk (los siguientes ya fluyen).
+    #   · CLASSIFY: el clasificador entero; vencer degrada por el MISMO camino
+    #     que ya existe para su error (accion determinista o charla).
+    MEL_REQUEST_DEADLINE_S = int(os.getenv("MEL_REQUEST_DEADLINE_S", "120"))
+    MEL_STREAM_FIRST_CHUNK_S = int(os.getenv("MEL_STREAM_FIRST_CHUNK_S", "60"))
+    TIE_CLASSIFY_DEADLINE_S = int(os.getenv("TIE_CLASSIFY_DEADLINE_S", "60"))
+    # Latido del stream: cada cuantos segundos se emite un `status` mientras se
+    # espera al clasificador/planner/accion. Objetivo medible de S4: NINGUN
+    # turno de chat por encima de este plazo sin respuesta NI evento. 0 = off.
+    TIE_HEARTBEAT_S = int(os.getenv("TIE_HEARTBEAT_S", "15"))
+
+    # [S5 · NEW-1, doc 34 §10] TUBERIA ENTRE PASOS. Cuantos caracteres del
+    # resultado de CADA nodo del que depende un paso se le pasan a ese paso.
+    # EL HUECO QUE CIERRA: `_execute_node` construia el contexto del nodo SOLO
+    # con memoria del MOS; el resultado de sus dependencias no llegaba por
+    # ningun camino, asi que "lee X y haz Y con ello" solo funcionaba si ambas
+    # cosas caian en el MISMO nodo. En cuanto el planner las separaba, el
+    # segundo paso trabajaba a ciegas y lo decia con una disculpa educada
+    # ("el contenido completo no llego a cargarse en la sesion" — era LITERAL).
+    TIE_NODE_HANDOFF_CHARS = int(os.getenv("TIE_NODE_HANDOFF_CHARS", "12000"))
+    # Presupuesto de la observacion de una tool que DEVUELVE CONTENIDO
+    # (document.read_*, filesystem.read_file, browser.get_text/get_html). El
+    # tope general de 4000 es correcto para un `list_dir`, pero descabezaba un
+    # GDD de 20 paginas — y ademas recortaba el JSON YA SERIALIZADO, asi que
+    # cuanto contenido real sobrevivia dependia del ruido de estructura.
+    TIE_OBSERVATION_CHARS_CONTENT = int(os.getenv("TIE_OBSERVATION_CHARS_CONTENT", "24000"))
+
+    # [S3, doc 34 §10] Presupuesto de llamadas LLM por CAMINO — medido, no solo
+    # "va lento". `telemetry.record("path", name=...)` etiqueta cada turno con
+    # el camino que tomó (chat/direct/planned/multi, ver tie/pipeline.py y
+    # orchestrator/__init__.py); `mission_timeline()` compara el conteo real de
+    # eventos "llm_call" contra el presupuesto de ese camino. BUDGET_LLM_CHAT=0
+    # es un techo teórico: el camino corto NUNCA crea mission_id (A·VOZ-3), así
+    # que hoy no hay traza a la que se le pueda aplicar. BUDGET_LLM_DIRECT cubre
+    # un bucle de tool-use de acción mecánica (un solo encargo, sin planner).
+    # BUDGET_LLM_PLANNED cubre planificar + ejecutar un grafo de 2-3 nodos.
+    # BUDGET_LLM_MULTI_PER_OBJECTIVE es el mismo techo que planned, aplicado a
+    # cada objetivo independiente de una orquestación multi-encargo (R2).
+    BUDGET_LLM_CHAT = int(os.getenv("BUDGET_LLM_CHAT", "0"))
+    BUDGET_LLM_DIRECT = int(os.getenv("BUDGET_LLM_DIRECT", "6"))
+    BUDGET_LLM_PLANNED = int(os.getenv("BUDGET_LLM_PLANNED", "12"))
+    BUDGET_LLM_MULTI_PER_OBJECTIVE = int(os.getenv("BUDGET_LLM_MULTI_PER_OBJECTIVE", "8"))
 
     # [2026-07-19] El navegador de Aithera se ve. Si navega por ti, tienes que
     # poder mirarlo y tomar el control. Solo se pone a True para automatismos de
@@ -146,6 +216,13 @@ class Settings:
     # V1.0 (MEL E1b, doc 19 §5.4/doc 22 §3·E1b): cada cuántos días se re-investigan
     # las capacidades de los modelos configurados (el número que pidió el usuario).
     MEL_RESEARCH_REFRESH_DAYS = int(os.getenv("MEL_RESEARCH_REFRESH_DAYS", "14"))
+    # [P4, doc 34, 2026-07] Cuántos modelos investiga como máximo el job NOCTURNO
+    # del auto-catálogo en cada pasada. Antes se disparaba a los 900s del arranque
+    # (podía coincidir con el usuario ya trabajando) e investigaba TODOS los
+    # configurados de golpe (hasta 16 en la campaña de test en vivo) — 45 minutos
+    # compitiendo por el proveedor activo. Con esto: nocturno (job cron junto a los
+    # del MOS) y como mucho 1 modelo por noche, repartido en varias noches.
+    MEL_RESEARCH_MAX_PER_NIGHT = int(os.getenv("MEL_RESEARCH_MAX_PER_NIGHT", "1"))
 
     # V0.8 (hardening): CORS restringido. Además de localhost (cubierto por
     # regex) y file:// de Electron (origen 'null'), se pueden declarar orígenes

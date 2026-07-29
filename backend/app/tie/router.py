@@ -28,6 +28,8 @@ async def complete(
     *,
     system_prompt: Optional[str] = None,
     capability: str = "chat",
+    model_override: Optional[str] = None,
+    policy_override: Optional[str] = None,
 ) -> dict:
     """Ejecuta una petición al modelo adecuado para `capability`. Punto ÚNICO de
     llamada al LLM del TIE — intents/planner/responder pasan por aquí. Devuelve
@@ -38,7 +40,15 @@ async def complete(
     `mel.complete(ExecutionRequest(capability=...))`. El MEL elige el modelo por
     la política activa; `fast()`/`smart()` quedan como hints heredados de T2 que
     ya nadie consulta (el reparto real lo hacen las cadenas compiladas). El TIE
-    conserva su API interna (`router.complete`) — solo cambia a QUÉ delega."""
+    conserva su API interna (`router.complete`) — solo cambia a QUÉ delega.
+
+    [S4] `model_override`/`policy_override` (ambos opcionales, default None =
+    comportamiento idéntico al anterior): permiten que un caller del camino
+    CALIENTE fije su modelo/política sin pasar por la política de calidad del
+    usuario — hoy lo usa `intents.classify` con `TIE_CLASSIFY_MODEL/POLICY`,
+    igual que el toolloop ya hacía con `TIE_TOOL_MODEL/POLICY` construyendo su
+    `ExecutionRequest` a mano. El MEL respeta la misma precedencia de siempre
+    (override de tarea > pin de proyecto > política)."""
     from app.mel import Capability, ExecutionRequest, complete as mel_complete
 
     # capability es un string (p.ej. "reason") que coincide con el valor del enum.
@@ -48,6 +58,7 @@ async def complete(
         cap = Capability.CHAT
     res = await mel_complete(ExecutionRequest(
         capability=cap, prompt=prompt, system_prompt=system_prompt,
+        model_override=model_override, policy_override=policy_override,
     ))
     # Adaptación al shape dict de siempre (response/model/tokens/error): el
     # caller (intents/planner/responder) lee result.get("response")/.get("error").

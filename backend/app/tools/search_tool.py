@@ -17,6 +17,7 @@ from typing import Dict, Any, List, Optional
 
 import httpx
 
+from app.core.sanitize import clean_external
 from .base import BaseTool
 from app.core import secrets as secrets_module
 
@@ -77,7 +78,11 @@ async def _search_brave(vertical: str, query: str, count: int, api_key: str) -> 
             "url": it.get("url") or it.get("source"),
             "description": it.get("description") or it.get("snippet") or "",
         })
-    return out
+    # [S9c] Los proveedores devuelven restos de marcado enriquecido: un
+    # `\ufffc` invisible pegado a una URL acaba DENTRO del enlace markdown que
+    # escribe el modelo, y el usuario recibe un enlace roto. Se limpia en la
+    # frontera, una vez, para que nadie aguas abajo tenga que acordarse.
+    return clean_external(out)
 
 
 async def _search_serpapi(vertical: str, query: str, count: int, api_key: str) -> List[Dict[str, Any]]:
@@ -106,7 +111,7 @@ async def _search_serpapi(vertical: str, query: str, count: int, api_key: str) -
             "url": it.get("link") or it.get("original") or it.get("source"),
             "description": it.get("snippet") or "",
         })
-    return out
+    return clean_external(out)      # [S9c] misma limpieza que en Brave
 
 
 async def _search(vertical: str, query: str, count: int) -> Dict[str, Any]:

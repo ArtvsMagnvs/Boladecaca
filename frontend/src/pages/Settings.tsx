@@ -1577,6 +1577,18 @@ function PermissionsSettings() {
         </p>
       )}
 
+      {/* [S7·S8-c] `autonomousNote` explica el COMPORTAMIENTO del perfil
+          Autónomo (arriba, junto al selector); esta es una nota DISTINTA —
+          un aviso único (no uno por toggle) de que los interruptores de abajo
+          no tienen ningún efecto mientras ese perfil siga activo. Antes no
+          había ninguna señal visible de esto: apagar un permiso individual
+          parecía funcionar y no hacía nada. */}
+      {catalog.profile === "full" && (
+        <p className="text-[10px] text-ink-faint bg-base-800/50 border border-base-700 rounded-lg px-3 py-2">
+          {tr("settings.permisos.togglesInertNote")}
+        </p>
+      )}
+
       {/* Permisos agrupados por categoría (grupo/label/description vienen del
           backend — catálogo de PermissionDef, fuera del alcance frontend-only
           de esta sesión; ver nota I18N-8 en doc 30). */}

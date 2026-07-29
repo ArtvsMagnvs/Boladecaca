@@ -274,16 +274,17 @@ async def lifespan(app: FastAPI):
         mel.register_handlers()
         from app.automation import scheduler_service
 
-        scheduler_service.add_interval_job(
-            mel.refresh_capability_reports,
-            minutes=settings.MEL_RESEARCH_REFRESH_DAYS * 24 * 60,
-            # [Opt latencia 2026-07-21] 90s tras arrancar era JUSTO la ventana en
-            # que el usuario suele lanzar su primera misión → el auto-catálogo
-            # (varias investigaciones seguidas) le competía el proveedor y todo
-            # iba lento. Se retrasa a 15 min: para entonces el usuario ya no está
-            # en el arranque, y de todos modos ahora investiga con modelo barato
-            # (economy). El refresco de fondo no tiene prisa (es cada 14 días).
-            id="mel_research_refresh", first_run_delay_s=900,
+        # [P4, doc 34, 2026-07] Antes era un `add_interval_job` que disparaba a
+        # los 900s (15 min) del ARRANQUE del backend — si el backend llevaba
+        # encendido desde por la mañana, esos 15 min podían caer a media tarde o
+        # noche, justo cuando el usuario estaba chateando de verdad (confirmado
+        # en la campaña 00: 4 de 4 picos de latencia de esa noche coincidían con
+        # el research). Ahora es un cron nocturno, junto a los del MOS
+        # (03:30-04:35) — 04:40, el usuario duerme. Además `nightly_refresh()`
+        # (llamado por `refresh_capability_reports`) investiga como mucho
+        # `MEL_RESEARCH_MAX_PER_NIGHT` modelo(s) y nunca proveedores por CLI.
+        scheduler_service.add_cron_job(
+            mel.refresh_capability_reports, hour=4, minute=40, id="mel_research_refresh",
         )
         # [2026-07-22] Auto-BENCHMARK catch-up: mide los modelos que aún no
         # tienen medición (los nuevos se miden solos al conectarse, vía
@@ -299,7 +300,8 @@ async def lifespan(app: FastAPI):
         log_info(
             "startup",
             f"MEL listo — política activa '{active}'; catálogo auto-investigado "
-            f"(refresco cada {settings.MEL_RESEARCH_REFRESH_DAYS}d)",
+            f"(nocturno 04:40, ≤{settings.MEL_RESEARCH_MAX_PER_NIGHT} modelo/noche, "
+            f"refresco cada {settings.MEL_RESEARCH_REFRESH_DAYS}d, sin CLI)",
         )
     except Exception as e:
         log_error("startup", e, "No se pudo inicializar el MEL en el arranque (no crítico; recompila en el primer uso)")
