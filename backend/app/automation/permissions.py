@@ -218,6 +218,13 @@ def permission_for_tool_action(tool_id: str, action: str) -> Optional[str]:
 # a propósito: un gate de nodo ES un paso de un plan — quien autoriza ejecutar
 # planes autoriza sus pasos (misma decisión de diseño que T4a: aprobar el plan
 # autoriza sus nodos sensibles).
+# [2026-08-02] `kind` del gate que representa una PREGUNTA al usuario. Vive
+# aquí (y no en el TIE) porque un `kind` de gate es vocabulario de
+# `app.automation`, y porque quien MÁS necesita conocerlo es justo la función
+# de abajo que lo excluye del modo Autónomo. Lo consumen `tie.toolloop`
+# (que la abre y espera) y el endpoint de aprobaciones (que la pinta aparte).
+USER_QUESTION_KIND = "user.question"
+
 _GATE_KIND_PERMISSION: dict[str, str] = {
     "tie.plan": "tie.plan_approval",
     "tie.node": "tie.plan_approval",
@@ -232,6 +239,16 @@ def is_kind_pre_authorized(kind: str) -> bool:
     `email.send`, el caso de A3b); (2) el kind es un gate del TIE con
     traducción declarada. Fail-closed en todo lo demás — un kind nuevo sin
     entrada aquí pregunta SIEMPRE, que es el default seguro (salvo en full)."""
+    # [2026-08-02] UNA PREGUNTA NO ES UN PERMISO. El modo Autónomo significa
+    # "no me pidas permiso para actuar", NUNCA "invéntate mi respuesta": si
+    # Aithera pregunta "¿Unity o motor genérico?", auto-aprobar esa pregunta
+    # devolvería al modelo la nota "auto (permiso pre-autorizado)" como si
+    # fuera la respuesta del usuario — es decir, se inventaría un criterio que
+    # el usuario nunca dio. Va ANTES del atajo de `autonomy_is_full` a
+    # propósito: es la única excepción al "sí a todo", y es lo que mantiene
+    # honesto el modo autónomo.
+    if kind == USER_QUESTION_KIND:
+        return False
     if autonomy_is_full():
         return True                      # 100% autónomo: cualquier gate, presente o futuro
     if is_pre_authorized(kind):

@@ -36,6 +36,8 @@ import { useModeloIAOptions } from "./useModeloIAOptions";
 import { SkillPickerPopup } from "./SkillPickerPopup";
 import { HelpButton, windowShortcuts } from "./HelpPanel";
 import { useDragResize, MIN_CARD_W, MIN_CARD_H, type CardLayout, type Rect } from "./useWindowCard";
+import { UserQuestionCard } from "@/components/UserQuestionCard";
+import { usePendingQuestions } from "@/hooks/usePendingQuestions";
 // Alias 'tr' (no 't'): este archivo usa 't' como variable de tool en
 // '.map((t) => …)' — evita sombrear/confundir.
 import { useT } from "@/store/useI18n";
@@ -99,6 +101,9 @@ export function AgentWindowCard({
   const [helpOpen, setHelpOpen] = useState(false);
   const pollRef = useRef<number | null>(null);
   const modeloOptions = useModeloIAOptions();
+  // [2026-08-02] Preguntas del asistente que esperan respuesta (ver
+  // `usePendingQuestions`): también se pueden responder desde aquí.
+  const { questions, refresh: refreshQuestions } = usePendingQuestions();
 
   const [editing, setEditing] = useState(false);
   const [editSaving, setEditSaving] = useState(false);
@@ -353,6 +358,21 @@ export function AgentWindowCard({
           );
         })}
       </div>
+      {/* [2026-08-02] Preguntas abiertas del asistente — el agente también
+          puede necesitar un dato para seguir, y si no se puede responder aquí
+          su trabajo se queda a medias. */}
+      {questions.length > 0 && (
+        <div className="px-4 pt-2 flex flex-col gap-2 shrink-0">
+          {questions.map((q) => (
+            <UserQuestionCard
+              key={q.gate_id}
+              question={q}
+              compact
+              onAnswered={() => { void refreshQuestions(); void loadExecutions(); }}
+            />
+          ))}
+        </div>
+      )}
       <div className="px-4 py-3 border-t border-base-700/60 flex gap-2 shrink-0">
         <input
           value={taskInput}
@@ -371,7 +391,7 @@ export function AgentWindowCard({
   return (
     <div
       ref={nodeRef}
-      className={`glass-surface rounded-2xl border border-base-700 shadow-glass flex flex-col overflow-hidden ${
+      className={`glass-surface holo-frame rounded-2xl border border-base-700 shadow-glass flex flex-col overflow-hidden ${
         layout.expanded ? "absolute inset-0" : "absolute top-0 left-0"
       }`}
       style={{ ...rectStyle, zIndex: layout.zIndex }}

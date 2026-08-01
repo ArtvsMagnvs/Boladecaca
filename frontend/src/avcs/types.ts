@@ -54,7 +54,10 @@ export interface Palette {
   field: readonly [number, number, number];
 }
 
-export type QualityTier = "Q1" | "Q2" | "Q3" | "Q4";
+/** [doc 35 PU5, 2026-07-30] Q1 ELIMINADO: con 4096 partículas no alcanzaba un
+ *  mínimo estético digno (decisión del usuario tras verlo) y hoy cualquier
+ *  equipo mueve Q2. El mínimo real es Q2. */
+export type QualityTier = "Q2" | "Q3" | "Q4";
 
 /** Salida del AudioReactor (stub en S1, real en S2). Contrato doc 13 §8. */
 export interface AudioFrame {
@@ -98,6 +101,26 @@ export interface UniformBus {
   // Respiración (§8) — forma preservada: escala global + giro del núcleo + latido
   uBreathScale: THREE.IUniform<number>; // escala global del logo (no deforma)
   uCoreSpin: THREE.IUniform<number>; // ángulo de giro acumulado del núcleo
+  /** [doc 35 PU5] Ángulo acumulado del giro de los anillos de sincronía (rad).
+   *  Lo integra RhythmEngine con la velocidad del ritmo activo
+   *  (`RHYTHM_RING_SPIN`); el shader lo multiplica por el factor de cada anillo
+   *  (sentido alterno + más rápido hacia dentro). */
+  uRingSpin: THREE.IUniform<number>;
+  /** [PU5c] 0 = anillos en su radio normal · 1 = recogidos hacia el núcleo.
+   *  RhythmEngine lo dispara de vez en cuando y lo deja decaer: los anillos se
+   *  encogen y se re-expanden hasta su sitio, repitiendo la animación de
+   *  entrada. En reposo vale 0 (no hay coste ni movimiento). */
+  uRingBloom: THREE.IUniform<number>;
+  /** [PU5f] Envolventes de las animaciones de estado (0..1, con crossfade).
+   *  `uListenEnv`: escucha — los anillos se recogen hacia el centro.
+   *  `uSpeakEnv`: habla — los anillos se expanden y ondulan con la voz, la
+   *  semilla late y sus líneas interiores giran.
+   *  `uSpeakSpin`: ángulo acumulado del giro de esas líneas (solo avanza
+   *  mientras habla, así que al terminar se quedan donde estaban en vez de
+   *  volver de golpe). */
+  uListenEnv: THREE.IUniform<number>;
+  uSpeakEnv: THREE.IUniform<number>;
+  uSpeakSpin: THREE.IUniform<number>;
   uPulse: THREE.IUniform<number>; // vibración/latido 0-1 (decae tras cada pulso)
   // Ondas (§7)
   uWaveCount: THREE.IUniform<number>;
@@ -116,6 +139,15 @@ export interface UniformBus {
   // Audio (stub S1)
   uAudioEnv: THREE.IUniform<number>;
   uAudioBands: THREE.IUniform<THREE.Vector3>;
-  // Render / tier (los escribe PerformanceManager)
+  // Render
+  /** Tamaño de punto = BASE_POINT_SIZE × `pointScale` del tier. El escalado es
+   *  MODERADO (×1.24 como mucho) y siempre va con `uEdgeHardness`: agrandar el
+   *  punto SIN endurecer su borde lo convierte en mancha difusa (ver constants.ts). */
   uPointSize: THREE.IUniform<number>;
+  /** [doc 35 PU5] Compensación de luminosidad por tier, SOLO en el canal alpha
+   *  del fragment. Lo escribe ParticleEngine.init() desde TIERS[tier].brightBoost.
+   *  Q4 = 1.0 exacto (referencia sin cambios). */
+  uBrightBoost: THREE.IUniform<number>;
+  /** [doc 35 PU5] Dureza del borde del punto (0 = Q4, degradado completo). */
+  uEdgeHardness: THREE.IUniform<number>;
 }

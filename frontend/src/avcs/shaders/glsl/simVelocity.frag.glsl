@@ -13,6 +13,11 @@ uniform vec3  uGravityDir;
 uniform float uWeights[10];
 uniform float uBreathScale;   // escala de respiración del logo (forma preservada)
 uniform float uCoreSpin;      // giro acumulado del núcleo
+uniform float uRingSpin;      // [PU5] giro acumulado de los anillos de sincronía
+uniform float uRingBloom;     // [PU5c] 0..1 anillos recogidos → re-expandiéndose
+uniform float uListenEnv;     // [PU5f] 0..1 animación de ESCUCHA
+uniform float uSpeakEnv;      // [PU5f] 0..1 animación de HABLA
+uniform float uSpeakSpin;     // [PU5f] ángulo acumulado del giro de la semilla al hablar
 uniform float uPulse;         // vibración/latido (0-1, decae)
 uniform float uCurlFreq;
 uniform float uCurlFlow;

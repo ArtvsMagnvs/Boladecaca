@@ -2387,7 +2387,7 @@ Misiones y su API), que ya toca esa superficie.
 | `project_id` nunca viaja en el chat | Deuda anotada, no bloqueante — sin fuga observada |
 | P4 (research fuera del camino caliente) sigue sin aplicarse | ✅ Cerrado en S1 (2026-07-27) |
 | **NEW-4** nodo "Hecha" contradiciendo su propio texto (§12.4) | ✅ **Cerrado 2026-07-28** (§12.9) — `is_surrender()` en `core/grounding.py` + tercer chequeo en `_validate_result` |
-| **NEW-5** tools del agente que no llegan al nodo (§12.4) | 🔎 Diagnóstico de código hecho (§12.4) + `scripts/diagnose_new5.py` listo — pendiente correrlo contra BD real para decidir el fix |
+| **NEW-5** tools del agente que no llegan al nodo (§12.4) | 🔎 **Medido contra BD real en campaña 02** (2026-07-29) — 1 caso real confirmado (planner no asignó pese a autoridad amplia), ningún camino de código que las quite; abierto como deuda de calidad de planificación, no bloqueante — relacionado con S11 (§S11, no reproducido en vivo, mecanismo más estrecho de lo asumido) |
 | **NEW-7** fabricación de listados/contenido/cifras SIN verbo delator (§12.5) | ✅ **Cerrado 2026-07-28** — dos capas: rescate determinista del intent + detector de evidencia inverificable |
 | **NEW-6** estado "Completada" con texto de espera (§12.4) | ✅ **Cerrado 2026-07-28** (§12.10) — `executor.finish_and_record()`, punto único compartido por los 3 callers que sintetizan el outcome |
 | Navegador muerto no se relanzaba (guard `is not None`, no vivacidad) (§12.6) | ✅ **S9b cerrado 2026-07-28** |
@@ -2883,3 +2883,90 @@ S1-S11 solo queda NEW-5 pendiente de medición.**
 Pendientes de verificación en vivo: S3, S4 (incluido el thrash de Ollama, que
 por diseño no se toca sin confirmarlo antes), S5, S7·S8, S9, S9b, S9c, S11, NEW-7b,
 NEW-4 y NEW-6. Pendiente de decisión: **NEW-5** (correr `diagnose_new5.py`).*
+
+---
+
+## Campaña 02 — verificación en vivo S1-S11 + diagnóstico NEW-5 (2026-07-29, Sonnet vía Claude Code)
+
+Campaña CORTA (no el catálogo completo de §11.4), encargada directamente por
+el usuario tras el cierre de S11: regresión completa + `diagnose_new5.py`
+contra el Postgres real + 5 escenarios en vivo priorizados por riesgo/nunca
+antes probados. Evidencia completa en
+`test-lab/campanya-02-s1s11-verificacion/` (`MANIFIESTO.md` + `INFORME.md` +
+5 `T0N-*-VEREDICTO.md`/logs/JSON). Verificado por Claude (esta sesión)
+contrastando el informe contra su evidencia cruda citada (regla R1 de §11.7:
+nunca aceptar la narrativa sola) — el log de S11 (`T01-S11-gate-concesion-
+log.txt`) y el JSON de gate de NEW7/NEW7b (`T04-...-gate-content.json`)
+confirman literalmente lo que el informe describe.
+
+- **Regresión**: `cd backend && python -m pytest tests/ -v` → **1351 passed,
+  1 skipped (benigno, guard explícito del propio test), 0 failed**
+  (337.6s). Ningún flake nuevo; los ya documentados en CLAUDE.md no
+  aparecieron. Único cambio de código de toda la campaña: un test-double de
+  `test_fast_precheck.py` sin `**kw` tras el trabajo de S4 (`router.complete`
+  ahora pasa `model_override`/`policy_override` siempre) — permitido por ser
+  fallo de firma trivial, no de comportamiento; confirmado en verde tras el
+  fix y en la pasada completa.
+- **NEW-5**: `diagnose_new5.py` contra la BD real — 3 agentes con
+  `browser`/`search` habilitadas; de las últimas 15 misiones con plan, 1 caso
+  real de discrepancia (misión `59502169...`, "escribe un DOCX sobre
+  cordyceps": `authority.allowed_tools` sí incluía `browser`/`search`, el
+  planner solo asignó `document`+`filesystem` a los nodos de recolectar
+  información) y 1 falso positivo del propio diagnóstico (tarea que nunca
+  necesitó `browser`/`search`, marcador sin discrepancia real). **Reafirma la
+  conclusión del rastreo estático**: ningún camino de código quita una tool ya
+  asignada; el patrón observado es 100% decisión del planificador de no
+  ofrecerla a ese nodo, no un recorte posterior. Sigue sin datos sobre el
+  patrón (b) del diseño original (tool en `node.tools` pero el toolloop nunca
+  la llama) — el rango de log disponible no incluía ninguna misión así.
+- **En vivo — 4/5 PASS, 1 NO REPRODUCIDO**: S9 (concurrencia de navegador,
+  0 `TargetClosedError` en 2 misiones genuinamente concurrentes) → **PASS**;
+  S9b (recuperación tras cierre externo, nuevo proceso Chrome confirmado por
+  el SO) → **PASS**; S2·S6 (email real enviado tras aprobar un gate, el texto
+  final nunca volvió a decir "necesito tu confirmación") → **PASS**;
+  NEW-7/NEW-7b (listado de 19 `.py` coincide exacto con un `Glob`
+  independiente contra disco; intentó guardar, avisó honestamente al
+  rechazarse) → **PASS**; S7·S8 (gate `tool.email.send_email` real
+  aprobado/rechazado ENTERAMENTE desde `/missions`, sin volver al Chat,
+  mission `state: done`) → **PASS**. **S11 (gate de concesión) NO
+  REPRODUCIDO** en 2 intentos reales: con el agente SIN `document`, el
+  **planner** rechazó el objetivo por su cuenta antes de crear ningún nodo
+  (`PlanRejection`, mecanismo de S2/B-1) — el toolloop nunca llegó a
+  ejecutarse; con el agente CON `document`, el planner asignó correctamente
+  la tool y no hizo falta ningún gate. **Conclusión, no invalida S11**: su
+  disparador (autoridad amplia + planner que NO asigna la tool al nodo que la
+  necesita + el modelo del toolloop la pide de todas formas) es un hueco más
+  estrecho de lo que el diseño original asumía — en la práctica el planner
+  suele resolver la situación por otra vía (recorte propio + rechazo honesto,
+  o asignación correcta) antes de llegar a ese hueco. Los 8 tests unitarios de
+  `test_audit_s11_grant.py` siguen verdes y ejercitan el mecanismo
+  directamente — el código no está roto, simplemente no encontró ocasión
+  natural de dispararse en el tiempo de esta campaña.
+- **Hallazgos nuevos**: (1) infraestructura, no del código de Aithera — el
+  backend real del usuario apareció con el puerto en LISTEN pero sin
+  responder HTTP (event loop aparentemente atascado, CPU en reposo,
+  confirmado con `curl` e `Invoke-WebRequest`), reiniciado con permiso del
+  usuario; severidad media, sin investigar la causa (habría exigido
+  depurador en un proceso en marcha, fuera de alcance de "no tocar código");
+  (2) LOG-2 reconfirmado (`system.log` se sigue contaminando con actividad de
+  pytest); (3) menor — `diagnose_new5.py` lanza `UnicodeEncodeError` en
+  consolas Windows cp1252 al imprimir `═`/`⚠`; se resuelve con
+  `PYTHONIOENCODING=utf-8` delante del comando, documentado para quien lo
+  corra después.
+- **Recomendación de la campaña, aceptada**: no hace falta otra sesión de fix
+  urgente. NEW-5/S11 quedan como una brecha de diseño real pero estrecha y no
+  bloqueante (la frontera de autoridad R4 sigue intacta y confirmada en
+  ambos intentos), no una regresión ni un mecanismo roto. Si en el futuro se
+  quiere cerrar del todo, la vía más directa es instrumentar `planner.py`
+  (nivel debug) para registrar cuándo recorta su propio catálogo por
+  autoridad Y el objetivo menciona explícitamente una capacidad que quedó
+  fuera — así el uso real seguiría acumulando los casos naturales que esta
+  campaña no consiguió forzar a propósito.
+
+**Con esto, el plan S1-S11 (más los 11+ hallazgos de las verificaciones en
+vivo del usuario) queda auditado y confirmado en su totalidad, con UN único
+punto abierto no bloqueante (NEW-5/S11, brecha de diseño estrecha, no bug).
+Bloque de auditoría global del runtime — CERRADO.** Siguiente paso
+recomendado: pulido/refinamiento + preparación del instalador antes del bump
+a `1.0.0` (decisión del usuario, no otra campaña de test general — esta
+campaña corta ya cumplió esa función para lo que S1-S11 tocó).

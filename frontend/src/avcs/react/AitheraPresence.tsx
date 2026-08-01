@@ -20,12 +20,22 @@ import type { CoreStateId, QualityTier } from "../types";
 // identidad visual de Aithera y se mantiene 100% igual en cualquier tema
 // (decisión explícita del usuario).
 
+// [PU5c] Zoom y órbita manuales. `zoomRef` lo comparten el runner (que lo
+// aplica a la cámara cada frame) y el contenedor (que escucha la rueda), y
+// `engineRef` sale del runner para que los eventos de puntero del div puedan
+// empujar la órbita al engine. Un ref simple basta: no hace falta re-render.
+const DIST_BASE = 8.5;
+const ZOOM_MIN = 0.5;   // alejado
+const ZOOM_MAX = 3.0;   // acercado
+
 interface RunnerProps {
   visible: boolean;
   tier: QualityTier;
+  zoomRef: React.MutableRefObject<number>;
+  onEngine: (e: HubEngine | null) => void;
 }
 
-function PresenceRunner({ visible, tier }: RunnerProps) {
+function PresenceRunner({ visible, tier, zoomRef, onEngine }: RunnerProps) {
   const { gl, scene, camera } = useThree();
   const engineRef = useRef<HubEngine | null>(null);
   const [bloom, setBloom] = useState<boolean>(() => TIERS[tier].bloom);
@@ -48,6 +58,7 @@ function PresenceRunner({ visible, tier }: RunnerProps) {
       setBloomIntensity(cfg.bloomIntensity);
     });
     engineRef.current = engine;
+    onEngine(engine);
     if (import.meta.env.DEV) {
       // Marca de instancia única: debe verse UNA sola vez por vida de la app.
       // eslint-disable-next-line no-console
@@ -57,6 +68,7 @@ function PresenceRunner({ visible, tier }: RunnerProps) {
       engine.setRenderConfigListener(null);
       engine.dispose();
       engineRef.current = null;
+      onEngine(null);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -82,11 +94,21 @@ function PresenceRunner({ visible, tier }: RunnerProps) {
   // aspect ratio de la ventana. FOV vertical = max(el que necesita la altura,
   // el que necesita la anchura convertido a vertical vía el aspect actual).
   useFrame((state, dt) => {
+    const cam0 = state.camera as THREE.PerspectiveCamera;
+    // [PU5c] ZOOM: acerca/aleja la cámara. El zoom PERSISTE (no vuelve solo);
+    // lo que vuelve al soltar es la órbita. Se suaviza para que la rueda no dé
+    // tirones.
+    const targetZ = DIST_BASE / zoomRef.current;
+    cam0.position.z += (targetZ - cam0.position.z) * Math.min(1, dt * 9);
+
     const aspect = state.size.width / Math.max(1, state.size.height);
     if (Math.abs(aspect - lastAspectRef.current) > 0.001) {
       lastAspectRef.current = aspect;
       const cam = state.camera as THREE.PerspectiveCamera;
-      const dist = cam.position.length();
+      // Distancia BASE a propósito: el encuadre fit-contain se calcula sobre la
+      // escena sin zoom, así que hacer zoom no reajusta el FOV (y al
+      // redimensionar la ventana el zoom del usuario se respeta).
+      const dist = DIST_BASE;
       const halfW = CONTENT_HALF_WIDTH * FIT_MARGIN;
       const halfH = CONTENT_HALF_HEIGHT * FIT_MARGIN;
       const halfAngleForHeight = Math.atan(halfH / dist);
@@ -115,29 +137,80 @@ export function AitheraPresence({ className }: AitheraPresenceProps) {
   const location = useLocation();
   const tier = useAvcsTier();
   const visible = isPresenceVisible(location.pathname);
+
+  // [PU5c] Interacción: arrastrar = girar (vuelve al soltar), rueda = zoom.
+  const zoomRef = useRef(1);
+  const engineRef = useRef<HubEngine | null>(null);
+  const dragRef = useRef<{ id: number; x: number; y: number } | null>(null);
+  const [grabbing, setGrabbing] = useState(false);
+
+  const onPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (e.button !== 0) return;
+    dragRef.current = { id: e.pointerId, x: e.clientX, y: e.clientY };
+    (e.currentTarget as HTMLDivElement).setPointerCapture(e.pointerId);
+    setGrabbing(true);
+  };
+  const onPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    const d = dragRef.current;
+    if (!d || d.id !== e.pointerId) return;
+    // px → radianes. Una pasada de ~400 px llega al tope de giro.
+    const yaw = (e.clientX - d.x) * 0.005;
+    const pitch = (e.clientY - d.y) * 0.005;
+    engineRef.current?.setOrbit(yaw, pitch, true);
+  };
+  const endDrag = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!dragRef.current || dragRef.current.id !== e.pointerId) return;
+    dragRef.current = null;
+    // dragging=false → el engine devuelve el objetivo a 0 y el AVCS vuelve
+    // suavemente a mirar de frente.
+    engineRef.current?.setOrbit(0, 0, false);
+    setGrabbing(false);
+  };
+  const onWheel = (e: React.WheelEvent<HTMLDivElement>) => {
+    const f = Math.exp(-e.deltaY * 0.0016);
+    zoomRef.current = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, zoomRef.current * f));
+  };
   // EL ESCENARIO DEL NÚCLEO (2026-07-21): el AVCS se ve EXACTAMENTE igual en
   // cualquier tema — sus partículas pintan con luz ADITIVA, así que exigen el
   // MISMO fondo oscuro debajo. Sin esto, en tema claro el fondo gris claro se
-  // transparenta tras el canvas y el núcleo aparece "con un velo blanco" (no
-  // hay ninguna capa encima: es el fondo de la página). Este div pinta el
-  // lienzo oscuro de siempre en el HUB (donde el núcleo es protagonista); en
-  // tema oscuro es pixel-idéntico a como era. CERO cambios en engine/shaders —
-  // es solo el color del telón de fondo.
-  const stage = location.pathname === "/";
+  // transparenta tras el canvas y el núcleo aparece "con un velo blanco".
+  // [PU6a-bis v2] El escenario va SIEMPRE, en todas las rutas: el AVCS es
+  // ahora el fondo permanente de la app (las páginas flotan encima como
+  // tarjetas), así que su telón oscuro también lo es. CERO cambios en
+  // engine/shaders — sigue siendo solo el color del telón de fondo.
+  const stage = true;
 
   return (
     <div
       className={className}
-      style={stage
-        ? { backgroundColor: "#0a0a0f", transition: "background-color 400ms ease" }
-        : { transition: "background-color 400ms ease" }}
+      // `pointerEvents: auto` SOLO donde el AVCS está visible: el contenedor
+      // vive al fondo (z-0), así que los paneles y controles de la UI —que van
+      // encima— siguen recibiendo sus eventos primero; aquí solo llegan los
+      // clics sobre zonas vacías, que es justo lo que queremos capturar.
+      onPointerDown={visible ? onPointerDown : undefined}
+      onPointerMove={visible ? onPointerMove : undefined}
+      onPointerUp={visible ? endDrag : undefined}
+      onPointerCancel={visible ? endDrag : undefined}
+      onWheel={visible ? onWheel : undefined}
+      style={{
+        transition: "background-color 400ms ease",
+        pointerEvents: visible ? "auto" : "none",
+        cursor: visible ? (grabbing ? "grabbing" : "grab") : undefined,
+        touchAction: "none",
+        ...(stage ? { backgroundColor: "#0a0a0f" } : null),
+      }}
     >
       <Canvas
-        camera={{ position: [0, 0, 8.5], fov: 45 }}
+        camera={{ position: [0, 0, DIST_BASE], fov: 45 }}
         dpr={[1, TIERS[tier].dpr]}
         gl={{ antialias: false, alpha: true, powerPreference: "high-performance" }}
       >
-        <PresenceRunner visible={visible} tier={tier} />
+        <PresenceRunner
+          visible={visible}
+          tier={tier}
+          zoomRef={zoomRef}
+          onEngine={(e) => { engineRef.current = e; }}
+        />
       </Canvas>
     </div>
   );

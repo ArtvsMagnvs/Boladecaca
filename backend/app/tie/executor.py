@@ -203,6 +203,34 @@ def _handoff_from_deps(node: TaskNode, graph: TaskGraph) -> str:
     return "\n\n".join(trozos)
 
 
+_SKILLS_CONTEXT_CHARS = 2000
+
+
+def _persona_block(graph: TaskGraph) -> str:
+    """[PU2, doc 35] Si la misión viene de un agente con skills asignadas
+    (`Authority.skills`, ver `authority.py`), las resuelve contra el catálogo
+    y arma un bloque breve de "quién ejecuta esto" — antes de PU2 las skills
+    vivían en BD y no llegaban a NINGÚN sitio; un agente creado "con skills de
+    marketing" ejecutaba exactamente igual que uno sin ninguna. Best-effort: si
+    el catálogo no resuelve algo, se omite esa skill, nunca rompe el nodo."""
+    skills = (graph.authority or {}).get("skills")
+    if not skills:
+        return ""
+    try:
+        from app.agents import skills_catalog
+
+        entries = skills_catalog.descriptions_for(list(skills))
+    except Exception:
+        entries = []
+    if not entries:
+        return ""
+    lines = [f"- {e['name']}: {e.get('description', '')}" for e in entries]
+    block = "Actúas como un agente con estas especialidades:\n" + "\n".join(lines)
+    if len(block) > _SKILLS_CONTEXT_CHARS:
+        block = block[:_SKILLS_CONTEXT_CHARS] + "\n[…]"
+    return block
+
+
 async def _execute_node(node: TaskNode, graph: TaskGraph, mission: Mission, trace_id: str) -> None:
     """Ejecuta UN nodo con el runtime que pida (memoria/tools/gate inyectados) y
     escribe su estado/resultado. Cada transición hace checkpoint."""
@@ -229,7 +257,8 @@ async def _execute_node(node: TaskNode, graph: TaskGraph, mission: Mission, trac
     # resumen" fallaba en cuanto el planner lo partía en dos nodos — el segundo
     # no veía el contenido del primero por ningún camino.
     handoff = _handoff_from_deps(node, graph)
-    context = "\n\n".join([p for p in (handoff, context) if p])
+    persona = _persona_block(graph)
+    context = "\n\n".join([p for p in (persona, handoff, context) if p])
 
     task = AgentTask(
         id=AgentTask.new_id(),

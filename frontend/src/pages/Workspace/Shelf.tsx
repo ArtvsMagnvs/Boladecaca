@@ -63,9 +63,13 @@ export function Shelf({ projects, getLayout, onOpen, onDragOut, onCreate }: Prop
   };
 
   return (
-    <aside className="w-56 shrink-0 flex flex-col gap-2 relative z-10">
+    // [PU6b-vent t4] Panel con cuerpo: con el AVCS real de fondo en todas las
+    // páginas, las filas flotaban directamente sobre las partículas y costaba
+    // leerlas. Fondo semi-opaco (85%) + blur: legible sin volverse una placa
+    // sólida — se pidió "que se pueda leer bien SIN quitarle toda la opacidad".
+    <aside className="w-56 shrink-0 flex flex-col gap-2 relative z-10 rounded-2xl holo-frame bg-base-900/85 backdrop-blur-md border border-base-700/50 p-2">
       <div className="flex items-center justify-between px-1">
-        <h2 className="text-xs uppercase tracking-wide text-ink-faint">{t("workspace.shelf.title")}</h2>
+        <h2 className="text-xs uppercase tracking-wide text-ink-dim">{t("workspace.shelf.title")}</h2>
         <button onClick={onCreate} className="text-accent hover:text-accent-soft text-lg leading-none px-1" title={t("workspace.shelf.new")}>+</button>
       </div>
       <div className="flex-1 overflow-y-auto flex flex-col gap-1">
@@ -77,8 +81,8 @@ export function Shelf({ projects, getLayout, onOpen, onDragOut, onCreate }: Prop
               onPointerDown={onRowPointerDown(p)}
               className={`text-left px-3 py-2 rounded-xl text-sm border transition-all cursor-grab active:cursor-grabbing select-none ${
                 !layout.shelved
-                  ? "bg-accent/12 text-ink border-accent/25"
-                  : "text-ink-dim hover:bg-base-700/40 border-transparent"
+                  ? "bg-accent/15 text-ink border-accent/30"
+                  : "text-ink bg-base-800/60 hover:bg-base-700/60 border-base-700/40"
               }`}
               title={layout.shelved ? t("workspace.shelf.dragToTake") : t("workspace.shelf.bringToFront")}
             >

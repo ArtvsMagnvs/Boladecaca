@@ -34,7 +34,13 @@ from typing import Any, Optional
 
 # Acciones de `aithera_tool` (R3) que operan sobre UN agente concreto. Para
 # éstas hay que comprobar que el agente objetivo pertenece al mismo proyecto.
-_AITHERA_AGENT_ACTIONS = {"assign_tools", "run_agent_task"}
+# [2026-08-02] `update_agent`/`delete_agent` entran AQUÍ el mismo día que se
+# exponen como acciones de `aithera_tool`: son las dos operaciones más
+# peligrosas sobre un agente (reconfigurarlo o borrarlo), así que sin esta
+# línea el orquestador del proyecto A podría editar o eliminar los agentes del
+# proyecto B — exactamente la brecha que `_check_project_scope` existe para
+# cerrar. Una acción nueva sobre un agente concreto SIEMPRE se añade aquí.
+_AITHERA_AGENT_ACTIONS = {"assign_tools", "run_agent_task", "update_agent", "delete_agent"}
 
 # Tools cuyo alcance es el sistema de archivos: si la misión tiene una carpeta
 # de proyecto asignada, no pueden salirse de ella.
@@ -72,11 +78,20 @@ class Authority:
       planner (clamp del grafo) y de nuevo aquí; ver `check`.
     - `project_id`: el orquestador/agente solo puede tocar agentes de ESTE
       proyecto.
-    - `repo_path`: las tools de archivos no pueden salir de esta carpeta."""
+    - `repo_path`: las tools de archivos no pueden salir de esta carpeta.
+    - `skills` [PU2, doc 35]: NO es una frontera de seguridad — es descriptivo
+      (las especialidades del agente, del catálogo de `skills_catalog.py`).
+      Vive aquí, no en un campo nuevo de `TaskGraph`, porque `Authority` ya es
+      el único vehículo que sobrevive al checkpoint y llega a CADA nodo
+      (`graph.authority` → `AgentTask.authority`, T3/T4a) — reusar el canal
+      que ya existe es más simple que inventar uno paralelo para lo mismo.
+      Nunca participa en `check()` ni en `is_unrestricted`: una misión con
+      SOLO skills (sin tools/proyecto/carpeta) sigue sin restricción."""
 
     project_id: Optional[int] = None
     repo_path: Optional[str] = None
     allowed_tools: Optional[list[str]] = field(default=None)
+    skills: Optional[list[str]] = field(default=None)
 
     @property
     def is_unrestricted(self) -> bool:
@@ -84,17 +99,20 @@ class Authority:
 
     def to_dict(self) -> dict:
         return {"project_id": self.project_id, "repo_path": self.repo_path,
-                "allowed_tools": list(self.allowed_tools) if self.allowed_tools is not None else None}
+                "allowed_tools": list(self.allowed_tools) if self.allowed_tools is not None else None,
+                "skills": list(self.skills) if self.skills is not None else None}
 
     @classmethod
     def from_dict(cls, d: Optional[dict]) -> "Authority":
         if not d:
             return cls()
         tools = d.get("allowed_tools")
+        skills = d.get("skills")
         return cls(
             project_id=d.get("project_id"),
             repo_path=d.get("repo_path"),
             allowed_tools=[str(t) for t in tools] if isinstance(tools, list) else None,
+            skills=[str(s) for s in skills] if isinstance(skills, list) else None,
         )
 
     # ------------------------------------------------------------------
@@ -232,6 +250,83 @@ def orchestrator_of(project_id: int) -> Optional[dict]:
             db.close()
     except Exception:
         return None
+
+
+# [hotfix 2026-08-02] Herramientas con las que nace un orquestador creado
+# automáticamente. Deliberadamente MÍNIMAS, porque el usuario acotó el encargo:
+# "que SOLO pueda dar órdenes a los agentes de ese proyecto y trabajar sobre la
+# carpeta del proyecto".
+#   · dar órdenes a sus agentes → NO hace falta listarla: `aithera` es una tool
+#     INTERNA y `Authority.check` la deja pasar siempre (no es una capacidad
+#     concedida, es de la casa), pero SÍ queda sujeta a `_check_project_scope`,
+#     que es justo lo que impide que toque agentes de otro proyecto.
+#   · trabajar sobre la carpeta → `filesystem` + `document`, ambas en
+#     `_PATH_PARAMS`, así que `_check_path_scope` las encierra en `repo_path`.
+# El usuario puede ampliarlas luego desde la ficha del agente como en cualquier
+# otro; esto es solo el punto de partida seguro.
+ORCHESTRATOR_DEFAULT_TOOLS = ["filesystem", "document"]
+
+
+def ensure_orchestrator(project_id: int) -> Optional[dict]:
+    """El orquestador de un proyecto, creándolo si aún no existe.
+
+    Devuelve el mismo dict que `orchestrator_of` (o `None` si el proyecto no
+    existe). Idempotente: si ya hay uno, NO crea otro ni lo modifica — mismo
+    criterio que la siembra de reglas predefinidas del AE (`rules_builtin`).
+
+    POR QUÉ EXISTE (petición del usuario, 2026-08-02): la columna `Agent.role`
+    y el enrutado por orquestador (`pipeline.submit_mission`) están desde W2e/R4,
+    pero NADA creaba nunca un agente con ese rol, así que en la práctica ningún
+    proyecto tenía orquestador y la ruta estaba muerta. El chat del proyecto lo
+    materializa a la primera pregunta.
+
+    DÓNDE SE IMPONE SU ALCANCE (importante, para no prometer de más): en
+    `Authority`, no en el `system_prompt`. El camino agente→TIE
+    (`agent_manager._delegate_to_tie`) pasa `allowed_tools`, `project_id` y
+    `repo_path`, y NO el system_prompt — así que la frontera es real y
+    verificable aunque el modelo ignore cualquier instrucción de texto."""
+    existing = orchestrator_of(project_id)
+    if existing:
+        return existing
+
+    try:
+        from app.agents.agent_manager import agent_manager
+        from app.db.database import Project, SessionLocal
+
+        db = SessionLocal()
+        try:
+            project = db.get(Project, project_id)
+            if project is None:
+                return None
+            project_name = project.name or f"proyecto {project_id}"
+        finally:
+            db.close()
+
+        agent_manager.create_agent(
+            name=f"Orquestador · {project_name}",
+            agent_type="orchestrator",
+            description=(
+                "Coordina el proyecto: reparte trabajo entre los agentes de este "
+                "proyecto y trabaja sobre su carpeta. Creado automáticamente al "
+                "abrir el chat del proyecto."
+            ),
+            allowed_tools=list(ORCHESTRATOR_DEFAULT_TOOLS),
+            project_id=project_id,
+            icon="🧠",
+            role="orchestrator",
+        )
+    except Exception as e:      # noqa: BLE001 — nunca romper el chat por esto
+        import logging
+
+        logging.getLogger("aithera").warning(
+            f"[authority] no se pudo crear el orquestador del proyecto {project_id}: {e!r}"
+        )
+        return orchestrator_of(project_id)
+
+    # Se relee en vez de construir el dict a mano: una sola forma de leer quién
+    # manda (y, si dos peticiones simultáneas crearan dos, `orchestrator_of`
+    # devuelve siempre el más antiguo — determinista).
+    return orchestrator_of(project_id)
 
 
 def _agent_project_id(agent_id: Any) -> Optional[int]:

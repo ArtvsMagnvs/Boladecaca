@@ -198,12 +198,12 @@ const TXT: Record<Lang, Record<string, string>> = {
 };
 
 const TIER_LABEL: Record<Lang, Record<QualityTier, string>> = {
-  es: { Q1: "Mínimo", Q2: "Medio", Q3: "Alto", Q4: "Máximo" },
-  en: { Q1: "Minimum", Q2: "Medium", Q3: "High", Q4: "Maximum" },
-  fr: { Q1: "Minimum", Q2: "Moyen", Q3: "Élevé", Q4: "Maximum" },
-  pt: { Q1: "Mínimo", Q2: "Médio", Q3: "Alto", Q4: "Máximo" },
+  es: { Q2: "Medio", Q3: "Alto", Q4: "Máximo" },
+  en: { Q2: "Medium", Q3: "High", Q4: "Maximum" },
+  fr: { Q2: "Moyen", Q3: "Élevé", Q4: "Maximum" },
+  pt: { Q2: "Médio", Q3: "Alto", Q4: "Máximo" },
 };
-const TIER_ORDER: QualityTier[] = ["Q1", "Q2", "Q3", "Q4"];
+const TIER_ORDER: QualityTier[] = ["Q2", "Q3", "Q4"];
 
 type Phase = "checking" | "show" | "done";
 type Step = 0 | 1 | 2 | 3;

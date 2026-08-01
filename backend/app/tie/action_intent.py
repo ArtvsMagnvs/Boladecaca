@@ -88,7 +88,11 @@ _NOUN_TO_ACTIONS: dict[str, tuple[str, ...]] = {
     "project": ("list_projects", "project_status", "create_project"),
     "milestone": ("create_milestone",),
     "task": ("create_task", "update_task"),
-    "agent": ("create_agent", "assign_tools", "list_agents", "run_agent_task"),
+    # [2026-08-02] `update_agent`/`delete_agent` (nuevas) van aquí: "cambia las
+    # skills del agente X" o "borra el agente Y" son órdenes sobre el MISMO
+    # sustantivo de dominio que ya cubría crear/listar.
+    "agent": ("create_agent", "assign_tools", "list_agents", "run_agent_task",
+              "update_agent", "delete_agent"),
     "rule": ("create_rule", "create_cron_job", "list_rules", "toggle_rule",
              "create_auto_reply_rule"),
     "language": ("set_language",),
@@ -414,10 +418,22 @@ def ensure_persistence_tool(intent: Optional[Intent], text: str) -> Optional[Int
     return intent
 
 
+# [2026-08-02] Acciones del catálogo que NO son órdenes del usuario y por tanto
+# NO se mapean a ningún sustantivo de dominio.
+#
+# `ask_user` la decide el MODELO en mitad de una misión cuando le falta un dato;
+# el usuario nunca la pide por su nombre. Meterla en un sustantivo sería peor
+# que dejarla fuera: cualquier mensaje que contuviera "pregunta" pasaría a
+# rescatarse como intent de acción, que es justo el falso positivo que este
+# detector existe para evitar. Se excluye A PROPÓSITO y por escrito — el test de
+# cobertura sigue vigilando todo lo demás.
+_NOT_USER_INVOKED: set = {"ask_user"}
+
+
 def assert_covers_catalog(catalog_action_ids: set) -> set:
     """Devuelve las acciones del catálogo de `aithera_tool` que NINGÚN sustantivo
     de dominio cubre. Vacío = cobertura total. Lo usa un test: si mañana se añade
     una acción nueva a la tool y nadie la mapea aquí, el test falla — así el
     detector no se queda obsoleto en silencio (que es como nacen los parches)."""
     cubiertas = {a for acts in _NOUN_TO_ACTIONS.values() for a in acts}
-    return set(catalog_action_ids) - cubiertas
+    return set(catalog_action_ids) - cubiertas - _NOT_USER_INVOKED

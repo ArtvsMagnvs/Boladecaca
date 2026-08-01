@@ -168,11 +168,12 @@ def _rec(model: Optional[dict], why: str) -> Optional[dict]:
 # ---------------------------------------------------------------------------
 # 3) RECOMENDACIÓN DE PARTÍCULAS DEL AVCS
 # ---------------------------------------------------------------------------
-# Q1 (mínimo) … Q4 (máximo). El AVCS es 3D (three.js): lo mueve sobre todo la
-# GPU. Con GPU dedicada potente → Q4; integrada/CPU → Q2/Q1 para no sobrecargar.
+# Q2 (mínimo) … Q4 (máximo). El AVCS es 3D (three.js): lo mueve sobre todo la
+# GPU. Con GPU dedicada potente → Q4; integrada/CPU → Q2 (mínimo).
+# [doc 35 PU5, 2026-07-30] Q1 eliminado: no llegaba al mínimo estético y
+# cualquier equipo actual mueve Q2.
 _AVCS_TIERS = {
-    "Q1": {"label": "Mínimo", "particles": "~pocas", "hint": "Ligero, para equipos modestos o sin GPU dedicada"},
-    "Q2": {"label": "Medio", "particles": "moderadas", "hint": "Equilibrado; buena mayoría de equipos"},
+    "Q2": {"label": "Mínimo", "particles": "moderadas", "hint": "Ligero; va bien en cualquier equipo actual"},
     "Q3": {"label": "Alto", "particles": "muchas", "hint": "Fluido con GPU dedicada"},
     "Q4": {"label": "Máximo", "particles": "el máximo", "hint": "Solo con GPU dedicada potente"},
 }
@@ -188,10 +189,8 @@ def recommend_avcs(hw: Optional[dict] = None) -> dict:
         tier = "Q4"
     elif gpu["present"] and vram >= 4:
         tier = "Q3"
-    elif ram >= 16:
-        tier = "Q2"          # sin GPU dedicada pero RAM holgada
     else:
-        tier = "Q1"
+        tier = "Q2"          # mínimo: sin GPU dedicada o RAM justa
 
     return {
         "recommended_tier": tier,
@@ -200,9 +199,7 @@ def recommend_avcs(hw: Optional[dict] = None) -> dict:
                 f"{f', {ram:.0f} GB RAM' if ram else ''}: "
                 f"'{_AVCS_TIERS[tier]['label']}' va fluido sin sobrecargar."),
         # Aviso para la UI: qué niveles podrían ir justos en este equipo.
-        "warn_above": None if tier == "Q4" else (
-            "Q4" if tier == "Q3" else ("Q3" if tier == "Q2" else "Q2")
-        ),
+        "warn_above": None if tier == "Q4" else ("Q4" if tier == "Q3" else "Q3"),
     }
 
 

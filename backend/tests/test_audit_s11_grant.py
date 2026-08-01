@@ -131,7 +131,7 @@ async def test_tool_real_fuera_de_whitelist_abre_gate_de_concesion(monkeypatch):
     res = await toolloop.run(
         instruction="dime cómo está la CPU", context="",
         allowed_tools=["filesystem"], tool_manager=tool_manager, max_iters=5,
-        approval_gate=gate, approval_wait_s=5,
+        approval_gate=gate,
         authority=Authority(allowed_tools=["filesystem", "process"]),
     )
 
@@ -157,7 +157,7 @@ async def test_gate_de_concesion_se_pregunta_una_sola_vez(monkeypatch):
     await toolloop.run(
         instruction="dime cómo está la CPU", context="",
         allowed_tools=["filesystem"], tool_manager=tool_manager, max_iters=6,
-        approval_gate=gate, approval_wait_s=5,
+        approval_gate=gate,
         authority=Authority(allowed_tools=["filesystem", "process"]),
     )
 
@@ -178,7 +178,7 @@ async def test_gate_rechazado_deja_limitations_y_el_modelo_se_entera(monkeypatch
     res = await toolloop.run(
         instruction="dime cómo está la CPU", context="",
         allowed_tools=["filesystem"], tool_manager=tool_manager, max_iters=5,
-        approval_gate=gate, approval_wait_s=5,
+        approval_gate=gate,
         authority=Authority(allowed_tools=["filesystem", "process"]),
     )
 
@@ -228,7 +228,7 @@ async def test_tool_inventada_no_abre_gate(monkeypatch):
     res = await toolloop.run(
         instruction="haz algo raro", context="",
         allowed_tools=["filesystem"], tool_manager=tool_manager, max_iters=3,
-        approval_gate=gate, approval_wait_s=5,
+        approval_gate=gate,
     )
 
     assert gate.asked == [], "una tool inexistente NUNCA abre un gate de concesión"
@@ -250,7 +250,7 @@ async def test_accion_invalida_de_tool_ya_permitida_no_abre_gate(monkeypatch):
     await toolloop.run(
         instruction="haz algo raro", context="",
         allowed_tools=["filesystem"], tool_manager=tool_manager, max_iters=3,
-        approval_gate=gate, approval_wait_s=5,
+        approval_gate=gate,
     )
 
     assert gate.asked == []
@@ -273,7 +273,7 @@ async def test_tool_fuera_de_authority_no_es_concedible(monkeypatch):
     res = await toolloop.run(
         instruction="dime cómo está la CPU", context="",
         allowed_tools=["filesystem"], tool_manager=tool_manager, max_iters=3,
-        approval_gate=gate, approval_wait_s=5,
+        approval_gate=gate,
         authority=Authority(allowed_tools=["filesystem"]),  # SIN "process"
     )
 
@@ -305,7 +305,7 @@ async def test_perfil_autonomo_auto_concede_con_rastro(monkeypatch):
     res = await toolloop.run(
         instruction="dime cómo está la CPU", context="",
         allowed_tools=["filesystem"], tool_manager=tool_manager, max_iters=5,
-        approval_gate=approval_gate, approval_wait_s=5,   # el ApprovalGate REAL
+        approval_gate=approval_gate,   # el ApprovalGate REAL
         authority=Authority(allowed_tools=["filesystem", "process"]),
     )
 

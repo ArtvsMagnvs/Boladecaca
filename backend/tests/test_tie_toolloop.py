@@ -10,6 +10,7 @@
 # whitelist, los timeouts y el filesystem son reales.
 from __future__ import annotations
 
+import asyncio
 import json
 
 import pytest
@@ -149,7 +150,7 @@ async def test_accion_sensible_SE_PREGUNTA_al_usuario(monkeypatch):
 
     res = await toolloop.run(
         instruction="envía un email", context="", allowed_tools=["email"],
-        tool_manager=tool_manager, max_iters=3, approval_gate=gate, approval_wait_s=5,
+        tool_manager=tool_manager, max_iters=3, approval_gate=gate,
     )
 
     assert len(gate.asked) == 1                                  # SE PREGUNTÓ
@@ -174,7 +175,7 @@ async def test_si_el_usuario_rechaza_no_se_ejecuta(monkeypatch):
 
     res = await toolloop.run(
         instruction="envía un email", context="", allowed_tools=["email"],
-        tool_manager=tool_manager, max_iters=3, approval_gate=gate, approval_wait_s=5,
+        tool_manager=tool_manager, max_iters=3, approval_gate=gate,
     )
 
     assert gate.asked                       # se preguntó
@@ -184,30 +185,51 @@ async def test_si_el_usuario_rechaza_no_se_ejecuta(monkeypatch):
     # éxito. La explicación del modelo se conserva y el responder la contará.
     assert not res.ok
     assert "permiso" in res.answer
+    # [PU3] Un rechazo (ahora la ÚNICA forma de "sin permiso": ya no hay
+    # caducidad) es una LIMITACIÓN del resultado final — antes se perdía en
+    # el transcript y `responder._with_limitations_note()` nunca se enteraba.
+    assert res.limitations == ["email.send_email"]
 
 
 @pytest.mark.anyio
-async def test_sin_respuesta_a_tiempo_expira_y_falla_honesto(monkeypatch):
-    """[Auditoría v0.9.5, A-2] El timeout EXPIRA la aprobación (nunca la deja
-    pendiente-cadáver en la UI) y el paso termina como fallo honesto (A-1: sin
-    fundamento no hay éxito), con la explicación del modelo conservada."""
-    seen = _fake_mel(monkeypatch, [
+async def test_sin_respuesta_no_expira_espera_hasta_que_el_usuario_conteste(monkeypatch):
+    """[PU3, doc 35, 2026-07-30] Reemplaza al viejo test de caducidad (A-2):
+    decisión EXPLÍCITA del usuario — "aquí (en Claude) las preguntas se
+    quedan indefinidamente hasta que se responden, debería ser así" — ningún
+    gate del toolloop caduca ya. Se prueba en dos mitades: (1) sin respuesta,
+    el bucle NO decide nada por su cuenta ni expira nada solo con que pase un
+    rato; (2) en cuanto el usuario SÍ responde, el bucle continúa con
+    normalidad y termina bien. La única salida sin respuesta explícita es el
+    kill-switch de la misión (T3), no algo que este bucle haga solo."""
+    _fake_mel(monkeypatch, [
         json.dumps({"tool": {"tool_id": "email", "action": "send_email",
                              "params": {"to": "x@y.com", "subject": "s", "body": "b"}}}),
-        '{"answer": "No pude enviarlo: el permiso caducó sin respuesta."}',
+        '{"answer": "Enviado."}',
     ])
     gate = _FakeGate("pending")
 
-    res = await toolloop.run(
-        instruction="envía un email", context="", allowed_tools=["email"],
-        tool_manager=tool_manager, max_iters=3, approval_gate=gate, approval_wait_s=2,
-    )
+    ejecutadas = []
 
+    async def _spy(**kwargs):
+        ejecutadas.append(kwargs)
+        return {"success": True, "result": {"message_id": "m1"}, "error": None}
+
+    monkeypatch.setattr(tool_manager, "execute", _spy)
+
+    task = asyncio.create_task(toolloop.run(
+        instruction="envía un email", context="", allowed_tools=["email"],
+        tool_manager=tool_manager, max_iters=3, approval_gate=gate,
+    ))
+    await asyncio.sleep(0.05)   # tiempo de sobra para llegar al gate y empezar a sondear
     assert gate.asked
-    assert getattr(gate, "expired", []), "el timeout debe EXPIRAR la aprobación"
-    assert "caducado" in seen[-1] or "caducad" in seen[-1]
-    assert not res.ok                      # sin tool ejecutada no hay éxito (A-1)
-    assert "caducó" in res.answer          # la explicación del modelo se conserva
+    assert not task.done(), "no debería resolverse por su cuenta sin que el usuario responda"
+    assert not hasattr(gate, "expired"), "no debe expirar nada — ya no hay timeout"
+
+    gate.verdict = "approved"   # el usuario responde (aunque haya tardado)
+    res = await asyncio.wait_for(task, timeout=5)
+
+    assert ejecutadas                       # se ejecutó de verdad tras la respuesta
+    assert res.ok
 
 
 @pytest.mark.anyio

@@ -119,8 +119,30 @@ async def _resolve_explicit_model(intent: Intent, *, project_id: Optional[int]) 
             )}
 
         if scope == "unspecified":
-            # Nombró un modelo pero no dijo si es puntual o permanente → preguntar,
-            # sin ejecutar nada este turno (aclaración de camino corto, sin gate).
+            # [PU3, doc 35, 2026-07-30] Esta ambigüedad ("¿para esta petición o
+            # para siempre?") NO es un permiso de seguridad — es una duda real
+            # de interpretación, así que normalmente se pregunta (sin ejecutar
+            # nada este turno, aclaración de camino corto, sin gate). Pero bajo
+            # el perfil Autónomo el usuario pidió "nunca preguntes nada, sin
+            # excepciones": aquí se aplica ese mismo principio por analogía,
+            # asumiendo el alcance MÁS LIMITADO (solo esta tarea — el más fácil
+            # de deshacer, a diferencia de fijarlo al proyecto entero) y
+            # avisando de qué se asumió en la propia respuesta — nunca en
+            # silencio, mismo principio que el resto de la autonomía (A3b).
+            try:
+                from app.automation import permission_service
+
+                if permission_service.autonomy_is_full():
+                    logger.info(
+                        f"[tie] alcance de modelo sin especificar para {ref.provider}/"
+                        f"{ref.model}; perfil Autónomo → asumo 'task' sin preguntar"
+                    )
+                    return {"action": "force", "model_key": ref.key, "note": _t(
+                        "pipeline.model_scope_auto_task", provider=ref.provider, model=ref.model,
+                    )}
+            except Exception:
+                pass  # fail-safe: si algo falla consultando el perfil, se sigue preguntando
+
             return {"action": "reply", "text": _t(
                 "pipeline.model_scope_unspecified", provider=ref.provider, model=ref.model,
             )}
@@ -206,6 +228,24 @@ async def handle_stream(text: str, *, channel: str = "web", intent: Optional[Int
             _record_path("chat")
             yield ("text", quick)
             return
+        # [PU4, doc 35] "Dame el briefing"/"¿qué tengo hoy?": mismo criterio
+        # determinista, async porque la respuesta puede leer la locución
+        # cacheada del MOS (nunca un LLM en caliente aquí).
+        quick_briefing = await quick_answers.try_answer_async(text)
+        if quick_briefing:
+            _record_path("chat")
+            yield ("text", quick_briefing)
+            return
+        # [PU10, doc 35] "Guarda esto en la memoria: X" / "busca en la memoria
+        # X" / "olvida esto de la memoria X": mismo criterio, con ancla
+        # obligatoria (no confundir con NEW-7b, que guarda un ARCHIVO).
+        from app.memory import quick_memory
+
+        quick_mem = await quick_memory.try_answer_async(text)
+        if quick_mem:
+            _record_path("chat")
+            yield ("text", quick_mem)
+            return
 
     # [A·VOZ-6] Clasificar SIN emitir "analizando" todavía: el ~80% de los
     # mensajes son camino corto (charla / query simple) y NO deben mostrar
@@ -232,6 +272,10 @@ async def handle_stream(text: str, *, channel: str = "web", intent: Optional[Int
         yield ("text", explicit["text"])   # sin ejecutar nada este turno
         return
     force_model = explicit["model_key"] if explicit else None
+    # [PU3] Autónomo asumió el alcance sin preguntar (ver _resolve_explicit_
+    # model) — se avisa como preámbulo del propio turno, nunca en silencio.
+    if explicit and explicit.get("note"):
+        yield ("text", explicit["note"] + "\n\n")
 
     # [A·VOZ-3/A·VOZ-6] Camino corto: SIN misión, SIN traza, SIN status y SIN
     # prefetch. Antes se pagaba `_prefetch_context` (una consulta al MOS con
@@ -539,6 +583,7 @@ async def submit_mission(
     allowed_tools: Optional[list[str]] = None,
     repo_path: Optional[str] = None,
     intent: Optional[Intent] = None,
+    skills: Optional[list[str]] = None,
 ) -> Mission:
     """Entrada PROGRAMÁTICA (AE `AgentTaskAction`, WPMS, Orquestador) — ya sabe
     que es una misión, así que NO hay camino corto: siempre planifica y ejecuta.
@@ -551,7 +596,13 @@ async def submit_mission(
     `allowed_tools`/`repo_path` (R4) acotan la misión cuando la lanza un AGENTE:
     sus herramientas, su proyecto y su carpeta. Sin ellos la misión no tiene
     frontera, que es el caso del chat del usuario. Delegar SIN pasar la whitelist
-    del agente sería ampliarle los permisos en silencio."""
+    del agente sería ampliarle los permisos en silencio.
+
+    `skills` [PU2, doc 35]: las especialidades del agente (nombres del catálogo
+    de `skills_catalog.py`, ya validados al crear/editar el agente). Viaja
+    DENTRO de `Authority` (descriptivo, no de seguridad) para que sobreviva al
+    checkpoint y el executor las incluya en el contexto de cada nodo — antes
+    se guardaban en BD y no llegaban a ningún sitio."""
     mission = new_mission(goal=goal, source=source, channel=channel, project_id=project_id,
                           run_id=run_id, parent_id=parent_id)
     # [S2, C-1] `intent` opcional (mismo patrón que handle_stream): quien ya
@@ -599,6 +650,7 @@ async def submit_mission(
         project_id=project_id if (allowed_tools is not None or repo_path) else None,
         repo_path=repo_path,
         allowed_tools=allowed_tools,
+        skills=skills,
     )
 
     context = await _context_for(intent, goal, project_id=project_id)
@@ -618,6 +670,17 @@ async def _run_pipeline(
     quick = await asyncio.to_thread(quick_answers.try_answer, text)
     if quick:
         return quick
+    # [PU4, doc 35] Mismo criterio, async (lee la locución cacheada del MOS).
+    quick_briefing = await quick_answers.try_answer_async(text)
+    if quick_briefing:
+        return quick_briefing
+    # [PU10, doc 35] Mini-chat de memoria con ancla — cubre el Gateway/Telegram
+    # igual que los dos anteriores.
+    from app.memory import quick_memory
+
+    quick_mem = await quick_memory.try_answer_async(text)
+    if quick_mem:
+        return quick_mem
 
     # [1+2] Clasificar y pre-fetch de contexto EN PARALELO (doc 11 B.2): el
     # enricher no sabe todavía qué tipos pedir, así que hace una consulta general;
@@ -633,6 +696,9 @@ async def _run_pipeline(
     if explicit and explicit["action"] == "reply":
         return explicit["text"]   # aclaración/confirmación: no se ejecuta nada este turno
     force_model = explicit["model_key"] if explicit else None
+    # [PU3] Autónomo asumió el alcance sin preguntar — se antepone como
+    # preámbulo de la respuesta de este turno, nunca en silencio.
+    _scope_note = explicit.get("note") if explicit else None
 
     # [A·VOZ-3, doc 32] Camino corto: ~80% de las queries no pagan planner ni
     # grafo (doc 14 §6) — Y AHORA TAMPOCO MISIÓN/TRAZA. Una charla no es una
@@ -647,7 +713,8 @@ async def _run_pipeline(
     # (`_mission_ctx`) ya tiene (None, None) como default documentado para
     # "llamada suelta (chat corto)" — exactamente este caso.
     if intent.is_short_path:
-        return await _short_path(text, intent, channel, model_key=force_model)
+        answer = await _short_path(text, intent, channel, model_key=force_model)
+        return f"{_scope_note}\n\n{answer}" if _scope_note else answer
 
     mission = new_mission(goal=intent.goal or text, source=source, channel=channel)
     trace_id = tracer.record_start(mission, channel=channel)

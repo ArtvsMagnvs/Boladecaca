@@ -11,10 +11,14 @@
 #   POST   /api/memory/conversations/clear -> borra el historial de conversaciones
 #   GET    /api/memory/ingest/status      -> [V0.85 M2] ultima pasada de ingesta por job
 #   POST   /api/memory/ingest/run         -> [V0.85 M2] fuerza una pasada de ingesta
-#   GET    /api/memory/briefing?date=     -> [V0.85 M3] resumen del dia + urgentes + agenda + top remitentes
+#   GET    /api/memory/briefing?date=     -> [V0.85 M3 + PU4/PU4b] resumen del dia + urgentes + agenda + top remitentes + spoken_text (voz) + spoken_segments (show)
+#   GET    /api/memory/briefing/config    -> [PU4b] configuracion del briefing (secciones/horarios/noticias)
+#   PUT    /api/memory/briefing/config    -> [PU4b] guarda config + re-arma los jobs de preparacion en caliente
+#   POST   /api/memory/briefing/prepare   -> [PU4b] fuerza una preparacion (noticias + locucion) ahora
 #   GET    /api/memory/profile            -> [R6.5c] hechos estables destilados del usuario
 #   DELETE /api/memory/profile/{key}      -> [R6.5c] borra un hecho
 #   POST   /api/memory/profile/run        -> [R6.5c] fuerza una pasada del destilado
+#   POST   /api/memory/quick              -> [PU10] mini-chat de memoria (guarda/busca/olvida, 0 LLM)
 #
 # NOTA: si ChromaDB no esta disponible, todos los endpoints devuelven 503
 # (excepto /stats que devuelve el error en el cuerpo).
@@ -76,6 +80,7 @@ def get_stats():
 async def get_briefing(date: Optional[str] = Query(None, description="YYYY-MM-DD; default hoy")):
     from datetime import date as _date, datetime as _datetime
 
+    from app.memory import briefing as briefing_mod
     from app.memory import summarizer
 
     if date:
@@ -100,7 +105,73 @@ async def get_briefing(date: Optional[str] = Query(None, description="YYYY-MM-DD
         # (cero LLM en el critical path de un GET — presupuesto de latencia).
         summary, summary_source = summarizer.build_deterministic_summary(data), "live_deterministic"
 
-    return {**data, "summary": summary, "summary_source": summary_source}
+    # [PU4, doc 35] Version hablada — aditiva. Misma disciplina de latencia que
+    # `summary`/`summary_source`: cache si el job nocturno ya la calculo, si no
+    # plantilla determinista al vuelo (nunca un LLM en este GET, que el Dock
+    # sondea cada 30s y que el boton manual/los disparos programados necesitan
+    # instantaneo).
+    spoken_text, spoken_source = await briefing_mod.spoken_text_for(target, data, summary)
+
+    # [PU4b] Segmentos para el show visual: deterministas + cache de noticias
+    # (la escribio el job de preparacion) + config de secciones. Cero LLM/red.
+    from app.memory import briefing_config as briefing_config_mod
+    from app.memory import news as news_mod
+
+    cfg = await asyncio.to_thread(briefing_config_mod.get_config)
+    news_cache = await asyncio.to_thread(news_mod.get_cached)
+    spoken_segments = briefing_mod.build_spoken_segments(data, summary, news_cache, cfg)
+
+    return {
+        **data,
+        "summary": summary,
+        "summary_source": summary_source,
+        "spoken_text": spoken_text,
+        "spoken_source": spoken_source,
+        "spoken_segments": spoken_segments,
+    }
+
+
+# ----------------------------------------------------------------------
+# [PU4b, doc 35] Configuracion del briefing + preparacion bajo demanda.
+# El PUT re-arma los jobs de preparacion EN CALIENTE (mismo espiritu que el
+# PATCH de reglas del AE: sin reiniciar el backend).
+# ----------------------------------------------------------------------
+
+@router.get("/briefing/config")
+def get_briefing_config():
+    from app.memory import briefing_config
+
+    return briefing_config.get_config()
+
+
+@router.put("/briefing/config")
+async def put_briefing_config(cfg: dict):
+    from app.memory import briefing_config
+
+    try:
+        saved = await asyncio.to_thread(briefing_config.save_config, cfg)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    # Re-armado best-effort: si el scheduler no corre (tests, arranque a
+    # medias), la config queda guardada igualmente y el proximo arranque arma.
+    try:
+        from app.automation import scheduler_service
+
+        if scheduler_service.running:
+            briefing_config.arm_prep_jobs(scheduler_service)
+    except Exception:
+        pass
+    return saved
+
+
+@router.post("/briefing/prepare")
+async def run_briefing_prepare():
+    """Fuerza una preparacion AHORA (noticias + locucion) sin esperar al
+    horario — para el boton de Ajustes y para probar. Mismo cuerpo que el
+    job programado."""
+    from app.memory import briefing
+
+    return await briefing.prepare_for_slot("manual")
 
 
 # ----------------------------------------------------------------------
@@ -295,6 +366,38 @@ async def run_profile_distill():
     from app.memory import profile
 
     return await profile.distill()
+
+
+# ----------------------------------------------------------------------
+# [PU10, doc 35] Mini-chat de memoria — pestaña Memoria de Ajustes.
+# Router DETERMINISTA (app.memory.quick_memory): "guarda que...", "que sabes
+# de...", "olvida lo de..." se resuelven SIN pasar por el pipeline completo
+# del chat (ni clasificador, ni planificador, ni LLM). Sin ancla (el panel
+# entero ya es sobre memoria) — a diferencia del enganche en el chat
+# principal, que SÍ exige mencionar "memoria" explícitamente.
+# ----------------------------------------------------------------------
+
+class QuickMemoryRequest(BaseModel):
+    text: str
+
+
+@router.post("/quick")
+async def quick_memory_command(body: QuickMemoryRequest):
+    """Ejecuta un comando de memoria del mini-chat. Nunca lanza 500 por un
+    texto que no reconoce: devuelve `recognized: false` con una pista, para
+    que la UI la muestre como una respuesta normal del panel."""
+    from app.memory import quick_memory
+
+    text = (body.text or "").strip()
+    if not text:
+        raise HTTPException(status_code=400, detail="text es obligatorio")
+
+    result = await quick_memory.handle(text, require_anchor=False)
+    if result is None:
+        from app.core.strings import t as _t
+
+        return {"recognized": False, "reply": _t("quick.memory.hint")}
+    return {"recognized": True, **result}
 
 
 # ----------------------------------------------------------------------

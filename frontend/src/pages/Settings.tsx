@@ -5,7 +5,7 @@
 // de preferencias del usuario y borrado del historial de ChromaDB.
 import { useState, useEffect, useRef } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { api, type AIProviderEntry, type ContextItem, type ProfileFact, type MemoryStats, type TelegramStatus, type SearchStatus, type SearchProviderStatus, type BrowserMode, type ElevenLabsCfgStatus, type PermissionCatalog, type MelPolicy, type MelModel, type MelOverride, type LocalModelCatalog } from "@/lib/api";
+import { api, type AIProviderEntry, type TelegramStatus, type SearchStatus, type SearchProviderStatus, type BrowserMode, type ElevenLabsCfgStatus, type PermissionCatalog, type MelPolicy, type MelModel, type MelOverride, type LocalModelCatalog } from "@/lib/api";
 import { useAppStore } from "@/store/useAppStore";
 import type { QualityTier } from "@/avcs";
 import { Toggle } from "@/components/Toggle";
@@ -19,6 +19,12 @@ import { useT } from "@/store/useI18n";
 // [2026-07-21] TODO el antiguo Centro de Voz vive ahora aquí (pestaña Voz).
 import VoicePanel from "@/components/voice/VoicePanel";
 import CodexSetup from "@/components/settings/CodexSetup";
+// [PU4b] Pestaña Briefing (secciones/horarios/noticias del briefing 2.0).
+import BriefingPanel from "@/components/settings/BriefingPanel";
+// [PU10 + pulido visual 2026-08-02] Pestaña Memoria: panel autónomo
+// (stats + mini-chat + preferencias + perfil destilado), mismo patrón que
+// BriefingPanel — Settings.tsx solo lo monta, sin duplicar su estado.
+import MemoriaPanel from "@/components/settings/MemoriaPanel";
 import { shortRef } from "@/lib/modelNames";
 import { PROVIDER_AUTH_HELP } from "@/data/providerAuthHelp";
 
@@ -35,6 +41,8 @@ const SETTINGS_TABS = [
   { id: "ia", labelKey: "settings.tab.ia" },
   { id: "permisos", labelKey: "settings.tab.permisos" },
   { id: "voz", labelKey: "settings.tab.voz" },
+  // [PU4b, doc 35] Briefing: secciones, horarios (N al día) y noticias.
+  { id: "briefing", labelKey: "settings.tab.briefing" },
   { id: "hub", labelKey: "settings.tab.hub" },
   { id: "conexiones", labelKey: "settings.tab.conexiones" },
   { id: "memoria", labelKey: "settings.tab.memoria" },
@@ -54,13 +62,12 @@ type SettingsTab = (typeof SETTINGS_TABS)[number]["id"];
 // significado real. Q4 es el máximo (antes oculto).
 // [I18N-7] Claves i18n en vez de literales — labelKey/particlesKey/hintKey.
 const TIER_INFO: Record<QualityTier, { labelKey: string; particlesKey: string; hintKey: string }> = {
-  Q1: { labelKey: "settings.hub.avcs.q1.label", particlesKey: "settings.hub.avcs.q1.particles", hintKey: "settings.hub.avcs.q1.hint" },
   Q2: { labelKey: "settings.hub.avcs.q2.label", particlesKey: "settings.hub.avcs.q2.particles", hintKey: "settings.hub.avcs.q2.hint" },
   Q3: { labelKey: "settings.hub.avcs.q3.label", particlesKey: "settings.hub.avcs.q3.particles", hintKey: "settings.hub.avcs.q3.hint" },
   Q4: { labelKey: "settings.hub.avcs.q4.label", particlesKey: "settings.hub.avcs.q4.particles", hintKey: "settings.hub.avcs.q4.hint" },
 };
 
-const TIER_ORDER: QualityTier[] = ["Q1", "Q2", "Q3", "Q4"];
+const TIER_ORDER: QualityTier[] = ["Q2", "Q3", "Q4"];
 
 function AvcsPerformanceSettings() {
   const tr = useT();
@@ -1871,16 +1878,8 @@ export default function Settings() {
   const [aiStatus, setAiStatus] = useState<{ provider: string | null; model: string | null; healthy: boolean } | null>(null);
   const [loading, setLoading] = useState(true);
   const [editState, setEditState] = useState<EditState | null>(null);
-  // V0.6 (Fase 3 Memory System): estado para la seccion Memoria.
-  const [memStats, setMemStats] = useState<MemoryStats | null>(null);
-  const [memLoading, setMemLoading] = useState(false);
-  const [contextItems, setContextItems] = useState<ContextItem[]>([]);
-  // [R6.5c] Perfil destilado del chat, distinto de las preferencias manuales de arriba.
-  const [profileFacts, setProfileFacts] = useState<ProfileFact[]>([]);
-  const [newCtxKey, setNewCtxKey] = useState("");
-  const [newCtxContent, setNewCtxContent] = useState("");
-  const [newCtxCategory, setNewCtxCategory] = useState("preference");
-  const [memMessage, setMemMessage] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
+  // [Pulido visual 2026-08-02] La sección Memoria (V0.6 stats + R6.5c perfil +
+  // PU10 mini-chat) ahora es un panel autónomo — ver <MemoriaPanel /> abajo.
   const { backendConnected } = useAppStore();
   const chatPrimaryDown = useAppStore((s) => s.chatPrimaryDown);
   const navigate = useNavigate();
@@ -1912,7 +1911,6 @@ export default function Settings() {
 
   useEffect(() => {
     loadData();
-    loadMemory();
   }, []);
 
   const loadData = async () => {
@@ -1950,82 +1948,6 @@ export default function Settings() {
     } catch (e) {
       setProvidersEnabled(prev => ({ ...prev, [provider]: !enabled }));  // revierte
       console.error("No se pudo cambiar el proveedor:", e);
-    }
-  };
-
-  // V0.6 (Fase 3): carga la seccion Memoria (stats + preferencias).
-  const loadMemory = async () => {
-    setMemLoading(true);
-    try {
-      const [stats, ctx, profile] = await Promise.all([
-        api.getMemoryStats(),
-        api.listContext(),
-        api.getProfile(),
-      ]);
-      setMemStats(stats);
-      setContextItems(ctx.items || []);
-      setProfileFacts(profile.items || []);
-      setMemMessage(null);
-    } catch (e) {
-      setMemMessage({ kind: "err", text: `Error cargando memoria: ${(e as Error).message}` });
-    } finally {
-      setMemLoading(false);
-    }
-  };
-
-  const handleAddContext = async () => {
-    if (!newCtxKey.trim() || !newCtxContent.trim()) {
-      setMemMessage({ kind: "err", text: tr("settings.memoria.errRequired") });
-      return;
-    }
-    try {
-      await api.storeContext({
-        key: newCtxKey.trim(),
-        content: newCtxContent.trim(),
-        category: newCtxCategory.trim() || "preference",
-      });
-      setNewCtxKey("");
-      setNewCtxContent("");
-      setMemMessage({ kind: "ok", text: tr("settings.memoria.prefSaved", { key: newCtxKey.trim() }) });
-      await loadMemory();
-    } catch (e) {
-      setMemMessage({ kind: "err", text: tr("settings.memoria.errSaving", { msg: (e as Error).message }) });
-    }
-  };
-
-  const handleDeleteContext = async (key: string) => {
-    if (!confirm(tr("settings.memoria.confirmDeletePref", { key }))) return;
-    try {
-      await api.deleteContext(key);
-      setMemMessage({ kind: "ok", text: tr("settings.memoria.prefDeleted", { key }) });
-      await loadMemory();
-    } catch (e) {
-      setMemMessage({ kind: "err", text: tr("settings.memoria.errDeleting", { msg: (e as Error).message }) });
-    }
-  };
-
-  // [R6.5c] Un hecho borrado es reversible: si vuelve a salir en el chat, la
-  // próxima pasada nocturna lo vuelve a destilar. No es un "prohibir".
-  const handleDeleteProfileFact = async (key: string, label: string) => {
-    if (!confirm(tr("settings.memoria.confirmForget", { label }))) return;
-    try {
-      await api.deleteProfileFact(key);
-      setMemMessage({ kind: "ok", text: tr("settings.memoria.forgotten", { label }) });
-      await loadMemory();
-    } catch (e) {
-      setMemMessage({ kind: "err", text: tr("settings.memoria.errForgetting", { msg: (e as Error).message }) });
-    }
-  };
-
-  const handleClearConversations = async () => {
-    const before = memStats?.conversations ?? 0;
-    if (!confirm(tr("settings.memoria.confirmClearConversations", { n: before }))) return;
-    try {
-      const r = await api.clearConversations();
-      setMemMessage({ kind: "ok", text: tr("settings.memoria.conversationsCleared", { n: r.count_before }) });
-      await loadMemory();
-    } catch (e) {
-      setMemMessage({ kind: "err", text: tr("settings.memoria.errDeleting", { msg: (e as Error).message }) });
     }
   };
 
@@ -2576,6 +2498,12 @@ export default function Settings() {
         </div>
       )}
 
+      {/* ═══ Pestaña Briefing ═══
+          [PU4b, doc 35] Qué menciona el briefing, a qué horas se lanza solo
+          (N al día, con preparación previa) y la selección de noticias
+          (temas, fuentes, prompt de intereses). */}
+      {tab === "briefing" && <BriefingPanel />}
+
       {/* ═══ Pestaña HUB Visual ═══
           [2026-07-21] Todo lo que gobierna CÓMO SE VE Aithera: tema claro/
           oscuro (antes en Sistema) + partículas del núcleo (antes en Voz). */}
@@ -2705,168 +2633,7 @@ export default function Settings() {
       )}
 
       {/* ═══ Pestaña Memoria ═══ */}
-      {tab === "memoria" && (
-        <div className="flex flex-col gap-4">
-            {/* V0.6 (Fase 3 Memory System): seccion Memoria (ChromaDB) */}
-            <div className="glass-surface rounded-2xl p-4">
-              <div className="flex items-center justify-between mb-3">
-                <h3 className="text-sm font-medium text-ink">{tr("settings.memoria.title")}</h3>
-                <button
-                  onClick={loadMemory}
-                  disabled={memLoading}
-                  className="text-xs px-2 py-1 rounded bg-base-700 text-ink-dim border border-base-600 hover:bg-base-600 disabled:opacity-50"
-                >
-                  {memLoading ? tr("common.loading") : tr("settings.memoria.refresh")}
-                </button>
-              </div>
-
-              {!memStats ? (
-                <p className="text-xs text-ink-dim">{tr("settings.memoria.loadingStats")}</p>
-              ) : !memStats.healthy ? (
-                <div className="text-xs text-signal-warn space-y-1">
-                  <p>{tr("settings.memoria.unavailable")}</p>
-                  {memStats.error && <p className="text-ink-faint font-mono">{memStats.error}</p>}
-                  <p className="text-ink-faint">{tr("settings.memoria.stillWorks")}</p>
-                </div>
-              ) : (
-                <div className="space-y-4">
-                  <div className="text-xs text-ink-dim grid grid-cols-3 gap-2">
-                    <div className="bg-base-900/40 rounded-lg p-2">
-                      <p className="text-ink-faint text-[10px] uppercase tracking-wider">{tr("settings.memoria.conversations")}</p>
-                      <p className="text-ink font-medium text-base">{memStats.conversations}</p>
-                    </div>
-                    <div className="bg-base-900/40 rounded-lg p-2">
-                      <p className="text-ink-faint text-[10px] uppercase tracking-wider">{tr("settings.memoria.preferences")}</p>
-                      <p className="text-ink font-medium text-base">{memStats.user_context}</p>
-                    </div>
-                    <div className="bg-base-900/40 rounded-lg p-2">
-                      <p className="text-ink-faint text-[10px] uppercase tracking-wider">{tr("settings.memoria.documents")}</p>
-                      <p className="text-ink font-medium text-base">{memStats.documents}</p>
-                    </div>
-                  </div>
-
-                  {/* Mensaje de feedback */}
-                  {memMessage && (
-                    <p className={`text-xs ${memMessage.kind === "ok" ? "text-signal-ok" : "text-signal-error"}`}>
-                      {memMessage.text}
-                    </p>
-                  )}
-
-                  {/* Formulario añadir preferencia */}
-                  <div className="border-t border-base-700/50 pt-3">
-                    <h4 className="text-xs font-medium text-ink mb-2">{tr("settings.memoria.addPref.title")}</h4>
-                    <p className="text-[10px] text-ink-faint mb-2">
-                      {tr("settings.memoria.addPref.desc")}
-                    </p>
-                    <div className="space-y-2">
-                      <input
-                        type="text"
-                        value={newCtxKey}
-                        onChange={(e) => setNewCtxKey(e.target.value)}
-                        placeholder={tr("settings.memoria.addPref.keyPlaceholder")}
-                        className="w-full bg-base-700 border border-base-600 rounded-lg px-3 py-1.5 text-xs text-ink placeholder:text-ink-faint focus:outline-none focus:border-accent/50"
-                      />
-                      <input
-                        type="text"
-                        value={newCtxCategory}
-                        onChange={(e) => setNewCtxCategory(e.target.value)}
-                        placeholder={tr("settings.memoria.addPref.categoryPlaceholder")}
-                        className="w-full bg-base-700 border border-base-600 rounded-lg px-3 py-1.5 text-xs text-ink placeholder:text-ink-faint focus:outline-none focus:border-accent/50"
-                      />
-                      <textarea
-                        value={newCtxContent}
-                        onChange={(e) => setNewCtxContent(e.target.value)}
-                        placeholder={tr("settings.memoria.addPref.contentPlaceholder")}
-                        rows={2}
-                        className="w-full bg-base-700 border border-base-600 rounded-lg px-3 py-1.5 text-xs text-ink placeholder:text-ink-faint focus:outline-none focus:border-accent/50"
-                      />
-                      <button
-                        onClick={handleAddContext}
-                        className="text-xs px-3 py-1.5 rounded-lg bg-accent/15 text-accent border border-accent/30 hover:bg-accent/25"
-                      >
-                        {tr("settings.memoria.addPref.save")}
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Lista de preferencias */}
-                  <div className="border-t border-base-700/50 pt-3">
-                    <h4 className="text-xs font-medium text-ink mb-2">
-                      {tr("settings.memoria.savedPrefs", { n: contextItems.length })}
-                    </h4>
-                    {contextItems.length === 0 ? (
-                      <p className="text-xs text-ink-faint">{tr("settings.memoria.noPrefs")}</p>
-                    ) : (
-                      <div className="space-y-2 max-h-48 overflow-y-auto">
-                        {contextItems.map((c) => (
-                          <div key={c.id} className="bg-base-900/40 rounded-lg p-2 flex items-start justify-between gap-2">
-                            <div className="min-w-0 flex-1">
-                              <p className="text-xs text-ink font-medium truncate">
-                                {c.key}{" "}
-                                <span className="text-[10px] text-ink-faint">({c.category})</span>
-                              </p>
-                              <p className="text-[11px] text-ink-dim mt-0.5">{c.content}</p>
-                            </div>
-                            <button
-                              onClick={() => handleDeleteContext(c.key)}
-                              className="text-[10px] px-2 py-1 rounded bg-signal-error/10 text-signal-error border border-signal-error/20 hover:bg-signal-error/20 shrink-0"
-                            >
-                              {tr("common.delete")}
-                            </button>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-
-                  {/* [R6.5c] Perfil destilado — lo que Aithera cree saber de ti, sola,
-                      de tus conversaciones. Distinto de las preferencias de arriba
-                      (esas las escribes tú a mano). Visible y borrable: sin esto sería
-                      una caja negra acumulando suposiciones sobre datos personales. */}
-                  <div className="border-t border-base-700/50 pt-3">
-                    <h4 className="text-xs font-medium text-ink mb-1">
-                      {tr("settings.memoria.profile.title", { n: profileFacts.length })}
-                    </h4>
-                    <p className="text-[10px] text-ink-faint mb-2">
-                      {tr("settings.memoria.profile.desc")}
-                    </p>
-                    {profileFacts.length === 0 ? (
-                      <p className="text-xs text-ink-faint">{tr("settings.memoria.profile.empty")}</p>
-                    ) : (
-                      <div className="space-y-2 max-h-48 overflow-y-auto">
-                        {profileFacts.map((f) => (
-                          <div key={f.key} className="bg-base-900/40 rounded-lg p-2 flex items-start justify-between gap-2">
-                            <div className="min-w-0 flex-1">
-                              <p className="text-xs text-ink font-medium truncate">{f.label}</p>
-                              <p className="text-[11px] text-ink-dim mt-0.5">{f.value}</p>
-                            </div>
-                            <button
-                              onClick={() => handleDeleteProfileFact(f.key, f.label)}
-                              className="text-[10px] px-2 py-1 rounded bg-signal-error/10 text-signal-error border border-signal-error/20 hover:bg-signal-error/20 shrink-0"
-                            >
-                              {tr("settings.memoria.profile.forget")}
-                            </button>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Acciones globales */}
-                  <div className="border-t border-base-700/50 pt-3 flex gap-2">
-                    <button
-                      onClick={handleClearConversations}
-                      disabled={!memStats.conversations}
-                      className="text-xs px-3 py-1.5 rounded-lg bg-signal-warn/10 text-signal-warn border border-signal-warn/30 hover:bg-signal-warn/20 disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      {tr("settings.memoria.clearHistory", { n: memStats.conversations })}
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-        )}
+      {tab === "memoria" && <MemoriaPanel />}
         </div>
       </div>
     </Modal>

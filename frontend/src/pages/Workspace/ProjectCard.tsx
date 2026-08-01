@@ -16,6 +16,7 @@ import { TaskPopup } from "./TaskPopup";
 import { MilestonePopup } from "./MilestonePopup";
 import { AgentsSection } from "./AgentsSection";
 import { AutomationSection } from "./AutomationSection";
+import { OrchestratorChat } from "./OrchestratorChat";
 import { HelpButton, windowShortcuts } from "./HelpPanel";
 import { useDragResize, MIN_CARD_W, MIN_CARD_H, type CardLayout, type Rect } from "./useWindowCard";
 // Alias 'tr' (no 't'): este archivo ya usa 't' como variable de tarea en
@@ -178,7 +179,7 @@ export function ProjectCard({
     <div
       ref={nodeRef}
       className={`glass-surface rounded-2xl shadow-glass flex flex-col overflow-hidden border ${
-        isFront ? "border-accent/45" : "border-base-700"
+        isFront ? "border-accent/45 holo-frame" : "border-base-700"
       } ${layout.expanded ? "absolute inset-0" : "absolute top-0 left-0"}`}
       style={{ ...rectStyle, zIndex: layout.zIndex }}
       onPointerDownCapture={onInteractStart}
@@ -313,6 +314,13 @@ export function ProjectCard({
                     </div>
                   </section>
                 )}
+
+                {/* [hotfix 2026-08-02] El chat del ORQUESTADOR del proyecto —
+                    abajo del todo, como pidió el usuario. Se monta con el mismo
+                    umbral de alto que tareas/actividad para no ahogar una
+                    tarjeta pequeña; el orquestador se crea en el backend a la
+                    primera vez que se abre (idempotente). */}
+                <OrchestratorChat projectId={project.id} expanded={layout.expanded} />
               </>
             )}
           </>

@@ -11,11 +11,12 @@ from sqlalchemy.orm import Session
 from typing import List, Optional
 
 from app.db.database import get_db
-from app.db.models import Project, Task
+from app.db.models import Agent, Project, Task
 from app.db.schemas import (
     ProjectCreate, ProjectUpdate, ProjectResponse,
     TaskCreate, TaskUpdate, TaskResponse,
     MilestoneCreate, MilestoneUpdate, MilestoneResponse,
+    AgentResponse,
 )
 from app.workspace import Milestone, workspace_service
 
@@ -94,6 +95,41 @@ async def archive_project(project_id: int, db: Session = Depends(get_db)):
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
     return project
+
+
+@projects_router.post("/{project_id}/orchestrator", response_model=AgentResponse)
+def ensure_project_orchestrator(project_id: int, db: Session = Depends(get_db)):
+    """[hotfix 2026-08-02] El ORQUESTADOR de este proyecto, creandolo si aun no
+    existe. Idempotente: si ya hay uno, lo devuelve tal cual (nunca crea un
+    segundo ni pisa su configuracion).
+
+    Lo consume el chat del proyecto (ProjectCard → OrchestratorChat): necesita
+    el agente para lanzarle encargos con los endpoints de agente que YA existen
+    (`POST /api/agents/{id}/execute` + `GET /api/agents/{id}/executions`), sin
+    inventar un canal de chat paralelo.
+
+    POR QUE HACIA FALTA: `Agent.role="orchestrator"` y el enrutado por
+    orquestador de `submit_mission` existen desde W2e/R4, pero nada creaba
+    nunca un agente con ese rol — la ruta estaba escrita y muerta. Su ALCANCE
+    (solo los agentes de este proyecto, solo su carpeta) lo impone `Authority`
+    en el TIE, no un prompt: ver `app/tie/authority.py::ensure_orchestrator`."""
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    # `app.tie.authority` es interno del TIE: se entra por la API publica.
+    import app.tie as tie
+
+    orch = tie.ensure_orchestrator(project_id)
+    if not orch:
+        raise HTTPException(
+            status_code=503,
+            detail="No se pudo preparar el orquestador de este proyecto.",
+        )
+    agent = db.query(Agent).filter(Agent.id == orch["id"]).first()
+    if not agent:
+        raise HTTPException(status_code=503, detail="El orquestador no esta disponible.")
+    return AgentResponse.model_validate(agent)
 
 
 # ===========================================================================

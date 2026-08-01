@@ -21,9 +21,15 @@ import { useT } from "@/store/useI18n";
 // claves de STATUS_COLORS (available/unavailable/busy/mixed/neutral) siguen
 // siendo el id interno (coincide con lo que devuelve el backend); el label
 // visible se resuelve aparte con `t(STATUS_LABEL_KEY[key])`.
+// [PU6b-vent t4] Nombres COMPLETOS (lunes, martes…) — petición del usuario;
+// los cortos quedan para pantallas estrechas vía la clase `sm:hidden`.
 const WEEKDAY_KEYS = [
   "calendar.weekday.mon", "calendar.weekday.tue", "calendar.weekday.wed",
   "calendar.weekday.thu", "calendar.weekday.fri", "calendar.weekday.sat", "calendar.weekday.sun",
+];
+const WEEKDAY_FULL_KEYS = [
+  "calendar.weekdayFull.mon", "calendar.weekdayFull.tue", "calendar.weekdayFull.wed",
+  "calendar.weekdayFull.thu", "calendar.weekdayFull.fri", "calendar.weekdayFull.sat", "calendar.weekdayFull.sun",
 ];
 const MONTH_KEYS = [
   "calendar.month.1", "calendar.month.2", "calendar.month.3", "calendar.month.4",
@@ -32,12 +38,16 @@ const MONTH_KEYS = [
 ];
 
 // Mapeo de status -> colores Tailwind (el color/anillo es visual, no texto).
+// [PU6b-vent t4] El TINTE de estado se pinta como capa sobre una base opaca
+// común (bg-base-900/90 en la celda): con el AVCS real de fondo en todas las
+// páginas, las celdas al 15-40% dejaban pasar las partículas y el calendario
+// costaba de leer. El tinte puede ser suave porque ya no compite con el fondo.
 const STATUS_COLORS: Record<string, { bg: string; ring: string; text: string }> = {
-  available:   { bg: "bg-emerald-500/15", ring: "ring-emerald-500/40", text: "text-emerald-300" },
-  unavailable: { bg: "bg-rose-500/20",    ring: "ring-rose-500/50",    text: "text-rose-300" },
-  busy:        { bg: "bg-amber-500/15",   ring: "ring-amber-500/40",   text: "text-amber-300" },
-  mixed:       { bg: "bg-orange-500/15",  ring: "ring-orange-500/40",  text: "text-orange-300" },
-  neutral:     { bg: "bg-base-800/40",    ring: "ring-base-700/30",    text: "text-ink-dim" },
+  available:   { bg: "bg-emerald-500/20", ring: "ring-emerald-500/40", text: "text-emerald-300" },
+  unavailable: { bg: "bg-rose-500/25",    ring: "ring-rose-500/50",    text: "text-rose-300" },
+  busy:        { bg: "bg-amber-500/20",   ring: "ring-amber-500/40",   text: "text-amber-300" },
+  mixed:       { bg: "bg-orange-500/20",  ring: "ring-orange-500/40",  text: "text-orange-300" },
+  neutral:     { bg: "bg-base-800/50",    ring: "ring-base-700/40",    text: "text-ink-dim" },
 };
 
 const STATUS_LABEL_KEY: Record<string, string> = {
@@ -71,6 +81,13 @@ export default function Calendar() {
   const now = new Date();
   const [year, setYear] = useState(now.getFullYear());
   const [month, setMonth] = useState(now.getMonth() + 1); // 1-12
+  // [PU6b-vent t4] Tres niveles de vista, patrón estándar de selector de
+  // fechas (Google Calendar / date pickers): DÍAS (el mes de siempre) →
+  // MESES (los 12 del año) → AÑOS (una docena alrededor del actual). Se sube
+  // de nivel clicando el TÍTULO central; se baja eligiendo (un año → sus
+  // meses, un mes → sus días). Las flechas ←/→ navegan la unidad de la vista
+  // activa (mes / año / bloque de 12 años).
+  const [view, setView] = useState<"days" | "months" | "years">("days");
   const [monthData, setMonthData] = useState<MonthDay[]>([]);
   const [loading, setLoading] = useState(false);
   const [selectedDay, setSelectedDay] = useState<string | null>(null);
@@ -109,8 +126,10 @@ export default function Calendar() {
   };
 
   useEffect(() => {
-    loadMonth(year, month);
-  }, [year, month]);
+    // Solo la vista de días necesita datos del backend; navegar por meses o
+    // años no dispara peticiones (se cargan al bajar de nuevo a días).
+    if (view === "days") loadMonth(year, month);
+  }, [year, month, view]);
 
   // ------------------------------------------------------------------
   // Navegacion
@@ -134,10 +153,23 @@ export default function Calendar() {
     }
   };
 
+  // [PU6b-vent t4] Las flechas navegan la unidad de la vista activa.
+  const goPrev = () => {
+    if (view === "days") prevMonth();
+    else if (view === "months") setYear(year - 1);
+    else setYear(year - 12);
+  };
+  const goNext = () => {
+    if (view === "days") nextMonth();
+    else if (view === "months") setYear(year + 1);
+    else setYear(year + 12);
+  };
+
   const goToday = () => {
     const d = new Date();
     setYear(d.getFullYear());
     setMonth(d.getMonth() + 1);
+    setView("days");
   };
 
   // ------------------------------------------------------------------
@@ -261,7 +293,7 @@ export default function Calendar() {
     <div className="h-full p-4 flex flex-col gap-4 overflow-hidden">
       {/* Cabecera */}
       <div className="flex items-center justify-between">
-        <div>
+        <div className="glass-surface rounded-xl px-4 py-2.5 w-fit">
           <h1 className="text-xl font-semibold text-ink">{t("calendar.title")}</h1>
           <p className="text-xs text-ink-faint mt-0.5">
             {t("calendar.subtitle")}
@@ -269,8 +301,8 @@ export default function Calendar() {
         </div>
         <div className="flex items-center gap-2">
           <button
-            onClick={prevMonth}
-            className="text-sm px-3 py-1.5 rounded-lg bg-base-800 hover:bg-base-700 text-ink"
+            onClick={goPrev}
+            className="text-sm px-3 py-1.5 rounded-lg bg-base-800/90 hover:bg-base-700 text-ink"
           >
             ← {t("calendar.prev")}
           </button>
@@ -281,8 +313,8 @@ export default function Calendar() {
             {t("calendar.today")}
           </button>
           <button
-            onClick={nextMonth}
-            className="text-sm px-3 py-1.5 rounded-lg bg-base-800 hover:bg-base-700 text-ink"
+            onClick={goNext}
+            className="text-sm px-3 py-1.5 rounded-lg bg-base-800/90 hover:bg-base-700 text-ink"
           >
             {t("calendar.next")} →
           </button>
@@ -299,18 +331,73 @@ export default function Calendar() {
         ))}
       </div>
 
-      {/* Mes + ano */}
-      <div className="text-center text-base font-medium text-ink-dim">
-        {t(MONTH_KEYS[month - 1])} {year}
-        {loading && <span className="ml-2 text-xs text-ink-faint">{t("calendar.loading")}</span>}
+      {/* Título central: MUESTRA la unidad de la vista y SUBE de nivel al
+          clicarlo (días → meses → años), patrón de cualquier selector de
+          fechas. El chevron indica que es interactivo. */}
+      <div className="text-center">
+        <button
+          type="button"
+          onClick={() => setView(view === "days" ? "months" : "years")}
+          disabled={view === "years"}
+          className={`text-base font-medium px-3 py-1 rounded-lg transition-colors ${
+            view === "years" ? "text-ink-dim cursor-default" : "text-ink hover:bg-base-800/80"
+          }`}
+        >
+          {view === "days" && `${t(MONTH_KEYS[month - 1])} ${year}`}
+          {view === "months" && `${year}`}
+          {view === "years" && `${year - 5} – ${year + 6}`}
+          {view !== "years" && <span className="ml-1.5 text-ink-faint text-xs">▾</span>}
+        </button>
+        {loading && view === "days" && <span className="ml-2 text-xs text-ink-faint">{t("calendar.loading")}</span>}
       </div>
 
-      {/* Grid del calendario (7 columnas x N filas) */}
+      {/* ── VISTA DE MESES: los 12 del año ─────────────────────────────── */}
+      {view === "months" && (
+        <div className="flex-1 grid grid-cols-3 sm:grid-cols-4 gap-3 min-h-0 content-start">
+          {MONTH_KEYS.map((mk, i) => {
+            const isCurrent = i + 1 === now.getMonth() + 1 && year === now.getFullYear();
+            return (
+              <button
+                key={mk}
+                onClick={() => { setMonth(i + 1); setView("days"); }}
+                className={`rounded-xl py-6 text-sm font-medium bg-base-900/90 backdrop-blur-sm ring-1 transition-all hover:ring-2 hover:bg-base-800/90 ${
+                  isCurrent ? "ring-2 ring-accent text-accent" : "ring-base-700/50 text-ink"
+                }`}
+              >
+                {t(mk)}
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      {/* ── VISTA DE AÑOS: una docena alrededor del actual ─────────────── */}
+      {view === "years" && (
+        <div className="flex-1 grid grid-cols-3 sm:grid-cols-4 gap-3 min-h-0 content-start">
+          {Array.from({ length: 12 }, (_, i) => year - 5 + i).map((y) => (
+            <button
+              key={y}
+              onClick={() => { setYear(y); setView("months"); }}
+              className={`rounded-xl py-6 text-sm font-medium bg-base-900/90 backdrop-blur-sm ring-1 transition-all hover:ring-2 hover:bg-base-800/90 ${
+                y === now.getFullYear() ? "ring-2 ring-accent text-accent" : "ring-base-700/50 text-ink"
+              }`}
+            >
+              {y}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* ── VISTA DE DÍAS: el mes (7 columnas x N filas) ───────────────── */}
+      {view === "days" && (
       <div className="flex-1 grid grid-cols-7 gap-2 min-h-0">
-        {/* Cabeceras de dias de la semana */}
-        {WEEKDAY_KEYS.map((wk) => (
-          <div key={wk} className="text-center text-[10px] uppercase tracking-wider text-ink-faint py-1">
-            {t(wk)}
+        {/* Cabecera de la semana: nombres COMPLETOS sobre fondo con cuerpo
+            (antes texto suelto casi invisible sobre el AVCS). En pantallas
+            estrechas caen a la abreviatura para no desbordar. */}
+        {WEEKDAY_KEYS.map((wk, i) => (
+          <div key={wk} className="text-center text-[11px] capitalize tracking-wide text-ink py-1.5 rounded-lg bg-base-800/90 backdrop-blur-sm border border-base-700/50 font-medium">
+            <span className="hidden sm:inline">{t(WEEKDAY_FULL_KEYS[i])}</span>
+            <span className="sm:hidden uppercase text-[10px]">{t(wk)}</span>
           </div>
         ))}
         {/* Celdas de dias */}
@@ -329,7 +416,8 @@ export default function Calendar() {
               whileTap={{ scale: 0.98 }}
               className={`
                 relative rounded-xl p-2 text-left min-h-[88px] flex flex-col gap-1 transition-colors
-                ${colors.bg} ${cell.isCurrentMonth ? colors.text : "opacity-40"}
+                bg-base-900/90 backdrop-blur-sm
+                ${cell.isCurrentMonth ? colors.text : "opacity-40"}
                 ring-1 ${isToday ? "ring-2 ring-accent ring-offset-2 ring-offset-base-950" : colors.ring}
                 hover:ring-2
               `}
@@ -341,8 +429,10 @@ export default function Calendar() {
                   : cell.date
               }
             >
+              {/* Tinte de estado, como capa sobre la base opaca. */}
+              <span className={`absolute inset-0 rounded-xl pointer-events-none ${colors.bg}`} />
               {/* Numero del dia */}
-              <div className="flex items-start justify-between">
+              <div className="relative flex items-start justify-between">
                 <span className={`text-sm font-medium ${isToday ? "text-accent" : ""}`}>
                   {dayNum}
                 </span>
@@ -355,7 +445,7 @@ export default function Calendar() {
 
               {/* Titulos de eventos + labels de bloques manuales (max 3 total) */}
               {dayInfo && (dayInfo.event_titles.length > 0 || dayInfo.block_labels.length > 0) && (
-                <div className="flex-1 min-h-0 space-y-0.5">
+                <div className="relative flex-1 min-h-0 space-y-0.5">
                   {/* Eventos reales (de calendar_events) - icono discreto */}
                   {dayInfo.event_titles.slice(0, 3).map((evTitle, i) => (
                     <div
@@ -394,6 +484,7 @@ export default function Calendar() {
           );
         })}
       </div>
+      )}
 
       {/* Modal de detalle de dia */}
       {selectedDay && (

@@ -215,7 +215,7 @@ async def test_gate_de_tool_lleva_mission_id_en_el_payload(monkeypatch):
 
     await toolloop.run(
         instruction="envía un email", context="", allowed_tools=["email"],
-        tool_manager=tool_manager, max_iters=3, approval_gate=gate, approval_wait_s=5,
+        tool_manager=tool_manager, max_iters=3, approval_gate=gate,
         session_key="mission-abc123",
     )
 
@@ -238,7 +238,7 @@ async def test_gate_de_tool_sin_session_key_lleva_mission_id_none(monkeypatch):
     gate = _FakeGate("approved")
     granted, _ = await toolloop._ask_permission(
         {"tool_id": "email", "action": "send_email"}, {"to": "x"}, gate,
-        instruction="x", wait_s=1,
+        instruction="x",
     )
     assert granted is True
     assert gate.asked[0]["action_payload"]["mission_id"] is None
@@ -288,7 +288,7 @@ async def test_log_pre_autorizado_por_perfil_autonomo_lo_dice(monkeypatch, caplo
     caplog.set_level(logging.INFO, logger="tie.toolloop")
     granted, reason = await toolloop._ask_permission(
         {"tool_id": "email", "action": "send_email"}, {}, approval_gate=None,
-        instruction="x", wait_s=1, mission_id="m1",
+        instruction="x", mission_id="m1",
     )
     assert granted is True
     assert any("perfil Autónomo" in r.message for r in caplog.records)
@@ -304,7 +304,7 @@ async def test_log_pre_autorizado_por_toggle_no_menciona_perfil_autonomo(monkeyp
     caplog.set_level(logging.INFO, logger="tie.toolloop")
     granted, reason = await toolloop._ask_permission(
         {"tool_id": "email", "action": "send_email"}, {}, approval_gate=None,
-        instruction="x", wait_s=1, mission_id="m1",
+        instruction="x", mission_id="m1",
     )
     assert granted is True
     assert any("Ajustes → Permisos" in r.message for r in caplog.records)

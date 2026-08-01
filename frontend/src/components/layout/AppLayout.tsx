@@ -1,8 +1,25 @@
-import { useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import { Outlet, useNavigate } from "react-router-dom";
 import { useLocation } from "react-router-dom";
-import { Sidebar } from "./Sidebar";
+import { Dock } from "./Dock";
+
+// [PU6a-bis v2] El chat ya no es una ruta: es una VENTANA montada aquí, en la
+// única instancia persistente del árbol. Dos consecuencias buscadas:
+//   · el Modo Conversación corre con el chat OCULTO (SPACE desde el Hub): el
+//     componente sigue montado, su bucle de voz sigue vivo, y la conversación
+//     se graba en el chat aunque no se vea;
+//   · el AVCS queda SIEMPRE de fondo — el chat es una tarjeta encima, no una
+//     página que lo tapa.
+// Lazy + gate `chatBooted`: el chunk del chat (grande) no se carga hasta la
+// primera vez que hace falta, igual que cuando era ruta.
+const ChatWindow = lazy(() => import("@/pages/Chat"));
 import { PresenceToggle } from "./PresenceToggle";
+import { BriefingButton } from "./BriefingButton";
+// [PU4b, doc 35] El "show" del briefing: tarjetas/calendario/pantalla de
+// noticias sincronizados con la locución. Vive aquí (única instancia
+// persistente) porque debe verse sobre CUALQUIER página; no renderiza nada
+// mientras no hay briefing en curso.
+import BriefingShow from "@/components/briefing/BriefingShow";
 import WelcomeOverlay from "@/components/onboarding/WelcomeOverlay";
 import { AitheraPresence } from "@/avcs";
 import { useAppStore } from "@/store/useAppStore";
@@ -39,33 +56,94 @@ export function AppLayout() {
   }, 45000);
 
   // AVCS S3 (doc 13 §13.4 Modo Presencia): F9 pliega/despliega toda la UI de
-  // chrome; Esc SIEMPRE restaura (nunca activa). Ninguna de las dos teclas
+  // chrome; Esc restaura si está en modo presencia. Ninguna de las dos teclas
   // inserta texto, así que no hace falta comprobar qué elemento tiene foco.
   // Vive aquí (AppLayout es la única instancia persistente del árbol) para
   // que el atajo funcione en cualquier página, sin listeners duplicados.
+  //
+  // [PU6a, doc 35] Fuera de modo presencia, Esc vuelve al Hub inmersivo —
+  // mismo destino que el logo del dock. Es el atajo de "salir de lo que sea
+  // que esté haciendo y volver a casa", coherente con que el Hub ya no es un
+  // dashboard sino el punto de entrada limpio.
+  //
+  // [PU6a-bis v2] Ventana de chat + Modo Conversación oculto. `chatBooted`
+  // retrasa la carga del chunk hasta la primera necesidad real (abrir el chat
+  // o pedir conversación por SPACE); una vez cargado, queda montado para
+  // siempre — ocultarlo es `display:none`, nunca desmontar (su bucle de voz y
+  // sus envíos en curso deben sobrevivir).
+  const chatOpen = useAppStore((s) => s.chatOpen);
+  const setChatOpen = useAppStore((s) => s.setChatOpen);
+  const conversationRequested = useAppStore((s) => s.conversationRequested);
+  // [PU4, doc 35] El botón de Briefing (y el disparo automático de las 8:15,
+  // que también pasa por requestBriefing) necesitan el chat MONTADO para que
+  // su efecto de escucha pueda reaccionar — mismo motivo que chatOpen/
+  // conversationRequested arriba.
+  const briefingRequestId = useAppStore((s) => s.briefingRequestId);
+  const [chatBooted, setChatBooted] = useState(false);
+  useEffect(() => {
+    if (chatOpen || conversationRequested || briefingRequestId > 0) setChatBooted(true);
+  }, [chatOpen, conversationRequested, briefingRequestId]);
+
+  // [PU6a-bis v2] Orden de prioridad de Esc, de más local a más global:
+  //   1. un diálogo abierto lo consume (Modal.tsx ya tiene su propio Esc)
+  //   2. el chat abierto: se cierra (vuelve a verse el Hub/la página de abajo)
+  //   3. Modo Presencia: restaura la UI
+  //   4. cualquier página ≠ Hub: cierra y vuelve al Hub
+  //   5. nada que cerrar: pedir a Electron salir de pantalla completa (IPC;
+  //      fuera de Electron no hace nada)
+  // El paso 5 es la mitad del fix del fallo reportado ("Esc con el chat
+  // abierto salía de fullscreen"): Electron ya NO decide nada sobre Esc — la
+  // otra mitad vive en main.cjs, que retiró su preventDefault.
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === "F9") {
         e.preventDefault();
         togglePresenceMode();
-      } else if (e.key === "Escape" && presenceMode) {
-        setPresenceMode(false);
+        return;
+      }
+      if (e.key !== "Escape") return;
+      if (document.querySelector('[role="dialog"]')) return; // (1)
+      if (useAppStore.getState().chatOpen) {
+        setChatOpen(false); // (2)
+      } else if (presenceMode) {
+        setPresenceMode(false); // (3)
+      } else if (location.pathname !== "/") {
+        navigate("/"); // (4)
+      } else {
+        window.aithera?.exitFullscreen?.(); // (5)
       }
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [presenceMode, setPresenceMode, togglePresenceMode]);
+  }, [presenceMode, setPresenceMode, togglePresenceMode, location.pathname, navigate, setChatOpen]);
+
+  // [PU6a-bis v2] SPACE activa/desactiva el Modo Conversación desde cualquier
+  // sitio — SIN abrir el chat (petición literal: "debería entrar en modo
+  // conversación manteniendo el chat oculto, aunque la conversación se grabe
+  // en el chat"). El componente del chat se monta oculto (chatBooted) y su
+  // bucle de voz corre igual; abrirlo después muestra la transcripción.
+  //
+  // Guardas: no robarle la barra espaciadora a quien escribe (input/textarea/
+  // contentEditable), ni a un diálogo, ni a un botón enfocado (preventDefault:
+  // SPACE sobre un <button> enfocado lo "pulsa").
+  const toggleConversationRequested = useAppStore((s) => s.toggleConversationRequested);
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.code !== "Space" || e.ctrlKey || e.metaKey || e.altKey) return;
+      const el = e.target as HTMLElement | null;
+      const tag = el?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || el?.isContentEditable) return;
+      if (document.querySelector('[role="dialog"]')) return;
+      e.preventDefault();
+      toggleConversationRequested();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [toggleConversationRequested]);
 
   return (
-    <div className="flex h-screen w-screen overflow-hidden bg-base-950 text-ink">
-      <div
-        className={`shrink-0 overflow-hidden transition-all duration-[400ms] ease-out ${
-          presenceMode ? "w-0 opacity-0 -translate-x-4" : "w-60 opacity-100 translate-x-0"
-        }`}
-      >
-        <Sidebar />
-      </div>
-      <main className="flex-1 overflow-hidden relative">
+    <div className="relative h-screen w-screen overflow-hidden bg-base-950 text-ink">
+      <main className="absolute inset-0 overflow-hidden">
         {/* AVCS S1 (doc 13 §13.1): el Canvas de la presencia vive AQUI, hermano
             del div con key=pathname y FUERA de el, para que NO se remonte al
             navegar (una sola instancia, el contexto WebGL y las FBO persisten).
@@ -105,16 +183,38 @@ export function AppLayout() {
             )}
           </div>
         )}
+        {/* `pb-28`: los botones sueltos flotan encima del contenido (son
+            `fixed`, ya no ocupan sitio en el flujo como la barra vieja), así
+            que el hueco se lo reserva la página para no quedar tapada. */}
         <div
-          className={`h-full p-6 relative z-10 transition-all duration-[400ms] ease-out ${
+          className={`h-full p-6 pb-28 relative z-10 transition-all duration-[400ms] ease-out ${
             presenceMode ? "opacity-0 translate-y-2 pointer-events-none" : "opacity-100 translate-y-0"
           }`}
           key={location.pathname}
         >
           <Outlet />
         </div>
+
+        {/* [PU6a-bis v2] VENTANA de chat — montada una vez, oculta con
+            display:none (los bucles de voz y los envíos siguen vivos).
+            `pointer-events-none` en el contenedor: solo el panel del chat
+            captura clics; el resto de la pantalla sigue siendo del Hub/página
+            de debajo. */}
+        {chatBooted && (
+          <div className={`absolute inset-0 z-30 pointer-events-none ${chatOpen ? "" : "hidden"}`}>
+            <Suspense fallback={null}>
+              <ChatWindow />
+            </Suspense>
+          </div>
+        )}
         <PresenceToggle />
+        <BriefingButton />
+        <BriefingShow />
       </main>
+
+      {/* [PU6a-bis, doc 35] Botones SUELTOS (sin barra). Se posicionan solos
+          (`fixed`) y gestionan su propio plegado en Modo Presencia. */}
+      <Dock />
 
       {/* OB-1 (doc 30 §1): asistente de bienvenida. Se auto-decide si mostrarse
           (primera vez, flag en BD); no renderiza nada si el onboarding ya se

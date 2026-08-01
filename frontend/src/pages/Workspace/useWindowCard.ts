@@ -14,7 +14,7 @@
 // Por eso el ancho/alto se clampa PRIMERO y la posicion se deriva de cuanto
 // realmente se movio el borde (startRect.w - clampedW), nunca del delta crudo.
 import { useCallback, useEffect, useRef, useState } from "react";
-import { CARD_Z_MAX } from "./layers";
+import { CARD_Z_MAX, allocateZ, registerZStore } from "./layers";
 
 export interface CardLayout {
   x: number;
@@ -36,7 +36,19 @@ const CLICK_THRESHOLD_PX = 4;
 function readStore(storageKey: string): Record<number, CardLayout> {
   try {
     const raw = localStorage.getItem(storageKey);
-    return raw ? JSON.parse(raw) : {};
+    const parsed = raw ? JSON.parse(raw) : {};
+    if (!parsed || typeof parsed !== "object") return {};
+    // [hotfix 2026-08-02] SANEAR al leer — ver `normalizeLayout`. Lo persistido
+    // puede venir de una version anterior (sin algun campo), de una escritura a
+    // medias o de un localStorage editado a mano; a partir de aqui, todo el
+    // resto del Workspace puede dar por hecho que un CardLayout es valido.
+    const out: Record<number, CardLayout> = {};
+    Object.entries(parsed as Record<string, unknown>).forEach(([id, value]) => {
+      const numericId = Number(id);
+      if (!Number.isFinite(numericId)) return;
+      out[numericId] = normalizeLayout(numericId, value);
+    });
+    return out;
   } catch {
     return {};
   }
@@ -58,6 +70,43 @@ function writeStore(storageKey: string, map: Record<number, CardLayout>) {
 // (40,40), exactamente superpuestos (bug encontrado en verificacion en vivo
 // de W2b). El id siempre esta disponible en cualquier call site, así que el
 // stagger es correcto sin coordinar quien pasa que indice.
+// [hotfix 2026-08-02] EL BUG QUE ESTO CIERRA (reportado por el usuario: "abres
+// un agente de dentro de un proyecto y se queda POR DEBAJO... no puedes subirla
+// porque la tarjeta del proyecto la bloquea").
+//
+// CAUSA RAÍZ: nada saneaba lo persistido. Si UNA sola entrada guardada no traía
+// `zIndex` numérico (versión anterior, escritura a medias), pasaban dos cosas,
+// y las dos acababan en el MISMO sitio:
+//   1. `getLayout` devolvía el objeto crudo → `layout.zIndex` era `undefined`.
+//   2. El contador arrancaba con `1 + Math.max(0, ...zIndex)` → NaN. Y como
+//      `NaN >= CARD_Z_MAX` es `false`, cada `bringToFront` hacía `NaN + 1` =
+//      NaN y lo PERSISTÍA: a partir de ahí, NaN para siempre.
+// React descarta `style={{ zIndex: NaN }}`, así que la tarjeta se quedaba con
+// `z-index: auto`. Y un elemento posicionado con `z-index: auto` se pinta en
+// una capa ESTRICTAMENTE POR DEBAJO de cualquier elemento posicionado con
+// z-index positivo — de ahí que quedara detrás de las tarjetas de proyecto y
+// que hacer clic no la subiera nunca (seguía escribiendo NaN).
+//
+// Sanear en la frontera (al leer) es lo que evita que un dato viejo o corrupto
+// pueda volver a envenenar el apilado.
+function normalizeLayout(id: number, raw: unknown): CardLayout {
+  const base = defaultLayout(id);
+  if (!raw || typeof raw !== "object") return base;
+  const r = raw as Record<string, unknown>;
+  const num = (v: unknown, fallback: number) =>
+    typeof v === "number" && Number.isFinite(v) ? v : fallback;
+  const bool = (v: unknown, fallback: boolean) => (typeof v === "boolean" ? v : fallback);
+  return {
+    x: num(r.x, base.x),
+    y: num(r.y, base.y),
+    w: Math.max(MIN_CARD_W, num(r.w, base.w)),
+    h: Math.max(MIN_CARD_H, num(r.h, base.h)),
+    shelved: bool(r.shelved, base.shelved),
+    expanded: bool(r.expanded, base.expanded),
+    zIndex: Math.min(CARD_Z_MAX, Math.max(1, num(r.zIndex, 1))),
+  };
+}
+
 function defaultLayout(projectId: number): CardLayout {
   // Una tarjeta nueva nace en la estanteria/oculta (metafora: libros que aun
   // no has sacado). x/y/w/h por defecto solo importan si el usuario la saca
@@ -84,11 +133,36 @@ function defaultLayout(projectId: number): CardLayout {
  * clave sin colisionar — de ahi el storageKey parametrizado). */
 export function useWorkspaceLayouts(storageKey: string = STORAGE_KEY) {
   const [layouts, setLayouts] = useState<Record<number, CardLayout>>(() => readStore(storageKey));
-  const zCounter = useRef(1 + Math.max(0, ...Object.values(readStore(storageKey)).map((l) => l.zIndex)));
 
   useEffect(() => {
     writeStore(storageKey, layouts);
   }, [storageKey, layouts]);
+
+  // [hotfix 2026-08-02] Espejo en un ref para que el apilado GLOBAL pueda leer
+  // las entradas de este almacen sin volver a suscribirse en cada render (el
+  // registro se hace una sola vez, al montar).
+  const layoutsRef = useRef(layouts);
+  useEffect(() => {
+    layoutsRef.current = layouts;
+  }, [layouts]);
+
+  useEffect(
+    () =>
+      registerZStore({
+        entries: () =>
+          Object.entries(layoutsRef.current).map(([id, l]) => [Number(id), l.zIndex] as [number, number]),
+        renumber: (next) =>
+          setLayouts((prev) => {
+            const out = { ...prev };
+            Object.entries(next).forEach(([id, z]) => {
+              const current = out[Number(id)];
+              if (current) out[Number(id)] = { ...current, zIndex: z };
+            });
+            return out;
+          }),
+      }),
+    [],
+  );
 
   const getLayout = useCallback(
     (projectId: number): CardLayout => layouts[projectId] ?? defaultLayout(projectId),
@@ -103,25 +177,20 @@ export function useWorkspaceLayouts(storageKey: string = STORAGE_KEY) {
   }, []);
 
   // [2026-07-25] Traer al frente (clic en cualquier parte de la tarjeta, como en
-  // Windows). El contador se RECICLA al llegar al techo: antes crecía sin límite
-  // y, en una sesión larga, una tarjeta podía superar la capa de los popups y
-  // taparlos (el bug que se arregló con `layers.ts`). Al reciclar, se renumeran
-  // las tarjetas conservando su orden relativo de apilado.
+  // Windows).
+  //
+  // [hotfix 2026-08-02] El contador ya NO es de esta instancia: es el ÚNICO
+  // compartido por todas las tarjetas del Workspace (`layers.allocateZ`). Con un
+  // contador por tipo, proyectos y agentes vivían en dos ordenaciones que no se
+  // podían comparar entre sí, y la única forma de que los agentes no quedaran
+  // tapados era un offset fijo (+100.000) que los dejaba SIEMPRE arriba — lo que
+  // impedía justo lo que el usuario pide: clicar el proyecto y que el agente
+  // pase detrás. Compartiendo contador, cada clic pone esa ventana por encima de
+  // todas las demás, sean del tipo que sean. El reciclado al llegar al techo
+  // también es global (ver `compactAll`).
   const bringToFront = useCallback(
     (projectId: number) => {
-      if (zCounter.current >= CARD_Z_MAX) {
-        setLayouts((prev) => {
-          const orden = Object.entries(prev)
-            .sort((a, b) => (a[1].zIndex || 0) - (b[1].zIndex || 0));
-          const out: Record<number, CardLayout> = {};
-          orden.forEach(([id, l], i) => { out[Number(id)] = { ...l, zIndex: i + 1 }; });
-          zCounter.current = orden.length + 1;
-          return { ...out, [projectId]: { ...(out[projectId] ?? defaultLayout(projectId)), zIndex: zCounter.current } };
-        });
-        return;
-      }
-      zCounter.current += 1;
-      setLayout(projectId, { zIndex: zCounter.current });
+      setLayout(projectId, { zIndex: allocateZ() });
     },
     [setLayout],
   );

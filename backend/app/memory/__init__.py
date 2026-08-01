@@ -46,7 +46,18 @@ from .vault import write_decision as vault_write_decision
 # — hay un test con presupuesto de 2 s sobre `import app.main` que salta si esto
 # se hace eager. Con `__getattr__`, `from app.memory import profile` dentro de
 # una función sigue siendo tan diferido como antes, pero ya respeta la frontera.
-_LAZY_SUBMODULES = ("ingestion", "summarizer", "lifecycle", "profile")
+_LAZY_SUBMODULES = (
+    "ingestion", "summarizer", "lifecycle", "profile",
+    # [PU4/PU4b, doc 35] Briefing 2.0: locución + segmentos (briefing),
+    # configuración persistida + armado de jobs de preparación
+    # (briefing_config) y selección de noticias (news).
+    "briefing", "briefing_config", "news",
+    # [PU10, doc 35] Router determinista del mini-chat de memoria ("guarda
+    # que...", "olvida lo de..."): endpoints/memory.py y los dos puntos del
+    # chat principal (app.tie.pipeline, app.orchestrator) lo consumen SOLO
+    # por aquí — nunca `from app.memory.quick_memory import ...` directo.
+    "quick_memory",
+)
 
 
 def __getattr__(name: str):
@@ -90,4 +101,8 @@ __all__ = [
     "summarizer",
     "lifecycle",
     "profile",
+    "briefing",
+    "briefing_config",
+    "news",
+    "quick_memory",
 ]

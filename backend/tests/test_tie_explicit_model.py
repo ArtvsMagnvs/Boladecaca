@@ -116,6 +116,43 @@ async def test_scope_unspecified_pregunta_sin_ejecutar(monkeypatch):
 
 
 # ---------------------------------------------------------------------------
+# [PU3, doc 35, 2026-07-30] scope=unspecified + perfil Autónomo → NO pregunta,
+# asume 'task' y avisa con una nota transparente (nunca en silencio).
+# ---------------------------------------------------------------------------
+@pytest.mark.anyio
+async def test_scope_unspecified_bajo_autonomo_no_pregunta_asume_task(monkeypatch):
+    from app.automation.permissions import apply_profile
+
+    apply_profile("full")
+    try:
+        _fake_classifier(monkeypatch, {"name": "Claude", "scope": "unspecified"})
+
+        import app.mel as mel
+        called = {"mel": False}
+
+        async def _mel_complete(req):
+            called["mel"] = True
+            called["model_override"] = req.model_override
+            from app.mel import ExecutionResult, ServedBy, Usage
+            return ExecutionResult(text="respuesta con claude", ok=True,
+                                   served_by=ServedBy("anthropic", "claude"), usage=Usage())
+        monkeypatch.setattr(mel, "complete", _mel_complete)
+        monkeypatch.setattr(mel, "resolve_model_name",
+                            lambda name: type("R", (), {"key": "anthropic:claude",
+                                                        "provider": "anthropic", "model": "claude"})())
+
+        out = await pipeline.handle(_Env("usa Claude"))
+
+        assert called["mel"] is True, "bajo Autónomo SÍ ejecuta este turno, no pregunta"
+        assert called["model_override"] == "anthropic:claude"
+        # Nunca en silencio: la respuesta lleva la nota de qué se asumió y por qué.
+        assert "Autónomo" in out or "autónomo" in out
+        assert "respuesta con claude" in out
+    finally:
+        apply_profile("manual")
+
+
+# ---------------------------------------------------------------------------
 # nombre no resuelto → responde con las opciones reales, sin inventar
 # ---------------------------------------------------------------------------
 @pytest.mark.anyio

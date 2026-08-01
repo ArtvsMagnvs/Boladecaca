@@ -104,11 +104,12 @@ class Settings:
     # sigue usando la política elegida por el usuario. Vacío = sin override (usa la
     # política activa, como antes).
     VOICE_CHAT_POLICY = os.getenv("VOICE_CHAT_POLICY", "speed").strip()
-    # Cuánto espera el bucle a que el usuario conteste una petición de permiso
-    # para una acción sensible. Si no contesta a tiempo, el paso sigue SIN esa
-    # acción y lo dice — la aprobación NO se cancela: queda pendiente en la UI.
-    # Con el permiso pre-autorizado (A3b) la espera es instantánea.
-    TIE_TOOL_APPROVAL_WAIT_S = int(os.getenv("TIE_TOOL_APPROVAL_WAIT_S", "120"))
+    # [PU3, doc 35, 2026-07-30] `TIE_TOOL_APPROVAL_WAIT_S` existía para acotar
+    # cuánto espera el bucle una respuesta de permiso (120s por defecto, luego
+    # caducaba). Retirado por decisión explícita del usuario: ningún gate
+    # caduca — se espera indefinidamente a que el usuario responda (con el
+    # permiso pre-autorizado, A3b, la espera sigue siendo instantánea). Ver
+    # `tie/toolloop.py::_wait_gate`.
     # [S4, doc 34 §10] Ventana deslizante del transcript del bucle de tool-use.
     # El transcript CRECE con cada iteracion y se reenviaba ENTERO en cada
     # llamada (observaciones de 4000 chars x 12 vueltas = ~50k chars al final):

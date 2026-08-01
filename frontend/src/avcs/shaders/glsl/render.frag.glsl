@@ -11,6 +11,37 @@ uniform vec3 uHeart; // Ámbar (núcleo)
 uniform vec3 uAura;  // oro cálido (aura/pétalos)
 uniform vec3 uField; // teal (Savia)
 
+// [doc 35 PU5] Compensación de luminosidad por tier. Q4 = 1.0 EXACTO (la
+// referencia: multiplicar por 1.0 deja el cálculo idéntico al original, así que
+// Q4 es bit a bit el de siempre). En tiers bajos hay menos partículas sumando
+// luz con el blending aditivo, así que el conjunto se apaga; esto lo compensa
+// subiendo la OPACIDAD de cada partícula.
+//
+// POR QUÉ AQUÍ Y NO EN EL TAMAÑO (lección de la primera versión de PU5, que se
+// revirtió): agrandar gl_PointSize NO conserva el diseño — cada partícula se
+// dibuja como un degradado radial (`glow`, abajo) que ocupa TODO el radio del
+// quad, así que un punto más grande es literalmente un degradado más grande =
+// una mancha difusa. El AVCS es polvo finísimo (ver render.vert.glsl); ampliarlo
+// lo convierte en otra cosa. El brillo, en cambio, no toca ni la geometría del
+// punto ni el perfil del degradado: misma nitidez exacta, más presencia.
+//
+// SOLO se aplica al canal ALPHA, nunca al color: `vBright` también gobierna la
+// mezcla ámbar→blanco del núcleo (abajo), así que tocarlo ahí volvería el núcleo
+// más blanco en tiers bajos — otro cambio de identidad. Con el boost solo en
+// alpha, el TONO es idéntico en los 4 tiers y solo cambia cuánta luz aporta cada
+// partícula.
+uniform float uBrightBoost;
+
+// [doc 35 PU5] Dureza del borde del punto (umbral interior del smoothstep de
+// abajo). 0.0 = degradado desde el mismísimo centro → Q4, EXACTAMENTE como
+// siempre. En tiers bajos sube (~0.30) y el punto pasa a tener un núcleo sólido
+// con un borde corto: se ve NÍTIDO aunque sea algo más grande.
+//
+// Es la pieza que hace viable subir `pointScale` sin emborronar. La 1.ª versión
+// de PU5 agrandó el punto SIN esto y el resultado fueron manchas difusas: con el
+// degradado ocupando todo el radio, más tamaño es literalmente más desenfoque.
+uniform float uEdgeHardness;
+
 varying float vRole;
 varying float vSeed;
 varying float vBright;
@@ -20,7 +51,7 @@ void main() {
   vec2 c = gl_PointCoord - 0.5;
   float d = length(c);
   if (d > 0.5) discard;
-  float glow = smoothstep(0.5, 0.0, d);
+  float glow = smoothstep(0.5, uEdgeHardness, d);
 
   vec3 col;
   if (vRole > 0.95) {
@@ -51,5 +82,7 @@ void main() {
   float edge = max(abs(vNdc.x), abs(vNdc.y));
   float edgeFalloff = 1.0 - smoothstep(0.92, 1.0, edge);
 
-  gl_FragColor = vec4(col * (0.35 + 0.9 * vBright), glow * vBright * 0.85 * edgeFalloff);
+  // El color (primer argumento) NO lleva el boost — ver la nota de uBrightBoost:
+  // el tono debe ser idéntico en los 4 tiers. Solo el alpha compensa.
+  gl_FragColor = vec4(col * (0.35 + 0.9 * vBright), glow * vBright * uBrightBoost * 0.85 * edgeFalloff);
 }

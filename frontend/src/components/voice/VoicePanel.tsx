@@ -169,6 +169,21 @@ export default function VoicePanel() {
   // V0.8.1 (Paso 2): cableado del nucleo al TTS manual (boton "Escuchar muestra").
   const setCoreState = useAppStore((s) => s.setCoreState);
 
+  // [PU1, doc 35] Guardas anti-carrera: si el usuario cambia de proveedor
+  // antes de que la peticion anterior responda, esa respuesta vieja NO debe
+  // pisar el estado de la pestana nueva (bug reportado: "Kokoro muestra voces
+  // de ElevenLabs" — la peticion de ElevenLabs tardaba mas y llegaba DESPUES
+  // de haber cambiado a Kokoro). `loadRequestId` numera cada llamada a
+  // `loadVoicesFor`; solo la mas reciente puede escribir en `voices`.
+  // `activeProviderRef` cubre la segunda via del mismo bug: el sondeo de
+  // instalacion de Kokoro recarga sus voces al terminar aunque el usuario ya
+  // este viendo otra pestana.
+  const loadRequestId = useRef(0);
+  const activeProviderRef = useRef<Provider>(activeProvider);
+  useEffect(() => {
+    activeProviderRef.current = activeProvider;
+  }, [activeProvider]);
+
   // Si el usuario cierra Ajustes con un preview sonando, nucleo a idle.
   useEffect(() => {
     return () => {
@@ -180,29 +195,41 @@ export default function VoicePanel() {
 
   // V0.83: carga las voces del proveedor dado y elige la voz inicial.
   const loadVoicesFor = useCallback(async (provider: Provider, preferId?: string | null) => {
+    // [PU1, doc 35] Esta llamada se numera; si al terminar ya no es la mas
+    // reciente (el usuario cambio de proveedor mientras tanto), se descarta
+    // en vez de escribir sobre el estado de la pestana actual.
+    const requestId = ++loadRequestId.current;
+    const isStale = () => requestId !== loadRequestId.current;
+
     setLoadingVoices(true);
     setVoiceLoadError(null);
     try {
       let list: VoiceConfig[] = [];
       if (provider === "edgetts") {
         const r = await api.getEdgeVoices();
+        if (isStale()) return;
         list = (r.voices || []).map(mapSimpleVoice);
       } else if (provider === "kokoro") {
         try {
           const st = await api.getKokoroStatus();
+          if (isStale()) return;
           setKokoroStatus(st);
           if (!st.available) setVoiceLoadError(st.message);
         } catch {
           /* status opcional */
         }
+        if (isStale()) return;
         const r = await api.getKokoroVoices();
+        if (isStale()) return;
         list = (r.voices || []).map(mapSimpleVoice);
       } else {
         // elevenlabs
         const status = await api.getVoiceStatus();
+        if (isStale()) return;
         if (status.configured) {
           setElevenlabsConfigured(true);
           const r = await api.getAccountVoices();
+          if (isStale()) return;
           list = (r.voices || []).map((v) => ({
             voice_id: v.voice_id,
             name: v.name,
@@ -216,17 +243,19 @@ export default function VoicePanel() {
           setVoiceLoadError(t("settings.voz.panel.elevenlabsNotConfigured"));
         }
       }
+      if (isStale()) return;
       let initial: VoiceConfig | null = null;
       if (preferId) initial = list.find((v) => v.voice_id === preferId) ?? null;
       if (!initial) initial = list[0] ?? null;
       setVoices(list);
       setSelectedVoice(initial);
     } catch (e: unknown) {
+      if (isStale()) return;
       setVoiceLoadError(e instanceof Error ? e.message : String(e));
       setVoices([]);
       setSelectedVoice(null);
     } finally {
-      setLoadingVoices(false);
+      if (!isStale()) setLoadingVoices(false);
     }
   }, []);
 
@@ -372,7 +401,10 @@ export default function VoicePanel() {
         setKokoroStatus(st);
         if (st.available || st.install_status === "failed" || st.install_status === "done") {
           setKokoroInstalling(false);
-          if (st.available) loadVoicesFor("kokoro");
+          // [PU1, doc 35] Solo recarga la lista si el usuario SIGUE en la
+          // pestana Kokoro — si ya cambio a otra, recargar aqui pisaria las
+          // voces del proveedor que esta viendo ahora (mismo bug, otra via).
+          if (st.available && activeProviderRef.current === "kokoro") loadVoicesFor("kokoro");
         }
       } catch {
         /* siguiente tick */

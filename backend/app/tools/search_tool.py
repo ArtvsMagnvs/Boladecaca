@@ -33,6 +33,14 @@ _BRAVE_PATHS = {
 }
 _SERPAPI_TBM = {"web": None, "news": "nws", "images": "isch", "videos": "vid"}
 
+# [PU4b hotfix, 2026-08-01] Ventana de actualidad — el briefing de noticias
+# pedía "geopolitica españa" y recibia análisis/debates de hace semanas en
+# vez del conflicto de Ceuta que estaba pasando ESE día: sin filtro de fecha,
+# ambos proveedores devuelven por relevancia, no por recencia. "d"/"w"/"m" =
+# últimas 24h / última semana / último mes.
+_BRAVE_FRESHNESS = {"d": "pd", "w": "pw", "m": "pm"}
+_SERPAPI_TBS = {"d": "qdr:d", "w": "qdr:w", "m": "qdr:m"}
+
 
 def _get_key(db, config_key: str) -> Optional[str]:
     from app.db.models import Config
@@ -54,12 +62,18 @@ def _configured_providers() -> Dict[str, Optional[str]]:
         db.close()
 
 
-async def _search_brave(vertical: str, query: str, count: int, api_key: str) -> List[Dict[str, Any]]:
+async def _search_brave(
+    vertical: str, query: str, count: int, api_key: str, freshness: Optional[str] = None
+) -> List[Dict[str, Any]]:
     path = _BRAVE_PATHS[vertical]
+    params = {"q": query, "count": count}
+    fresh = _BRAVE_FRESHNESS.get(freshness or "")
+    if fresh and vertical in ("news", "web"):
+        params["freshness"] = fresh
     async with httpx.AsyncClient(timeout=10.0) as client:
         r = await client.get(
             f"https://api.search.brave.com{path}",
-            params={"q": query, "count": count},
+            params=params,
             headers={"Accept": "application/json", "X-Subscription-Token": api_key},
         )
         r.raise_for_status()
@@ -73,11 +87,26 @@ async def _search_brave(vertical: str, query: str, count: int, api_key: str) -> 
     items = bucket.get("results", bucket) if isinstance(bucket, dict) else bucket
     out = []
     for it in (items or [])[:count]:
-        out.append({
+        entry = {
             "title": it.get("title"),
             "url": it.get("url") or it.get("source"),
             "description": it.get("description") or it.get("snippet") or "",
-        })
+        }
+        # [PU4b, doc 35] Campos ADITIVOS para el briefing (fuente legible,
+        # miniatura, antig\u00fcedad) \u2014 best-effort, solo si el proveedor los trae.
+        # Brave: meta_url.hostname / thumbnail.src / age\u00b7page_age.
+        meta = it.get("meta_url") or {}
+        thumb = it.get("thumbnail")
+        source = meta.get("hostname") if isinstance(meta, dict) else None
+        image = thumb.get("src") if isinstance(thumb, dict) else (thumb if isinstance(thumb, str) else None)
+        published = it.get("age") or it.get("page_age")
+        if source:
+            entry["source"] = source
+        if image:
+            entry["image"] = image
+        if published:
+            entry["published"] = published
+        out.append(entry)
     # [S9c] Los proveedores devuelven restos de marcado enriquecido: un
     # `\ufffc` invisible pegado a una URL acaba DENTRO del enlace markdown que
     # escribe el modelo, y el usuario recibe un enlace roto. Se limpia en la
@@ -85,11 +114,16 @@ async def _search_brave(vertical: str, query: str, count: int, api_key: str) -> 
     return clean_external(out)
 
 
-async def _search_serpapi(vertical: str, query: str, count: int, api_key: str) -> List[Dict[str, Any]]:
+async def _search_serpapi(
+    vertical: str, query: str, count: int, api_key: str, freshness: Optional[str] = None
+) -> List[Dict[str, Any]]:
     params = {"engine": "google", "q": query, "api_key": api_key, "num": count}
     tbm = _SERPAPI_TBM.get(vertical)
     if tbm:
         params["tbm"] = tbm
+    tbs = _SERPAPI_TBS.get(freshness or "")
+    if tbs:
+        params["tbs"] = tbs
 
     async with httpx.AsyncClient(timeout=15.0) as client:
         r = await client.get("https://serpapi.com/search", params=params)
@@ -106,15 +140,28 @@ async def _search_serpapi(vertical: str, query: str, count: int, api_key: str) -
     items = data.get(key_by_vertical.get(vertical, "organic_results"), [])
     out = []
     for it in (items or [])[:count]:
-        out.append({
+        entry = {
             "title": it.get("title"),
             "url": it.get("link") or it.get("original") or it.get("source"),
             "description": it.get("snippet") or "",
-        })
+        }
+        # [PU4b] Campos aditivos (ver _search_brave). SerpAPI news_results:
+        # source (nombre del medio, str o dict según engine), date, thumbnail (URL str).
+        source = it.get("source")
+        if isinstance(source, dict):
+            source = source.get("name")
+        thumb = it.get("thumbnail")
+        if isinstance(source, str) and source:
+            entry["source"] = source
+        if isinstance(thumb, str) and thumb:
+            entry["image"] = thumb
+        if it.get("date"):
+            entry["published"] = it.get("date")
+        out.append(entry)
     return clean_external(out)      # [S9c] misma limpieza que en Brave
 
 
-async def _search(vertical: str, query: str, count: int) -> Dict[str, Any]:
+async def _search(vertical: str, query: str, count: int, freshness: Optional[str] = None) -> Dict[str, Any]:
     keys = _configured_providers()
     if not keys["brave"] and not keys["serpapi"]:
         return {
@@ -130,13 +177,13 @@ async def _search(vertical: str, query: str, count: int) -> Dict[str, Any]:
     # tarjeta vinculada) — orden del usuario, 2026-07-22.
     if keys["serpapi"]:
         try:
-            items = await _search_serpapi(vertical, query, count, keys["serpapi"])
+            items = await _search_serpapi(vertical, query, count, keys["serpapi"], freshness)
             return {"success": True, "result": {"provider": "serpapi", "query": query, "items": items}, "error": None}
         except Exception as e:
             errors.append(f"serpapi: {type(e).__name__}: {e}")
     if keys["brave"]:
         try:
-            items = await _search_brave(vertical, query, count, keys["brave"])
+            items = await _search_brave(vertical, query, count, keys["brave"], freshness)
             return {"success": True, "result": {"provider": "brave", "query": query, "items": items}, "error": None}
         except Exception as e:
             errors.append(f"brave: {type(e).__name__}: {e}")
@@ -171,7 +218,8 @@ class SearchTool(BaseTool):
                 return {"success": False, "result": None, "error": "falta parametro: query"}
             count = int(params.get("count", 8))
             count = max(1, min(count, 20))
-            return await _search(vertical, query, count)
+            freshness = params.get("freshness") if params.get("freshness") in ("d", "w", "m") else None
+            return await _search(vertical, query, count, freshness)
         except Exception as e:
             return {"success": False, "result": None, "error": f"{type(e).__name__}: {e}"}
 

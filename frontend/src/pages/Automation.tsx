@@ -136,7 +136,7 @@ export default function Automation() {
 
   return (
     <div className="h-full overflow-y-auto p-4 flex flex-col gap-5 max-w-4xl mx-auto w-full">
-      <div>
+      <div className="glass-surface rounded-xl px-4 py-2.5 w-fit">
         <h1 className="text-xl font-semibold text-ink">{t("automation.title")}</h1>
         <p className="text-xs text-ink-faint mt-0.5">
           {t("automation.subtitle")}

@@ -3425,9 +3425,1190 @@ test en vivo para MiniMax M3 (doc 34 §11, regla de oro: **nunca toca código**)
   silencio; si se rechaza, que la respuesta final lleve la advertencia de
   incompletitud.
 
+- ✅ **Campaña 02 EJECUTADA (2026-07-29, Sonnet vía Claude Code) —
+  verificación en vivo S1-S11 + diagnóstico NEW-5 contra Postgres real**
+  (doc 34, campaña corta encargada directamente por el usuario, no el
+  catálogo completo de §11.4): evidencia en
+  `test-lab/campanya-02-s1s11-verificacion/`, verificada por esta sesión
+  contrastando el informe contra su evidencia cruda citada (regla R1 de
+  doc 34 §11.7 — nunca aceptar la narrativa sola; confirmado que el log de
+  S11 y el JSON del gate de NEW-7/NEW-7b coinciden literalmente con lo que
+  el informe describe). **Regresión: 1351 passed, 1 skipped (benigno),
+  0 failed** — único cambio de código de la campaña, un test-double de
+  `test_fast_precheck.py` sin `**kw` tras S4 (fallo de firma trivial,
+  permitido). **NEW-5 medido contra la BD real**: 1 caso real de
+  discrepancia confirmado (misión `59502169...`, el planner no asignó
+  `browser`/`search` a los nodos de recolectar información pese a que la
+  autoridad las permitía) — reafirma la conclusión del rastreo estático:
+  ningún camino de código quita una tool ya asignada, es 100% decisión del
+  planificador. **4/5 escenarios en vivo PASS** (S9 concurrencia de
+  navegador, S9b recuperación tras cierre externo, S2·S6 email real sin
+  falsa petición de confirmación, NEW-7/NEW-7b listado exacto contra disco +
+  aviso honesto al rechazar el guardado, S7·S8 gate resuelto enteramente
+  desde `/missions`) — todos con evidencia cruzada (logs, comparación
+  contra disco, timestamps del SO). **S11 (gate de concesión) NO
+  REPRODUCIDO** en 2 intentos reales: sin `document`, el planner rechazó el
+  objetivo por su cuenta (`PlanRejection`) antes de que el toolloop
+  arrancara; con `document`, el planner la asignó bien y no hizo falta gate.
+  **No invalida S11** — su disparador (autoridad amplia + planner que NO
+  asigna una tool que sí podría + el modelo la pide de todas formas) es un
+  hueco más estrecho de lo asumido: el planner suele resolverlo por otra vía
+  antes de llegar ahí. Los 8 tests de `test_audit_s11_grant.py` siguen
+  verdes y ejercitan el mecanismo directamente. **Hallazgos nuevos**: (1)
+  infraestructura ajena al código — el backend real del usuario apareció con
+  el puerto en LISTEN sin responder HTTP (event loop aparentemente atascado),
+  reiniciado con permiso, severidad media, causa no investigada (fuera de
+  alcance de "no tocar código"); (2) LOG-2 reconfirmado; (3) menor —
+  `diagnose_new5.py` necesita `PYTHONIOENCODING=utf-8` en consolas Windows
+  cp1252 (documentado). **Recomendación de la campaña, aceptada**: no hace
+  falta otra sesión de fix urgente; NEW-5/S11 quedan como una brecha de
+  diseño real pero estrecha y no bloqueante (R4 sigue intacta). **Con esto
+  se cierra el plan S1-S11 al completo, con un único punto abierto no
+  bloqueante (NEW-5/S11). Bloque de auditoría global del runtime —
+  CERRADO.** Siguiente paso: pulido/refinamiento + preparación del
+  instalador antes del bump a `1.0.0` (no otra campaña de test general —
+  esta ya cumplió esa función para lo que S1-S11 tocó).
+
 ---
 
-*Última actualización: 2026-07-29 — **S11 ejecutada (§26)**: gate de
+## 27. Bloque PULIDO pre-instalador (doc 35, en curso)
+
+Plan de sesiones en `PLAN_MAESTRO_2026/35_PLAN_PULIDO_PRE_INSTALADOR.md` — 12
+sesiones (`PU1`-`PU10` + `PI-A`/`PI-B`) que agrupan los 14 últimos ajustes de
+producto pedidos por el usuario (2026-07-30) antes del instalador y el bump a
+`1.0.0`: briefing 2.0 con voz, AVCS a pantalla completa + equilibrio de
+partículas en tiers bajos, Hub sin UI + botonera inferior (sustituye la
+sidebar), modo claro profesional, autonomía 100% sin excepciones + matriz de
+timeouts, skills reales en agentes, voces mezcladas en el panel de Voz,
+auditoría de prompts internos, Obscura (investigación GO/NO-GO — es un
+navegador headless para agentes, NO un buscador, corregido tras investigar el
+repo real), Obsidian como frontend de memoria (investigación honesta), y la
+pestaña Memoria de Ajustes con chat directo.
+
+- ✅ **PU1 EJECUTADA (2026-07-30) — voces mezcladas en el panel de Voz**: el
+  usuario reportó que al elegir Kokoro el listado mostraba voces de
+  ElevenLabs. Causa raíz confirmada en `VoicePanel.tsx`: `loadVoicesFor` no
+  descartaba respuestas de peticiones superadas — si el usuario cambiaba de
+  pestaña antes de que la petición anterior respondiera, ganaba la que
+  llegaba última (normalmente ElevenLabs, 2 llamadas HTTP encadenadas,
+  más lenta que Kokoro/EdgeTTS), sin importar la pestaña activa en pantalla.
+  Fix: `loadRequestId` (ref, contador) numera cada llamada; `isStale()` se
+  comprueba tras CADA `await` (status, lista de voces, antes de escribir
+  `voices`/`selectedVoice`, y en el `finally` de `setLoadingVoices`) — una
+  respuesta que ya no es la más reciente se descarta sin tocar el estado.
+  **Segunda vía del mismo bug, encontrada al leer el archivo completo**: el
+  sondeo de instalación de Kokoro recargaba sus voces al terminar SIN
+  comprobar si el usuario seguía en esa pestaña — instalar Kokoro y cambiar
+  a otra pestaña mientras tanto reproducía el mismo síntoma por otro
+  camino. Cerrado con `activeProviderRef` (ref sincronizada por efecto,
+  necesaria porque el intervalo del sondeo captura un closure viejo) + guard
+  antes de recargar. Verificación: `tsc --noEmit` limpio (RC=0); sin test
+  automatizado (UI asíncrona pura, sin contrato de backend). **Pendiente en
+  Windows**: cambiar rápido entre las 3 pestañas repetidas veces y confirmar
+  que la lista siempre corresponde a la activa; instalar Kokoro, cambiar de
+  pestaña ANTES de que termine, y confirmar que no salta a mostrarla si ya
+  no estás ahí.
+
+- ✅ **PU2 EJECUTADA (2026-07-30) — skills reales en agentes (catálogo +
+  validación + uso real)**: dos fallos reales cerrados. **(1) Sin
+  validación**: `agent.skills` aceptaba cualquier string — un agente creado
+  por chat ("créame un agente con skills de X") podía acabar con nombres
+  inventados que no existen en el catálogo real (254 entradas/17 categorías,
+  `msitarzewski/agency-agents`, hasta ahora solo conocido por el frontend).
+  `backend/app/agents/skills_catalog.py` (NUEVO, copia propia del JSON):
+  `validate_skills()` canonicaliza mayúsculas y RECHAZA con sugerencia
+  (substring/difflib) lo inventado; enganchado en `agent_manager.create_agent`/
+  `update_agent` — cubre a la vez `POST/PATCH /api/agents` Y
+  `aithera_tool.create_agent` (el camino del chat), un solo punto de
+  validación al converger ambos en el mismo `AgentManager`. **Desviación
+  deliberada**: NO se creó el endpoint `GET /api/agents/skills-catalog` que
+  el plan original sugería — `SkillPickerPopup.tsx` evita a propósito
+  cualquier fetch en tiempo de ejecución (autosuficiencia local, doc 09); el
+  backend necesitaba su PROPIA copia para validar, no para servirla. Deuda
+  menor aceptada: las 2 copias del JSON pueden desincronizarse si el catálogo
+  cambia. **(2) Código muerto real**: `agent.skills` se guardaba en BD pero
+  jamás llegaba a la ejecución — `_delegate_to_tie` no lo pasaba a ningún
+  sitio, así que un agente "con skills de marketing" ejecutaba idéntico a
+  uno sin ninguna. Fix reusando el canal YA EXISTENTE que sobrevive al
+  checkpoint y llega a cada nodo (`Authority`, doc 23 R4): nuevo campo
+  `skills` NO-seguridad (nunca en `check()`/`is_unrestricted`) que viaja
+  `_run_execution`→`_delegate_to_tie`→`pipeline.submit_mission`→
+  `Authority(...)`; `executor._persona_block()` (NUEVO) antepone al contexto
+  de CADA nodo un bloque "Actúas como un agente con estas especialidades: …"
+  con las descripciones reales del catálogo (tope 2000 chars) — antes del
+  handoff de S5 y del contexto del MOS. Se decidió NO añadir un campo nuevo a
+  `TaskGraph`: `Authority` ya es el vehículo único persistido en
+  `orchestrator_traces.plan`, duplicar el canal habría sido plomería
+  redundante. Tests: `test_pu2_skills.py` (NUEVO, 13 — catálogo puro,
+  validación en creación/edición/aithera_tool, inyección real en ejecución
+  incl. round-trip del checkpoint). 2 mutaciones confirmadas y restauradas.
+  Regresión: **142 tests en verde** (48 pu2_skills+agent_execution+
+  aithera_tool + 60 tie_executor+tie_planner+tie_handle+module_boundaries +
+  34 tie_e2e+audit_s11_grant+orchestrator+orchestrator_e2e), sin regresión
+  por el nuevo campo `Authority.skills` ni el kwarg nuevo de
+  `submit_mission`. **Pendiente en Windows**: pedir por chat un agente con
+  una skill inventada y confirmar que rechaza con sugerencia real; crear uno
+  con una skill real y confirmar que se guarda bien; lanzarle una tarea y
+  comprobar (por log/telemetría o por el estilo de la respuesta) que la
+  especialidad asignada se nota de verdad.
+
+  **Extensión PU2 (2026-07-30, misma sesión)** — pregunta directa del
+  usuario: "si le digo al chat 'skills de research y márketing', ¿las sabrá
+  elegir solo?". Respuesta honesta: no, tal como quedó cerrado arriba
+  `validate_skills` solo distinguía "nombre real" de "no existe" — un
+  término suelto ("research", que ni es una de las 17 categorías) o una
+  categoría entera ("marketing", 36 skills, pero "marketing" no es el
+  nombre de ninguna) caían en la sugerencia por distancia de edición de
+  siempre, inútil para un término temático. Fix: `skills_catalog.py` gana
+  `_match_category()` (¿el término ES una categoría, acento-insensible vía
+  `unicodedata`?) y `_keyword_candidates()` (¿aparece en el NOMBRE o la
+  DESCRIPCIÓN de alguna skill real?) entre "nombre exacto" y el typo por
+  difflib; cuando disparan, el error de `validate_skills` lista hasta 8
+  candidatos REALES (alfabético, sin inventar ranking) para que el modelo
+  reintente con nombres concretos en la siguiente vuelta del bucle de
+  tool-use — invisible para el usuario, que solo ve el agente creado un
+  instante después. Ningún nivel selecciona nada por su cuenta a propósito
+  (nunca se adivina en silencio, mismo principio que A3b/A-1/S11). Tests:
+  +6 en `test_pu2_skills.py` (5 puros + 1 end-to-end real con
+  `aithera_tool.create_agent`: categoría suelta → candidatos reales →
+  reintento con nombre real → agente creado). 2 mutaciones confirmadas.
+  Regresión: **54 tests en verde**. **Pendiente en Windows**: pedir por
+  chat "créame un agente con skills de research y márketing" tal cual y
+  confirmar que el agente sale creado con nombres reales del catálogo sin
+  que el usuario tenga que corregir nada.
+
+- ✅ **PU3 EJECUTADA (2026-07-30) — autonomía 100% sin excepciones + sin
+  timeouts en gates**: decisión FINAL y más estricta que la matriz de
+  timeouts que el doc 35 proponía — *"aquí en Claude las preguntas se quedan
+  INDEFINIDAMENTE hasta que se responden. Creo que debería ser así"* (el
+  usuario, sobre la propia herramienta con la que trabajamos). Se descarta
+  la matriz de timeouts propuesta (subir a 10 min, degradar al expirar):
+  **ningún gate del toolloop caduca ya** — ni el de permiso de tool ni el de
+  concesión (S11) — `toolloop._wait_gate` reescrito sin `deadline`, sondea
+  cada 1s hasta `approved`/`rejected` EXPLÍCITOS; la única salida sin
+  respuesta es el kill-switch de la misión (T3), igual que ya funcionaba
+  para los gates de plan/nodo/checkpoint (auditados y confirmados correctos
+  SIN tocar código — `permission_service.autonomy_is_full()` ya los cubre).
+  **Desktop tool**: el usuario eligió *"Sin excepciones también aquí"* —
+  confirmado que ya fluye por el permiso `computer.use` normal, sin caso
+  especial, sin cambio de código. **Email send confirm**: confirmado
+  NO-ISSUE — pasa por el mismo ApprovalGate genérico que cualquier acción
+  sensible del toolloop; el flag `confirmed:true` de `/api/email/send` es
+  un contrato HTTP congelado (V0.7) usado solo por la UI, ajeno al TIE.
+  **Alcance del override de modelo (E2b)**, única fila que sí pedía código:
+  `tie/pipeline.py::_resolve_explicit_model`, rama `scope="unspecified"`,
+  gana un chequeo de `autonomy_is_full()` — bajo Autónomo asume `task` sin
+  preguntar y antepone una nota transparente a la respuesta (nueva clave
+  i18n ×4 idiomas), nunca en silencio; fuera de Autónomo sigue preguntando
+  igual que antes. **Hallazgo real durante la implementación**: un rechazo
+  de permiso no dejaba rastro en `ToolLoopResult.limitations` (se quedaba
+  solo en el transcript) — corregido de paso, así el responder final SÍ
+  avisa de la limitación. **Dos tests quedaron obsoletos por el cambio de
+  diseño** (probaban la EXPIRACIÓN que ya no existe) — reescritos como el
+  contrato contrario: lanzar en segundo plano, confirmar que NO decide nada
+  por su cuenta mientras espera, y solo entonces resolver explícitamente;
+  de paso, `test_product_contracts.py` pasa de 8/13 ejecutables en el
+  sandbox (5 exigían 120s reales) a **13/13 en ~4s**. Tests: 2 nuevos
+  (cobertura de la rama Autónomo del override de modelo + `limitations` en
+  rechazo de permiso) + los 2 reescritos. 3 mutaciones quirúrgicas
+  confirmadas (bucle infinito, `limitations.append`, chequeo de
+  `autonomy_is_full()`) y restauradas byte-idénticas. Regresión: 100 tests
+  en verde en el subconjunto directo + **375 passed, 6 skipped** en el
+  subconjunto amplio (todo `test_tie_*`/`test_automation*`/
+  `test_orchestrator*`/`test_audit_s*`/`test_agent_execution`), sin ninguna
+  regresión atribuible. **Pendiente en Windows**: disparar una acción
+  sensible con perfil Manual/Balanced, esperar bien pasados los 120s viejos
+  y confirmar en Ajustes → Automatización que sigue `pending` (no
+  `expired`); con perfil Autónomo, nombrar un modelo sin decir alcance
+  ("usa Claude para esto") y confirmar que responde directo con la nota en
+  vez de preguntar "¿solo esta vez o para siempre?".
+
+- ✅ **PU5 (Fallo 1) — partículas Q1-Q4 (2026-07-30). CUARTA versión; las tres
+  anteriores se entregaron mal.** Fallos previos: (1) `gl_PointSize` ×8 a secas →
+  borroso (cada partícula es un degradado radial; agrandarla agranda la mancha);
+  (2) compensar solo el brillo → no emborronaba pero no arreglaba nada; (3)
+  redistribuir partículas hacia el logo → se perdían anillos y bandas, medio
+  diseño del AVCS. El usuario lo dijo tres veces: **no es distribución, es que
+  los puntos sean más grandes y luminosos sin ser borrosos, con la MISMA
+  luminosidad que Q4**. **Lo que faltaba era medir**: el previsualizador
+  (`frontend/scripts/avcs-preview/`, geometría y config reales, y — tras
+  corregirlo — el clamp de `gl_FragColor` a [0,1] que hace WebGL) mide la
+  **luminosidad total de la escena** y calibra por bisección hasta igualar la de
+  Q4. **Dato que cierra el debate**: con el clamp real, el brillo NO puede
+  sustituir al tamaño — con un punto de ×2.0, ni con brillo ×30 se pasa del 36%
+  de la luz de Q4, porque la opacidad satura en 1.0. La luz es área × opacidad;
+  con 64× menos partículas, el área es la única palanca. **Configuración final**
+  (medida): Q1 tamaño ×4.00 brillo ×1.58 → **100.2%** de la luz de Q4 · Q2 ×2.00
+  /×1.60 → 99.9% · Q3 ×1.45/×0.69 → 99.3% · Q4 neutro, intacto. **No sale
+  borroso pese al ×4** gracias a `edgeHardness` (uniform nuevo `uEdgeHardness`,
+  umbral interior del `smoothstep` del fragment): con 0.42 el punto es un disco
+  sólido con borde corto — grande y NÍTIDO; en Q4 vale 0.0 = el degradado de
+  siempre. **El diseño no se toca**: `lotus.ts` vuelve al reparto idéntico en los
+  4 tiers (sin `logoScale` ni `strokeTighten`) porque anillos/bandas/starfield
+  son parte del AVCS. **Verificación**: `tsc --noEmit` limpio + luminosidad de
+  los 4 tiers medida desde la config real. **Pendiente en Windows**: recorrer
+  Q4→Q3→Q2→Q1 y confirmar misma presencia luminosa, ninguno borroso, Q4 intacto.
+
+- ✅ **PU5b (2026-07-31) — 4 peticiones sobre el AVCS**: **(1) Q1 ELIMINADO**
+  (decisión del usuario: con 4096 partículas no llegaba al mínimo estético y
+  cualquier equipo actual mueve Q2). Retirado de los 8 puntos donde vivía —
+  `QualityTier` pasa a `"Q2"|"Q3"|"Q4"` (así TypeScript caza cualquier uso
+  olvidado), `TIERS`, escalera de `PerformanceManager`, `WelcomeOverlay`,
+  `Settings`, i18n ×4 idiomas y `hardware.py` (Q2 pasa a ser "Mínimo").
+  Detalle que habría roto la app: `useAppStore` valida el tier de
+  `localStorage`, así que un "Q1" guardado se **migra** a Q2 en vez de quedar
+  como tier inexistente. **(2) RAÍCES eliminadas** — las líneas doradas que
+  sobresalían del contorno (`FRAC.tendrils`, bloque 5 de `lotus.ts`); su cuota
+  del pool va a los anillos (+0.04, ganan definición) y al campo. El polvo
+  interior se mantiene: comparte rol pero está DENTRO de la silueta.
+  **(3) ANILLOS que mantienen la forma** — se deformaban por dos causas
+  simultáneas: `bind` 0.45 (la mitad que el logo) Y el wander, que lo aflojaba
+  hasta un 70% periódicamente con `wanderAllow(0.38)≈0.83`. Corregidas ambas:
+  `RING_BIND` → 0.88 (≈95% de la rigidez del logo, no 100% a propósito) y
+  wander ×0.12 para RING; además dispersión en Z 0.1 → 0.028 para que se lean
+  como línea circular y no como toro. **(4) LOS ANILLOS GIRAN en su propio
+  plano** (`spinRing` en `fields.glsl`, rotación en **Z**) — deliberadamente
+  distinto del anillo del núcleo, que usa `rotY` y por eso se ve de canto al
+  alinearse con la vista. Sentido ALTERNO (externo a la derecha, siguiente a la
+  izquierda…), velocidad progresiva (`RING_SPIN_RATIO`=1.32 → el interior gira
+  ~3× más que el externo), y reposo tranquilo (0.055 rad/s en el externo = una
+  vuelta cada ~114 s). **Configurable por estado**: `RHYTHM_RING_SPIN` da la
+  velocidad de los 7 ritmos y `RhythmEngine` integra el ÁNGULO ACUMULADO (no
+  una fase), así cambiar de estado acelera/frena de forma continua sin saltos —
+  las animaciones finas de habla/escucha son otra sesión, el mando queda
+  puesto. El índice de anillo se deriva del RADIO del ancla (el genoma no tiene
+  canal libre), lo que obliga a replicar radios/centro en el shader: hay
+  comentario cruzado en ambos archivos. **Verificación**: `tsc` limpio +
+  **`glslcheck.cjs` NUEVO** (valida los shaders con includes resueltos — un
+  error de GLSL deja el AVCS en negro y no lo cazaba nada) + luminosidad
+  remedida tras el cambio de reparto (Q3 100.1%, Q2 101.3% de Q4) +
+  `hardware.py` probado con 3 perfiles. **Pendiente en Windows** (el
+  previsualizador es estático y no simula dinámica): confirmar en la app que
+  los anillos mantienen forma, giran en su sitio sin bascular, alternan sentido
+  y los interiores van más rápido.
+
+- ✅ **PU5c (2026-07-31) — 5 peticiones más sobre el AVCS**: **(1) anillos +50%
+  de brillo** (`RING_BRIGHT`) — se veían apagados frente al logo; el clamp a 1
+  hace que los nodos saturen, así que lo que sube de verdad es el cuerpo del
+  anillo, que era lo que se percibía oscuro. **(2) variedad de tamaños en los
+  anillos** (`RING_NODE_FRACTION` 0.05 → 0.16): un 16% son "nodos" más grandes
+  y brillantes, como ya pasaba en los contornos del logo — antes se leían
+  planos. **(3) "bloom" periódico** (uniform nuevo `uRingBloom`): de vez en
+  cuando los anillos se recogen hacia el núcleo y se re-expanden hasta su sitio,
+  repitiendo la animación de entrada. Poisson (media 38 s), NO periódico exacto,
+  para que no se vuelva previsible; la re-expansión la hace el decaimiento de la
+  envolvente con curva `pow(env,1.6)` (sale rápido del centro, llega despacio); y
+  con desfase por anillo, así se lee como una onda del centro afuera y no como un
+  salto. En reposo vale 0: coste cero. **(4) ondas de sincronía largas y
+  ondeantes**: `BAND_REACH` 4.2 → 7.6 (cruzan la pantalla de lado a lado y mueren
+  con el `edgeFalloff` en vez de cortarse a media pantalla) + ondeo real en
+  `targetAnchor` — onda VIAJERA (`- uTime`: el patrón se desplaza, la banda
+  "corre" en vez de vibrar en el sitio), armónico corto en sentido contrario, y
+  amplitud creciente hacia los extremos; el ORIGEN también deriva lentamente
+  cerca del núcleo. **(5) zoom y órbita con el ratón**: arrastrar gira el AVCS y
+  **al soltar vuelve solo al frente** (retorno más lento que el arrastre, se lee
+  como gesto y no como resorte); la rueda hace zoom y ese persiste. La órbita es
+  rotación RÍGIDA del grupo (no toca la simulación), con topes ±40°/±25° porque
+  el AVCS es plano y más ángulo lo pondría de canto. **Detalle que habría roto el
+  zoom**: el fit-contain de la cámara pasa a calcularse con la distancia BASE —
+  con la actual, al redimensionar la ventana el FOV se recalcularía con la cámara
+  ya acercada y desharía el zoom del usuario. `pointerEvents` solo se activa
+  donde el AVCS es visible (`/` y `/chat`) y el contenedor va al fondo (z-0), así
+  que los paneles de la UI siguen recibiendo sus eventos primero. **Verificación**:
+  `tsc` limpio + `glslcheck.cjs` OK + luminosidad remedida (Q3 99.9%, Q2 100.2%
+  de Q4). **Pendiente en Windows** (el previsualizador es estático): el bloom
+  periódico (esperar ~40 s), el ondeo de las bandas y el zoom/giro con el ratón.
+
+- ✅ **PU5d (2026-07-31) — 4 ajustes del AVCS + un BUG real**: **(1) faros en
+  los anillos**: tres escalones de tamaño (7% faros grandes a brillo pleno, 12%
+  nodos medios, resto polvo) decididos con un solo `rand()` de rangos disjuntos.
+  **(2) más de 2 ondas de sincronía a la vez — causa MEDIDA**: nacían con
+  Poisson de media 7 s y viven ~5,4 s, así que la media de simultáneas era 0,8
+  (casi nunca 3). `WAVE_BIRTH_DIVISOR=3` la sube a ~2,3, con ratos de 4-5 y
+  ratos de una sola — sigue siendo Poisson, no un metrónomo. **(3) ondas que
+  ondean de verdad**: amplitud máxima 0.44 → 1.25 y frecuencia espacial
+  0.78 → 1.15 (≈1,4 ciclos por lado con el alcance de 7.6); la VELOCIDAD
+  temporal no cambia — faltaba recorrido, no ritmo. El origen cerca del núcleo
+  pasa de 0.26 a 0.62 con dos frecuencias inconmensurables. **(4) el "APAGÓN"
+  global era un BUG con causa concreta**: en `render.vert.glsl` una partícula
+  alejada de su ancla perdía hasta 65% de brillo y 68% de tamaño
+  (`mix(0.35/0.32, 1.0, closeness)`) — como la luz es área × opacidad, eso es
+  caer a ~1/9; y el latido (`fPulse`, cada ~6,5 s) más cada onda desplazan
+  MUCHAS partículas a la vez, así que la caída era colectiva: apagón, y al
+  recuperar anclas, destello. Suelos subidos a 0.82/0.70: el viaje sigue
+  notándose pero ya no arrastra la luz del conjunto. Era además condición
+  necesaria para (2), que si no habría agravado el apagón. Verificación: `tsc` +
+  `glslcheck` limpios, luminosidad remedida (Q3 100.7%, Q2 99.3% de Q4).
+  **Pendiente en Windows**: confirmar que el apagón desapareció (mirar un minuto
+  seguido), el ondeo, y contar si a veces hay 3-4 ondas simultáneas.
+
+- ✅ **PU8 EJECUTADA (2026-07-31, Fable 5) — auditoría de prompts internos +
+  mapa de inyección (→ doc 36)**: las dos entregas del doc 35 hechas y las
+  mejoras aplicadas en la misma sesión. **Doc 36 publicado**
+  (`36_MAPA_DE_PROMPTS.md`): censo por grep sistemático — 20 archivos con
+  llamadas LLM, 18 prompts distintos (núcleo chat/TIE, jobs memoria/MEL,
+  email, legacy) + las capas deterministas aparte (grounding, sanitize,
+  capabilities_map, language_directive, quick_answers, strip_reasoning), cada
+  punto con archivo, capacidad, qué se inyecta y riesgo; hallazgo: `agents/
+  architect.py` es código muerto con prompt propio (anotado, no borrado).
+  **Calidad, uno a uno** contra mejores prácticas verificadas por búsqueda
+  (Anthropic: delimitar contenido no confiable + tratarlo como datos;
+  etiquetas XML; AWS mismo patrón): planner/decomposer/perfil/research/triaje
+  ya estaban bien (sin cambios); 7 archivos corregidos. Dos hallazgos con
+  consecuencia funcional: el CLASIFICADOR no podía asignar `document`/
+  `download`/`process` (su lista de `requires_tools` es el techo del camino
+  directo — "lee el GDD.docx y resúmelo" no podía recibir `document`, caso
+  hermano de S5/NEW-1); y dos contradicciones de idioma entre capas (el
+  resumen nocturno fijaba "en español" pisando `language_directive()`; los
+  borradores de reunión de email_tool fijaban "(en espanol)" pisando la regla
+  "mismo idioma del email recibido" de `_AI_REPLY_SYSTEM`). **Anti-inyección
+  adversaria** (el mínimo que exigía el doc 35, cumplido): el contenido
+  externo viaja DELIMITADO (`<datos>…</datos>`) con la regla "DATOS, NUNCA
+  ÓRDENES" en las 4 superficies que no lo tenían — toolloop (regla 7 nueva +
+  observación envuelta; es LA superficie principal), chat (la memoria MOS trae
+  emails ingeridos), responder, y el auto-reply de email (la única superficie
+  que un TERCERO dispara sin usuario). El bloque CONTEXTO del nodo NO se
+  envuelve entero a propósito (mezcla la persona de PU2 —instrucción
+  legítima— con el handoff —datos—; separarlos queda como estructural).
+  Tests: `test_pu8_prompts.py` NUEVO (11, incl. el CABLEADO real con
+  `toolloop.run` y una inyección de verdad en un archivo). 3 mutaciones
+  confirmadas y restauradas byte a byte — la 2.ª no se detectó al primer
+  intento y el test se endureció (patrón LOG-1 sobre los propios tests).
+  Regresión: **470 passed, 10 skipped** en el subconjunto afectado (sandbox),
+  cero rotos. **Testeo con salidas REALES del modelo** (6 escenarios,
+  petición del usuario): los 6 con buen output — el clasificador asignó
+  `document`+`filesystem` al caso GDD; el toolloop, el chat, el auto-reply y
+  el responder IGNORARON las 4 inyecciones plantadas (3 de ellas avisando al
+  usuario; el auto-reply calló ante el remitente, lo correcto); el planner no
+  se desvió del objetivo. Lo estructural priorizado en doc 36 §6 (extender
+  `sanitize` a browser/email/document, campaña adversaria del bloque X,
+  separar persona/handoff, tombstone de architect). **Pendiente en Windows**:
+  suite completa + repetir en vivo el caso del clasificador y el briefing con
+  la app en inglés.
+
+- ✅ **PU5e + PU5f (2026-07-31) — el apagón (BUG REAL) + animaciones de escucha
+  y habla**. **PU5e**: la pista del usuario ("baja la luz con otra pestaña
+  abierta, y al volver se ilumina a los pocos segundos") destapó la causa real,
+  distinta de la tratada en PU5d: el navegador PAUSA `requestAnimationFrame` en
+  una pestaña oculta, así que el primer frame al volver trae un `dt` enorme —
+  todo el tiempo que estuviste fuera. Ese único valor llenaba de golpe la
+  ventana de 3000 ms de `PerformanceManager`, daba una media altísima y
+  **degradaba un escalón; y el escalón 1 es exactamente `bloom: false`** → el
+  glow desaparece. Segundos después la media volvía a bajar, se restauraba el
+  escalón y con él el bloom: el ciclo completo que se veía. Arreglo: `observe()`
+  descarta muestras > 200 ms (5 FPS — por debajo ya habría degradado con
+  muestras normales, así que no enmascara nada real) + 6 frames de gracia.
+  **Corregido sobre la marcha**: se probó pasarle el `dt` ya clampeado a 50 ms,
+  pero así el filtro nunca se dispararía y quedaría muerto — el medidor necesita
+  ver el pico real. **PU5f**: animaciones por RITMO (sin segunda fuente de
+  verdad), con envolvente y crossfade. **Escucha**: anillos al 86% de radio
+  (recogimiento lento) y giro +15%. **Habla**: anillos +10% y **ondulando con la
+  voz** (5 lóbulos viajeros de amplitud proporcional a `uAudioEnv`, desfasados
+  entre anillos); semilla latiendo más fuerte **sin deformarse** (actúa sobre
+  `uBreathScale`); **giro de las líneas** — hizo falta separar el único
+  `ROLE.PETAL` en sub-roles (AXIS/OUTER/INNER/ALMOND), todos dentro del tramo
+  que el fragment pinta igual y donde el tono depende de `vSeed`, **así que no
+  cambia ni un píxel de color**: el 2.º contorno gira a la derecha y la almendra
+  al revés ×7, ambos con `rotY` (mismo eje que el anillo del núcleo, como se
+  pidió) sobre la posición ancla entera, que es lo que la hace girar "como un
+  bloque"; y **relámpagos** de 0.18/0.35 unidades (≈1 y 2 cm) que brotan del
+  polvo interior con envolvente corta, subconjunto distinto cada vez y escalados
+  por la voz. El ángulo de giro solo avanza mientras habla. `tsc` + `glslcheck`
+  limpios. **Pendiente en Windows**: nada de esto se ve en el previsualizador
+  (es estático) — hay que probarlo con voz real.
+
+- ✅ **PU6a EJECUTADA (2026-07-31, Sonnet) — botonera inferior + Hub
+  inmersivo** (primera de 4 sesiones en que se dividió PU6, doc 35): diseño
+  acordado directamente con el usuario en el chat — "Inicio" pasa a ser el
+  hub inmersivo sin UI, "Chat" se abre con Enter + pill "Conversación"
+  flotante, "Misiones" se renombra **"Mission Control"** (marca propia SIN
+  traducir en los 4 idiomas, confirmado explícitamente), Automatización
+  pierde su botón propio del HUB (se fusionará dentro de Mission Control en
+  PU6b). `BottomBar.tsx` NUEVO sustituye a `Sidebar.tsx` (eliminada):
+  logo/Inicio + 4 accesos (Mission Control temporalmente a `/missions`,
+  Workspace, Correo, Calendario) + indicador `chatPrimary`/breaker del
+  MEL-UI (§25, conservado) + Ajustes, con badges cross-página (aprobaciones
+  pendientes, alertas de Workspace, correo urgente) vía un `usePolling` de
+  30s único. `Hub.tsx` reescrito (833→~95 líneas): fuera los 6 paneles de
+  datos, solo AVCS + etiqueta de estado (tinta fija, identidad intocable) +
+  pill de Conversación; entra al chat por clic, Enter, o la pill (con
+  `state:{autoConversation:true}` que `Chat.tsx` consume para arrancar el
+  modo voz solo). `Chat.tsx` gana autofocus del textarea. `AppLayout.tsx`
+  pasa de layout horizontal a vertical (main+bottombar); Esc fuera de Modo
+  Presencia ahora también vuelve al Hub desde cualquier página. i18n:
+  `nav.missionControl` en los 4 idiomas con el mismo literal. Huérfano
+  encontrado por este cambio: `components/hub/HubPanel.tsx` sin consumidor —
+  se deja en disco sin borrar (mismo criterio que `AICore.tsx`/
+  `PoopSphere.tsx`), revisitar en PU6d. `tsc --noEmit` limpio; `npm run
+  build` completó la transformación de Vite sin errores (860/860 módulos)
+  pero se cortó por el límite del sandbox antes de escribir los chunks —
+  señal fuerte, no confirmación completa. **Pendiente en Windows**:
+  recorrido completo de navegación + `npm run build` local. **Siguiente**:
+  PU6b (fusión Agentes+Automatización+Misiones en "Mission Control"), PU6c
+  (mapa vivo del Orquestador/TIE/MEL, pendiente de imágenes de referencia
+  del usuario), PU6d (pulido + verificación en ambos temas).
+
+- ✅ **PU6a-bis EJECUTADA (2026-07-31, Sonnet) — botones SUELTOS con
+  iconografía propia + teclado**: el usuario probó PU6a en vivo y pidió 7
+  correcciones; 5 caen aquí (las otras 2 son PU6b-vent). **La barra
+  desaparece**: `BottomBar.tsx` eliminada → **`Dock.tsx`**, botones flotando
+  sobre el AVCS con la geometría literal que se pidió (la barra medía 64px →
+  el CENTRO de los círculos de 52px va a esos 64px del borde inferior,
+  `bottom-[38px]`). Configuración se va a la esquina inferior IZQUIERDA y
+  Modo Presencia se queda en la derecha — eso cierra por construcción el
+  solape reportado (el botón de presencia caía encima del engranaje y lo
+  hacía impulsable), no con z-index. **`DockButton.tsx`** (NUEVO): solo
+  icono, y el texto aparece al pasar el ratón como elemento **absoluto**
+  (`top-full`), que no aporta altura al flujo — el icono NO se mueve, que era
+  el fallo concreto a evitar. **`DockIcons.tsx`** (NUEVO): los 7 iconos
+  redibujados según la lámina de referencia del usuario (línea fina
+  geométrica, composiciones orbitales, nodos como puntos llenos, oro cálido),
+  enmarcados en un **anillo azul con un punto de luz orbitando**
+  (`.dock-ring`, reusa la técnica de `.agent-ring-glow` de V0.87: conic-
+  gradient enmascarado + `::after` como cabeza del cometa; 12s/vuelta en
+  reposo, 2,4s al hover) y con **polvo de estrellas** al pulsar (14
+  partículas con vector propio en `--dx`/`--dy` + onda de choque). **Esc con
+  el orden correcto**: `before-input-event` de Electron veía la tecla ANTES
+  que el renderer y hacía `preventDefault()` para salir de fullscreen, así
+  que con F11 activo el Esc que debía cerrar el chat nunca llegaba a la UI;
+  como ese handler es síncrono y no puede preguntar, ahora la UI le AVISA por
+  un canal IPC nuevo (`ui:escape-capture`). Orden: diálogo → Modo Presencia →
+  volver al Hub → salir de pantalla completa. Retirado el clic-en-AVCS-abre-
+  chat (queda Enter + la pill). **SPACE activa la conversación desde
+  cualquier sitio**: el bucle de voz sigue en `Chat.tsx`, pero la INTENCIÓN
+  pasa a `useAppStore.conversationRequested` con sincronización en los dos
+  sentidos — sin store, SPACE desde el Hub no tenía forma de llegar a un
+  componente que ni siquiera está montado; sustituye al
+  `location.state.autoConversation` de PU6a. La pill se mueve al punto medio
+  entre semilla y botones (`fixed bottom-[26%]`); en Modo Presencia
+  desaparece pero SPACE sigue funcionando, como se pidió. Huérfanos de esta
+  sesión limpiados (`location`/`navigate` en Chat, clave `hub.aria.openChat`
+  ×4 idiomas); clave nueva `hub.conversation` ×4. `tsc` limpio, `node
+  --check` en los 2 archivos de Electron, y **`vite build` COMPLETO** (862
+  módulos, 40,5s, con las reglas `.dock-*` confirmadas en el CSS emitido).
+  **Pendiente en Windows**: verificación visual y de teclado (nada de esto es
+  comprobable sin la app corriendo). **Siguiente**: **PU6b-vent** — las
+  páginas (Correo/Calendario/Workspace/Ajustes/Chat) dejan de ser pantallas
+  opacas y pasan a ser tarjetas sobre el AVCS con maximizar/cerrar, y el chat
+  además movible y redimensionable (a priori reusando `useWindowCard.ts` de
+  V0.87 W2b).
+
+- ✅ **PU6b-vent tanda 2 EJECUTADA (2026-07-31, Sonnet) — las 7 correcciones
+  de la verificación en vivo de PU6a-bis**: **(1) Esc v2, "renderer
+  decide"** — el fix v1 (flag IPC `ui:escape-capture`) tenía una carrera
+  inherente y el usuario confirmó que seguía fallando; ahora `main.cjs` NO
+  toca Esc (solo F11), la UI procesa la tecla con orden determinista
+  (diálogo → chat → presencia → página→Hub) y solo si no queda nada pide
+  `window:exit-fullscreen` por IPC. **(5) El chat deja de ser RUTA y pasa a
+  VENTANA siempre montada** (`useAppStore.chatOpen`, `/chat` queda como
+  redirect): es lo que permite "SPACE entra en conversación con el chat
+  oculto, aunque se grabe en el chat" — el componente vive montado
+  (display:none) y su bucle de voz corre igual. El bug "no entra realmente
+  en modo conversación" tenía causa concreta: la sincronización en dos
+  sentidos de la v1 pisaba la bandera al montar; v2 = fuente de verdad
+  ÚNICA (`conversationRequested`; SPACE, pill y botón del panel conmutan la
+  misma) + un solo efecto store→bucle. Pill con halo `animate-ping` +
+  "Conversación activa" cuando está encendida; el clic en el AVCS ya no
+  abre el chat; el panel gana ✕ (cerrar ≠ parar la conversación). **(2)
+  AVCS de fondo en TODAS las páginas**: `isPresenceVisible()` → true
+  siempre + escenario `#0a0a0f` permanente — el "fondo plano oscuro" era el
+  motor pausado fuera de `/` y `/chat`. **(3) Modo Presencia = botón del
+  dock** (`DockButton` + icono "Conexión" de la lámina, alineado al centro
+  de 64px como el resto). **(4) Anillos ×0.88** (`RING_RADII`
+  [1.36…3.04] + umbrales de `ringIndex()` en fields.glsl): el externo queda
+  por encima de los botones; `CONTENT_HALF_*` intacto a propósito. **(6)
+  Dock rediseñado con las 2 láminas**: iconos rehechos fieles (semilla,
+  sistema orbital, red geodésica, calendario con argollas, sobre con líneas
+  de entrega, engranaje, órbita) y botón de 4 capas — fondo radial oscuro,
+  rim degradado MÁS BRILLANTE POR ABAJO, cometa orbitando, peana elíptica
+  de luz bajo el activo (`.dock-platform`); +20% (62px) y gap-7, centro
+  clavado a 64px. **(7) Starfield a pantalla completa**: las franjas
+  laterales eran matemática (fit-contain garantiza la altura → semiancho
+  visible ≈7.1 en 16:9, estrellas morían en ±5.5); `jit(19)` + `FRAC.star`
+  0.14. Luminosidad re-medida: Q3 100.3%, Q2 98.5% de Q4. `tsc`/`node
+  --check`/`glslcheck` limpios + `vite build` completo (862 módulos,
+  26.5s). **Pendiente en Windows**: todo lo visual/interactivo, y REINICIAR
+  la app de Electron entera (el fix de Esc toca main.cjs/preload.cjs, HMR
+  no los recarga). **Siguiente (tanda 3)**: maximizar/cerrar por página +
+  chat movible/redimensionable (`useWindowCard.ts`) + modo presencia propio
+  de Mission Control.
+
+- ✅ **PU6b-vent tanda 4 EJECUTADA (2026-07-31, Sonnet) — legibilidad sobre
+  el AVCS + vistas del calendario + marco HUD**: seis peticiones de la
+  verificación en vivo, con una lámina nueva de referencia (marco sci-fi).
+  **(1)** Etiqueta central del Hub ("En reposo · minimax…") eliminada con sus
+  huérfanos. **(2) Calendario**: celdas y cabecera sobre base OPACA
+  (`bg-base-900/90`+blur, el tinte de estado pasa a capa encima — con el
+  AVCS de fondo no se leía), nombres de día COMPLETOS
+  (`calendar.weekdayFull.*` ×7 ×4 idiomas, abreviatura en pantallas
+  estrechas), y tres niveles de vista patrón selector de fechas (días →
+  meses → años, clic en el título sube, elegir baja; ←/→ navegan la unidad
+  activa; meses/años sin peticiones al backend). **(3) Ajustes**: `Modal`
+  gana `clearBackdrop` (sin velo negro — el AVCS intacto alrededor, clic
+  fuera sigue cerrando) y alto acotado en píxeles
+  (`min(88vh,100vh−150px)` + `pb-28`): ya no llega a los botones del dock.
+  **(4)** Estantería del Workspace con cuerpo (`bg-base-900/85`+blur+borde),
+  filas con fondo propio. **(5)** El orbe azul del Workspace (AICore
+  ambiental de W2b) eliminado con sus textos centrados — con el AVCS real
+  detrás se veían DOS núcleos; queda el marco tintado. **(6) `.holo-frame`**
+  (index.css): borde degradado cian→azul→violeta + cometa de luz recorriendo
+  el contorno (conic con `--holo-a` vía `@property` — rotar el elemento solo
+  vale para círculos) + esquinas remarcadas (8 trazos como background con
+  drop-shadow), en 2 pseudo-elementos sin tocar el flujo; aplicado SOLO a
+  contenedores primarios (chat, modal de Ajustes, lienzo del Workspace,
+  estantería, tarjeta al frente, ventanas de agente). `.glass-surface`
+  (~16 superficies) gana la firma sutil global (luz interior arriba +
+  aliento cian abajo, solo sombras). `tsc` limpio + `vite build` completo
+  (`holo-frame`/`weekdayFull` confirmados en el bundle). **Pendiente en
+  Windows**: verificación visual (ver mensaje de cierre).
+
+- ✅ **Hotfix post-tanda-4 EJECUTADO (2026-08-01, Sonnet) — 3 fallos
+  reportados en vivo**: **(1)** el chat ocupaba toda la pantalla desplazado
+  a la izquierda y saliéndose por el borde — causa raíz `calc(100%-2rem)`
+  (sin espacio, CSS inválido) en `Chat.tsx`/`Modal.tsx`: el `width`
+  inválido caía a `auto`, y con `position:absolute`+`right` fijo+`left:auto`
+  eso empujaba `left` a negativo. Arreglado con la sintaxis de espacio de
+  Tailwind (`calc(100%_-_2rem)`), confirmado `calc(100% - 2rem)` en el CSS
+  compilado. **(2)** títulos "Misiones"/"Calendario"/"Automatización"/
+  "Agentes"/"Correo" ilegibles en tema claro — tinta oscura (`text-ink` en
+  claro) sobre el AVCS, que siempre es oscuro; envueltos en
+  `glass-surface` (theme-aware) en los 5 archivos. **(3)** faros de los
+  anillos (`RING_BEACON_FRACTION`, PU5d) de 0.07 a 0.03 — "es demasiado".
+  `tsc`+`vite build` limpios (860 módulos); luminosidad remedida (Q3 99.8%,
+  Q2 97.7% de Q4). **Pendiente en Windows**: verificación visual (ver
+  mensaje de cierre).
+
+- ✅ **PU4 EJECUTADA (2026-08-01, Sonnet) — Briefing 2.0 con voz + botón
+  manual + disparo automático a las 8:15**: resuelve la "decisión pendiente"
+  de doc 35 §PU4 (¿fijo a una hora o solo bajo demanda?) con AMBOS, tal como
+  pidió el usuario explícitamente ("que el Briefing se active solo a las
+  8.15h... pero también que lo pueda activar yo con un botón"). Selección de
+  noticias deliberadamente FUERA de alcance ("la haremos después de tener la
+  base hecha") — el briefing de hoy no lleva sección de noticias.
+  **Backend**: `app/memory/briefing.py` (NUEVO) —
+  `build_deterministic_spoken()` (plantilla en español, sin markdown/emojis)
+  + `_try_llm_spoken()` (MEL SUMMARIZE con `policy_override="economy"`,
+  `clean_for_speech()` aplicado al resultado) + `spoken_text_for()`
+  (cache-o-plantilla, MISMA disciplina de latencia que `summary`/
+  `summary_source` de V0.85 M3 — cero LLM en el GET que el Dock sondea cada
+  30s). `summarizer.run_summarizer()` cachea la locución junto al resumen
+  nocturno (best-effort, nunca bloquea el job si falla). `GET /api/memory/
+  briefing` gana `spoken_text`/`spoken_source` (aditivo, contrato existente
+  intacto). **"Dame el briefing"/"¿qué tengo hoy?" por chat o voz**:
+  `quick_answers.try_answer_async()` (hermano async del listado determinista
+  de proyectos de 2026-07-24 — mismo criterio conservador de patrón/verbo de
+  acción, cero LLM en la clasificación) enganchado en los DOS puntos que
+  responden un turno real del chat: `tie/pipeline.py`
+  (`handle_stream`/`_run_pipeline`) Y `orchestrator/__init__.py`
+  (`handle_stream`, la capa que de verdad recibe `/api/chat/stream`) —
+  **hallazgo real durante la implementación**: el Orquestador tiene su
+  PROPIO precheck sync-only (`tie.quick_answer`) anterior a emitir
+  "analizando", así que engancharlo solo en el TIE no bastaba: sin el
+  segundo punto, el chat real seguía clasificando con el LLM antes de que la
+  respuesta determinista tuviera ocasión de responder. Arreglado exponiendo
+  `tie.quick_answer_async` en el barrel del TIE (`app/tie/__init__.py`) y
+  llamándolo en `orchestrator.handle_stream()` justo después de su chequeo
+  síncrono existente. **Frontend**: `IconBriefing` nuevo en `DockIcons.tsx`
+  (amanecer — horizonte, arco de sol, núcleo con halo, rayos con nodos en la
+  punta — mismo vocabulario `S`/`Svg`/`Dot`/`Node` que el resto de la
+  lámina, no formaba parte del set original) + `BriefingButton.tsx` (NUEVO,
+  `DockButton` de 46px inmediatamente a la izquierda de `PresenceToggle`,
+  oculto por completo en Modo Presencia a diferencia de éste, que debe
+  seguir siendo la única salida) montado en `AppLayout.tsx`. `useAppStore`
+  gana `briefingRequestId`/`requestBriefing()` (el botón solo anuncia la
+  intención, mismo patrón que `conversationRequested`)/`briefingBusy`/
+  `lastAutoBriefingDate` (persistido en localStorage, mismo patrón que
+  `avcsTier`). `Chat.tsx` (montado de forma persistente desde PU6a-bis v2,
+  sobrevive a cualquier navegación): `runBriefing()` llama `GET /api/
+  memory/briefing` DIRECTO — sin pasar por `sendMessage`/el LLM, porque
+  `spoken_text` ya viene calculado — añade el texto como burbuja del
+  asistente y lo locuta con el `speak()` que ya existía; un efecto observa
+  el CAMBIO de `briefingRequestId` (vía ref, para no disparar nada al
+  montar); un `usePolling` de 60s compara la hora local contra las 8:15 y
+  contra `lastAutoBriefingDate` — aprovecha que `usePolling` corre al
+  montar y de nuevo al volver la pestaña a primer plano, así que si la app
+  abre después de las 8:15 (o estaba oculta justo entonces) el briefing
+  suena en el primer tick visible, sin perderse el día. `MemoryBriefing`
+  (`api.ts`) gana `spoken_text`/`spoken_source`. `nav.briefing` +
+  `chat.briefing.empty`/`chat.briefing.error` en los 4 idiomas. **No se
+  tocó la regla del AE `daily_briefing`** (Telegram 08:00, V0.9 A3) —
+  decisión deliberada para minimizar riesgo: el usuario no lo pidió y el
+  formato actual funciona. Tests: 5 nuevos en `test_memory_briefing.py`
+  (plantilla determinista vacía/con datos, el summarizer cachea la
+  locución, `spoken_text_for` sin cache, el endpoint con/sin cache) +
+  sección 4 nueva en `test_quick_answers.py` (8 frases ES/EN disparan el
+  briefing async, 3 no-disparan con verbo de acción/tema ajeno, el
+  orquestador responde sin LLM/sin "analizando"/sin misión). Regresión: 29
+  passed en el subconjunto directo (15 skipped por ChromaDB no disponible
+  en el sandbox, esperado) + 38 passed en `test_module_boundaries`+
+  `test_tie_handle`+`test_tie_e2e` (sandbox). **`tsc --noEmit`/`vite build`
+  NO verificables en este sandbox** (el mirror de archivos staged del
+  frontend no trae `package.json`/`node_modules` completos) — se hizo una
+  revisión manual exhaustiva en su lugar (balance de llaves/paréntesis en
+  los 6 archivos tocados, tipos e imports contrastados a mano). **Pendiente
+  en Windows**: `tsc --noEmit` + `vite build` reales; pulsar el botón nuevo
+  junto a Modo Presencia y confirmar que Aithera habla el briefing; probar
+  "dame el briefing"/"¿qué tengo hoy?" por chat y por voz; y confirmar el
+  disparo automático a las 8:15 (o simulándolo cambiando la hora del
+  sistema) sin que se repita si se recarga la app el mismo día.
+
+- ✅ **PU4b EJECUTADA (2026-08-01, Fable 5) — Briefing 2.0 completo:
+  configuración + noticias + show visual sincronizado + fix del chat
+  bloqueado**. Tres encargos directos del usuario sobre la base de PU4.
+  **(0) Fix urgente primero — el chat "abierto pero bloqueado, no puedo
+  escribir"**: REGRESIÓN PROPIA de la entrega de PU4 — `Chat.tsx` se
+  entregó desde una copia staged ANTERIOR al hotfix del mismo día y lo
+  PISÓ (el commit fue sin guard de mtime; CLAUDE.md §27 decía el hotfix
+  hecho pero el archivo en disco ya no lo tenía). Dos síntomas de la misma
+  pisada: el `calc(100%-2rem)` inválido volvió (width→auto, panel
+  descolocado) y el panel quedó sin `pointer-events-auto` dentro del
+  wrapper `pointer-events-none` de AppLayout (`pointer-events` SE HEREDA
+  → el panel entero era clic-through: imposible escribir). Re-aplicados
+  ambos sobre la versión VIGENTE del archivo (re-staged del equipo, no de
+  la copia vieja). Además: los 502 de ElevenLabs sin red (getaddrinfo)
+  pagaban un intento fallido POR FRASE antes del fallback — `synthChunk`
+  gana memoria de sesión (2 fallos seguidos del proveedor → EdgeTTS el
+  resto de la sesión, sin tocar la preferencia guardada). **(1) Ajustes →
+  pestaña "Briefing"** (`briefing_config.py` NUEVO + `BriefingPanel.tsx`
+  NUEVO + pestaña en Settings): secciones on/off (email/calendario/
+  proyectos/tareas/noticias/ayer), N HORARIOS al día ("HH:MM" local,
+  añadir/quitar, default 08:00), `prep_minutes_before` (default 30) — un
+  job de PREPARACIÓN por horario (`arm_prep_jobs`, APScheduler inyectado
+  desde main.py; el PUT re-arma EN CALIENTE) que deja noticias + locución
+  LLM cacheadas para que a la hora del briefing todo sea lectura
+  instantánea (la disciplina de latencia de siempre). Config en la tabla
+  `Config` (JSON, fusión aditiva sobre defaults — sin migración).
+  Endpoints: GET/PUT `/api/memory/briefing/config` (+400 con motivo),
+  POST `/api/memory/briefing/prepare` (botón "Preparar ahora"). **(2)
+  Noticias** (`news.py` NUEVO): por tema → búsqueda real vía la
+  infraestructura de `search_tool` (SerpAPI→Brave, las keys de Ajustes;
+  normalizadores ganan `source`/`image`/`published` aditivos) → filtro
+  DETERMINISTA por dominio (bloqueadas fuera, preferidas delante) →
+  curación MEL (SUMMARIZE, economy) guiada por el PROMPT del usuario con
+  respaldo determinista → cache en Config. Sin proveedor → `unavailable`
+  honesto, jamás noticias inventadas. Defaults del usuario (petición
+  literal): 5 temas (geopolítica global, geopolítica española, IA
+  general, Claude/Anthropic, agentes/MCP/repos) + prompt anti-clickbait
+  ("información contrastada, medios honestos, nada de grandes medios").
+  Solo titular + resumen de 1 línea (locuta `spoken_per_topic`=2 por
+  tema; la pantalla muestra `per_topic`=4). **(3) El SHOW** — "que el
+  briefing muestre las cosas de las que habla": `build_spoken_segments()`
+  (briefing.py) parte la locución en pasos DETERMINISTAS con referencia
+  (`focus`) — la estructura ES el contrato de sincronización, por eso no
+  la escribe un LLM; `GET /briefing` gana `spoken_segments` (aditivo).
+  Frontend: `useBriefingShow.ts` (store puente) + `BriefingShow.tsx`
+  (montado en AppLayout): tarjetas en la esquina IZQUIERDA (el chat vive
+  a la derecha) — emails con avatar/asunto, mini-calendario del mes con
+  los días de agenda remarcados y el día del evento locutado PULSANDO en
+  oro, tarjetas de proyecto con barra de progreso, fechas límite y
+  bloqueos — y para noticias una PANTALLA COMPLETA (z-40) con columnas
+  por tema, imagen/fuente/fecha, enlace "Abrir", vídeo YouTube embebido
+  al pulsar ▶, scroll por tarjeta, y el titular que está sonando
+  enmarcado en azul con auto-scroll. Esc/✕ paran show Y voz
+  (`requestStop` → `stopSpeaking` registrado). `Chat.tsx::runBriefing` v2
+  conduce: escena por segmento, foco por paso, `speak()` por frase (con
+  TTS silenciado, tiempo de lectura por longitud — el show no pasa en un
+  parpadeo). Disparo automático v2: lee los horarios de la config (poll
+  5 min), chequeo por minuto con `usePolling`, idempotencia por
+  horario+día (`briefing.lastAuto.<HH:MM>` en localStorage) y **ventana
+  de gracia de 45 min** — corrige el comportamiento de PU4 (catch-up sin
+  límite: abrir la app a las 13:45 locutaba el briefing "de las 8:15"),
+  incorrecto con varios horarios al día. i18n: 48 claves nuevas ×4
+  idiomas (pestaña + panel + show), insertadas por script respetando el
+  orden alfabético del archivo (2 islas intencionales intactas). Tests:
+  `test_briefing_config.py` NUEVO (18 — defaults con los 5 temas,
+  round-trip/fusión aditiva/validaciones con motivo/config corrupta→
+  defaults, arm_prep_jobs con scheduler FAKE inyectado incl. cruce de
+  medianoche, news con filtro de fuentes/curador mockeado/degradación
+  honesta/cache round-trip, segmentos completos con focus/secciones
+  apagadas/día vacío/news unavailable, endpoints GET/PUT/400 y
+  `spoken_segments` en el GET). Regresión: 18+18 nuevos + 102 passed en
+  el subconjunto briefing/quick_answers/module_boundaries/s9c/new_tools
+  (los 8 fallos de new_tools son los de siempre del sandbox:
+  browser/desktop sin display ni red externa, verificado que los tests de
+  search sí pasan). `tsc` real NO ejecutable en el sandbox (mirror sin
+  package.json) — chequeo con tsc `--noResolve` sobre los archivos
+  tocados (solo falsos positivos de tipos globales sin resolver) +
+  balance de llaves + py_compile. **Pendiente en Windows**: `tsc
+  --noEmit`/`vite build` reales; escribir en el chat (el fix del
+  bloqueo); configurar una key de búsqueda y "Preparar ahora" → briefing
+  con la pantalla de noticias; un horario a 2-3 min vista para ver el
+  disparo automático + preparación; verificar que el ✕/Esc para voz y
+  show a la vez.
+
+- ✅ **Fix Chat.tsx — regresión de mirror obsoleto EJECUTADO (2026-08-01,
+  Sonnet)**: el usuario reportó el chat sin responder a clics ni teclado tras
+  el hotfix de `calc()`/faros de más arriba. Diagnóstico: NO era ese hotfix —
+  una sesión distinta y posterior (la que implementó PU4/briefing) trabajó
+  sobre una copia STALE de `Chat.tsx` y `doc35.md` (anterior a
+  PU6a-bis-v2/tanda4) y, al guardar su propio código nuevo encima, REVIRTIÓ en
+  silencio todo lo más reciente que esa copia no conocía — la señal reveladora
+  fue código NUEVO (la función de briefing) conviviendo con código VIEJO (el
+  patrón de estado pre-PU6a-bis) en el mismo archivo, algo solo posible si una
+  base vieja recibió código nuevo sin incorporar el historial intermedio.
+  Causa concreta del bloqueo: el `<aside>` del chat perdió `pointer-events-
+  auto`, así que heredaba `pointer-events-none` del contenedor de
+  `AppLayout.tsx` — clic-through total. Reconstruido a mano sobre la versión
+  VIGENTE del archivo (con PU4 intacto): el patrón `conversationRequested`
+  derivado del store (no `useState` local, evita el bug de sincronización
+  bidireccional ya corregido antes), el `calc(100%_-_2rem)` con sintaxis de
+  espacio válida, `pointer-events-auto`+`holo-frame` en el panel, y el botón
+  de cerrar con Esc. Se confirmó `AppLayout.tsx`/`useAppStore.ts` y los
+  archivos propios de PU4 (`BriefingButton.tsx`, `DockIcons.tsx`) intactos —
+  el daño estaba aislado a `Chat.tsx` y a `doc35.md` (perdió todo el
+  historial de cierre de PU6a→PU6a-bis→tanda2→tanda4, reconstruido con un
+  resumen condensado + una nota de aviso para sesiones futuras sobre este
+  modo de fallo). Verificado con `tsc --noEmit` limpio + `vite build`
+  completo (861 módulos) + grep del bundle compilado confirmando exactamente
+  un `pointer-events-none`/`pointer-events-auto`/`holo-frame` cada uno en el
+  chunk del chat. **Lección para sesiones futuras**: si un archivo muestra
+  código evidentemente MÁS NUEVO y MÁS VIEJO conviviendo, sospechar de un
+  mirror obsoleto antes de asumir que la propia sesión rompió algo.
+
+- ✅ **PU10 EJECUTADA (2026-08-01, Sonnet) — pestaña Memoria: mini-chat
+  directo + instrucciones de comportamiento aplicadas de verdad**: router
+  determinista compartido `app/memory/quick_memory.py` (NUEVO, mismo espíritu
+  que `tie/quick_answers.py` — SQL/ChromaDB directo, 0 LLM en el enrutado):
+  `parse()` reconoce "guarda que…"/"¿qué sabes de…?"/"olvida lo de…" en DOS
+  modos — `require_anchor=False` (mini-chat de Ajustes, el panel entero ya es
+  sobre memoria) admite las formas "bare"; `require_anchor=True` (chat
+  principal) exige mención EXPLÍCITA a "la memoria" ("guarda esto en la
+  memoria: X"), para no confundirse con `action_intent._wants_to_persist`
+  (NEW-7b, que guarda un ARCHIVO) — verificado con test dedicado que ni
+  "guárdame un resumen de tres líneas" ni "olvida lo que dije antes" a media
+  charla disparan esto. **GUARDAR SIEMPRE escribe en `user_context`**
+  (`memory_manager.store_user_context`), NUNCA en `mem_personal` genérica —
+  es la colección que `chat_service.build_system_prompt()` YA inyecta en
+  cada turno, así que lo guardado se APLICA de verdad en la siguiente
+  respuesta (verificado con un test que guarda una preferencia y comprueba
+  que aparece dentro de un `build_system_prompt()` real, no solo que quedó
+  en la BD). Buscar combina `user_context`+`mem_personal`
+  (`memory_router.search`); olvidar borra por coincidencia de substring —
+  único → borra, ninguna → lo dice, varias → lista sin borrar (nunca
+  ambigüedad silenciosa). **Un solo camino de escritura**: el chat principal
+  engancha `quick_memory.try_answer_async` en los MISMOS dos puntos que PU4
+  usó para el briefing (`tie/pipeline.py::handle_stream`+`_run_pipeline`,
+  `orchestrator/__init__.py::handle_stream` — el orquestador tiene su propio
+  precheck síncrono antes del TIE), expuesto vía
+  `app.tie.quick_memory_answer_async` en el barrel (frontera de módulo
+  respetada: `app.orchestrator` nunca importa `app.memory` directo, doc 16).
+  **Backend**: `POST /api/memory/quick` (`endpoints/memory.py`) sin ancla
+  para el mini-chat; 14 claves i18n `quick.memory.*` ×4 idiomas en
+  `core/strings.py`. **Frontend**: `MemoryQuickChat.tsx` (NUEVO,
+  `components/settings/`) — panel de burbujas simple sin persistir entre
+  sesiones, con `onChanged` que refresca perfil/preferencias tras un
+  guardado/olvido con éxito; montado en `Settings.tsx` justo DESPUÉS de las
+  stats y ANTES del formulario manual — la vía conversacional pasa a ser la
+  principal, el formulario sigue disponible como alternativa. `api.
+  quickMemory()`+`QuickMemoryResult` en `lib/api.ts`; 5 claves i18n
+  `settings.memoria.quickchat.*` ×4 idiomas. Tests: `test_quick_memory.py`
+  (NUEVO, 42 — parseo puro con/sin ancla en los 3 verbos incl. el no-choque
+  con NEW-7b, ejecución real contra ChromaDB con limpieza por test, el
+  round-trip completo hasta `build_system_prompt()`, y el enganche real en
+  `orchestrator.handle_stream`/`tie.handle_stream` verificando que NO llaman
+  al clasificador). Suite (sandbox, sin chromadb/sentence-transformers): 28
+  tests puros en verde + 14 se saltan por diseño (mismo patrón que el resto
+  de tests de memoria del proyecto); regresión de 155+122 tests de los
+  módulos tocados (tie/orchestrator/memory/module_boundaries/automation/
+  grounding/telemetry) en verde, 0 rotos. `tsc --noEmit` limpio; `vite
+  build` transformó los 865 módulos sin error (cortado por el límite del
+  sandbox antes de escribir los chunks, mismo patrón ya documentado en
+  PU6a). **Pendiente en Windows**: con chromadb/sentence-transformers
+  reales, correr `test_quick_memory.py` completo (las 14 clases que aquí se
+  saltan); y en vivo — pedir por el mini-chat de Ajustes "guarda que cuando
+  me expliques algo técnico usa lenguaje coloquial", confirmar que aparece
+  en la lista de preferencias, y que la siguiente pregunta técnica en el
+  chat normal responde en tono coloquial; repetir con "olvida lo de..." y
+  confirmar el borrado; y desde el chat PRINCIPAL probar "guarda esto en la
+  memoria: dame instrucciones detalladas sin asumir" y confirmar que NO pasa
+  por "analizando" (sin clasificador) y queda guardado igual.
+
+
+- ✅ **Fix Workspace: ventanas apilables + chat del ORQUESTADOR por proyecto
+  (2026-08-02, Fable 5)** — dos peticiones directas del usuario sobre la
+  pantalla de Proyectos. **(1) Las tarjetas de agente quedaban POR DEBAJO de
+  la del proyecto** ("no puedes subirla porque la tarjeta del proyecto la
+  bloquea"). Causa raíz encontrada: NADA saneaba las disposiciones
+  persistidas en `localStorage`, y bastaba UNA entrada sin `zIndex` numérico
+  (versión anterior, escritura a medias) para que el contador arrancara en
+  `1 + Math.max(0, ...undefined)` = **NaN**; como `NaN >= CARD_Z_MAX` es
+  `false`, cada "traer al frente" hacía `NaN + 1` y lo PERSISTÍA. React
+  descarta `style={{zIndex: NaN}}`, así que la tarjeta se quedaba en
+  `z-index: auto` — y un elemento posicionado con `auto` se pinta en una capa
+  ESTRICTAMENTE por debajo de cualquiera con z-index positivo: de ahí que
+  quedara detrás y que hacer clic no la subiera NUNCA (seguía escribiendo
+  NaN). Arreglado saneando en la frontera (`normalizeLayout` al leer el
+  store: tipos, mínimos y `zIndex` finito). **Además, el diseño hacía
+  imposible la otra mitad de lo pedido**: las ventanas de agente llevaban un
+  offset FIJO de +100.000 (`AGENT_Z_OFFSET`), así que vivían permanentemente
+  por encima de los proyectos y "clicar el proyecto para que el agente pase
+  detrás" no podía ocurrir. Dos contadores independientes (uno por instancia
+  de `useWorkspaceLayouts`) no son comparables entre sí; ahora comparten un
+  **único contador global** (`layers.allocateZ`, persistido, con compactación
+  global al llegar al techo vía almacenes registrados) y el offset se retira:
+  proyectos y agentes se intercalan por orden de uso, como ventanas de
+  escritorio. El foco (borde de acento) pasa a calcularse contra TODAS las
+  ventanas: si la de arriba es un agente, ningún proyecto lo lleva.
+  **(2) No había forma de hablar con el orquestador del proyecto** — y era
+  literal: `Agent.role="orchestrator"` (W2e) y el enrutado de
+  `submit_mission` hacia el orquestador del proyecto (R4) llevaban versiones
+  existiendo, pero NADA creaba nunca un agente con ese rol, así que la ruta
+  estaba escrita y muerta. Nace `authority.ensure_orchestrator(project_id)`
+  (idempotente; respeta uno configurado a mano sin reconfigurarlo) expuesto
+  por el barrel `app.tie` — `app.tie.authority` es interno y la capa API no
+  puede importarlo (lo vigila `test_module_boundaries`) — y el endpoint
+  `POST /api/projects/{id}/orchestrator`. El chat vive abajo del todo en la
+  `ProjectCard` (`OrchestratorChat.tsx`) y **no inventa ningún canal nuevo**:
+  el orquestador ES un agente, así que se le habla con
+  `POST /api/agents/{id}/execute` + `GET .../executions`, los mismos endpoints
+  de W2d — de regalo, el historial del chat se persiste solo en
+  `agent_executions` y sobrevive a cerrar la tarjeta y a reiniciar la app.
+  Su ALCANCE lo impone `Authority` (proyecto + carpeta + tools), NO un
+  prompt: el camino agente→TIE pasa `allowed_tools`/`project_id`/`repo_path`
+  y **no** el `system_prompt`, así que la frontera es real aunque el modelo
+  ignore cualquier instrucción de texto — nace con `filesystem`+`document`
+  (encerradas en `repo_path` por `_check_path_scope`) y manda sobre sus
+  agentes vía la tool interna `aithera`, que salta la whitelist pero SÍ pasa
+  por `_check_project_scope`. Tests: `test_project_orchestrator.py` (10 — los
+  negativos son los que importan: no manda sobre agentes de otro proyecto, no
+  escribe fuera de la carpeta ni con `document`, no gana tools que no tiene)
+  + 2 mutaciones confirmadas y restauradas byte a byte. Regresión: **1337
+  passed** (los 2 fallos restantes son los de `chromadb` ausente en el
+  sandbox, preexistentes). `tsc` limpio. **Pendiente en Windows**: abrir un
+  agente sobre su proyecto y confirmar que sale DELANTE, que clicar el
+  proyecto lo manda detrás y que se puede alternar libremente; y escribirle
+  al orquestador desde el chat de la tarjeta.
+
+- ✅ **PU10-visual EJECUTADA (2026-08-02, Sonnet) — pestaña Memoria: pulido
+  visual profesional**: petición directa del usuario tras cerrar el PU10
+  funcional ("es la memoria de Aithera, quiero que sea bonito, intuitivo y
+  moderno") — el pulido de las 3 zonas se había quedado pendiente en la
+  primera pasada (solo se insertó el mini-chat nuevo, sin tocar el resto).
+  `components/settings/MemoriaPanel.tsx` (NUEVO): la pestaña Memoria pasa de
+  bloque inline dentro de `Settings.tsx` a panel AUTÓNOMO — mismo patrón que
+  `BriefingPanel.tsx` (posee su propio estado y su propia carga,
+  `Settings.tsx` solo lo monta con `<MemoriaPanel />`, sin props). Es una
+  reorganización 100% VISUAL, cero cambios de endpoint/comportamiento: los 4
+  bloques que antes vivían apilados y separados por una simple línea
+  (`border-t`) pasan a tarjetas `glass-surface rounded-2xl p-4` con cabecera
+  propia (icono + título + descripción), mismo lenguaje que `BriefingPanel`/
+  PU4b. Iconografía nueva propia del panel (núcleo concéntrico para la
+  cabecera, burbuja/marcador/documento para las 3 estadísticas, chispa para
+  "Resumen"/"Perfil", flecha circular para refrescar) — mismo vocabulario
+  fino que `DockIcons.tsx` (stroke 1.1-1.4, `currentColor`) pero vive aquí
+  porque son iconos INFORMATIVOS, no de navegación (los de `DockIcons.tsx`
+  se dejan intactos). Cambios concretos: cabecera con icono+subtítulo (antes
+  solo un `<h3>`); el formulario manual de añadir preferencia pasa de
+  SIEMPRE visible a PLEGADO por defecto tras un botón "+ Añadir preferencia"
+  (revelación progresiva); las filas de preferencias/perfil ganan una
+  insignia de categoría y un botón de borrar circular consistente (antes un
+  botón "Eliminar" de texto suelto); estados vacíos con caja de borde
+  punteado en vez de una línea de texto perdida; "Borrar historial de
+  conversaciones" se separa en su propia franja `signal-warn` (zona sensible
+  diferenciada); el mensaje de feedback pasa de texto suelto a una franja
+  `signal-ok`/`signal-error` con fondo. El mini-chat (`MemoryQuickChat.tsx`,
+  MODIFICADO) gana burbujas con el MISMO estilo que `ChatBubble` del chat
+  principal (`bg-accent/20`/`bg-base-700/50`, `rounded-xl`), 3 chips de
+  ejemplo clicables cuando la conversación está vacía (rellenan el input,
+  nunca envían solos — el usuario conserva el control) para que la frase
+  exacta no haya que adivinarla, e indicador de "escribiendo" (3 puntos con
+  `animate-bounce`) mientras se resuelve. **Estado movido, no duplicado**:
+  `memStats`/`contextItems`/`profileFacts`/`newCtx*`/`memMessage` y sus 5
+  handlers (`loadMemory`/`handleAddContext`/`handleDeleteContext`/
+  `handleDeleteProfileFact`/`handleClearConversations`) se retiran de
+  `Settings.tsx` (con su `loadMemory()` del `useEffect` de montaje) y pasan
+  a vivir DENTRO de `MemoriaPanel.tsx` — el import de los tipos
+  `MemoryStats`/`ContextItem`/`ProfileFact` en `Settings.tsx` se limpia por
+  quedar sin uso. 8 claves i18n nuevas ×4 idiomas (`settings.memoria.
+  panelTitle`, `.panelSubtitle`, `.summary.title`, `.clearHistoryHint`,
+  `.quickchat.chip1/2/3`, `.quickchat.tryHint`), insertadas en orden
+  alfabético en los 4 `i18n/locales/*.json` — paridad verificada
+  programáticamente (1256 claves en los 4 idiomas). Sin cambios de backend,
+  sin tests nuevos (reorganización visual sobre endpoints ya cubiertos por
+  `test_quick_memory.py`). Verificado en el sandbox: `tsc --noEmit` limpio
+  (rc=0, 15s) y `vite build` COMPLETO sin errores (867 módulos,
+  `Settings-DBbovIwo.js` 108.89 kB — a diferencia de PU6a, esta vez el build
+  terminó dentro del límite del sandbox). **Pendiente en Windows**: vistazo
+  visual real de la pestaña Memoria (las 3 tarjetas + mini-chat + zona
+  sensible), confirmar que los chips de ejemplo rellenan el input sin
+  enviarlo, y que expandir/colapsar el formulario manual funciona.
+
+- ✅ **Fix crítico PU10 — el mini-chat de memoria mezclaba emails crudos con
+  hechos de perfil (2026-08-02, Sonnet)**: reportado en vivo por el usuario —
+  al preguntar "¿Qué sabes de mí?" al mini-chat de Ajustes → Memoria, la
+  respuesta mezcló una preferencia real guardada con contenido claramente
+  ajeno y de apariencia personal sacado de su bandeja de entrada (una
+  notificación de Booking.com sobre un alojamiento en Allerona, Umbria; una
+  notificación de TikTok "Tach.ink77 publicó... Alexandros Olmo, sois amigos
+  en TikTok"; un mensaje de Milanuncios), bajo la etiqueta "Otros datos que
+  recuerdo" — dando la impresión de que Aithera había "aprendido" datos
+  personales inventados o ajenos. **Diagnóstico**: la colección `mem_personal`
+  del MOS NO es un almacén exclusivo de "hechos sobre ti" — la comparten DOS
+  productores con semántica distinta, distinguibles solo por
+  `metadata.kind`: (1) `kind="inbox_item"`, el asunto+fragmento de CADA email
+  de la bandeja, escrito cada ~20 min por la ingesta de V0.85 MOS M2
+  (`ingestion.py::ingest_email`, ya documentada desde entonces, alimenta el
+  briefing/detección de urgentes — el email SÍ es del usuario, vía su propia
+  conexión OAuth ya concedida, no es una fuga ni un dato externo); (2)
+  `kind="profile_fact"` (`profile.FACT_KIND`), los hechos ESTABLES extraídos
+  SOLO de lo que el usuario ha dicho explícitamente en el chat, por el job
+  nocturno de destilado (R6.5c, V1.0 Orquestador) — la MISMA fuente que ya se
+  muestra en "Lo que Aithera sabe de ti". `quick_memory.py::_do_search()`
+  (código de HOY, PU10) buscaba en TODA la colección sin filtrar por `kind`,
+  así que una pregunta vaga como "¿qué sabes de mí?" traía lo que fuera
+  semánticamente más cercano de CUALQUIERA de los dos orígenes — presentando
+  ruido de marketing/notificaciones del email como si fueran datos aprendidos
+  sobre la persona. **Fix**: `_do_search()` añade
+  `filters={"kind": _profile.FACT_KIND}` a la llamada a
+  `memory_router.search()` (mismo mecanismo que ya usaba
+  `profile.py::delete_fact()`) — la búsqueda de "qué sabes de mí" pasa a leer
+  EXCLUSIVAMENTE de la misma fuente curada que ya se ve en el panel de
+  Memoria, nunca de la ingesta cruda de email/calendario. Import interno
+  `from app.memory import profile as _profile` dentro del propio
+  `app/memory/` — no viola la disciplina modular (doc 16): la excepción de
+  `test_module_boundaries.py` para archivos DENTRO del directorio dueño
+  aplica aquí (confirmado, 10/10 en verde). Test nuevo: `test_quick_memory.py
+  ::TestDoSearchFiltraPorHechosDePerfil` (doble mínimo del router que
+  registra los argumentos de la llamada real, sin gate de ChromaDB — corre
+  siempre). **Comprobación de mutación**: revertido el fix, el test falla;
+  restaurado, `diff` confirma el archivo byte-idéntico y el test vuelve a
+  pasar. Regresión: `test_quick_memory.py`+`test_module_boundaries.py` →
+  **39 passed, 14 skipped** (los 14 son tests ya existentes que exigen
+  ChromaDB real, ausente en el sandbox). **Pendiente en Windows**: repetir
+  "¿qué sabes de mí?" en el mini-chat y confirmar que solo aparecen hechos
+  de perfil genuinos (o un "todavía no sé nada" honesto) — nunca contenido
+  de la bandeja de entrada.
+
+---
+
+*Última actualización: 2026-08-02 — **Fix crítico PU10 (§27)**: el mini-chat
+de memoria mezclaba emails crudos de la bandeja (ingesta V0.85 MOS) con
+hechos de perfil curados en la respuesta a "¿qué sabes de mí?", dando la
+falsa impresión de datos personales "aprendidos" ajenos al usuario — filtro
+`kind=profile_fact` añadido a `_do_search()`, 1 test nuevo, mutación
+verificada, 39 passed/14 skipped. **Pendiente en Windows**: repetir la
+pregunta y confirmar que solo salen hechos de perfil genuinos.*
+
+*Anterior: 2026-08-02 — **PU10-visual (§27)**: la pestaña
+Memoria pasa de bloque inline tosco a panel autónomo (`MemoriaPanel.tsx`,
+mismo patrón que `BriefingPanel`) con tarjetas `glass-surface` con cabecera
+propia, iconografía nueva, formulario de añadir preferencia plegado por
+defecto, filas con insignia de categoría, zona de "borrar historial"
+diferenciada como acción sensible, y el mini-chat con burbujas al estilo del
+chat principal + chips de ejemplo clicables. Reorganización 100% visual (cero
+cambios de backend/comportamiento) — 8 claves i18n nuevas ×4 idiomas, paridad
+verificada. `tsc`/`vite build` limpios en el sandbox. **Pendiente en
+Windows**: verificación visual (ver §27).*
+
+*Anterior: 2026-08-02 — **Fix Workspace (§27)**: las tarjetas de
+agente ya se apilan como ventanas de escritorio sobre las de proyecto (causa
+raíz: un `zIndex` NaN persistido dejaba la tarjeta en `z-index: auto`, por
+debajo de todo y sin poder subirla; + contador de apilado ÚNICO compartido en
+vez del offset fijo que hacía imposible mandar el agente detrás), y **cada
+proyecto tiene por fin chat con SU orquestador** abajo de la tarjeta —
+`ensure_orchestrator` lo crea si no existe y `Authority` lo encierra en su
+proyecto y su carpeta. 10 tests nuevos + 2 mutaciones + 1337 de regresión.
+**Pendiente en Windows**: verificación manual (ver §27).*
+
+*Anterior: 2026-08-01 — **PU10 (§27)**: pestaña Memoria —
+mini-chat directo en Ajustes (`quick_memory.py`, router determinista
+compartido, 0 LLM) para guardar/buscar/olvidar instrucciones de
+comportamiento por lenguaje natural, con el mismo verbo funcionando también
+desde el chat principal (con ancla "en la memoria" para no chocar con
+NEW-7b). Lo guardado escribe SIEMPRE en `user_context` — la colección que
+`build_system_prompt()` inyecta en cada turno — verificado con un test que
+confirma que una preferencia guardada aparece en el prompt real. 42 tests
+nuevos (28 en verde en el sandbox, 14 se saltan por falta de chromadb) +
+regresión de ~277 tests en verde. `tsc`/`vite build` limpios. **Pendiente en
+Windows**: suite completa con ChromaDB real + verificación manual (ver §27).*
+
+*Anterior: 2026-08-01 — **Fix Chat.tsx — regresión de mirror
+obsoleto (§27)**: el chat se abría pero quedaba clic-through (imposible
+escribir) por un mirror obsoleto de una sesión distinta que pisó el hotfix
+del mismo día sin incorporar el historial intermedio — reconstruido
+correctamente, con nota de aviso para sesiones futuras sobre este modo de
+fallo. Verificado con `tsc`/`vite build` limpios + grep del bundle
+compilado. **Pendiente en Windows**: verificación manual (ver §27).*
+
+*Anterior: 2026-08-01 — **Hotfix noticias post-PU4b (§27)**:
+el sistema de noticias del briefing ganó ventana de actualidad por tema
+(`freshness` d/w/m, propagada a Brave/SerpAPI — antes ordenaban por
+relevancia, no por fecha, y se perdían hechos del día) + bloqueo por defecto
+de YouTube/Vimeo/Dailymotion + reglas explícitas de "qué es noticia" en el
+prompt del curador LLM (nada de opinión/debate/documental/vídeo). Bug real
+corregido de paso: un "vacío explícito" del curador (ningún candidato era
+noticia real) se rellenaba igualmente con el respaldo determinista,
+anulando la regla justo cuando debía aplicarse. 4 tests nuevos + 21/21 +
+52 de regresión (sandbox). **Pendiente en Windows**: verificación manual
+(ver §27).*
+
+*Anterior: 2026-08-01 — **PU4b (§27)**: Briefing 2.0 completo —
+pestaña de configuración (secciones, N horarios/día con preparación 30 min
+antes, temas/fuentes/prompt de noticias con los 5 temas del usuario), módulo
+de noticias (búsqueda real + filtro determinista de fuentes + curación MEL
+economy con respaldo), y el SHOW visual sincronizado con la voz (tarjetas de
+proyecto/email/calendario en la esquina, pantalla completa de noticias por
+columnas con foco que sigue la locución, vídeo embebido). Además, fix de la
+regresión propia que dejó el chat clic-through (la entrega de PU4 pisó el
+hotfix del calc() + pointer-events heredado). 18 tests nuevos + 102 de
+regresión (sandbox). **Pendiente en Windows**: verificación manual (ver §27).*
+
+- ✅ **Hotfix noticias post-PU4b (2026-08-01) — búsqueda desactualizada +
+  vídeos/debates colándose como noticia**: el usuario probó el módulo de
+  noticias en vivo y reportó dos fallos concretos: (1) el tema "geopolítica
+  España" trajo un debate genérico en vez del conflicto real de Ceuta que
+  estaba pasando ESE día — causa raíz: ni Brave ni SerpAPI llevaban ventana
+  de fecha, así que ambos ordenan por relevancia, no por recencia; (2)
+  resultados que eran vídeos/documentales/debates colándose como "noticia" —
+  "noticias son noticias, otra cosa es información" (el usuario). **Fix (1)**
+  `search_tool.py`: `_search`/`_search_brave`/`_search_serpapi` ganan
+  `freshness: "d"|"w"|"m"` (Brave `freshness=pd/pw/pm`, SerpAPI `tbs=qdr:d/w/m`),
+  propagado desde `briefing_config.py` (cada tema gana su propio campo,
+  default `"d"` — últimas 24h; los temas de IA/Claude/agentes usan `"w"`,
+  donde un lanzamiento de la semana sigue siendo relevante). **Fix (2)**
+  `blocked_sources` por defecto gana `youtube.com`/`vimeo.com`/
+  `dailymotion.com`; `_CURATOR_SYSTEM` (el prompt del curador LLM en
+  `news.py`) reescrito con reglas explícitas de qué CUENTA como noticia
+  (hecho reciente concreto, no opinión/debate/documental/vídeo) por encima
+  del criterio libre del usuario, con antigüedad de cada candidato incluida
+  en el prompt para que prefiera el más reciente. **Bug real encontrado al
+  escribir el fix**: si el curador LLM decidía EXPLÍCITAMENTE que ningún
+  candidato de un tema era noticia real (lista vacía a propósito, siguiendo
+  justo la regla que se le pedía cumplir), el respaldo determinista lo
+  interpretaba como "el LLM ignoró el tema" y rellenaba con los primeros N
+  candidatos SIN filtrar — anulando la regla en el caso exacto en que debía
+  aplicarse. Corregido distinguiendo "el LLM decidió vacío" (se respeta, cero
+  noticias ese tema) de "el LLM no mencionó el tema / falló" (ahí sí aplica
+  el respaldo). Tests: 4 nuevos en `test_briefing_config.py` (propagación de
+  `freshness` con y sin config explícita, vacío explícito no se rellena,
+  ausencia de tema sí usa respaldo) — 21/21 en verde + 52 de regresión
+  directa (sandbox). **Pendiente en Windows**: repetir una búsqueda de
+  geopolítica española tras un evento real reciente y confirmar que aparece;
+  confirmar que ningún resultado enlaza a YouTube/Vimeo.
+
+*Anterior: 2026-08-01 — **PU4 (§27)**: Briefing 2.0 con voz —
+disparo automático a las 8:15 hora local + botón manual junto a Modo
+Presencia (icono de amanecer, iconografía propia) + "dame el briefing" por
+chat/voz sin LLM en la clasificación (enganchado en el TIE Y en el
+Orquestador, que tiene su propio precheck — el hallazgo real de esta
+sesión). `spoken_text` cacheado por el job nocturno, nunca un LLM en
+caliente en el GET que el Dock sondea cada 30s. 5 tests nuevos +
+sección 4 de `test_quick_answers.py` + 29/38 passed de regresión directa
+(sandbox). Selección de noticias deliberadamente fuera de alcance (pedido
+explícito del usuario). **Pendiente en Windows**: `tsc`/`vite build` reales
++ verificación manual (ver §27).*
+
+*Anterior: 2026-08-01 — **Hotfix post-tanda-4 (§27)**: chat
+fuera de pantalla arreglado (bug de `calc()` sin espacio → CSS inválido →
+`left` negativo), 5 títulos de página legibles en tema claro
+(`glass-surface`), faros de los anillos del AVCS de 7% a 3%. `tsc`+`vite
+build` limpios. **Pendiente en Windows**: verificación visual (ver mensaje
+de cierre).*
+
+*Anterior: 2026-07-31 — **PU6b-vent tanda 4 (§27)**: fuera la
+etiqueta central del Hub y el orbe azul del Workspace; calendario legible
+sobre el AVCS (base opaca) con nombres de día completos y vistas de
+días/meses/años; Ajustes sin velo de fondo y sin llegar al dock; estantería
+con cuerpo; y nace el marco HUD de Aithera (`.holo-frame`: degradado
+cian→violeta, esquinas remarcadas y cometa de luz recorriendo el contorno)
+aplicado a los contenedores primarios + firma sutil en todas las
+superficies de cristal. Build completo limpio.*
+
+*Anterior: 2026-07-31 — **PU6b-vent tanda 2 (§27)**: las 7
+correcciones de la verificación en vivo — Esc v2 determinista (Electron ya
+no toca la tecla), chat como ventana siempre montada (SPACE conversa con el
+chat oculto; el bug de la conversación era una sincronización en dos
+sentidos que se pisaba), AVCS de fondo en TODAS las páginas, botón de
+presencia integrado en el dock, anillos ×0.88 por encima de los botones,
+iconos y botones rediseñados con las dos láminas de referencia (+20%, rim
+degradado, peana de luz), starfield sin franjas laterales. Build completo
+limpio. **Pendiente en Windows**: verificación visual + reiniciar Electron
+entero (ver mensaje de cierre).*
+
+*Anterior: 2026-07-31 — **PU6a-bis (§27)**: fuera la barra —
+botones SUELTOS (`Dock.tsx`) con la iconografía de la lámina de referencia,
+anillo azul con luz orbitando y polvo de estrellas al pulsar; texto al hover
+sin mover el icono; Ajustes abajo-izquierda y Presencia abajo-derecha (fin
+del solape); Esc cierra el chat ANTES de salir de pantalla completa (canal
+IPC nuevo con Electron); SPACE activa la conversación desde cualquier sitio.
+`tsc` limpio y `vite build` completo (862 módulos). **Pendiente en Windows**:
+verificación visual y de teclado (ver mensaje de cierre).*
+
+*Anterior: 2026-07-31 — **PU6a (§27)**: botonera inferior
+(`BottomBar.tsx`) sustituye a la Sidebar, Hub reescrito a inmersivo (solo
+AVCS + pill "Conversación"), entrada al chat por clic/Enter/pill, "Misiones"
+renombrada a "Mission Control" (marca propia sin traducir), Esc vuelve al
+Hub desde cualquier página. `tsc` limpio; `npm run build` sin errores en la
+fase medida (cortado por el sandbox antes del fin). **Pendiente en
+Windows**: recorrido completo de navegación (ver mensaje de cierre) +
+`npm run build` local completo.*
+
+*Anterior: 2026-07-31 — **PU5e+PU5f (§27)**: encontrado y
+cerrado el bug del apagón (el navegador pausa rAF en pestaña oculta → el
+primer frame al volver degradaba el nivel de calidad, y el primer escalón
+apaga el bloom); y añadidas las animaciones de escucha (anillos que se
+recogen, giro +15%) y habla (anillos expandidos ondulando con la voz,
+semilla latiendo sin deformarse, líneas de la semilla girando en sentidos
+opuestos, relámpagos). `tsc` y `glslcheck` limpios. **Pendiente en
+Windows**: nada de esto es visible en el previsualizador — probar con voz
+real (ver §27).*
+
+*Anterior: 2026-07-31 — **PU5d (§27)**: faros (7%) en los
+anillos, más ondas de sincronía simultáneas (la media era 0,8 por diseño del
+Poisson — ahora ~2,3), ondas con recorrido vertical real y origen móvil, y
+**arreglado el "apagón" global del AVCS**: los suelos de atenuación por
+distancia al ancla (0.35/0.32) hacían que cada latido y cada onda apagaran
+el conjunto a ~1/9 de su luz y luego volviera de golpe. `tsc` y `glslcheck`
+limpios; luminosidad entre tiers estable. **Pendiente en Windows**:
+verificar lo animado (ver §27).*
+
+*Anterior: 2026-07-30 — **PU3 ejecutada (§27)**: ningún gate
+del toolloop caduca ya (decisión explícita del usuario, "las preguntas se
+quedan hasta que se responden"); Autónomo confirmado sin excepciones
+(desktop tool incluido) y el override de modelo sin alcance especificado
+ya no pregunta bajo Autónomo (nota transparente en su lugar). 2 tests
+nuevos + 2 reescritos + 3 mutaciones confirmadas; 375 passed/6 skipped en
+el subconjunto amplio (sandbox). **Pendiente en Windows**: verificación
+manual (ver §27).*
+
+*Anterior: 2026-07-30 — **Extensión PU2 ejecutada (§27)**:
+resolución de categorías/temas sueltos a skills reales — "research y
+márketing" (sin nombres exactos) ahora recibe candidatos REALES del
+catálogo (por categoría o por palabra clave en nombre/descripción) en vez
+de un "no existe" mudo, para que el modelo se autocorrija en el bucle de
+tool-use sin que el usuario tenga que saberse ningún nombre de memoria. 6
+tests nuevos + 54 de regresión en verde (sandbox), 2 mutaciones
+confirmadas. **Pendiente en Windows**: verificación manual (ver §27).*
+
+*Anterior: 2026-07-30 — **PU2 ejecutada (§27)**: skills reales en
+agentes — catálogo de 254 skills validado en `create_agent`/`update_agent`
+(cubre HTTP y el camino del chat vía `aithera_tool`) con rechazo+sugerencia
+para nombres inventados, y las skills asignadas por fin LLEGAN a la
+ejecución (`Authority.skills` → `executor._persona_block()`, código antes
+muerto). 13 tests nuevos + 142 de regresión en verde (sandbox), 2 mutaciones
+confirmadas. Segunda sesión ejecutada del bloque PULIDO (doc 35).
+**Pendiente en Windows**: verificación manual (ver §27).*
+
+*Anterior: 2026-07-30 — **PU1 ejecutada (§27)**: fix de la
+carrera en `VoicePanel.tsx` que mezclaba voces entre proveedores (Kokoro
+mostrando las de ElevenLabs), por dos vías — cambio rápido de pestaña y
+sondeo de instalación de Kokoro terminando en otra pestaña. `tsc --noEmit`
+limpio. Primera sesión ejecutada del bloque PULIDO (doc 35, 12 sesiones).
+**Pendiente en Windows**: verificación manual (ver §27).*
+
+*Anterior: 2026-07-29 — **Campaña 02 ejecutada (§26)**:
+verificación en vivo de S1-S11 + medición de NEW-5 contra el Postgres real
+del usuario. Regresión limpia (1351 passed, 0 failed); 4/5 escenarios en
+vivo PASS con evidencia cruzada; S11 no reproducido en 2 intentos reales
+(su disparador es más estrecho de lo asumido, el planner suele resolver la
+situación antes de llegar ahí — no invalida el mecanismo, cuyos 8 tests
+siguen verdes); NEW-5 reafirmado con un caso real medido (decisión del
+planner, no un recorte de seguridad). **Bloque de auditoría global del
+runtime (S1-S11) — CERRADO**, con un único punto abierto no bloqueante
+(NEW-5/S11, brecha de diseño estrecha). Siguiente paso recomendado: pulir/
+refinar + preparar el instalador antes del bump a `1.0.0`.*
+
+*Anterior: 2026-07-29 — **S11 ejecutada (§26)**: gate de
 concesión cuando una tool real permitida al agente no llegó al nodo — el
 bucle pregunta "¿te la doy, o sigues sin ella?" en vez de denegar en
 silencio; rechazada, la respuesta final avisa siempre de la limitación

@@ -1,28 +1,28 @@
 // pages/Workspace/WorkspaceCanvas.tsx — el lienzo espacial (V0.87 W2b)
 //
-// Fondo ambiental: reusa AICore.tsx TAL CUAL (regla ya vigente en Hub.tsx: "no
-// se modifica"), atenuado y sin interaccion. NO es el AVCS completo de doc 13
-// (ParticleEngine full-bleed, V0.82/V0.83, sin construir todavia) — es el
-// mismo lenguaje visual del Hub reusando el componente que ya existe.
+// [PU6b-vent t4] El fondo ambiental (AICore, el "orbe azul" heredado del Hub
+// viejo) se ELIMINÓ a petición del usuario: desde que el AVCS real es el
+// fondo permanente de la app (PU6b-vent t2), aquí se veían DOS núcleos
+// superpuestos — el de verdad detrás y este viejo atenuado delante. Queda el
+// marco del lienzo con su leve tinte (eso se pidió conservar) y el AVCS real
+// visible a través.
 import { useEffect, useRef, useState } from "react";
 import type { Project } from "@/lib/api";
-import { AICore } from "@/components/hub/AICore";
 import { Shelf } from "./Shelf";
 import { ProjectCard } from "./ProjectCard";
 import { AgentWindowCard } from "./AgentWindowCard";
 import { useWorkspaceLayouts } from "./useWindowCard";
-import { AGENT_Z_OFFSET } from "./layers";
 import { useT } from "@/store/useI18n";
 
 const AGENT_LAYOUTS_KEY = "aithera.workspace.agentCardLayouts";
-// V0.87 (W4): las ventanas de agente flotan SIEMPRE por encima de las
-// tarjetas de proyecto (offset plano de z-index) — son dos instancias
-// independientes de useWorkspaceLayouts (contadores de zIndex separados, ver
-// useWindowCard.ts), así que sus valores numéricos podrían solaparse; este
-// offset evita que una tarjeta de proyecto "tape" una ventana de agente
-// mientras cada tipo sigue respetando su propio orden de traer-al-frente.
-// [2026-07-25] El número vive en `layers.ts` junto al techo de las tarjetas y a
-// la capa de los popups: los tres se leen juntos o vuelven a solaparse.
+// [hotfix 2026-08-02] APILADO ÚNICO. Antes, las ventanas de agente llevaban un
+// offset fijo de z-index (+100.000) que las ponía SIEMPRE por encima de las
+// tarjetas de proyecto. Eso tapaba un problema (dos contadores de zIndex
+// independientes, uno por instancia de useWorkspaceLayouts, no son comparables
+// entre sí) a costa de hacer imposible lo que el usuario pide: que al clicar la
+// tarjeta del proyecto el agente pase DETRÁS, como ventanas de escritorio.
+// Ahora ambas instancias comparten un único contador global (`layers.allocateZ`),
+// así que el z-index ya se puede comparar directamente y no hace falta offset.
 
 interface Props {
   projects: Project[];
@@ -92,10 +92,16 @@ export function WorkspaceCanvas({ projects, onCreateProject, onEditProject, onPr
   const openCards = projects.filter((p) => !getLayout(p.id).shelved);
   // [2026-07-25] Cuál está al frente (mayor zIndex entre las abiertas): se usa
   // solo para pintar el borde de foco, no altera el apilado.
-  const frontProjectId = openCards.reduce<number | null>(
-    (best, p) => (best === null || getLayout(p.id).zIndex > getLayout(best).zIndex ? p.id : best),
-    null,
+  // [hotfix 2026-08-02] Ahora el foco se calcula contra TODAS las ventanas
+  // (proyectos Y agentes), que ya comparten escala de z-index: si la ventana al
+  // frente es la de un agente, ningún proyecto lleva el borde de acento —
+  // marcar uno sería mentir sobre quién tiene el foco.
+  const topZ = Math.max(
+    0,
+    ...openCards.map((p) => getLayout(p.id).zIndex),
+    ...openAgentIds.map((id) => getAgentLayout(id).zIndex),
   );
+  const frontProjectId = openCards.find((p) => getLayout(p.id).zIndex === topZ)?.id ?? null;
 
   return (
     <div className="h-full flex gap-4">
@@ -103,24 +109,11 @@ export function WorkspaceCanvas({ projects, onCreateProject, onEditProject, onPr
         <Shelf projects={projects} getLayout={getLayout} onOpen={openFromShelf} onDragOut={handleDragOut} onCreate={onCreateProject} />
       </div>
 
-      <div ref={canvasRef} className="flex-1 min-w-0 relative rounded-2xl overflow-hidden bg-base-900/30 border border-base-700/40">
-        {/* Fondo ambiental — no interactivo, siempre detrás de las tarjetas */}
-        <div className="absolute inset-0 flex items-center justify-center opacity-[0.12] pointer-events-none select-none">
-          <AICore size={520} />
-        </div>
-
-        {projects.length === 0 && (
-          <div className="absolute inset-0 flex items-center justify-center text-sm text-ink-faint">
-            {t("workspace.canvas.noProjects")}
-          </div>
-        )}
-
-        {openCards.length === 0 && projects.length > 0 && (
-          <div className="absolute inset-0 flex items-center justify-center text-sm text-ink-faint pointer-events-none">
-            {t("workspace.canvas.allShelved")}
-          </div>
-        )}
-
+      <div ref={canvasRef} className="flex-1 min-w-0 relative rounded-2xl overflow-hidden holo-frame bg-base-900/20 border border-base-700/30">
+        {/* [PU6b-vent t4] Los textos centrados ("no hay proyectos" / "todo en
+            la estantería") se retiraron junto con el orbe — el usuario pidió
+            ver SOLO el AVCS real a través del marco. La estantería con su "+"
+            ya explica qué hacer cuando el lienzo está vacío. */}
         {projects.map((p) => {
           const layout = getLayout(p.id);
           if (layout.shelved) return null;
@@ -152,15 +145,16 @@ export function WorkspaceCanvas({ projects, onCreateProject, onEditProject, onPr
 
         {/* V0.87 (W4): ventanas de agente — mismo mecanismo que las tarjetas
             de proyecto, en su propia instancia de useWorkspaceLayouts (ver
-            arriba). Flotan por encima de las tarjetas de proyecto a
-            proposito (AGENT_Z_OFFSET): se abren para trabajar con ellas. */}
+            arriba). [hotfix 2026-08-02] Comparten el contador de z-index con
+            las tarjetas de proyecto, así que se intercalan por orden de uso
+            como las ventanas de un escritorio: la última que tocas, delante. */}
         {openAgentIds.map((agentId) => {
           const layout = getAgentLayout(agentId);
           return (
             <AgentWindowCard
               key={agentId}
               agentId={agentId}
-              layout={{ ...layout, zIndex: layout.zIndex + AGENT_Z_OFFSET }}
+              layout={layout}
               bounds={bounds}
               onInteractStart={() => bringAgentToFront(agentId)}
               onCommit={(patch) => setAgentLayout(agentId, patch)}

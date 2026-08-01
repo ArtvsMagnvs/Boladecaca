@@ -30,6 +30,7 @@
 # por test (BD y disco).
 from __future__ import annotations
 
+import asyncio
 import json
 import shutil
 from pathlib import Path
@@ -305,37 +306,67 @@ async def test_contrato_perfil_manual_si_pregunta(monkeypatch):
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# CONTRATO 4 — "Una aprobación que no sirve para nada, no se queda ahí"
-# Fallo de origen: aprobabas tarde y el sistema lo ignoraba en silencio.
+# CONTRATO 4 — "Si te pregunto, espero a que respondas — no me invento nada"
+# [PU3, doc 35, 2026-07-30] Reemplaza al contrato viejo ("una aprobación
+# caducada no se queda pendiente"): decisión EXPLÍCITA del usuario — ningún
+# gate de Aithera caduca ya, se espera indefinidamente a la respuesta (misma
+# lógica que esta propia herramienta, donde una pregunta se queda hasta que
+# se contesta). El botón "que no hace nada al pulsarlo" que este contrato
+# vigilaba ahora se previene de otra forma: no hay reloj que lo desactive
+# antes de que el usuario llegue a pulsarlo.
 # ═══════════════════════════════════════════════════════════════════════════
 @pytest.mark.anyio
-async def test_contrato_la_aprobacion_caducada_no_queda_pendiente(monkeypatch):
-    """Si el paso siguió sin esperar más, su aprobación se marca `expired`:
-    nunca `pending` (un botón que no hace nada al pulsarlo)."""
+async def test_contrato_la_aprobacion_no_caduca_espera_hasta_que_respondo(monkeypatch, workdir):
+    """Sin respuesta, el paso NO decide nada por su cuenta ni transcurre a
+    ningún estado por sí solo — sigue `pending` pase el tiempo que pase.
+    En cuanto respondo (aprobando), el paso retoma y termina de verdad.
+
+    Usa `filesystem.write_file` (real, sin red) en vez de `email.send_email`
+    a propósito: enviar un correo de verdad exige credenciales OAuth que este
+    entorno no tiene configuradas — habría probado "Google falla", no "el
+    gate espera". Escribir en `workdir` (real, dentro de HOME) sí es una
+    acción sensible que pide confirmación (`requires_confirmation=True`,
+    `filesystem_tool.py`) y no depende de nada externo."""
     from app.tie import toolloop
     from app.tools.tool_manager import tool_manager
 
+    destino = str(workdir / "nota.txt")
     _llm(monkeypatch, classify=_CLASSIFY_COMPLEX, node_script=[
-        json.dumps({"tool": {"tool_id": "email", "action": "send_email",
-                             "params": {"to": "a@b.com", "subject": "s", "body": "b"}}}),
-        '{"answer": "No pude enviarlo: el permiso caducó."}',
+        json.dumps({"tool": {"tool_id": "filesystem", "action": "write_file",
+                             "params": {"path": destino, "content": "hola"}}}),
+        '{"answer": "Escrito."}',
     ])
 
-    res = await toolloop.run(
-        instruction="envía un email", context="", allowed_tools=["email"],
-        tool_manager=tool_manager, max_iters=3,
-        approval_gate=approval_gate, approval_wait_s=1,
-    )
+    task = asyncio.create_task(toolloop.run(
+        instruction="escribe una nota", context="", allowed_tools=["filesystem"],
+        tool_manager=tool_manager, max_iters=3, approval_gate=approval_gate,
+    ))
+    await asyncio.sleep(0.1)  # tiempo de sobra para llegar al gate y ponerse a esperar
+
+    s = SessionLocal()
+    try:
+        pendientes = s.query(Approval).filter(Approval.status == "pending").all()
+    finally:
+        s.close()
+    assert len(pendientes) == 1, "debe haber quedado esperando mi respuesta"
+    assert not task.done(), "no debe resolverse solo, sin que yo conteste"
+    assert not Path(destino).exists(), "y nada se ha escrito todavía, mientras espera"
+
+    # Respondo (tarde, a propósito — nada debería haber cambiado por la espera)
+    aprobacion_id = pendientes[0].id
+    await approval_gate.resolve(aprobacion_id, approved=True, note="test")
+
+    res = await asyncio.wait_for(task, timeout=5)
 
     s = SessionLocal()
     try:
         estados = [a.status for a in s.query(Approval).all()]
     finally:
         s.close()
-
-    assert estados and all(e != "pending" for e in estados), f"quedó pendiente: {estados}"
-    assert "expired" in estados
-    assert not res.ok, "y el paso no finge que salió bien"
+    assert "expired" not in estados, "nada caduca ya"
+    assert estados == ["approved"]
+    assert res.ok, "y una vez respondido, el paso sí termina bien"
+    assert Path(destino).read_text() == "hola", "y esta vez sí se ha escrito de verdad"
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -404,9 +435,19 @@ async def test_contrato_si_la_herramienta_falla_la_mision_no_es_done(
 @pytest.mark.anyio
 async def test_contrato_sin_permiso_no_se_escribe_nada(monkeypatch, workdir):
     """Descubierto AL ESCRIBIR ESTOS TESTS (S4, doc 25): sin el permiso
-    `filesystem.write` concedido, una escritura ni siquiera se ejecuta — se
-    pide confirmación y, sin respuesta, el paso sigue sin ella. Que el disco
-    quede intacto es tan contrato como que se escriba cuando sí hay permiso."""
+    `filesystem.write` concedido, una escritura pide confirmación — y hasta que
+    alguien la resuelve, no se ejecuta. Que el disco quede intacto es tan
+    contrato como que se escriba cuando sí hay permiso.
+
+    [PU3, doc 35, 2026-07-30] Antes esta prueba dejaba que `handle()` corriera
+    sin resolver nada, confiando en que la espera CADUCARA sola a los 120s y
+    el paso siguiera "sin permiso" — eso ya no existe (decisión explícita del
+    usuario, ver `toolloop._wait_gate`). "Sin permiso" ahora se representa
+    como lo que de verdad es en producción: el usuario RECHAZA la petición.
+    Se ejecuta en segundo plano para observar el disco intacto MIENTRAS
+    espera, y luego se resuelve el gate explícitamente con un rechazo."""
+    from app.automation import Approval as _Approval
+
     _no_context(monkeypatch)
     prohibido = workdir / "prohibido.txt"
     _llm(monkeypatch, classify=_CLASSIFY_COMPLEX,
@@ -418,9 +459,22 @@ async def test_contrato_sin_permiso_no_se_escribe_nada(monkeypatch, workdir):
          ],
          summary="No tengo permiso.")
 
-    await handle(_Env("escribe un archivo"))
+    task = asyncio.create_task(handle(_Env("escribe un archivo")))
+    await asyncio.sleep(0.1)  # tiempo de sobra para llegar al gate y ponerse a esperar
 
-    assert not prohibido.exists(), "sin permiso, el disco queda INTACTO"
+    assert not prohibido.exists(), "sin resolver, el disco sigue INTACTO"
+    assert not task.done(), "no debe decidir nada por su cuenta sin una respuesta"
+
+    s = SessionLocal()
+    try:
+        pendiente = s.query(_Approval).filter(_Approval.status == "pending").one()
+    finally:
+        s.close()
+    await approval_gate.resolve(pendiente.id, approved=False, note="sin permiso (test)")
+
+    await asyncio.wait_for(task, timeout=5)
+
+    assert not prohibido.exists(), "y tras el rechazo, el disco sigue INTACTO"
     graph = tracer.load_graph(_trace_row().id)
     assert graph.nodes["n1"].state == NodeState.FAILED, "y no se finge que salió"
 

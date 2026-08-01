@@ -8,7 +8,7 @@ from datetime import date, datetime, timedelta
 import pytest
 
 from app.memory import MemoryType, memory_router
-from app.memory import summarizer
+from app.memory import briefing, summarizer
 
 pytestmark = pytest.mark.skipif(
     not memory_router.healthy, reason="ChromaDB no disponible en el entorno de test"
@@ -63,6 +63,7 @@ def _cleanup_chroma():
     async def _clean():
         await memory_router.forget(MemoryType.PERSONAL, {"kind": "agenda_item"})
         await memory_router.forget(MemoryType.PERSONAL, {"kind": "daily_summary"})
+        await memory_router.forget(MemoryType.PERSONAL, {"kind": briefing.SPOKEN_KIND})
 
     asyncio.run(_clean())
 
@@ -201,3 +202,85 @@ async def test_criterio_de_cierre_briefing_sin_google(monkeypatch, client, seede
     assert data["urgent_pending"]["count"] >= 1
     assert any(a["title"] == "Reunion M3" for a in data["agenda"])
     assert data["summary_source"] == "cached"
+
+
+# ---------------------------------------------------------------------------
+# [PU4, doc 35] Locución hablada del briefing
+# ---------------------------------------------------------------------------
+async def _no_llm_spoken(_data, _summary):
+    return None
+
+
+def test_build_deterministic_spoken_vacio_y_con_datos():
+    vacio = briefing.build_deterministic_spoken(
+        {"urgent_pending": {"count": 0, "items": []}, "agenda": [], "workspace": {}},
+        "Sin actividad relevante.",
+    )
+    assert "no hay nada urgente ni agendado" in vacio
+    assert "Sin actividad relevante" in vacio
+
+    con_datos = briefing.build_deterministic_spoken(
+        {
+            "urgent_pending": {"count": 2, "items": [{"subject": "Servidor caído"}, {"subject": "Factura"}]},
+            "agenda": [{"title": "Reunión M3", "start": "2026-07-31T10:00:00"}],
+            "workspace": {
+                "active_milestones": [{"project_name": "Cordyceps", "ratio": 0.42}],
+                "upcoming_deadlines": [{"id": 1}],
+                "blocked": [],
+            },
+        },
+        "Ayer cerraste 3 tareas.",
+    )
+    assert "2 correos urgentes pendientes" in con_datos
+    assert "Servidor caído" in con_datos
+    assert "Reunión M3" in con_datos
+    assert "Cordyceps" in con_datos and "42 por ciento" in con_datos
+    assert "1 tarea con fecha límite" in con_datos
+    assert "Ayer cerraste 3 tareas." in con_datos
+    # Nunca markdown/emojis en lo que se va a hablar (aunque aquí venga limpio,
+    # la plantilla no debe introducirlos).
+    assert "**" not in con_datos and "#" not in con_datos
+
+
+@pytest.mark.anyio
+async def test_run_summarizer_cachea_locucion_hablada(monkeypatch, seeded_day):
+    monkeypatch.setattr(summarizer, "_try_llm_summary", _no_llm)
+    monkeypatch.setattr(briefing, "_try_llm_spoken", _no_llm_spoken)
+
+    result = await summarizer.run_summarizer(TODAY)
+    assert result["status"] == "ok"
+
+    cached_spoken = await briefing.get_cached_spoken(TODAY)
+    assert cached_spoken is not None
+    # La plantilla determinista debe reflejar los datos sembrados (urgente
+    # pendiente de seeded_day).
+    assert "urgente" in cached_spoken.lower()
+
+
+@pytest.mark.anyio
+async def test_spoken_text_for_sin_cache_es_live_deterministic(seeded_day):
+    data = summarizer.gather_day_data(TODAY)
+    text, source = await briefing.spoken_text_for(TODAY, data, "resumen de prueba")
+    assert source == "live_deterministic"
+    assert text
+
+
+def test_endpoint_briefing_incluye_spoken_text_sin_cache(client, seeded_day):
+    r = client.get("/api/memory/briefing")
+    assert r.status_code == 200
+    data = r.json()
+    assert data["spoken_source"] == "live_deterministic"
+    assert data["spoken_text"]
+
+
+@pytest.mark.anyio
+async def test_endpoint_briefing_spoken_text_usa_cache_tras_summarizer(monkeypatch, client, seeded_day):
+    monkeypatch.setattr(summarizer, "_try_llm_summary", _no_llm)
+    monkeypatch.setattr(briefing, "_try_llm_spoken", _no_llm_spoken)
+    await summarizer.run_summarizer(TODAY)
+
+    r = client.get("/api/memory/briefing")
+    assert r.status_code == 200
+    data = r.json()
+    assert data["spoken_source"] == "cached"
+    assert data["spoken_text"] == await briefing.get_cached_spoken(TODAY)

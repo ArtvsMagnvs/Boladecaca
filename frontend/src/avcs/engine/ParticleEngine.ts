@@ -11,7 +11,7 @@ import { GPUComputationRenderer } from "three/examples/jsm/misc/GPUComputationRe
 import { ShaderSystem } from "../shaders/ShaderSystem";
 import { createUniformBus } from "./UniformBus";
 import { buildSceneGeometry } from "../math/lotus";
-import { TIERS, REST_RADIUS, weightsToArray } from "../constants";
+import { TIERS, REST_RADIUS, weightsToArray, BASE_POINT_SIZE } from "../constants";
 import type { FieldWeights, Palette, QualityTier, StructureHandle, StructureSpec, UniformBus } from "../types";
 
 export interface ParticleEngineOptions {
@@ -57,6 +57,16 @@ export class ParticleEngine {
     const spec = TIERS[this.tier];
     this.sim = spec.sim;
     const N = spec.particles;
+
+    // [doc 35 PU5] Compensación por tier — las 3 palancas de render. Con menos
+    // partículas el conjunto suma menos luz (blending aditivo) y deja huecos
+    // entre punto y punto; se compensa con opacidad + un tamaño MODERADO
+    // (×1.24 en Q1, NO ×8: eso fue el error de la 1.ª versión) + un borde duro
+    // que evita que ese tamaño extra se traduzca en desenfoque.
+    // En Q4 los tres valen 1.0 / 1.0 / 0.0 = los históricos exactos.
+    this.bus.uBrightBoost.value = spec.brightBoost;
+    this.bus.uPointSize.value = BASE_POINT_SIZE * spec.pointScale;
+    this.bus.uEdgeHardness.value = spec.edgeHardness;
 
     const gpu = new GPUComputationRenderer(this.sim, this.sim, this.renderer);
 
@@ -107,6 +117,11 @@ export class ParticleEngine {
       uWeights: this.bus.uWeights,
       uBreathScale: this.bus.uBreathScale,
       uCoreSpin: this.bus.uCoreSpin,
+      uRingSpin: this.bus.uRingSpin,
+      uRingBloom: this.bus.uRingBloom,
+      uListenEnv: this.bus.uListenEnv,
+      uSpeakEnv: this.bus.uSpeakEnv,
+      uSpeakSpin: this.bus.uSpeakSpin,
       uPulse: this.bus.uPulse,
       uCurlFreq: this.bus.uCurlFreq,
       uCurlFlow: this.bus.uCurlFlow,
@@ -161,6 +176,8 @@ export class ParticleEngine {
         uHeart: this.bus.uHeart,
         uAura: this.bus.uAura,
         uField: this.bus.uField,
+        uBrightBoost: this.bus.uBrightBoost,
+        uEdgeHardness: this.bus.uEdgeHardness,
       },
       vertexShader: ShaderSystem.buildRenderVertex(),
       fragmentShader: ShaderSystem.buildRenderFragment(),

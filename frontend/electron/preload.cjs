@@ -15,7 +15,15 @@ const { contextBridge, ipcRenderer } = require("electron");
 // ARCHIVOS reales a un proyecto (Project.docs) necesita rutas absolutas, y eso
 // solo lo puede dar el diálogo nativo. Sigue siendo una superficie mínima y
 // explícita (dos funciones concretas), no un API de filesystem genérico.
+// [PU6a-bis v2, doc 35 §PU6] `exitFullscreen` es la tercera excepcion, y por
+// un motivo distinto: la tecla Esc la procesa SIEMPRE la UI (con su orden de
+// prioridad: dialogo → chat → presencia → pagina), y solo cuando no le queda
+// nada que cerrar pide aqui salir de pantalla completa. Antes era al reves
+// (el proceso principal decidia primero) y habia una carrera real: con el
+// chat abierto en fullscreen, Esc salia de pantalla completa en vez de
+// cerrar el chat. `send` y no `invoke`: aviso de una direccion.
 contextBridge.exposeInMainWorld("aithera", {
   pickFolder: () => ipcRenderer.invoke("dialog:pick-folder"),
   pickFiles: () => ipcRenderer.invoke("dialog:pick-files"),
+  exitFullscreen: () => ipcRenderer.send("window:exit-fullscreen"),
 });

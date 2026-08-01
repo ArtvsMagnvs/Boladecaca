@@ -253,6 +253,85 @@ export interface MemoryBriefing {
   conversations_count: number;
   // V0.87 (WPMS W4)
   workspace: WorkspaceBriefing;
+  // [PU4, doc 35] Locución hablada — aditivo, misma disciplina de cache que
+  // summary/summary_source (nunca un LLM en caliente en este GET).
+  spoken_text: string;
+  spoken_source: "cached" | "live_deterministic";
+  // [PU4b] Segmentos deterministas para el show visual sincronizado con la voz.
+  spoken_segments: SpokenSegment[];
+}
+
+// [PU4b, doc 35] Briefing 2.0 — segmentos del show + configuración + noticias.
+export interface SegmentStep {
+  text: string;
+  /** Qué visual resaltar mientras se habla este paso: email_id, "proj:<id>",
+   *  "ev:<i>", id de noticia "topic:<n>", "deadlines"/"blocked", o null. */
+  focus: string | null;
+}
+export interface NewsItem {
+  id: string;
+  title: string;
+  summary: string;
+  url: string;
+  source: string;
+  image: string | null;
+  published: string | null;
+}
+export interface NewsTopicItems {
+  id: string;
+  label: string;
+  items: NewsItem[];
+}
+export interface SpokenSegment {
+  kind: "greeting" | "email" | "calendar" | "projects" | "tasks" | "news" | "yesterday";
+  refs: {
+    items?: { email_id: string; sender: string | null; subject: string | null }[];
+    total?: number;
+    events?: { title: string | null; start: string | null }[];
+    projects?: {
+      project_id: number | null;
+      project_name: string | null;
+      milestone: string | null;
+      version: string | null;
+      ratio: number;
+      done: number | null;
+      total: number | null;
+    }[];
+    deadlines?: { task_id: number; title: string | null; due_date: string | null; project_id: number | null }[];
+    blocked?: { task_id: number; title: string | null }[];
+    topics?: NewsTopicItems[];
+    prepared_at?: string;
+  };
+  steps: SegmentStep[];
+}
+export interface BriefingNewsTopic {
+  id: string;
+  label: string;
+  query: string;
+  vertical: "news" | "web";
+  /** [hotfix 2026-08-02] nº de noticias de ESTE tema — opcional; si falta,
+   * el tema usa `news.per_topic` (el default global) en su lugar. */
+  count?: number;
+}
+export interface BriefingConfig {
+  sections: {
+    email: boolean;
+    calendar: boolean;
+    projects: boolean;
+    tasks: boolean;
+    news: boolean;
+    yesterday: boolean;
+  };
+  schedules: string[];
+  prep_minutes_before: number;
+  news: {
+    topics: BriefingNewsTopic[];
+    blocked_sources: string[];
+    preferred_sources: string[];
+    prompt: string;
+    per_topic: number;
+    spoken_per_topic: number;
+  };
 }
 
 export interface ContextItem {
@@ -270,6 +349,20 @@ export interface ProfileFact {
   label: string;
   value: string;
   updated_at?: string;
+}
+
+// [PU10, doc 35] Resultado del mini-chat de memoria (guardar/buscar/olvidar,
+// 0 LLM). `recognized: false` = el texto no se reconoció como comando (la UI
+// muestra `reply` igualmente: es la pista de sintaxis, no un error).
+export interface QuickMemoryResult {
+  recognized: boolean;
+  ok?: boolean;
+  action?: "save" | "search" | "forget";
+  reply: string;
+  key?: string;
+  content?: string;
+  results?: string[];
+  ambiguous?: boolean;
 }
 
 export interface MemorySearchItem {
@@ -498,6 +591,17 @@ export interface ElevenLabsCfgStatus {
 // que pase, un socket se libera como muy tarde a los REQUEST_TIMEOUT_MS.
 const REQUEST_TIMEOUT_MS = 20_000;
 
+// [hotfix 2026-08-01] Algunas peticiones hacen trabajo real de varios pasos
+// (búsqueda + curación LLM de noticias, triaje/proceso de N emails con LLM
+// por email) que rutinariamente supera los 20s del timeout por defecto — el
+// backend las termina bien (se ve en su log), pero el frontend ya había
+// abortado y mostraba un fallo genérico ("The user aborted a request" /
+// "La preparación falló") sin que hubiera ningún fallo real. Estas pocas
+// llamadas, identificadas una a una, usan este plazo más largo en vez de
+// subir el timeout global (que existe para liberar sockets colgados, no
+// para cubrir trabajo legítimamente lento — ver la nota de arriba).
+const SLOW_REQUEST_TIMEOUT_MS = 120_000;
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   // Se respeta un `signal` explícito de quien llama (p.ej. el health check, que
   // usa 2s); si no lo hay, se impone el plazo por defecto.
@@ -618,6 +722,13 @@ export interface Approval {
   // [S7·S8] Solo presente en gates que lo declaran (p.ej. tie_tool_permission,
   // R1) — permite a Missions.tsx correlacionar un gate con su misión.
   mission_id: string | null;
+  // [2026-08-02] Una PREGUNTA al usuario (kind `user.question`) no es una
+  // aprobacion: no se responde con si/no sino con un TEXTO. El backend expone
+  // su enunciado y las opciones sugeridas solo para este kind.
+  is_question?: boolean;
+  question?: string | null;
+  options?: string[] | null;
+  header?: string | null;
   requested_at: string | null;
   resolved_at: string | null;
 }
@@ -809,6 +920,12 @@ export const api = {
     }),
   getAgentExecutions: (id: number, limit = 50) =>
     request<AgentExecution[]>(`/agents/${id}/executions?limit=${limit}`),
+  // [hotfix 2026-08-02] El orquestador de un proyecto, creandolo si aun no
+  // existe (idempotente en el backend). Lo usa el chat de la ProjectCard: el
+  // orquestador ES un agente, asi que a partir de aqui se le habla con
+  // executeAgent/getAgentExecutions como a cualquier otro.
+  ensureProjectOrchestrator: (projectId: number) =>
+    request<Agent>(`/projects/${projectId}/orchestrator`, { method: "POST" }),
   getExecution: (execId: number) =>
     request<AgentExecution>(`/agents/executions/${execId}`),
   cancelOrDeleteExecution: (execId: number) =>
@@ -887,9 +1004,15 @@ export const api = {
       `/email/inbox/preview?max_emails=${max_emails}`
     ),
   // V0.7.3 (Sprint 3): clasifica el inbox en 7 categorias (2 etapas)
+  // [hotfix 2026-08-01] hasta 30 emails, cada uno potencialmente con su
+  // propia llamada LLM (etapa 2 del triaje) — el timeout global de 20s
+  // (ver REQUEST_TIMEOUT_MS) se quedaba corto y el frontend abortaba la
+  // petición aunque el backend siguiera trabajando y terminara bien
+  // (el "Error procesando bandeja: The user aborted a request" reportado).
   runTriage: (max_emails = 30) =>
     request<TriageRunResult>(`/email/triage/run?max_emails=${max_emails}`, {
       method: "POST",
+      signal: AbortSignal.timeout(SLOW_REQUEST_TIMEOUT_MS),
     }),
   getEmail: (id: string) =>
     request<{
@@ -957,6 +1080,9 @@ export const api = {
   deleteAutoReplyRule: (id: number) =>
     request(`/email/auto-reply/rules/${id}`, { method: "DELETE" }),
   // V0.7 extra (FIX): endpoint unificado que combina auto-reply + reuniones
+  // [hotfix 2026-08-01] hasta 50 emails, cada uno pasando por reglas +
+  // posible respuesta IA + detección de reuniones — mismo motivo que
+  // runTriage: necesita más de los 20s por defecto.
   processInbox: (max_emails = 50) =>
     request<{
       processed: Array<{
@@ -980,7 +1106,10 @@ export const api = {
       }>;
       count: number;
       message?: string;
-    }>(`/email/process-inbox?max_emails=${max_emails}`, { method: "POST" }),
+    }>(`/email/process-inbox?max_emails=${max_emails}`, {
+      method: "POST",
+      signal: AbortSignal.timeout(SLOW_REQUEST_TIMEOUT_MS),
+    }),
   testAutoReply: (data: { sender: string; subject: string; body: string }) =>
     request<{
       matches: Array<{
@@ -1124,6 +1253,21 @@ export const api = {
   getMemoryIngestStatus: () => request<MemoryIngestStatus>("/memory/ingest/status"),
   getMemoryBriefing: (date?: string) =>
     request<MemoryBriefing>(`/memory/briefing${date ? `?date=${date}` : ""}`),
+  // [PU4b] Configuración del briefing + preparación bajo demanda.
+  getBriefingConfig: () => request<BriefingConfig>("/memory/briefing/config"),
+  saveBriefingConfig: (cfg: Partial<BriefingConfig>) =>
+    request<BriefingConfig>("/memory/briefing/config", {
+      method: "PUT",
+      body: JSON.stringify(cfg),
+    }),
+  // [hotfix 2026-08-01] búsqueda real en 5 temas + curación LLM + locución —
+  // ver nota de SLOW_REQUEST_TIMEOUT_MS (era la causa de "La preparación
+  // falló" con las noticias ya generadas de fondo).
+  prepareBriefing: () =>
+    request<{ status: string; news: string; spoken: string; slot: string }>(
+      "/memory/briefing/prepare",
+      { method: "POST", signal: AbortSignal.timeout(SLOW_REQUEST_TIMEOUT_MS) },
+    ),
   storeContext: (data: { key: string; content: string; category?: string }) =>
     request<{ id: string; stored: boolean; key: string }>("/memory/context", {
       method: "POST",
@@ -1148,6 +1292,9 @@ export const api = {
     request<{ items: MemorySearchItem[]; count: number }>(`/memory/documents/search?q=${encodeURIComponent(q)}&n_results=${n_results}`),
   clearConversations: () =>
     request<{ cleared: boolean; count_before: number }>("/memory/conversations/clear", { method: "POST" }),
+  // [PU10, doc 35] Mini-chat de memoria (guarda/busca/olvida, 0 LLM).
+  quickMemory: (text: string) =>
+    request<QuickMemoryResult>("/memory/quick", { method: "POST", body: JSON.stringify({ text }) }),
 
   // --- IA (estado, catalogo, gestion de proveedores) ---
   getAIStatus: () => request<AIStatus>("/ai/status"),

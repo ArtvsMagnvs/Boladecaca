@@ -32,6 +32,18 @@ function isHarmlessDevtoolsMessage(text) {
   return HARMLESS_DEVTOOLS_PATTERNS.some((re) => re.test(text));
 }
 
+// [PU6a-bis v2, doc 35 §PU6] Esc lo decide SIEMPRE el renderer. La primera
+// version (un flag "ui:escape-capture" que la UI mantenia al dia) tenia una
+// carrera inherente: el flag podia llegar tarde y este proceso salia de
+// pantalla completa cuando la UI queria cerrar el chat (fallo reportado en
+// vivo). Ahora el orden es determinista: este proceso NUNCA toca Esc; la UI
+// procesa la tecla con su prioridad (dialogo → chat → presencia → pagina) y,
+// solo si no le queda nada que cerrar, pide salir del fullscreen por IPC.
+ipcMain.on("window:exit-fullscreen", (event) => {
+  const win = BrowserWindow.fromWebContents(event.sender);
+  if (win && win.isFullScreen()) win.setFullScreen(false);
+});
+
 function createWindow() {
   const win = new BrowserWindow({
     // [2026-07-21] `show: false` + `maximize()` al estar listo = Aithera SIEMPRE
@@ -61,12 +73,16 @@ function createWindow() {
   // toggle. Esc también sale del fullscreen (comportamiento esperado). El
   // maximizado normal (arriba) es lo de siempre; el fullscreen es el modo
   // inmersivo opcional.
+  //
+  // [PU6a-bis v2, doc 35 §PU6] Esc ya NO se toca aqui: este handler ve las
+  // teclas ANTES que el renderer, asi que cualquier decision tomada aqui
+  // le gana a la UI (con el chat abierto en fullscreen, Esc salia de
+  // pantalla completa en vez de cerrar el chat — fallo reportado en vivo).
+  // La tecla pasa siempre al renderer; cuando a la UI no le queda nada que
+  // cerrar, pide salir del fullscreen via "window:exit-fullscreen".
   win.webContents.on("before-input-event", (event, input) => {
     if (input.type === "keyDown" && input.key === "F11") {
       win.setFullScreen(!win.isFullScreen());
-      event.preventDefault();
-    } else if (input.type === "keyDown" && input.key === "Escape" && win.isFullScreen()) {
-      win.setFullScreen(false);
       event.preventDefault();
     }
   });

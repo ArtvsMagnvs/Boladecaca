@@ -19,6 +19,8 @@ from app.automation import (
     permission_service,
 )
 
+USER_QUESTION_KIND = permission_service.USER_QUESTION_KIND
+
 router = APIRouter(prefix="/automation", tags=["automation"])
 
 
@@ -32,6 +34,12 @@ def _approval_out(a: Approval) -> dict:
     R1) con la misión que lo abrió — antes ese panel solo existía en el Chat.
     `None` para cualquier aprobación que no lo lleve (la inmensa mayoría)."""
     payload = a.action_payload or {}
+    # [2026-08-02] Una PREGUNTA al usuario necesita, además, su enunciado y las
+    # opciones sugeridas: sin eso la UI solo podría pintar "aprobar/rechazar",
+    # que es justo lo que NO es una pregunta. Se exponen SOLO para este kind y
+    # SOLO estos tres campos — el resto del payload sigue sin salir (misma
+    # excepción acotada que `mission_id` en S7·S8, no una apertura general).
+    es_pregunta = a.kind == USER_QUESTION_KIND
     return {
         "gate_id": a.id,
         "kind": a.kind,
@@ -41,6 +49,10 @@ def _approval_out(a: Approval) -> dict:
         "status": a.status,
         "channel": a.channel,
         "mission_id": payload.get("mission_id"),
+        "is_question": es_pregunta,
+        "question": payload.get("question") if es_pregunta else None,
+        "options": (payload.get("options") or []) if es_pregunta else None,
+        "header": payload.get("header") if es_pregunta else None,
         "requested_at": a.requested_at.isoformat() if a.requested_at else None,
         "resolved_at": a.resolved_at.isoformat() if a.resolved_at else None,
     }

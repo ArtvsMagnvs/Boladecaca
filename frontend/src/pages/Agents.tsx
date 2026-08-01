@@ -360,7 +360,7 @@ export default function Agents() {
         className="col-span-3 flex items-center justify-between"
         style={{ gridColumn: "1 / -1" }}
       >
-        <div>
+        <div className="glass-surface rounded-xl px-4 py-2.5 w-fit">
           <h1 className="text-xl font-semibold text-ink">{t("agents.title")}</h1>
           <p className="text-xs text-ink-faint mt-0.5">
             {t("agents.subtitle")}

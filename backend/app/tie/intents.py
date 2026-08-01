@@ -153,7 +153,11 @@ Campos del JSON (todos obligatorios):
     canción", "crea una carpeta y dentro un archivo con este texto", "búscame un vuelo
     y ábrelo" son requires_planning=FALSE — se ejecutan de corrido con herramientas,
     sin plan que revisar. Ante la duda en tareas mecánicas, requires_planning=false.
-- "requires_tools": lista de herramientas probables, subconjunto de ["filesystem","shell","git","powershell","email","calendar","aithera","memory","search","browser"].
+- "requires_tools": lista de herramientas probables, subconjunto de ["filesystem","shell","git","powershell","email","calendar","aithera","memory","search","browser","document","download","process"].
+    USA "document" para leer o crear PDF, Word (.docx) o Excel (.xlsx) — "filesystem"
+    solo maneja texto plano, no abre esos formatos (si hace falta localizar el archivo,
+    incluye AMBAS). "download" para descargar un archivo de internet al ordenador.
+    "process" para ver, abrir o cerrar programas del equipo.
     USA "aithera" siempre que el usuario quiera OPERAR LA PROPIA APP: gestionar SUS
     proyectos, hitos, tareas, agentes, reglas de automatización o recordatorios —
     p.ej. "crea un proyecto llamado X", "abre el proyecto Y", "en el proyecto Z crea

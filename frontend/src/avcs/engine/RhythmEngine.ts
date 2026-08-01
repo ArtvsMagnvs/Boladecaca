@@ -14,6 +14,14 @@ import {
   STATE_TO_RHYTHM,
   WAVE_MAX_RADIUS,
   weightsToArray,
+  RHYTHM_RING_SPIN,
+  RING_BLOOM_INTERVAL_S,
+  RING_BLOOM_RECOVER_S,
+  WAVE_BIRTH_DIVISOR,
+  LISTEN_RING_TAU,
+  SPEAK_TAU,
+  SPEAK_PETAL_SPIN,
+  SPEAK_SEED_PULSE,
 } from "../constants";
 import { mulberry32, noise1D, poissonInterval } from "../math/prng";
 import type { CoreStateId, RhythmName, UniformBus } from "../types";
@@ -54,6 +62,25 @@ export class RhythmEngine {
   private breathPhase = 0; // acumulador (rad) — velocidad angular variable
   private breathTime = 0;
   private coreSpinAngle = 0;
+  // [doc 35 PU5] Giro de los anillos de sincronía. Se guarda el ángulo
+  // ACUMULADO (no una fase de sin/cos) para que un cambio de velocidad al
+  // cambiar de estado no produzca un salto: la posición es continua y solo
+  // cambia la derivada. `curRingSpeed` persigue al objetivo del ritmo activo
+  // con el mismo crossfade que el resto, así que acelerar/frenar es suave.
+  private ringSpinAngle = 0;
+  private curRingSpeed = RHYTHM_RING_SPIN.repose;
+  // [PU5c] "Bloom" de los anillos: se recogen hacia el núcleo y se re-expanden
+  // hasta su sitio, repitiendo la animación de entrada. Poisson (no periódico
+  // exacto) para que no se vuelva previsible — mismo criterio que el latido.
+  private ringBloomEnv = 0;
+  private nextRingBloomIn: number;
+  // [PU5f] Envolventes de las animaciones por estado. Persiguen 1 mientras el
+  // ritmo correspondiente está activo y 0 en cuanto deja de estarlo, con taus
+  // distintos: la escucha entra y sale despacio (es un recogimiento), el habla
+  // reacciona rápido (o llegaría tarde a la primera sílaba).
+  private listenEnv = 0;
+  private speakEnv = 0;
+  private speakSpinAngle = 0;
   private pulseEnv = 0; // 0-1 envolvente del latido (decae)
   private nextPulseIn: number;
 
@@ -71,8 +98,9 @@ export class RhythmEngine {
     this.rand = mulberry32((opts.sessionSeed | 0) ^ 0x9e37);
     this.seedA = (opts.sessionSeed % 1000) * 0.001 * 7.0;
     this.seedB = ((opts.sessionSeed * 31) % 1000) * 0.001 * 11.0;
+    this.nextRingBloomIn = RING_BLOOM_INTERVAL_S * (0.6 + 0.8 * Math.random());
     this.nextPulseIn = poissonInterval(6.5, this.rand);
-    this.nextWaveIn = poissonInterval(RHYTHM_BREATH_PERIOD.repose, this.rand);
+    this.nextWaveIn = poissonInterval(RHYTHM_BREATH_PERIOD.repose / WAVE_BIRTH_DIVISOR, this.rand);
     weightsToArray(RHYTHM_WEIGHTS.repose, this.targetWeights);
     weightsToArray(RHYTHM_WEIGHTS.repose, this.curWeights);
     this.bus.uWeights.value.set(this.curWeights);
@@ -146,7 +174,9 @@ export class RhythmEngine {
     // de voz real (ya escrita en el bus por HubEngine antes de este update) se
     // suma a la escala global — el logo entero se hincha visiblemente al
     // hablar, sin deformarse (mismo mecanismo que la respiración ambiental).
-    const audioSwell = 0.16 * this.bus.uAudioEnv.value;
+    // [PU5f] Al hablar, el latido de la semilla se refuerza (sobre el swell que
+    // ya existía) para que "la voz mueve la presencia" se vea de verdad.
+    const audioSwell = (0.16 + SPEAK_SEED_PULSE * this.speakEnv) * this.bus.uAudioEnv.value;
     this.bus.uBreathScale.value = 1 + 0.05 * (raw + ripple) * jitter + audioSwell;
 
     // (2) GIRO del núcleo como un sol: velocidad variable (a veces lenta, a
@@ -156,11 +186,52 @@ export class RhythmEngine {
     this.coreSpinAngle += spinRate * dt;
     this.bus.uCoreSpin.value = this.coreSpinAngle;
 
+    // (2b) [doc 35 PU5] GIRO DE LOS ANILLOS de sincronía. La velocidad objetivo
+    // sale de RHYTHM_RING_SPIN[ritmo] — ÉSE es el punto de configuración por
+    // estado — y se persigue suavemente para que no haya tirones al cambiar de
+    // estado. El shader reparte este ángulo entre los 5 anillos (sentido
+    // alterno + más rápido hacia dentro).
+    const ringTarget = RHYTHM_RING_SPIN[this.rhythm];
+    this.curRingSpeed += (ringTarget - this.curRingSpeed) * Math.min(1, dt * 1.5);
+    this.ringSpinAngle += this.curRingSpeed * dt;
+    this.bus.uRingSpin.value = this.ringSpinAngle;
+
+    // (2c) [PU5c] BLOOM de los anillos, de vez en cuando. Al dispararse quedan
+    // recogidos (env=1) y el env decae: la re-expansión hasta su radio la hace
+    // el propio decaimiento, así que se ve como un florecer, no como un salto.
+    // Curva `pow(env, 1.6)`: sale rápido del centro y llega despacio a su sitio.
+    this.nextRingBloomIn -= dt;
+    if (this.nextRingBloomIn <= 0) {
+      this.ringBloomEnv = 1;
+      this.nextRingBloomIn = RING_BLOOM_INTERVAL_S * (0.6 + 0.8 * Math.random());
+    }
+    if (this.ringBloomEnv > 0) {
+      this.ringBloomEnv = Math.max(0, this.ringBloomEnv - dt / RING_BLOOM_RECOVER_S);
+    }
+    this.bus.uRingBloom.value = Math.pow(this.ringBloomEnv, 1.6);
+
+    // (2d) [PU5f] ANIMACIONES DE ESTADO — escucha y habla.
+    // Se derivan del RITMO activo, que es lo que ya traduce el coreState, así
+    // que no hay una segunda fuente de verdad que pueda desincronizarse.
+    const wantListen = this.rhythm === "listening" ? 1 : 0;
+    const wantSpeak = this.rhythm === "communication" ? 1 : 0;
+    this.listenEnv += (wantListen - this.listenEnv) * Math.min(1, dt / LISTEN_RING_TAU * 3);
+    this.speakEnv += (wantSpeak - this.speakEnv) * Math.min(1, dt / SPEAK_TAU * 3);
+    this.bus.uListenEnv.value = this.listenEnv;
+    this.bus.uSpeakEnv.value = this.speakEnv;
+
+    // El ángulo del giro de las líneas de la semilla SOLO avanza mientras habla
+    // (ponderado por la envolvente, así que arranca y se detiene suavemente).
+    // Al callar se queda donde esté en vez de volver de golpe a su sitio.
+    this.speakSpinAngle += SPEAK_PETAL_SPIN * this.speakEnv * dt;
+    this.bus.uSpeakSpin.value = this.speakSpinAngle;
+
     // (3) LATIDO (Poisson): un pulso que decae y se propaga (fPulse).
     this.nextPulseIn -= dt;
     if (this.nextPulseIn <= 0) {
       this.pulseEnv = 1;
-      this.nextPulseIn = poissonInterval(6.5, this.rand);
+      this.nextRingBloomIn = RING_BLOOM_INTERVAL_S * (0.6 + 0.8 * Math.random());
+    this.nextPulseIn = poissonInterval(6.5, this.rand);
     }
     this.pulseEnv = Math.max(0, this.pulseEnv - dt / 1.6); // decae en ~1.6s
     this.bus.uPulse.value = this.pulseEnv;
@@ -181,7 +252,7 @@ export class RhythmEngine {
     // nacimiento Poisson en torno al periodo respiratorio
     this.nextWaveIn -= dt;
     if (this.nextWaveIn <= 0) {
-      this.nextWaveIn = poissonInterval(RHYTHM_BREATH_PERIOD[this.rhythm], this.rand);
+      this.nextWaveIn = poissonInterval(RHYTHM_BREATH_PERIOD[this.rhythm] / WAVE_BIRTH_DIVISOR, this.rand);
       if (this.waves.length < this.maxWaves) {
         this.waves.push({ r: 0.05, vel: 0.85, age: 0, ampBase: 0.12, seed: this.rand() * 1000 });
       }

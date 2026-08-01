@@ -34,6 +34,8 @@ FORBIDDEN_MODULES = (
     ("app.memory.summarizer", MEMORY_DIR),
     ("app.memory.lifecycle", MEMORY_DIR),
     ("app.memory.profile", MEMORY_DIR),
+    # [PU10, doc 35] Router determinista del mini-chat de memoria.
+    ("app.memory.quick_memory", MEMORY_DIR),
     ("app.workspace.models", WORKSPACE_DIR),
     ("app.workspace.service", WORKSPACE_DIR),
     ("app.workspace.progress", WORKSPACE_DIR),

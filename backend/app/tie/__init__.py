@@ -51,6 +51,13 @@ from app.tie.pipeline import handle, handle_stream, submit_mission, resolve_plan
 # desde el catálogo real. `chat_service.py` lo consume vía esta API pública. ---
 from app.tie.capabilities_map import summary as capabilities_summary
 
+# --- Orquestador de proyecto (R4 + hotfix 2026-08-02) ---
+# `app.tie.authority` es INTERNO del TIE (lo vigila test_module_boundaries), así
+# que el chat del proyecto (capa API) llega a él por aquí. `ensure_orchestrator`
+# es lo que hace que "cada proyecto tiene su orquestador" deje de ser solo una
+# columna en la BD y pase a existir de verdad.
+from app.tie.authority import ensure_orchestrator, orchestrator_of
+
 
 def register_handlers() -> None:
     """Cablea el TIE con el ApprovalGate y el bus de eventos: gates de NODO
@@ -72,6 +79,19 @@ fast_precheck = intents.fast_precheck
 # Orquestador la consulta ANTES de clasificar.
 from app.tie import quick_answers as _quick_answers  # noqa: E402
 quick_answer = _quick_answers.try_answer
+# [PU4, doc 35] Hermano async: el Orquestador lo consulta ANTES de emitir
+# "analizando" y de clasificar — mismo criterio que `quick_answer`, pero
+# la respuesta puede requerir I/O async (leer la locución cacheada del MOS).
+quick_answer_async = _quick_answers.try_answer_async
+# [PU10, doc 35] Mini-chat de memoria ("guarda esto en la memoria...", "busca
+# en la memoria...", "olvida esto de la memoria..."): vive en `app.memory`
+# (dominio de memoria, no del TIE) — se re-expone aquí para que el
+# Orquestador (que solo conoce la API pública de `app.tie`, nunca importa
+# `app.memory` directo) lo consulte con el mismo criterio que el briefing.
+# Con ancla obligatoria: "guárdame un resumen" (NEW-7b, un archivo) no debe
+# confundirse con esto.
+from app.memory import quick_memory as _quick_memory  # noqa: E402
+quick_memory_answer_async = _quick_memory.try_answer_async
 
 __all__ = [
     # contratos
@@ -96,6 +116,8 @@ __all__ = [
     "classify",
     "fast_precheck",
     "quick_answer",
+    "quick_answer_async",
+    "quick_memory_answer_async",
     "new_mission",
     "tracer",
     # motor de ejecución del grafo (T3): run/cancel/resume_pending/register_gate_handlers
@@ -110,4 +132,7 @@ __all__ = [
     "register_handlers",
     # mapa de capacidades (R6)
     "capabilities_summary",
+    # orquestador de proyecto (R4 + hotfix 2026-08-02)
+    "ensure_orchestrator",
+    "orchestrator_of",
 ]

@@ -11,6 +11,11 @@ declare global {
       /** [2026-07-25] Selecciona uno o varios ARCHIVOS (rutas absolutas) para
        *  adjuntarlos a un proyecto. `[]` si el usuario cancela. */
       pickFiles: () => Promise<string[]>;
+      /** [PU6a-bis v2, doc 35 §PU6] Pide al proceso principal salir de
+       *  pantalla completa. La UI procesa Esc con su orden de prioridad
+       *  (diálogo → chat → presencia → página) y llama esto solo cuando no le
+       *  queda nada que cerrar. Opcional: un preload viejo no la expone. */
+      exitFullscreen?: () => void;
     };
   }
 }

@@ -58,6 +58,15 @@ _ES: dict[str, str] = {
         "¿Quieres que use {provider} ({model}) solo para esta petición, o a partir "
         "de ahora para todo? Dímelo y sigo."
     ),
+    # [PU3, doc 35] Bajo perfil Autónomo esto ya NO se pregunta (Autónomo =
+    # nunca preguntar nada, decisión del usuario) — se asume "solo esta
+    # petición" (el alcance más limitado, más fácil de deshacer) y se avisa
+    # de qué se asumió, nunca en silencio.
+    "pipeline.model_scope_auto_task": (
+        "Uso {provider} ({model}) para esta petición (no dijiste si querías dejarlo "
+        "fijo, y con Autónomo activo no te lo pregunto — si quieres fijarlo para "
+        "todo el proyecto, dímelo explícitamente)."
+    ),
     "pipeline.internal_error_retry": "He tenido un problema interno procesando eso. Inténtalo otra vez.",
     "pipeline.generic_done": "Hecho.",
     "pipeline.generic_could_not": "No pude completarlo.",
@@ -115,6 +124,26 @@ _ES: dict[str, str] = {
     ),
     "quick.enabled": "activa",
     "quick.disabled": "inactiva",
+    # [PU10, doc 35] mini-chat de memoria (guarda/busca/olvida, 0 LLM)
+    "quick.memory.hint": (
+        "No he reconocido eso como un comando de memoria. Prueba con "
+        "«guarda que…», «¿qué sabes de…?» u «olvida lo de…»."
+    ),
+    "quick.memory.unavailable": "La memoria no está disponible ahora mismo.",
+    "quick.memory.save_empty": "Dime qué quieres que guarde.",
+    "quick.memory.save_failed": "No he podido guardarlo.",
+    "quick.memory.saved": "Guardado: «{content}». Lo tendré en cuenta a partir de ahora.",
+    "quick.memory.search_empty": "Dime qué quieres que busque.",
+    "quick.memory.search_empty_result": "No tengo nada guardado sobre «{query}».",
+    "quick.memory.search_prefs_header": "Preferencias guardadas:",
+    "quick.memory.search_facts_header": "Otros datos que recuerdo:",
+    "quick.memory.forget_empty": "Dime qué quieres que olvide.",
+    "quick.memory.forget_none": "No he encontrado nada guardado sobre «{query}».",
+    "quick.memory.forget_ambiguous": (
+        "Hay {n} cosas guardadas que coinciden — dime cuál con más detalle:"
+    ),
+    "quick.memory.forget_failed": "No he podido olvidarlo.",
+    "quick.memory.forgotten": "Olvidado: «{content}».",
     "pipeline.ack_mission": "Entendido, me pongo con ello: {goal}. Te cuento en cuanto lo tenga.",
     # [A·VOZ-4] Misiones en segundo plano (modo conversación): acuse + reporte async
     "conversation.acuse": "Vale, me pongo a ello. Te aviso cuando esté; sigue hablando si quieres.",
@@ -156,6 +185,11 @@ _EN: dict[str, str] = {
     "pipeline.model_scope_unspecified": (
         "Do you want me to use {provider} ({model}) just for this request, or "
         "from now on for everything? Let me know and I'll continue."
+    ),
+    "pipeline.model_scope_auto_task": (
+        "Using {provider} ({model}) for this request (you didn't say whether you "
+        "wanted it pinned, and with Autonomous mode on I won't ask — if you want it "
+        "pinned for the whole project, just say so explicitly)."
     ),
     "pipeline.internal_error_retry": "I ran into an internal problem processing that. Try again.",
     "pipeline.generic_done": "Done.",
@@ -205,6 +239,26 @@ _EN: dict[str, str] = {
     ),
     "quick.enabled": "enabled",
     "quick.disabled": "disabled",
+    # [PU10, doc 35] memory mini-chat (save/search/forget, 0 LLM)
+    "quick.memory.hint": (
+        "I didn't recognize that as a memory command. Try \"save that…\", "
+        "\"what do you know about…?\" or \"forget that…\"."
+    ),
+    "quick.memory.unavailable": "Memory isn't available right now.",
+    "quick.memory.save_empty": "Tell me what you want me to save.",
+    "quick.memory.save_failed": "I couldn't save that.",
+    "quick.memory.saved": "Saved: \"{content}\". I'll keep that in mind from now on.",
+    "quick.memory.search_empty": "Tell me what you want me to look for.",
+    "quick.memory.search_empty_result": "I don't have anything saved about \"{query}\".",
+    "quick.memory.search_prefs_header": "Saved preferences:",
+    "quick.memory.search_facts_header": "Other things I remember:",
+    "quick.memory.forget_empty": "Tell me what you want me to forget.",
+    "quick.memory.forget_none": "I couldn't find anything saved about \"{query}\".",
+    "quick.memory.forget_ambiguous": (
+        "There are {n} saved things that match — tell me which one more precisely:"
+    ),
+    "quick.memory.forget_failed": "I couldn't forget that.",
+    "quick.memory.forgotten": "Forgotten: \"{content}\".",
     "pipeline.ack_mission": "Got it, I'm on it: {goal}. I'll tell you as soon as it's done.",
     # [A·VOZ-4] Background missions (conversation mode): ack + async report
     "conversation.acuse": "Alright, I'm on it. I'll let you know when it's done; keep talking if you like.",
@@ -246,6 +300,11 @@ _FR: dict[str, str] = {
     "pipeline.model_scope_unspecified": (
         "Voulez-vous que j'utilise {provider} ({model}) seulement pour cette demande, "
         "ou à partir de maintenant pour tout ? Dites-le-moi et je continue."
+    ),
+    "pipeline.model_scope_auto_task": (
+        "J'utilise {provider} ({model}) pour cette demande (vous n'avez pas précisé si "
+        "vous vouliez le fixer, et avec le mode Autonome activé je ne pose pas la "
+        "question — si vous voulez le fixer pour tout le projet, dites-le explicitement)."
     ),
     "pipeline.internal_error_retry": "J'ai eu un problème interne en traitant cela. Réessayez.",
     "pipeline.generic_done": "Fait.",
@@ -297,6 +356,26 @@ _FR: dict[str, str] = {
     ),
     "quick.enabled": "active",
     "quick.disabled": "inactive",
+    # [PU10, doc 35] mini-chat de mémoire (sauvegarder/chercher/oublier, 0 LLM)
+    "quick.memory.hint": (
+        "Je n'ai pas reconnu ça comme une commande de mémoire. Essaie « garde "
+        "que… », « que sais-tu de… ? » ou « oublie que… »."
+    ),
+    "quick.memory.unavailable": "La mémoire n'est pas disponible pour le moment.",
+    "quick.memory.save_empty": "Dis-moi ce que tu veux que je garde.",
+    "quick.memory.save_failed": "Je n'ai pas pu le garder.",
+    "quick.memory.saved": "Gardé : « {content} ». J'en tiendrai compte désormais.",
+    "quick.memory.search_empty": "Dis-moi ce que tu veux que je cherche.",
+    "quick.memory.search_empty_result": "Je n'ai rien de gardé sur « {query} ».",
+    "quick.memory.search_prefs_header": "Préférences enregistrées :",
+    "quick.memory.search_facts_header": "Autres choses dont je me souviens :",
+    "quick.memory.forget_empty": "Dis-moi ce que tu veux que j'oublie.",
+    "quick.memory.forget_none": "Je n'ai rien trouvé de gardé sur « {query} ».",
+    "quick.memory.forget_ambiguous": (
+        "Il y a {n} choses gardées qui correspondent — précise laquelle :"
+    ),
+    "quick.memory.forget_failed": "Je n'ai pas pu l'oublier.",
+    "quick.memory.forgotten": "Oublié : « {content} ».",
     "pipeline.ack_mission": "Compris, je m'en occupe : {goal}. Je te tiens au courant dès que c'est prêt.",
     # [A·VOZ-4] Missions en arrière-plan (mode conversation) : accusé + rapport async
     "conversation.acuse": "D'accord, je m'en occupe. Je te préviens quand c'est fait ; continue à parler si tu veux.",
@@ -338,6 +417,11 @@ _PT: dict[str, str] = {
     "pipeline.model_scope_unspecified": (
         "Quer que use {provider} ({model}) só para este pedido, ou a partir de "
         "agora para tudo? Diga-me e continuo."
+    ),
+    "pipeline.model_scope_auto_task": (
+        "A usar {provider} ({model}) para este pedido (não disse se queria fixá-lo, "
+        "e com o modo Autónomo ativo não pergunto — se quiser fixá-lo para todo o "
+        "projeto, diga-o explicitamente)."
     ),
     "pipeline.internal_error_retry": "Tive um problema interno ao processar isso. Tente novamente.",
     "pipeline.generic_done": "Feito.",
@@ -388,6 +472,26 @@ _PT: dict[str, str] = {
     ),
     "quick.enabled": "ativa",
     "quick.disabled": "inativa",
+    # [PU10, doc 35] mini-chat de memória (guardar/procurar/esquecer, 0 LLM)
+    "quick.memory.hint": (
+        "Não reconheci isso como um comando de memória. Tenta «guarda que…», "
+        "«que sabes sobre…?» ou «esquece que…»."
+    ),
+    "quick.memory.unavailable": "A memória não está disponível neste momento.",
+    "quick.memory.save_empty": "Diz-me o que queres que eu guarde.",
+    "quick.memory.save_failed": "Não consegui guardar isso.",
+    "quick.memory.saved": "Guardado: «{content}». Vou ter isso em conta a partir de agora.",
+    "quick.memory.search_empty": "Diz-me o que queres que eu procure.",
+    "quick.memory.search_empty_result": "Não tenho nada guardado sobre «{query}».",
+    "quick.memory.search_prefs_header": "Preferências guardadas:",
+    "quick.memory.search_facts_header": "Outras coisas que me lembro:",
+    "quick.memory.forget_empty": "Diz-me o que queres que eu esqueça.",
+    "quick.memory.forget_none": "Não encontrei nada guardado sobre «{query}».",
+    "quick.memory.forget_ambiguous": (
+        "Há {n} coisas guardadas que correspondem — diz-me qual com mais detalhe:"
+    ),
+    "quick.memory.forget_failed": "Não consegui esquecer isso.",
+    "quick.memory.forgotten": "Esquecido: «{content}».",
     "pipeline.ack_mission": "Entendido, vou tratar disso: {goal}. Digo-te assim que estiver pronto.",
     # conversation.* (A·VOZ-4) — faltaban en PT (hallado 2026-07-24 al validar paridad)
     "conversation.acuse": "Está bem, vou tratar disso. Aviso-te quando estiver; continua a falar se quiseres.",

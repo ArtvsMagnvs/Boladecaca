@@ -6,7 +6,10 @@
 #      los proyectos REALES, 0 LLM — imposible alucinar.
 #   2. Frases de ACCIÓN ("crea un proyecto...") NO disparan el listado.
 #   3. El flujo REAL del chat (orquestador → texto) responde sin clasificador.
-#   4. Una misión emite el ACUSE inmediato ("Entendido, me pongo con ello")
+#   4. "Dame el briefing"/"¿qué tengo hoy?" [PU4, doc 35] responde con la
+#      locución del día, 0 LLM en la clasificación — hermano ASYNC de (1)
+#      porque la respuesta puede leer una cache del MOS.
+#   5. Una misión emite el ACUSE inmediato ("Entendido, me pongo con ello")
 #      antes de ejecutar — el chat nunca se queda mudo.
 import pytest
 
@@ -116,7 +119,80 @@ async def test_orquestador_responde_proyectos_sin_llm(monkeypatch):
 
 
 # ---------------------------------------------------------------------------
-# 4) acuse inmediato al arrancar una misión (el chat nunca mudo)
+# 4) [PU4, doc 35] "Dame el briefing" / "¿qué tengo hoy?" — hermano async
+# ---------------------------------------------------------------------------
+@pytest.mark.parametrize("msg", [
+    "dame el briefing",
+    "el briefing de hoy",
+    "¿qué tengo hoy?",
+    "que tengo para hoy",
+    "ponme al día",
+    "resumen del día",
+    "what do I have today",
+    "catch me up",
+])
+@pytest.mark.anyio
+async def test_briefing_request_dispara_respuesta_async(monkeypatch, msg):
+    # Se aísla de la BD/ChromaDB reales: esto blinda el ROUTING determinista
+    # (¿el mensaje dispara el camino del briefing?), no el cálculo de datos —
+    # eso ya lo cubre test_memory_briefing.py con su propia fixture de chroma.
+    from app.memory import summarizer
+    import app.memory.briefing as briefing_mod
+
+    fake_data = {
+        "date": "2026-07-31", "triage_counts": {}, "triaged_total": 0,
+        "urgent_pending": {"count": 0, "items": []}, "agenda": [],
+        "conversations_count": 0, "workspace": {},
+    }
+    monkeypatch.setattr(summarizer, "gather_day_data", lambda _d: fake_data)
+
+    async def _no_summary(_d):
+        return None
+    monkeypatch.setattr(summarizer, "get_cached_summary", _no_summary)
+
+    async def _fake_spoken(_target, _data, _summary):
+        return "Buenos días. Locución de prueba.", "live_deterministic"
+    monkeypatch.setattr(briefing_mod, "spoken_text_for", _fake_spoken)
+
+    r = await quick_answers.try_answer_async(msg)
+    assert r == "Buenos días. Locución de prueba."
+
+
+@pytest.mark.parametrize("msg", [
+    "crea un proyecto llamado Briefing",  # verbo de acción presente
+    "cuéntame qué tal el clima",
+    "abre el proyecto OT Saas",
+])
+@pytest.mark.anyio
+async def test_briefing_request_no_dispara_con_accion_o_tema_ajeno(msg):
+    assert await quick_answers.try_answer_async(msg) is None
+
+
+@pytest.mark.anyio
+async def test_orquestador_responde_briefing_sin_llm(monkeypatch):
+    """Mismo contrato que el listado de proyectos: sin clasificador, sin
+    misión — respuesta instantánea."""
+    import app.orchestrator as orch
+    import app.tie as tie
+    import app.memory.briefing as briefing_mod
+
+    async def _boom(text, channel=None):
+        raise AssertionError("el briefing NO debe llamar al clasificador LLM")
+    monkeypatch.setattr(tie, "classify", _boom)
+
+    async def _fake_spoken(_target, _data, _summary):
+        return "Tu briefing de prueba.", "live_deterministic"
+    monkeypatch.setattr(briefing_mod, "spoken_text_for", _fake_spoken)
+
+    evs = [ev async for ev in orch.handle_stream("dame el briefing")]
+    texto = "".join(p for k, p in evs if k == "text")
+    assert "Tu briefing de prueba." in texto
+    assert not any(k == "status" for k, _ in evs)
+    assert not any(k == "mission" for k, _ in evs)
+
+
+# ---------------------------------------------------------------------------
+# 5) acuse inmediato al arrancar una misión (el chat nunca mudo)
 # ---------------------------------------------------------------------------
 @pytest.mark.anyio
 async def test_mision_emite_acuse_inmediato(monkeypatch):

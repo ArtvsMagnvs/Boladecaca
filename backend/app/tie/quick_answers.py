@@ -139,6 +139,67 @@ def _rules_answer() -> str:
         db.close()
 
 
+# ---------------------------------------------------------------------------
+# [PU4, doc 35] "Dame el briefing" / "¿qué tengo hoy?" — misma filosofía que
+# el resto de este módulo (determinista, sin LLM en la clasificación), pero
+# la RESPUESTA en sí (`spoken_text`) sí puede venir de una cache escrita por
+# el job nocturno vía MEL — por eso esta función es async y vive aparte de
+# `try_answer` (que el resto del módulo mantiene 100% síncrono/SQL). El coste
+# real de este camino es una lectura de cache (memory_router.retrieve), NUNCA
+# una llamada a un LLM en caliente — ver `app.memory.briefing.spoken_text_for`.
+# ---------------------------------------------------------------------------
+_BRIEFING_NOUNS = ("briefing",)
+_BRIEFING_PHRASES = (
+    # español
+    "que tengo hoy", "que tengo para hoy", "como va mi dia", "como esta mi dia",
+    "ponme al dia", "resumen de hoy", "resumen del dia",
+    # english
+    "what do i have today", "how's my day", "hows my day", "catch me up",
+    "today's summary", "todays summary",
+    # français / português (cobertura conservadora: al menos "briefing" cuela
+    # en los 4 idiomas como préstamo, y se añaden las frases más comunes)
+    "qu'est-ce que j'ai aujourd'hui", "resume du jour", "resumo do dia",
+    "o que eu tenho hoje",
+)
+
+
+def _is_briefing_request(norm: str) -> bool:
+    words = norm.replace("?", " ").replace("¿", " ").split()
+    if not words or len(words) > _MAX_WORDS:
+        return False
+    if any(w in _ACTION_WORDS for w in words):
+        return False
+    if any(n in norm for n in _BRIEFING_NOUNS):
+        return True
+    return any(p in norm for p in _BRIEFING_PHRASES)
+
+
+async def try_answer_async(text: str) -> Optional[str]:
+    """Hermano async de `try_answer`: mismo criterio conservador (solo
+    dispara ante una petición clara del briefing de hoy), pero la respuesta
+    puede requerir I/O async (leer la locución cacheada del MOS). None si no
+    aplica → sigue el pipeline normal. Nunca lanza."""
+    try:
+        norm = _norm(text)
+        if not _is_briefing_request(norm):
+            return None
+        from datetime import datetime
+
+        from app.memory import briefing as briefing_mod
+        from app.memory import summarizer
+
+        target = datetime.utcnow().date()
+        import asyncio as _asyncio
+
+        data = await _asyncio.to_thread(summarizer.gather_day_data, target)
+        cached_summary = await summarizer.get_cached_summary(target)
+        summary = cached_summary or summarizer.build_deterministic_summary(data)
+        spoken, _source = await briefing_mod.spoken_text_for(target, data, summary)
+        return spoken
+    except Exception:
+        return None
+
+
 def _tasks_answer() -> str:
     from app.db.database import Project, SessionLocal, Task
 

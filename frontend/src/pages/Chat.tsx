@@ -1,9 +1,12 @@
 import { useState, useRef, useEffect, useCallback, memo } from "react";
-import { Link } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { api, type Approval } from "@/lib/api";
 import { useAppStore } from "@/store/useAppStore";
 import { useChatStore } from "@/store/useChatStore";
+import { useBriefingShow } from "@/store/useBriefingShow";
 import MicButton from "@/components/voice/MicButton";
+import { UserQuestionCard } from "@/components/UserQuestionCard";
+import { usePendingQuestions } from "@/hooks/usePendingQuestions";
 import { attachVoiceAudio } from "@/avcs";
 import { MiniMarkdown } from "@/lib/miniMarkdown";
 import { usePolling } from "@/hooks/usePolling";
@@ -65,6 +68,10 @@ export default function Chat() {
   const tieStatus = activeSession.tieStatus;
   const sending = activeSession.sending;
   const t = useT();
+  // [2026-08-02] Preguntas del asistente pendientes de respuesta (todas, no
+  // solo las de una misión concreta: el Chat principal es el sitio por
+  // defecto donde el usuario está mirando).
+  const { questions: pendingQuestions, refresh: refreshQuestions } = usePendingQuestions();
   // [I18N-6] El STT (MicButton) debe reconocer en el idioma de interfaz
   // seleccionado, no forzar siempre "es" — antes era un valor fijo.
   const uiLang = useI18n((s) => s.lang);
@@ -73,7 +80,14 @@ export default function Chat() {
   const uiLangRef = useRef(uiLang);
   useEffect(() => { uiLangRef.current = uiLang; }, [uiLang]);
   const [input, setInput] = useState("");
+  // [PU6a, doc 35] El textarea se autoenfoca al montar — es lo que hace que
+  // "Enter abre el chat" (Hub.tsx) se sienta como escribir directamente, sin
+  // un clic extra en el input.
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  useEffect(() => { textareaRef.current?.focus(); }, []);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const location = useLocation();
+  const navigate = useNavigate();
   // Un AbortController por sesión: parar una pestaña no corta la de al lado.
   const abortRefs = useRef<Record<string, AbortController>>({});
   // V0.8.1 (Paso 2): selector granular para no re-renderizar el componente
@@ -134,6 +148,11 @@ export default function Chat() {
 
   // [O1, A·VOZ-1] Síntesis con fallback a EdgeTTS (gratis, sin key, siempre
   // disponible — reemplaza al antiguo fallback eSpeak), devuelve el data-URL.
+  // [Fix 2026-08-01] Si el proveedor elegido falla 2 veces seguidas (p. ej.
+  // ElevenLabs sin red: cada frase pagaba un 502 antes del fallback), se
+  // cambia a EdgeTTS para el RESTO de la sesión — sin tocar la preferencia
+  // guardada del usuario, que vuelve a intentarse al reabrir la app.
+  const providerFailsRef = useRef(0);
   const synthChunk = useCallback(async (chunk: string): Promise<string | null> => {
     const voiceId = selectedVoiceRef.current;
     const provRaw = providerRef.current;
@@ -141,8 +160,14 @@ export default function Chat() {
     const provider =
       provRaw === "elevenlabs" ? undefined : (provRaw as "edgetts" | "kokoro");
     try {
-      return (await api.synthesizeVoiceBase64(chunk, voiceId, provider)).audio;
+      const audio = (await api.synthesizeVoiceBase64(chunk, voiceId, provider)).audio;
+      providerFailsRef.current = 0;
+      return audio;
     } catch (e) {
+      if (provRaw !== "edgetts" && ++providerFailsRef.current >= 2) {
+        console.info(`[voz] ${provRaw} falló ${providerFailsRef.current} veces seguidas — uso EdgeTTS el resto de la sesión`);
+        providerRef.current = "edgetts";
+      }
       try {
         return (await api.synthesizeVoiceBase64(chunk, voiceId, "edgetts")).audio;
       } catch (e2) {
@@ -270,6 +295,124 @@ export default function Chat() {
 
   /** ¿Está Aithera hablando ahora mismo? */
   const isSpeaking = () => speakTokenRef.current !== null && !speakTokenRef.current.cancelled;
+
+  // ── [PU4/PU4b, doc 35] Briefing 2.0 con voz + SHOW visual ───────────────
+  // A diferencia de `handleTranscript`/`sendMessage` (que pasan por el LLM),
+  // el briefing NO necesita clasificador ni planificación: todo viene
+  // calculado del GET (cacheado por el job de preparación, o determinista al
+  // vuelo). [PU4b] Con `spoken_segments`, la locución va POR PASOS y cada
+  // paso fija la escena/foco en `useBriefingShow` — así la tarjeta del
+  // proyecto se abre EXACTAMENTE cuando se habla de él, y la pantalla de
+  // noticias enmarca el titular que está sonando.
+  const runBriefing = useCallback(async () => {
+    if (useAppStore.getState().briefingBusy) return; // ya hay uno en curso
+    useAppStore.getState().setBriefingBusy(true);
+    const sid = useChatStore.getState().activeSessionId;
+    const show = useBriefingShow.getState();
+    try {
+      const data = await api.getMemoryBriefing();
+      const segments = data.spoken_segments?.length ? data.spoken_segments : null;
+      const fullText =
+        (segments
+          ? segments.flatMap((seg) => seg.steps.map((st) => st.text)).join(" ")
+          : data.spoken_text?.trim()) ||
+        data.summary?.trim() ||
+        t("chat.briefing.empty");
+      // La transcripción completa queda en el chat (continuidad/registro).
+      useChatStore.getState().appendMessage(sid, { role: "assistant", content: fullText });
+
+      if (!segments) {
+        await speak(fullText);
+        return;
+      }
+
+      // Un paso = una locución corta + su visual. Con el TTS silenciado (o si
+      // la síntesis falla), un tiempo de lectura mantiene el ritmo del show en
+      // vez de pasarlo todo en un parpadeo.
+      const speakStep = async (text: string) => {
+        const dwellMs = Math.min(1200 + text.length * 42, 9000);
+        if (ttsEnabledRef.current) {
+          const floor = new Promise<void>((r) => setTimeout(r, 900));
+          await Promise.all([speak(text), floor]);
+        } else {
+          await new Promise<void>((r) => setTimeout(r, dwellMs));
+        }
+      };
+
+      show.start(stopSpeaking); // el ✕/Esc del show corta también la voz
+      for (const seg of segments) {
+        if (useBriefingShow.getState().stopRequested) break;
+        useBriefingShow.getState().setScene(seg);
+        for (const step of seg.steps) {
+          if (useBriefingShow.getState().stopRequested) break;
+          useBriefingShow.getState().setFocus(step.focus ?? null);
+          await speakStep(step.text);
+        }
+      }
+    } catch {
+      useChatStore.getState().appendMessage(sid, { role: "assistant", content: t("chat.briefing.error") });
+    } finally {
+      useBriefingShow.getState().end();
+      useAppStore.getState().setBriefingBusy(false);
+    }
+  }, [speak, stopSpeaking, t]);
+
+  // Botón del dock (PresenceToggle de al lado): incrementa `briefingRequestId`
+  // en el store — se observa el CAMBIO (no el valor: empieza en 0 y no debe
+  // disparar nada al montar el chat) con un ref, mismo patrón que el resto de
+  // banderas cross-componente de este archivo (conversationRequested, etc.).
+  const briefingRequestId = useAppStore((s) => s.briefingRequestId);
+  const lastBriefingRequestIdRef = useRef(briefingRequestId);
+  useEffect(() => {
+    if (briefingRequestId !== lastBriefingRequestIdRef.current) {
+      lastBriefingRequestIdRef.current = briefingRequestId;
+      void runBriefing();
+    }
+  }, [briefingRequestId, runBriefing]);
+
+  // [PU4b] Disparo automático por HORARIOS CONFIGURABLES (Ajustes → Briefing,
+  // puede haber varios al día: 08:00, 14:00, 21:00…). La config se refresca
+  // cada 5 min; el chequeo corre cada minuto vía `usePolling` (que además se
+  // ejecuta al montar y al volver la pestaña a primer plano — si la app abre
+  // a las 8:10 con un horario de las 8:00, suena en el primer tick visible).
+  // VENTANA DE GRACIA de 45 min: pasado ese margen el briefing de ese horario
+  // se da por perdido — abrir la app a las 13:45 no debe locutar el de las
+  // 8:00 con datos rancios (con varios horarios al día, el catch-up sin
+  // límite era incorrecto; corrige el comportamiento de la primera versión).
+  // Idempotencia por horario+día en localStorage (`briefing.lastAuto.<HH:MM>`).
+  const AUTO_GRACE_MIN = 45;
+  const schedulesRef = useRef<string[]>(["08:00"]);
+  usePolling(() => {
+    api
+      .getBriefingConfig()
+      .then((cfg) => {
+        if (Array.isArray(cfg.schedules) && cfg.schedules.length) {
+          schedulesRef.current = cfg.schedules;
+        }
+      })
+      .catch(() => { /* sin backend: se mantiene la última conocida */ });
+  }, 300000);
+  usePolling(() => {
+    const now = new Date();
+    const todayKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+    const nowMin = now.getHours() * 60 + now.getMinutes();
+    for (const slot of schedulesRef.current) {
+      const [h, m] = slot.split(":").map(Number);
+      if (Number.isNaN(h) || Number.isNaN(m)) continue;
+      const slotMin = h * 60 + m;
+      if (nowMin < slotMin || nowMin >= slotMin + AUTO_GRACE_MIN) continue;
+      const key = `briefing.lastAuto.${slot}`;
+      try {
+        if (window.localStorage.getItem(key) === todayKey) continue;
+        window.localStorage.setItem(key, todayKey);
+      } catch {
+        /* sin localStorage: mejor no disparar en bucle */
+        continue;
+      }
+      void runBriefing();
+      break; // como mucho un briefing por tick
+    }
+  }, 60000);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -679,12 +822,32 @@ ${t("chat.stoppedByYou")}` : t("chat.stoppedByYou"),
     return () => { conversationRef.current = false; };
   }, []);
 
+  // [PU6a, doc 35] Atajo desde el Hub: la pill de "Conversación" navega aquí
+  // con esta bandera para arrancar el Modo Conversación de un solo gesto en
+  // vez de dos (entrar al chat + pulsar el botón). Se consume UNA vez al
+  // montar y se limpia del historial (`replace`) para que un "atrás" del
+  // navegador no la reactive sola.
+  useEffect(() => {
+    if ((location.state as { autoConversation?: boolean } | null)?.autoConversation && !conversationRef.current) {
+      toggleConversation();
+      navigate(".", { replace: true, state: {} });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // AVCS S3 (Chat limpio, doc 13 §13.5): la presencia domina el centro — el
   // AVCS ya vive detrás vía AppLayout (full-bleed), así que esta página deja
   // esa zona vacía a propósito. Solo el panel flotante lateral lleva UI.
   return (
     <div className="h-full relative">
-      <aside className="avcs-panel-breathe glass-surface absolute top-4 right-4 bottom-4 w-[min(380px,calc(100%-2rem))] rounded-2xl flex flex-col overflow-hidden">
+      {/* [Fix 2026-08-01] Dos regresiones del chat "bloqueado": (1) el calc()
+          SIN espacios es CSS inválido (Tailwind exige la sintaxis con `_`) —
+          el width caía a auto y el panel se descolocaba (re-aplicado: el
+          hotfix original se pisó al entregar PU4 desde una copia anterior);
+          (2) el wrapper de AppLayout es pointer-events-none (los clics deben
+          atravesar hacia el Hub) y `pointer-events` SE HEREDA: sin re-activarlo
+          aquí, el panel entero era clic-through y no se podía ni escribir. */}
+      <aside className="avcs-panel-breathe glass-surface absolute top-4 right-4 bottom-4 w-[min(380px,calc(100%_-_2rem))] rounded-2xl flex flex-col overflow-hidden pointer-events-auto">
         <div className="shrink-0 flex items-center justify-between px-4 py-3 border-b border-white/5">
           <h1 className="text-sm font-semibold text-ink">{t("chat.title")}</h1>
           <span
@@ -756,6 +919,19 @@ ${t("chat.stoppedByYou")}` : t("chat.stoppedByYou"),
               encontrabas y aprobabas, el bucle ya se había rendido (espera 120s
               y sigue sin esa acción), así que aprobar "no hacía nada". */}
           <PendingApprovals />
+          {/* [2026-08-02] PREGUNTAS al usuario — mismo criterio que los
+              permisos de arriba y por el mismo motivo: si Aithera necesita un
+              dato para seguir, tiene que poder pedírtelo DONDE estás mirando.
+              Antes no existía este canal: la pregunta acababa escrita en el
+              resumen final de la misión, donde ya no se puede contestar y el
+              trabajo se queda sin hacer. */}
+          {pendingQuestions.length > 0 && (
+            <div className="flex flex-col gap-2 my-2">
+              {pendingQuestions.map((q) => (
+                <UserQuestionCard key={q.gate_id} question={q} onAnswered={refreshQuestions} />
+              ))}
+            </div>
+          )}
           <div ref={messagesEndRef} />
         </div>
 
@@ -771,6 +947,7 @@ ${t("chat.stoppedByYou")}` : t("chat.stoppedByYou"),
               pareciera congelada). */}
           <div className="flex gap-2 items-end">
             <textarea
+              ref={textareaRef}
               value={input}
               rows={1}
               onChange={(e) => {

@@ -102,8 +102,99 @@ body {
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
   border: 1px solid rgb(var(--glass-border) / var(--glass-border-alpha));
-  /* En claro: sombra suave (diferencia tarjeta/fondo); en oscuro: none. */
-  box-shadow: var(--panel-shadow);
+  /* En claro: sombra suave (diferencia tarjeta/fondo); en oscuro: none.
+     [PU6b-vent t4] + firma HUD sutil en TODAS las superficies: una línea de
+     luz interior en el borde superior (como si el cristal recogiera la luz
+     del AVCS) y un aliento cian muy leve en el inferior. Solo sombras — cero
+     pseudo-elementos, cero riesgo de layout en los ~16 sitios que usan esta
+     clase. El tratamiento completo (esquinas + cometa) es `.holo-frame`. */
+  box-shadow:
+    var(--panel-shadow),
+    inset 0 1px 0 rgb(var(--c-accent-glow) / 0.10),
+    inset 0 -10px 24px -18px rgb(var(--c-accent) / 0.35);
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   [PU6b-vent t4] `.holo-frame` — el MARCO HUD de Aithera (lámina de
+   referencia del usuario: marco fino azul con esquinas remarcadas, degradado
+   que deriva a violeta, y un punto de luz que recorre el contorno).
+
+   Se aplica SOLO a contenedores primarios (panel del chat, ventana de
+   Ajustes, lienzo del Workspace, estantería, tarjetas-ventana): en cada
+   chip o botoncito sería ruido, no personalidad.
+
+   Capas (los 2 pseudo-elementos, sin tocar el flujo):
+   · ::after — el BORDE: degradado diagonal cian→azul→violeta enmascarado al
+     grosor (1.2px) + un COMETA de luz (conic-gradient) que recorre el
+     perímetro girando `--holo-a` (registrada con @property para poder
+     animarla — rotar el elemento entero solo vale para círculos).
+   · ::before — las ESQUINAS: 8 trazos (2 por esquina) dibujados como capas
+     de background, con un drop-shadow que las hace brillar.
+   ───────────────────────────────────────────────────────────────────────── */
+@property --holo-a {
+  syntax: "<angle>";
+  initial-value: 0deg;
+  inherits: false;
+}
+.holo-frame {
+  position: relative;
+}
+.holo-frame::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1.2px;
+  background:
+    /* cometa: cola larga y tenue, cabeza brillante */
+    conic-gradient(
+      from var(--holo-a),
+      transparent 0%,
+      transparent 72%,
+      rgb(var(--c-accent) / 0.0) 72%,
+      rgb(var(--c-accent) / 0.55) 90%,
+      rgb(var(--c-accent-glow) / 0.95) 100%
+    ),
+    /* borde permanente: cian arriba-izquierda → azul → violeta abajo-derecha */
+    linear-gradient(
+      135deg,
+      rgb(var(--c-accent-glow) / 0.45) 0%,
+      rgb(var(--c-accent) / 0.22) 35%,
+      rgb(var(--c-accent) / 0.16) 65%,
+      rgb(167 139 250 / 0.38) 100%
+    );
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  animation: holo-orbit 16s linear infinite;
+  pointer-events: none;
+  z-index: 40;
+}
+@keyframes holo-orbit {
+  to { --holo-a: 360deg; }
+}
+.holo-frame::before {
+  content: "";
+  position: absolute;
+  inset: 5px;
+  border-radius: inherit;
+  pointer-events: none;
+  z-index: 40;
+  /* 8 trazos: horizontal + vertical por esquina (14×1.5 y 1.5×14). */
+  background:
+    linear-gradient(rgb(var(--c-accent-glow) / 0.85), rgb(var(--c-accent-glow) / 0.85)) left 0 top 0 / 14px 1.5px,
+    linear-gradient(rgb(var(--c-accent-glow) / 0.85), rgb(var(--c-accent-glow) / 0.85)) left 0 top 0 / 1.5px 14px,
+    linear-gradient(rgb(var(--c-accent-glow) / 0.85), rgb(var(--c-accent-glow) / 0.85)) right 0 top 0 / 14px 1.5px,
+    linear-gradient(rgb(var(--c-accent-glow) / 0.85), rgb(var(--c-accent-glow) / 0.85)) right 0 top 0 / 1.5px 14px,
+    linear-gradient(rgb(167 139 250 / 0.75), rgb(167 139 250 / 0.75)) left 0 bottom 0 / 14px 1.5px,
+    linear-gradient(rgb(167 139 250 / 0.75), rgb(167 139 250 / 0.75)) left 0 bottom 0 / 1.5px 14px,
+    linear-gradient(rgb(var(--c-accent) / 0.85), rgb(var(--c-accent) / 0.85)) right 0 bottom 0 / 14px 1.5px,
+    linear-gradient(rgb(var(--c-accent) / 0.85), rgb(var(--c-accent) / 0.85)) right 0 bottom 0 / 1.5px 14px;
+  background-repeat: no-repeat;
+  filter: drop-shadow(0 0 3px rgb(var(--c-accent) / 0.6));
+}
+@media (prefers-reduced-motion: reduce) {
+  .holo-frame::after { animation: none; }
 }
 
 /* Panel de modal (Modal.tsx): borde/sombra dependientes del tema, en vez del
@@ -346,4 +437,175 @@ input[type="range"]::-moz-range-thumb {
   .agent-ring-glow::after {
     display: none;
   }
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   PU6a-bis v2 (doc 35 §PU6) — Botones sueltos del dock, integrados con el AVCS.
+
+   Dos láminas de referencia del usuario:
+   · ICONOS: "ICONOGRAFÍA DEL SISTEMA" — glifo de línea fina geométrica con
+     nodos como puntos llenos, en oro cálido (viven en DockIcons.tsx).
+   · BOTONES: círculos con luz cian, borde degradado MÁS BRILLANTE POR ABAJO
+     (como iluminados desde el suelo), interior oscuro con un resplandor
+     inferior, y el activo apoyado sobre una PLATAFORMA elíptica de luz.
+
+   Capas, de atrás a delante:
+     .dock-platform  → elipse de luz bajo el botón ACTIVO (la "peana")
+     .dock-btn       → cuerpo: fondo radial oscuro + resplandor inferior
+     .dock-rim       → borde degradado estático (tenue arriba, vivo abajo)
+     .dock-ring      → cometa de luz orbitando (12s reposo / 2.4s hover)
+     glifo dorado    → el icono (solo él escala al hover)
+   ───────────────────────────────────────────────────────────────────────── */
+.dock-btn {
+  position: relative;
+  border-radius: 9999px;
+  /* Sin overflow:hidden A PROPÓSITO: la etiqueta al pasar el ratón, el polvo
+     de estrellas del clic y la plataforma viven FUERA del círculo. */
+  background:
+    radial-gradient(circle at 50% 82%, rgb(var(--c-accent) / 0.20), transparent 58%),
+    radial-gradient(circle at 50% 28%, rgba(13, 18, 30, 0.92), rgba(5, 8, 14, 0.97));
+  box-shadow:
+    0 0 22px -8px rgb(var(--c-accent) / 0.7),
+    0 10px 24px -12px rgba(0, 0, 0, 0.8),
+    inset 0 -8px 14px -8px rgb(var(--c-accent) / 0.45),
+    inset 0 1px 1px rgba(255, 255, 255, 0.05);
+  transition: box-shadow 250ms ease, background-color 250ms ease;
+}
+.dock-btn:hover,
+.dock-btn:focus-visible {
+  box-shadow:
+    0 0 30px -6px rgb(var(--c-accent) / 0.9),
+    0 10px 26px -12px rgba(0, 0, 0, 0.8),
+    inset 0 -8px 16px -6px rgb(var(--c-accent) / 0.6),
+    inset 0 1px 1px rgba(255, 255, 255, 0.07);
+}
+
+/* Borde degradado estático — la firma de la lámina de botones: casi apagado
+   arriba, encendido abajo (luz "desde la peana"). Enmascarado al grosor. */
+.dock-rim {
+  position: absolute;
+  inset: 0;
+  border-radius: 9999px;
+  padding: 1.5px;
+  background: linear-gradient(
+    180deg,
+    rgb(var(--c-accent) / 0.22) 0%,
+    rgb(var(--c-accent) / 0.4) 55%,
+    rgb(var(--c-accent-glow) / 0.95) 100%
+  );
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  pointer-events: none;
+  transition: opacity 250ms ease;
+}
+.dock-btn:hover .dock-rim { opacity: 1.35; }
+
+/* Cometa de luz orbitando por encima del rim (petición explícita: "un punto
+   de luz girando alrededor"). Hijo del elemento que rota → la cabeza va
+   siempre pegada al extremo brillante del gradiente. */
+.dock-ring {
+  position: absolute;
+  inset: -1px;
+  border-radius: 9999px;
+  padding: 2px;
+  background: conic-gradient(
+    from 0deg,
+    transparent 0%,
+    transparent 70%,
+    rgb(var(--c-accent) / 0.55) 88%,
+    rgb(var(--c-accent-glow)) 100%
+  );
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  animation: dock-ring-orbit 12s linear infinite;
+  pointer-events: none;
+}
+.dock-ring::after {
+  content: "";
+  position: absolute;
+  top: -1.5px;
+  left: 50%;
+  width: 5px;
+  height: 5px;
+  margin-left: -2.5px;
+  border-radius: 9999px;
+  background: rgb(var(--c-accent-glow));
+  box-shadow: 0 0 7px 2px rgb(var(--c-accent-glow)), 0 0 3px rgb(var(--c-accent));
+}
+.dock-btn:hover .dock-ring,
+.dock-btn:focus-visible .dock-ring {
+  animation-duration: 2.4s;
+}
+@keyframes dock-ring-orbit {
+  to { transform: rotate(360deg); }
+}
+
+/* Plataforma elíptica bajo el botón ACTIVO — la "peana de luz" de la lámina:
+   el botón de la sección actual se lee apoyado sobre un charco de luz cian. */
+.dock-platform {
+  position: absolute;
+  left: 50%;
+  bottom: -13px;
+  width: 130%;
+  height: 16px;
+  transform: translateX(-50%);
+  border-radius: 9999px;
+  background: radial-gradient(
+    ellipse at center,
+    rgb(var(--c-accent-glow) / 0.55) 0%,
+    rgb(var(--c-accent) / 0.28) 40%,
+    transparent 72%
+  );
+  filter: blur(3px);
+  pointer-events: none;
+  animation: dock-platform-in 400ms ease-out;
+}
+@keyframes dock-platform-in {
+  from { opacity: 0; transform: translateX(-50%) scaleX(0.5); }
+  to   { opacity: 1; transform: translateX(-50%) scaleX(1); }
+}
+
+/* Onda de choque al pulsar: un aro que se expande y se desvanece. */
+.dock-shock {
+  position: absolute;
+  inset: 0;
+  border-radius: 9999px;
+  border: 1px solid rgb(var(--c-accent-glow));
+  animation: dock-shock 620ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  pointer-events: none;
+}
+@keyframes dock-shock {
+  0%   { transform: scale(1);    opacity: 0.6; }
+  100% { transform: scale(2.05); opacity: 0;   }
+}
+
+/* Polvo de estrellas al pulsar: cada partícula lleva su propio vector en
+   --dx/--dy (lo calcula el componente al generarlas), así una sola regla
+   CSS sirve para todas sin repetir keyframes por dirección. */
+.dock-dust {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 3px;
+  height: 3px;
+  margin: -1.5px 0 0 -1.5px;
+  border-radius: 9999px;
+  background: rgb(var(--c-accent-glow));
+  box-shadow: 0 0 6px 1px rgb(var(--c-accent-glow));
+  animation: dock-dust 700ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  pointer-events: none;
+}
+@keyframes dock-dust {
+  0%   { transform: translate(0, 0) scale(1);                 opacity: 1; }
+  70%  {                                                       opacity: 0.55; }
+  100% { transform: translate(var(--dx), var(--dy)) scale(0.15); opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dock-ring { animation: none; }
+  .dock-ring::after { display: none; }
+  .dock-shock, .dock-dust { display: none; }
+  .dock-platform { animation: none; }
 }

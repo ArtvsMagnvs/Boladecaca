@@ -211,11 +211,30 @@ def build_deterministic_summary(data: dict[str, Any]) -> str:
     return " ".join(parts)
 
 
+# [PU8, doc 35] Sin "en español" fijo: el idioma lo decide `language_directive()`
+# (I18N-9) cuando el usuario ha elegido uno — antes este prompt CONTRADECÍA a la
+# directiva de idioma (briefing siempre en español con la app en inglés). Sin
+# idioma elegido, el default sigue siendo el del propio prompt (español).
 _SUMMARY_SYSTEM = (
     "Eres el asistente personal de Aithera. Redactas un resumen diario breve "
-    "(2-4 frases), en español, tono natural y directo, a partir de datos ya "
-    "calculados. No inventes datos que no esten en la entrada."
+    "(2-4 frases), tono natural y directo, a partir de datos ya calculados. "
+    "No inventes datos que no esten en la entrada."
 )
+
+
+def _summary_system() -> str:
+    """System prompt del resumen con la directiva de idioma (si la hay) — mismo
+    patrón que `responder._synthesize` (I18N-9). Best-effort: sin directiva, el
+    prompt base tal cual."""
+    try:
+        from app.core.language import language_directive
+
+        directive = language_directive()
+        if directive:
+            return f"{_SUMMARY_SYSTEM}\n\n{directive}"
+    except Exception as e:
+        print(f"[summarizer] no se pudo resolver el idioma (uso el default): {e}")
+    return _SUMMARY_SYSTEM
 
 
 async def _try_llm_summary(data: dict[str, Any]) -> Optional[str]:
@@ -236,7 +255,7 @@ async def _try_llm_summary(data: dict[str, Any]) -> Optional[str]:
     )
     try:
         res = await mel_complete(ExecutionRequest(
-            capability=Capability.SUMMARIZE, prompt=prompt, system_prompt=_SUMMARY_SYSTEM,
+            capability=Capability.SUMMARIZE, prompt=prompt, system_prompt=_summary_system(),
             policy_override="economy",
         ))
         if res.ok and res.text.strip():
@@ -262,7 +281,16 @@ async def get_cached_summary(target_date: date) -> Optional[str]:
 
 async def run_summarizer(target_date: Optional[date] = None) -> dict[str, Any]:
     """Una pasada del resumen nocturno. Idempotente (dedup_key=day:{date}):
-    re-ejecutar el mismo dia sobreescribe, nunca duplica."""
+    re-ejecutar el mismo dia sobreescribe, nunca duplica.
+
+    [PU4, doc 35] Ademas del resumen (texto, ya existia), esta pasada calcula
+    y cachea la LOCUCION del briefing (`briefing.build_spoken_text`) — el
+    unico punto donde ese texto paga un LLM (politica economy). El resto del
+    dia, el endpoint/el boton manual/el disparo automatico de las 8:15h leen
+    la cache; nunca esperan a un modelo. Best-effort: si la locucion falla,
+    el resumen (lo critico) ya quedo guardado — no se aborta la pasada por
+    ella, se deja constancia en el log y el caller cae a la plantilla
+    determinista al vuelo (`briefing.spoken_text_for`)."""
     target = target_date or datetime.utcnow().date()
     run_id = _start_run()
     try:
@@ -276,6 +304,15 @@ async def run_summarizer(target_date: Optional[date] = None) -> dict[str, Any]:
             dedup_key=f"day:{target.isoformat()}",
         )
         vault_write_daily_summary(target, summary)  # espejo Markdown (doc 07 §9, best-effort)
+
+        try:
+            from app.memory import briefing
+
+            spoken = await briefing.build_spoken_text(data, summary)
+            await briefing.store_spoken(target, spoken)
+        except Exception as e:
+            print(f"[summarizer] no se pudo cachear la locución del briefing (no crítico): {e}")
+
         _finish_run(run_id, status="ok", items_processed=1)
         emit("memory.ingested", source="mos", payload={"job": JOB_SUMMARIZER, "items_new": 1})
         return {"job": JOB_SUMMARIZER, "status": "ok", "date": target.isoformat(), "summary": summary}

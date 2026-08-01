@@ -16,6 +16,8 @@ import { useT } from "@/store/useI18n";
 
 import { api, type Approval, type Mission, type MissionDetail, type NodeState, type TaskNode } from "@/lib/api";
 import { MiniMarkdown } from "@/lib/miniMarkdown";
+import { UserQuestionCard } from "@/components/UserQuestionCard";
+import { usePendingQuestions } from "@/hooks/usePendingQuestions";
 
 const STATE_KEY: Record<string, string> = {
   running: "missions.state.running",
@@ -81,6 +83,10 @@ export default function Missions() {
   const [toolGate, setToolGate] = useState<Approval | null>(null);
   const selectedRef = useRef<string | null>(null);
   selectedRef.current = selected;
+  // [2026-08-02] Preguntas al usuario de ESTA misión (a diferencia del Chat,
+  // aquí sí se filtran: estás mirando una misión concreta). `detail?.id` es el
+  // mismo id con el que el toolloop las etiquetó (`session_key` = mission.id).
+  const { questions: allQuestions, refresh: refreshQuestions } = usePendingQuestions();
 
   const load = useCallback(async () => {
     try {
@@ -173,11 +179,17 @@ export default function Missions() {
   const awaitingNode = !awaitingPlan
     ? nodes.find((n) => n.state === "waiting_approval" && n.gate_id)
     : undefined;
+  // Las preguntas de la misión abierta. Se comparan contra los DOS ids porque
+  // `mission_id` y `trace_id` pueden diferir (S7·S8) y el toolloop etiqueta
+  // con el de la misión.
+  const missionQuestions = allQuestions.filter(
+    (q) => q.mission_id && (q.mission_id === detail?.id || q.mission_id === selected),
+  );
 
   return (
     <div className="h-full flex flex-col gap-4">
       {confirmDialog}
-      <div>
+      <div className="glass-surface rounded-xl px-4 py-2.5 w-fit">
         <h1 className="text-lg font-semibold text-ink">{t("missions.title")}</h1>
         <p className="text-xs text-ink-faint mt-0.5">
           {t("missions.subtitle")}
@@ -378,6 +390,23 @@ export default function Missions() {
                       {t("missions.toolGate.reject")}
                     </button>
                   </div>
+                </div>
+              )}
+
+              {/* [2026-08-02] PREGUNTAS de esta misión. A diferencia de los
+                  gates de arriba (que se responden con sí/no), aquí la misión
+                  espera un DATO — por eso se pinta la misma tarjeta de
+                  pregunta que en el Chat, con sus opciones y su respuesta
+                  libre, en vez de dos botones que no significarían nada. */}
+              {missionQuestions.length > 0 && (
+                <div className="flex flex-col gap-2">
+                  {missionQuestions.map((q) => (
+                    <UserQuestionCard
+                      key={q.gate_id}
+                      question={q}
+                      onAnswered={() => { void refreshQuestions(); void load(); }}
+                    />
+                  ))}
                 </div>
               )}
 

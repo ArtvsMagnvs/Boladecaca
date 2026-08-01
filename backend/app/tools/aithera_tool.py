@@ -37,6 +37,20 @@ from typing import Any, Dict, List, Optional
 from .base import BaseTool
 
 
+def _json_list(raw) -> List[str]:
+    """`Agent.allowed_tools` se guarda como JSON string (V0.5). Se devuelve
+    como lista para que el modelo la lea sin tener que parsear nada."""
+    import json as _json
+
+    if isinstance(raw, list):
+        return raw
+    try:
+        valor = _json.loads(raw or "[]")
+        return valor if isinstance(valor, list) else []
+    except (ValueError, TypeError):
+        return []
+
+
 def _missing(params: Dict[str, Any], required: List[str]) -> List[str]:
     """Campos ausentes o vacíos. OJO: un {} o [] presente es un valor válido
     (p.ej. action_config={} para una acción sin parámetros) — solo None,
@@ -76,9 +90,17 @@ class AitheraTool(BaseTool):
             "update_task": self._update_task,
             # Agentes
             "create_agent": self._create_agent,
+            "update_agent": self._update_agent,
+            "delete_agent": self._delete_agent,
             "assign_tools": self._assign_tools,
             "list_agents": self._list_agents,
             "run_agent_task": self._run_agent_task,
+            # [2026-08-02] La ejecución REAL de `ask_user` NO está aquí: la
+            # intercepta `toolloop` antes de despachar (ver más abajo y el
+            # comentario de `list_actions`). Este handler solo existe para que
+            # una llamada fuera del bucle falle CLARO en vez de "acción
+            # desconocida", que sería un diagnóstico engañoso.
+            "ask_user": self._ask_user_guard,
             # Automatización
             "create_rule": self._create_rule,
             "create_cron_job": self._create_cron_job,
@@ -138,6 +160,34 @@ class AitheraTool(BaseTool):
              "requires_confirmation": False, "params": {"project_id": "int opcional"}},
             {"id": "run_agent_task", "description": "Lanza una ejecución asíncrona de un agente con una tarea.",
              "requires_confirmation": True, "params": {"agent_id": "int", "task": "string"}},
+            {"id": "update_agent",
+             "description": ("Edita un agente YA EXISTENTE: skills, proyecto, tools, nombre, "
+                             "descripción, icono o si está activo. Úsala para CORREGIR un agente "
+                             "en vez de crear otro con distinto nombre."),
+             "requires_confirmation": True,
+             "params": {"agent_id": "int", "name": "string opcional",
+                        "description": "string opcional", "agent_type": "string opcional",
+                        "skills": "lista de strings opcional", "allowed_tools": "lista de tool_id opcional",
+                        "project_id": "int opcional", "icon": "string opcional",
+                        "is_active": "bool opcional", "max_execution_time": "int opcional"}},
+            {"id": "delete_agent", "description": "Elimina un agente (cancela sus ejecuciones en curso).",
+             "requires_confirmation": True, "params": {"agent_id": "int"}},
+            # ---- Preguntar al usuario ----
+            # [2026-08-02] La ejecuta el bucle de tool-use (`toolloop`), NO esta
+            # clase: el ToolManager impone un timeout duro de 300 s como mucho y
+            # la espera de una respuesta humana es INDEFINIDA (decisión explícita
+            # del usuario). Se declara aquí para que aparezca en el catálogo que
+            # ve el modelo, que es lo que la hace descubrible.
+            {"id": "ask_user",
+             "description": ("PREGUNTA algo al usuario y ESPERA su respuesta (sin límite de tiempo). "
+                             "Úsala siempre que te falte un dato, tengas que elegir entre varias vías "
+                             "o necesites una confirmación de criterio, EN VEZ de suponer, de rendirte "
+                             "o de terminar pidiéndoselo en el resumen final. Ofrece opciones concretas "
+                             "cuando las haya: el usuario podrá elegir una o escribir su propia respuesta."),
+             "requires_confirmation": False,
+             "params": {"question": "string — la pregunta, clara y concreta",
+                        "options": "lista de strings opcional (2-4 respuestas sugeridas; la 1.ª, la recomendada)",
+                        "header": "string opcional — etiqueta corta del tema (máx. 40 car.)"}},
             # ---- Automatización ----
             {"id": "create_rule", "description": "Crea una regla de automatización (disparador+condición+acción).",
              "requires_confirmation": True,
@@ -358,13 +408,78 @@ class AitheraTool(BaseTool):
             return {"success": False, "result": None, "error": f"agente {params['agent_id']} no existe"}
         return {"success": True, "result": {"id": agent.id, "allowed_tools": agent.allowed_tools}, "error": None}
 
+    async def _ask_user_guard(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """`ask_user` la resuelve `toolloop` interceptándola ANTES de despachar
+        (necesita esperar sin límite; aquí habría un timeout de 300 s). Si la
+        ejecución llega hasta este punto es que se llamó desde fuera del bucle
+        de tool-use, y eso hay que decirlo con claridad en vez de fingir."""
+        return {"success": False, "result": None,
+                "error": ("'ask_user' solo funciona dentro de una misión (el bucle de tool-use "
+                          "es quien espera la respuesta del usuario, sin límite de tiempo). "
+                          "Desde aquí no hay a quién preguntar.")}
+
+    async def _update_agent(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """[2026-08-02] Editar un agente YA CREADO (skills, proyecto, tools,
+        nombre, descripción, activo).
+
+        POR QUÉ EXISTE: sin esto, un agente creado con algún campo mal se
+        quedaba así PARA SIEMPRE — el caso real reportado por el usuario:
+        `create_agent` sin `project_id`/`skills`, el reintento con el mismo
+        nombre reventando contra el índice único (`agents_name_key`), y ninguna
+        acción de catálogo para arreglarlo. `agent_manager.update_agent` ya
+        existía (lo usa `assign_tools`), solo que no estaba expuesta entera."""
+        from app.agents.agent_manager import agent_manager
+
+        missing = _missing(params, ["agent_id"])
+        if missing:
+            return {"success": False, "result": None, "error": "faltan parámetros", "missing": missing}
+        campos = {k: params[k] for k in
+                  ("name", "description", "agent_type", "skills", "allowed_tools",
+                   "project_id", "icon", "is_active", "max_execution_time")
+                  if k in params}
+        if not campos:
+            return {"success": False, "result": None,
+                    "error": "no se indicó ningún campo que cambiar (name, description, agent_type, "
+                             "skills, allowed_tools, project_id, icon, is_active, max_execution_time)"}
+        try:
+            agent = agent_manager.update_agent(int(params["agent_id"]), **campos)
+        except ValueError as e:
+            return {"success": False, "result": None, "error": str(e)}
+        if agent is None:
+            return {"success": False, "result": None, "error": f"agente {params['agent_id']} no existe"}
+        return {"success": True, "result": {
+            "id": agent.id, "name": agent.name, "project_id": agent.project_id,
+            "skills": agent.skills or [], "allowed_tools": agent.allowed_tools,
+            "is_active": agent.is_active,
+        }, "error": None}
+
+    async def _delete_agent(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        from app.agents.agent_manager import agent_manager
+
+        missing = _missing(params, ["agent_id"])
+        if missing:
+            return {"success": False, "result": None, "error": "faltan parámetros", "missing": missing}
+        ok = agent_manager.delete_agent(int(params["agent_id"]))
+        if not ok:
+            return {"success": False, "result": None, "error": f"agente {params['agent_id']} no existe"}
+        return {"success": True, "result": {"deleted": int(params["agent_id"])}, "error": None}
+
     async def _list_agents(self, params: Dict[str, Any]) -> Dict[str, Any]:
         from app.agents.agent_manager import agent_manager
 
         project_id = params.get("project_id")
         agents = agent_manager.list_agents(project_id=int(project_id) if project_id else None)
+        # [2026-08-02] Se devuelven TAMBIÉN project_id, skills, role y
+        # allowed_tools. Antes el listado solo traía id/nombre/tipo/activo, así
+        # que el modelo no tenía forma de VER que un agente había quedado sin
+        # proyecto o sin skills: en el caso real reportado tuvo que deducirlo
+        # ("project_id: parece no estar vinculado, el listado no lo muestra")
+        # y encima acertó por casualidad. Un diagnóstico no debe ser una
+        # conjetura cuando el dato existe.
         return {"success": True, "result": {"agents": [
-            {"id": a.id, "name": a.name, "agent_type": a.agent_type, "is_active": a.is_active}
+            {"id": a.id, "name": a.name, "agent_type": a.agent_type, "is_active": a.is_active,
+             "project_id": a.project_id, "skills": a.skills or [], "role": a.role,
+             "allowed_tools": _json_list(a.allowed_tools)}
             for a in agents
         ]}, "error": None}
 

@@ -283,7 +283,7 @@ async def test_con_el_permiso_activado_el_bucle_no_pregunta(monkeypatch):
 
     granted, motivo = await toolloop._ask_permission(
         {"tool_id": "email", "action": "send_email"}, {"to": "x@y.z"},
-        _GateQueNoDebeUsarse(), instruction="enviar email", wait_s=1,
+        _GateQueNoDebeUsarse(), instruction="enviar email",
     )
     assert granted is True
     assert "antemano" in motivo
@@ -302,7 +302,7 @@ async def test_aprobar_el_plan_no_vuelve_a_preguntar_por_cada_accion():
 
     granted, motivo = await toolloop._ask_permission(
         {"tool_id": "email", "action": "send_email"}, {},
-        _GateQueNoDebeUsarse(), instruction="enviar", wait_s=1,
+        _GateQueNoDebeUsarse(), instruction="enviar",
         pre_approved=True,
     )
     assert granted is True

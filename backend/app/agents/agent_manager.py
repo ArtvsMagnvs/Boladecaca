@@ -97,7 +97,15 @@ class AgentManager:
         """Crea un agente y persiste en BD.
 
         Valida que todos los tool_id en allowed_tools EXISTAN en el
-        ExecutionEngine; si alguno no existe, lanza ValueError."""
+        ExecutionEngine; si alguno no existe, lanza ValueError.
+
+        [PU2, doc 35] Misma validación para `skills`, contra el catálogo real
+        (`skills_catalog.py`) — antes cualquier string colaba, así que un
+        agente creado por chat ("créame un agente con skills de X e Y") podía
+        acabar con skills inventadas que no significaban nada. Se
+        CANONICALIZA (respeta las mayúsculas reales del catálogo) antes de
+        persistir. Cubre a la vez el endpoint HTTP y `aithera_tool.
+        create_agent`: los dos llaman aquí."""
         if allowed_tools:
             available = {t["tool_id"] for t in tool_manager.list_tools()}
             unknown = set(allowed_tools) - available
@@ -106,6 +114,10 @@ class AgentManager:
                     f"Tools desconocidas en allowed_tools: {sorted(unknown)}. "
                     f"Disponibles: {sorted(available)}"
                 )
+        if skills:
+            from app.agents import skills_catalog
+
+            skills = skills_catalog.validate_skills(skills)
 
         db = SessionLocal()
         try:
@@ -151,6 +163,13 @@ class AgentManager:
                         f"Disponibles: {sorted(available)}"
                     )
                 kwargs["allowed_tools"] = json.dumps(tools)
+
+            if "skills" in kwargs and kwargs["skills"] is not None:
+                from app.agents import skills_catalog
+
+                if not isinstance(kwargs["skills"], list):
+                    raise ValueError("skills debe ser una lista")
+                kwargs["skills"] = skills_catalog.validate_skills(kwargs["skills"])
 
             if "max_execution_time" in kwargs and kwargs["max_execution_time"] is not None:
                 kwargs["max_execution_time"] = max(1, min(int(kwargs["max_execution_time"]), 3600))
@@ -296,57 +315,121 @@ class AgentManager:
                 # durar minutos y no queremos mantener una conexion abierta ni
                 # arrastrar objetos ORM a otro contexto.
                 agent_project_id = agent.project_id
+                agent_skills = list(agent.skills) if agent.skills else None
                 task_text = execution.task_description or ""
+
+                # [hotfix 2026-08-02] SOLTAR LA SESIÓN ANTES DE LA MISIÓN.
+                #
+                # EL BUG (reportado por el usuario: "en el chat pone
+                # 'trabajando' desde hace rato, pero la misión ya sale como
+                # completada"): el comentario de arriba decía desde siempre que
+                # no se quería "mantener una conexión abierta" durante la
+                # misión... pero el código NO lo hacía: `db` seguía abierta y
+                # `execution` era un objeto ORM atado a ella durante MINUTOS
+                # (una misión con gates puede durar horas). Si esa conexión se
+                # perdía por el camino —timeout de Postgres, reciclado del
+                # pool—, el `db.commit()` final fallaba, y el `except` que debía
+                # marcarla como fallida usaba LA MISMA sesión rota, así que
+                # también reventaba: la fila se quedaba en "running" PARA
+                # SIEMPRE. La misión terminaba bien, pero el chat seguía
+                # diciendo "Trabajando…" eternamente.
+                #
+                # Ahora la sesión se cierra aquí y el resultado se escribe con
+                # una sesión NUEVA (`_finish_execution`), que además es
+                # idempotente y no depende de nada vivo desde antes del await.
+                db.close()
+                db = None
 
                 mission = await self._delegate_to_tie(
                     task=task_text,
                     allowed_tools=allowed_tools,
                     project_id=agent_project_id,
+                    skills=agent_skills,
                 )
 
                 # La mision puede acabar esperando una aprobacion del usuario
                 # (gate del plan de T4a). Eso NO es "completada": el agente sigue
                 # a la espera, y decir lo contrario seria mentir en la UI.
                 if mission.state == "waiting":
-                    execution.status = "running"
-                    execution.result = mission.outcome or "Esperando tu aprobacion para continuar."
+                    self._finish_execution(
+                        execution_id, status="running",
+                        result=mission.outcome or "Esperando tu aprobacion para continuar.",
+                        tool_calls=self._tool_calls_of(mission), completed=False,
+                    )
                 else:
-                    execution.status = "completed" if mission.state != "failed" else "failed"
-                    execution.result = mission.outcome or ""
-                    if mission.state == "failed":
-                        execution.error_message = mission.outcome or "la mision no pudo completarse"
-                    execution.completed_at = datetime.utcnow()
-
-                execution.tool_calls = json.dumps(
-                    self._tool_calls_of(mission), ensure_ascii=False, default=str
-                )
-                db.commit()
+                    fallo = mission.state == "failed"
+                    self._finish_execution(
+                        execution_id, status="failed" if fallo else "completed",
+                        result=mission.outcome or "",
+                        error=(mission.outcome or "la mision no pudo completarse") if fallo else None,
+                        tool_calls=self._tool_calls_of(mission), completed=True,
+                    )
 
             except asyncio.CancelledError:
-                execution.status = "cancelled"
-                execution.error_message = "cancelado por el usuario"
-                execution.completed_at = datetime.utcnow()
-                db.commit()
+                self._finish_execution(execution_id, status="cancelled",
+                                       error="cancelado por el usuario", completed=True)
                 raise
             except Exception as e:
-                execution.status = "failed"
-                execution.error_message = f"{type(e).__name__}: {e}"
-                execution.completed_at = datetime.utcnow()
-                db.commit()
+                self._finish_execution(execution_id, status="failed",
+                                       error=f"{type(e).__name__}: {e}", completed=True)
             finally:
                 self._running_tasks.pop(execution_id, None)
+        finally:
+            if db is not None:
+                db.close()
+
+    @staticmethod
+    def _finish_execution(execution_id: int, *, status: str, result: Optional[str] = None,
+                          error: Optional[str] = None, tool_calls: Optional[List[Dict[str, Any]]] = None,
+                          completed: bool = True) -> None:
+        """[hotfix 2026-08-02] Escribe el desenlace de una ejecucion con una
+        sesion NUEVA y de vida corta.
+
+        Es la otra mitad del arreglo de "Trabajando… para siempre": antes esto
+        se hacia sobre la sesion abierta ANTES de la mision, que podia llevar
+        minutos u horas muerta. Al abrir una sesion aqui, el resultado se
+        persiste aunque la conexion original se haya perdido — y si algo falla,
+        falla SOLO el registro, nunca deja la fila a medias en un estado
+        intermedio invisible."""
+        db = SessionLocal()
+        try:
+            execution = db.query(AgentExecution).filter(AgentExecution.id == execution_id).first()
+            if execution is None:
+                return
+            execution.status = status
+            if result is not None:
+                execution.result = result
+            if error is not None:
+                execution.error_message = error
+            if tool_calls is not None:
+                execution.tool_calls = json.dumps(tool_calls, ensure_ascii=False, default=str)
+            if completed:
+                execution.completed_at = datetime.utcnow()
+            db.commit()
+        except Exception as e:      # noqa: BLE001 — registrar nunca debe propagar
+            import logging
+
+            logging.getLogger("aithera").error(
+                f"[agent_manager] no se pudo cerrar la ejecucion {execution_id}: {e!r}"
+            )
         finally:
             db.close()
 
     async def _delegate_to_tie(self, *, task: str, allowed_tools: List[str],
-                               project_id: Optional[int]):
+                               project_id: Optional[int],
+                               skills: Optional[List[str]] = None):
         """Convierte la tarea del agente en una mision del TIE, acotada a lo que
         ese agente puede hacer.
 
         `allowed_tools` se pasa SIEMPRE, incluso vacia: una lista vacia significa
         "este agente no tiene herramientas" y el TIE lo respetara (el bucle de R1
         trata la whitelist vacia como 'ninguna', nunca como 'todas'). Pasar None
-        aqui seria el agujero: el planner veria el catalogo entero."""
+        aqui seria el agujero: el planner veria el catalogo entero.
+
+        `skills` [PU2, doc 35]: las especialidades del agente (ya validadas
+        contra el catalogo al crear/editar el agente). Antes de PU2 se
+        guardaban en BD y morian ahi — este parametro es lo que las hace
+        llegar de verdad al contexto de ejecucion (ver `executor._execute_node`)."""
         import app.tie as tie
 
         repo_path = _project_repo_path(project_id) if project_id else None
@@ -356,6 +439,7 @@ class AgentManager:
             project_id=project_id,
             allowed_tools=list(allowed_tools),
             repo_path=repo_path,
+            skills=skills,
         )
 
     @staticmethod

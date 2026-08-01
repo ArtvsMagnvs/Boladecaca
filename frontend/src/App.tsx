@@ -1,6 +1,7 @@
 import { HashRouter, Routes, Route, Navigate } from "react-router-dom";
-import { lazy, Suspense } from "react";
+import { lazy, Suspense, useEffect } from "react";
 import { AppLayout } from "@/components/layout/AppLayout";
+import { useAppStore } from "@/store/useAppStore";
 // El Hub es la ruta raíz (lo primero que se ve): se carga de forma eager para
 // que el arranque no muestre un spinner. El resto van lazy (code-splitting) —
 // [Opt v0.9.5, P2] EmailAssistant (1600+ líneas), Settings (2000+) y las demás
@@ -9,7 +10,15 @@ import { AppLayout } from "@/components/layout/AppLayout";
 // cargan bien bajo el file:// de Electron.
 import Hub from "@/pages/Hub";
 
-const Chat = lazy(() => import("@/pages/Chat"));
+// [PU6a-bis v2] El chat dejó de ser una ruta: es una VENTANA flotante montada
+// en AppLayout (para que el Modo Conversación corra con el chat oculto y el
+// AVCS quede siempre de fondo). El enlace viejo /chat sigue funcionando: abre
+// la ventana y aterriza en el Hub — mismo patrón que /projects → /workspace.
+function ChatRedirect() {
+  const setChatOpen = useAppStore((s) => s.setChatOpen);
+  useEffect(() => { setChatOpen(true); }, [setChatOpen]);
+  return <Navigate to="/" replace />;
+}
 // V0.87 (WPMS W2a): Workspace unifica Proyectos + Tareas. Las paginas viejas
 // (Projects.tsx/Tasks.tsx) se retiran; /projects y /tasks redirigen aqui.
 const Workspace = lazy(() => import("@/pages/Workspace"));
@@ -42,7 +51,7 @@ export default function App() {
       <Routes>
         <Route element={<AppLayout />}>
           <Route path="/" element={<Hub />} />
-          <Route path="/chat" element={<Suspense fallback={<RouteFallback />}><Chat /></Suspense>} />
+          <Route path="/chat" element={<ChatRedirect />} />
           <Route path="/email" element={<Suspense fallback={<RouteFallback />}><EmailAssistant /></Suspense>} />
           <Route path="/workspace" element={<Suspense fallback={<RouteFallback />}><Workspace /></Suspense>} />
           {/* V0.87: rutas viejas -> Workspace (sin romper enlaces existentes) */}

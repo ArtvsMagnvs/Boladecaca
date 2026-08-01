@@ -141,6 +141,33 @@ Si Hermes no expone providers, su licencia no lo permite o su huella es inviable
 En los tres casos, V1.0 ya es un producto completo con `NullRuntime` — Hermes es
 mejora, no dependencia (regla de autosuficiencia).
 
+## 6b. [Δ 2026-07-31, PI-A doc 37] Obscura como motor de LECTURA/scraping — se pliega AQUÍ
+
+**Decisión del usuario (2026-07-31)**: tras la investigación PI-A (doc 37,
+Obscura ejecutado de verdad + PoC de Playwright por CDP), Obscura se descarta
+como motor del `browser_tool` para 1.0 (**no tiene layout/paint** → rompe
+capturas y clics interactivos; su propio binario manda usar Chromium real para
+lo visual), pero **se añade con Hermes** en un papel acotado: **backend de
+LECTURA/scraping opcional** para la pata "tengo una URL (de `search`), léeme su
+texto/HTML" — sin lanzar un Chrome pesado.
+
+Por qué encaja en el bloque Hermes y no antes: es la ola donde el sistema de
+agentes se replantea, y donde un motor de fetch/scrape de 41 MB (Apache-2.0,
+CDP nativo, `mcp` nativo, stealth para páginas públicas, `navigator.webdriver=
+false`) aporta de verdad. Encaje concreto a diseñar en su sprint:
+
+- **NO toca el `browser_tool` interactivo** (Chrome real sigue siendo EL
+  navegador). Es un camino nuevo en `search → leer página`: si Obscura está
+  instalado, extrae el texto por su `serve`+CDP; si no, degrada a Chrome.
+- Instalación 1-click con el patrón ya construido 3× (Ollama/Kokoro/Codex):
+  hilo con progreso + estados idle/installing/done/failed + degradación honesta.
+  Hay binario nativo Windows (`obscura-x86_64-windows.zip`, ~41 MB), sin Docker.
+- Alternativa a evaluar en paralelo: exponer Obscura por su **`mcp` nativo** en
+  vez de CDP, coherente con el `AitheraToolProvider`/MCP de §7 — Hermes/Aithera
+  lo verían como una tool más. Decidir CDP-vs-MCP al implementar.
+- Coste estimado: pequeño-medio, aditivo y aislado. Detalle en doc 37 §"Coste
+  estimado de PU9 según el camino" (camino acotado).
+
 ## 7. Futuro
 
 - V1.2: multi-instancia (`Research/Coding/CalendarHermesRuntime`) — perfiles

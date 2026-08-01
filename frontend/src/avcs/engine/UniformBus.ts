@@ -2,7 +2,10 @@
 // Objetos {value} de three, mutados en sitio, compartidos por referencia entre
 // los materiales de simulación (GPGPU), el material de render y RhythmEngine.
 import * as THREE from "three";
-import { FIELD_COUNT, MAX_WAVES, REST_RADIUS, WAVE_THICKNESS, DEFAULT_PALETTE } from "../constants";
+import {
+  FIELD_COUNT, MAX_WAVES, REST_RADIUS, WAVE_THICKNESS, DEFAULT_PALETTE,
+  BASE_POINT_SIZE,
+} from "../constants";
 import { weightsToArray } from "../constants";
 import { RHYTHM_WEIGHTS } from "../constants";
 import type { UniformBus } from "../types";
@@ -24,6 +27,11 @@ export function createUniformBus(): UniformBus {
     uDamping: { value: 0.9 },
     uBreathScale: { value: 1 },
     uCoreSpin: { value: 0 },
+    uRingSpin: { value: 0 },
+    uRingBloom: { value: 0 },
+    uListenEnv: { value: 0 },
+    uSpeakEnv: { value: 0 },
+    uSpeakSpin: { value: 0 },
     uPulse: { value: 0 },
     uWaveCount: { value: 0 },
     uWaveR: { value: new Float32Array(MAX_WAVES) },
@@ -38,7 +46,16 @@ export function createUniformBus(): UniformBus {
     uField: { value: field },
     uAudioEnv: { value: 0 },
     uAudioBands: { value: new THREE.Vector3(0, 0, 0) },
-    uPointSize: { value: 42 },
+    // Tamaño de punto base (= Q4). ParticleEngine.init() lo multiplica por el
+    // `pointScale` del tier — moderado, y siempre junto a `uEdgeHardness`.
+    uPointSize: { value: BASE_POINT_SIZE },
+    // [doc 35 PU5] Por defecto 1.0 = referencia Q4 (sin efecto);
+    // ParticleEngine.init() lo reescribe según el tier real en cada
+    // (re)inicialización.
+    uBrightBoost: { value: 1.0 },
+    // [doc 35 PU5] 0.0 = Q4 (degradado completo, sin cambios); ParticleEngine
+    // .init() lo sube en tiers bajos para que el punto se vea nítido.
+    uEdgeHardness: { value: 0.0 },
   };
 }
 

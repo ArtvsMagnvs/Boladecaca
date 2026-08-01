@@ -249,11 +249,20 @@ async def lifespan(app: FastAPI):
             scheduler_service.add_cron_job(
                 _purge_old_telemetry, hour=4, minute=35, id="telemetry_cleanup"
             )
+        # [PU4b, doc 35] Briefing 2.0: un job de PREPARACIÓN por cada horario
+        # configurado (a slot − prep_minutes: noticias + locución → cache).
+        # El scheduler se INYECTA (app.memory no importa app.automation);
+        # PUT /api/memory/briefing/config re-arma en caliente.
+        from app.memory import briefing_config as _briefing_config
+
+        _briefing_config.arm_prep_jobs(scheduler_service)
+
         log_info(
             "startup",
             "APScheduler iniciado — ingesta (email/cal), resumen nocturno 03:30, "
             "perfil 03:45, lifecycle "
-            f"{settings.MEMORY_LIFECYCLE_HOUR:02d}:00, limpieza de misiones 04:30 (local)",
+            f"{settings.MEMORY_LIFECYCLE_HOUR:02d}:00, limpieza de misiones 04:30 (local), "
+            "preparación del briefing por horario (PU4b)",
         )
     except Exception as e:
         log_error("startup", e, "No se pudo iniciar el planificador (el backend sigue; los jobs del MOS quedan sin programar)")

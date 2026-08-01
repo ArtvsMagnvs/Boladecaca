@@ -139,6 +139,21 @@ async def handle_stream(text: str, *, channel: str = "web", session_id: Optional
         yield ("text", quick)
         return
 
+    # [PU4, doc 35] "Dame el briefing"/"¿qué tengo hoy?": mismo criterio que el
+    # listado de proyectos de arriba, pero async (puede leer una cache del MOS).
+    quick_briefing = await tie.quick_answer_async(text)
+    if quick_briefing:
+        yield ("text", quick_briefing)
+        return
+
+    # [PU10, doc 35] "Guarda esto en la memoria: X" / "busca en la memoria X" /
+    # "olvida esto de la memoria X": mismo criterio, con ancla obligatoria (no
+    # confundir con "guárdame un resumen", que guarda un ARCHIVO, NEW-7b).
+    quick_mem = await tie.quick_memory_answer_async(text)
+    if quick_mem:
+        yield ("text", quick_mem)
+        return
+
     # No es charla obvia: hay que clasificar con el modelo. AHÍ sí tiene sentido
     # "analizando" (cubre la latencia del clasificador).
     yield ("status", _t("status.analyzing"))

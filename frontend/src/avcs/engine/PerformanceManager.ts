@@ -15,12 +15,24 @@ export interface RenderConfig {
 
 const SIM_LADDER: Record<number, number> = { 64: 64, 128: 64, 256: 128, 512: 256 };
 
+/** [PU5e] Por encima de esto un frame no se considera una medida de
+ *  rendimiento sino un artefacto. 200 ms = 5 FPS: ningún equipo que de verdad
+ *  vaya a 5 FPS sostenidos llega aquí sin haber degradado antes con muestras
+ *  normales, así que filtrar no enmascara un problema real — solo evita que un
+ *  parón puntual (pestaña en segundo plano, GC, cambio de ventana) dispare una
+ *  degradación que el usuario percibe como "se ha apagado". */
+const MAX_SANE_FRAME_MS = 200;
+/** Frames que se ignoran tras uno anómalo: al volver de segundo plano suelen
+ *  venir 2-3 aún irregulares mientras el navegador recompone. */
+const GRACE_FRAMES = 6;
+
 export class PerformanceManager {
   private baseTier: QualityTier;
   private level = 0; // 0..3 (escalón de degradación)
   private frames: number[] = [];
   private windowMs = 3000;
   private acc = 0;
+  private graceFrames = 0;
 
   constructor(initialTier: QualityTier) {
     this.baseTier = initialTier;
@@ -30,6 +42,8 @@ export class PerformanceManager {
     this.baseTier = tier;
     this.level = 0;
     this.frames.length = 0;
+    this.acc = 0;
+    this.graceFrames = 0;
   }
 
   get tier(): QualityTier {
@@ -43,12 +57,12 @@ export class PerformanceManager {
   }
 
   /** Tier efectivo (escalón 3: baja un nivel de calidad completo — menos
-   *  partículas, no solo menos resolución de textura — nunca por debajo de Q1,
+   *  partículas, no solo menos resolución de textura — nunca por debajo de Q2,
    *  §16.4). HubEngine lo usa para re-inicializar el ParticleEngine SIN pasar
    *  por setTier() (que resetearía la propia escalera). */
   get effectiveTier(): QualityTier {
     if (this.level < 3) return this.baseTier;
-    const LADDER: QualityTier[] = ["Q1", "Q2", "Q3", "Q4"];
+    const LADDER: QualityTier[] = ["Q2", "Q3", "Q4"];
     const idx = LADDER.indexOf(this.baseTier);
     return LADDER[Math.max(0, idx - 1)];
   }
@@ -66,6 +80,37 @@ export class PerformanceManager {
   /** Observa el frametime; puede subir/bajar un escalón. Devuelve true si cambió
    *  algo que el consumidor deba re-aplicar (sim size / bloom / dpr). */
   observe(frameMs: number): boolean {
+    // ------------------------------------------------------------------
+    // [PU5e] EL BUG DEL "SE APAGA AL VOLVER DE OTRA PESTAÑA".
+    // ------------------------------------------------------------------
+    // Síntoma: con Aithera en segundo plano la luminosidad caía de golpe, y al
+    // volver tardaba unos segundos en recuperarse.
+    // Causa: el navegador PAUSA requestAnimationFrame en una pestaña oculta, así
+    // que el primer frame al volver trae un `dt` enorme — todo el tiempo que
+    // estuviste fuera. Esa única muestra bastaba para superar la ventana de
+    // 3000 ms de golpe, dar una media altísima y degradar un escalón. Y el
+    // escalón 1 es precisamente `bloom: false` → el glow desaparece = "baja la
+    // luminosidad". Unos segundos después, con frames normales, la media volvía
+    // a bajar de 13 ms, se restauraba el escalón y con él el bloom = "se
+    // ilumina de nuevo". El ciclo completo que se veía.
+    //
+    // Arreglo: un frame anormalmente largo NO mide rendimiento — es un
+    // artefacto (pestaña oculta, GC, el SO ocupado, la ventana redimensionada).
+    // Se descarta, se limpia la ventana de muestreo para que no arrastre nada
+    // raro, y se abre un breve periodo de gracia porque tras volver de segundo
+    // plano suelen venir 2-3 frames aún irregulares mientras el navegador
+    // recompone.
+    if (frameMs > MAX_SANE_FRAME_MS) {
+      this.frames.length = 0;
+      this.acc = 0;
+      this.graceFrames = GRACE_FRAMES;
+      return false;
+    }
+    if (this.graceFrames > 0) {
+      this.graceFrames--;
+      return false;
+    }
+
     this.frames.push(frameMs);
     this.acc += frameMs;
     if (this.acc < this.windowMs) return false;
@@ -87,5 +132,6 @@ export class PerformanceManager {
     this.level = 0;
     this.frames.length = 0;
     this.acc = 0;
+    this.graceFrames = 0;
   }
 }
