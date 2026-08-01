@@ -240,6 +240,23 @@ def test_actualizar_agente_valida_skills():
     assert updated.skills == ["Geographer"]
 
 
+def _mk_project_pu2(name="Proyecto PU2") -> int:
+    """[2026-08-02] `create_agent` de `aithera_tool` exige `project_id` desde el
+    fix del agente huérfano. Lo que estos tests comprueban (validación de
+    skills) no cambia; solo necesitan un proyecto real al que colgar el agente."""
+    from app.db.database import Project, SessionLocal
+
+    db = SessionLocal()
+    try:
+        p = Project(name=name, status="active")
+        db.add(p)
+        db.commit()
+        db.refresh(p)
+        return p.id
+    finally:
+        db.close()
+
+
 @pytest.mark.anyio
 async def test_aithera_tool_create_agent_categoria_suelta_ofrece_candidatos_reales():
     """[PU2-ext] "créame un agente con skills de marketing" — el chat manda
@@ -250,8 +267,9 @@ async def test_aithera_tool_create_agent_categoria_suelta_ofrece_candidatos_real
     from app.tools.aithera_tool import AitheraTool
 
     tool = AitheraTool()
+    pid = _mk_project_pu2()
     res = await tool.execute("create_agent", {
-        "name": "Chat-Marketing-Bot", "skills": ["marketing"],
+        "name": "Chat-Marketing-Bot", "skills": ["marketing"], "project_id": pid,
     })
     assert res["success"] is False
     assert "categoría" in res["error"]
@@ -262,7 +280,7 @@ async def test_aithera_tool_create_agent_categoria_suelta_ofrece_candidatos_real
     # con un nombre REAL de esos candidatos, la creación SÍ funciona: cierra
     # el círculo completo "categoría suelta -> candidatos -> nombre real -> agente".
     res2 = await tool.execute("create_agent", {
-        "name": "Chat-Marketing-Bot", "skills": ["Book Co-Author"],
+        "name": "Chat-Marketing-Bot", "skills": ["Book Co-Author"], "project_id": pid,
     })
     assert res2["success"] is True
 
@@ -284,6 +302,7 @@ async def test_aithera_tool_create_agent_propaga_el_rechazo():
     tool = AitheraTool()
     res = await tool.execute("create_agent", {
         "name": "Chat-Bot", "skills": ["Skill Que Nadie Tiene"],
+        "project_id": _mk_project_pu2("Proyecto PU2 b"),
     })
     assert res["success"] is False
     assert "Skills inválidas" in (res["error"] or "")

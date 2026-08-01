@@ -30,15 +30,24 @@ const ACTION_LABEL_KEYS: Record<string, string> = {
 };
 
 // V0.7 extra: visual config para los tipos de actividad del dashboard
+//
+// [PU7, 2026-08-02] `text` lleva su pareja `light:` — las paletas fijas de
+// Tailwind (emerald-300, amber-300…) están calibradas para fondo OSCURO y
+// quedan poco legibles sobre el lienzo gris claro de `.light` (bug
+// reportado por el usuario: "letras amarillas y de otros colores que no
+// contrastan bien" — precisamente en esta pantalla). `signal-ok`/
+// `signal-error` ya eran tokens de tema (no se tocan). La variante `light:`
+// (tailwind.config.js) solo actúa bajo `.light`, así que el oscuro es
+// pixel-idéntico al de antes.
 const ACTIVITY_VISUAL: Record<string, { bg: string; ring: string; text: string; icon: string; labelKey: string }> = {
-  sent:               { bg: "bg-emerald-500/10",  ring: "ring-emerald-500/30", text: "text-emerald-300", icon: "✉",  labelKey: "email.activity.type.sent" },
-  draft:              { bg: "bg-amber-500/10",    ring: "ring-amber-500/30",   text: "text-amber-300",   icon: "📝", labelKey: "email.activity.type.draft" },
-  alert:              { bg: "bg-rose-500/15",     ring: "ring-rose-500/40",    text: "text-rose-300",    icon: "🔔", labelKey: "email.activity.type.alert" },
-  urgent:             { bg: "bg-orange-500/10",   ring: "ring-orange-500/30",  text: "text-orange-300",  icon: "!",  labelKey: "email.activity.type.urgent" },
-  meeting_proposal:   { bg: "bg-violet-500/10",   ring: "ring-violet-500/30",  text: "text-violet-300",  icon: "📅", labelKey: "email.activity.type.meetingProposal" },
+  sent:               { bg: "bg-emerald-500/10",  ring: "ring-emerald-500/30", text: "text-emerald-300 light:text-emerald-800", icon: "✉",  labelKey: "email.activity.type.sent" },
+  draft:              { bg: "bg-amber-500/10",    ring: "ring-amber-500/30",   text: "text-amber-300 light:text-amber-800",     icon: "📝", labelKey: "email.activity.type.draft" },
+  alert:              { bg: "bg-rose-500/15",     ring: "ring-rose-500/40",    text: "text-rose-300 light:text-rose-800",       icon: "🔔", labelKey: "email.activity.type.alert" },
+  urgent:             { bg: "bg-orange-500/10",   ring: "ring-orange-500/30",  text: "text-orange-300 light:text-orange-800",   icon: "!",  labelKey: "email.activity.type.urgent" },
+  meeting_proposal:   { bg: "bg-violet-500/10",   ring: "ring-violet-500/30",  text: "text-violet-300 light:text-violet-800",   icon: "📅", labelKey: "email.activity.type.meetingProposal" },
   meeting_confirmed:  { bg: "bg-signal-ok/15",    ring: "ring-signal-ok/40",   text: "text-signal-ok",   icon: "✓",  labelKey: "email.activity.type.meetingConfirmed" },
   skipped:            { bg: "bg-base-800/30",     ring: "ring-base-700/20",    text: "text-ink-faint",   icon: "⊘",  labelKey: "email.activity.type.skipped" },
-  error:              { bg: "bg-red-500/15",      ring: "ring-red-500/40",     text: "text-red-300",     icon: "⚠",  labelKey: "email.activity.type.error" },
+  error:              { bg: "bg-red-500/15",      ring: "ring-red-500/40",     text: "text-red-300 light:text-red-800",         icon: "⚠",  labelKey: "email.activity.type.error" },
 };
 
 // V0.7 extra: filtros disponibles para el dashboard
@@ -63,7 +72,7 @@ const STATUS_LABEL_KEYS: Record<string, string> = {
 
 const PROPOSAL_STATUS_COLORS: Record<string, { bg: string; text: string; labelKey: string }> = {
   pending:      { bg: "bg-base-700/40",   text: "text-ink-dim",     labelKey: "email.proposalStatus.pending" },
-  counter_sent: { bg: "bg-amber-500/15",  text: "text-amber-300",   labelKey: "email.proposalStatus.counterSent" },
+  counter_sent: { bg: "bg-amber-500/15",  text: "text-amber-300 light:text-amber-800", labelKey: "email.proposalStatus.counterSent" },
   confirmed:    { bg: "bg-signal-ok/15",  text: "text-signal-ok",   labelKey: "email.proposalStatus.confirmed" },
   rejected:     { bg: "bg-signal-error/15", text: "text-signal-error", labelKey: "email.proposalStatus.rejected" },
   expired:      { bg: "bg-base-700/40",   text: "text-ink-faint",   labelKey: "email.proposalStatus.expired" },
@@ -75,12 +84,12 @@ const gmailLink = (emailId?: string | null) =>
 
 // V0.7.3 (Sprint 3): color de badge por categoria de triaje
 const TRIAGE_STYLES: Record<string, string> = {
-  urgente: "bg-red-500/20 text-red-400",
-  responder: "bg-amber-500/20 text-amber-400",
-  reunion: "bg-blue-500/20 text-blue-400",
+  urgente: "bg-red-500/20 text-red-400 light:text-red-800",
+  responder: "bg-amber-500/20 text-amber-400 light:text-amber-800",
+  reunion: "bg-blue-500/20 text-blue-400 light:text-blue-800",
   newsletter: "bg-base-700/60 text-ink-faint",
-  factura: "bg-emerald-500/20 text-emerald-400",
-  "spam-social": "bg-fuchsia-500/20 text-fuchsia-400",
+  factura: "bg-emerald-500/20 text-emerald-400 light:text-emerald-800",
+  "spam-social": "bg-fuchsia-500/20 text-fuchsia-400 light:text-fuchsia-800",
   fyi: "bg-base-700/60 text-ink-dim",
 };
 
@@ -616,17 +625,17 @@ export default function EmailAssistant() {
           </div>
 
           {!status?.has_credentials && (
-            <div className="mt-3 p-3 rounded-lg bg-amber-500/10 border border-amber-500/30 text-xs text-amber-300 space-y-2">
+            <div className="mt-3 p-3 rounded-lg bg-amber-500/10 border border-amber-500/30 text-xs text-amber-300 light:text-amber-800 space-y-2">
               <p>
                 {t("email.creds.intro")}
               </p>
               <p>
-                <strong className="text-amber-200">{t("email.creds.connectDisabledStrong")}</strong>{" "}
+                <strong className="text-amber-200 light:text-amber-900">{t("email.creds.connectDisabledStrong")}</strong>{" "}
                 {t("email.creds.connectDisabledRest")}
               </p>
               <ul className="list-disc list-inside text-ink-faint">
                 <li>
-                  <strong className="text-amber-200">{t("email.creds.option1")}</strong> {t("email.creds.option1Rest")}{" "}
+                  <strong className="text-amber-200 light:text-amber-900">{t("email.creds.option1")}</strong> {t("email.creds.option1Rest")}{" "}
                   <code className="bg-base-950/50 px-1 rounded">backend/.env</code> {t("email.creds.option1Add")}
                   <br />
                   <code className="bg-base-950/50 px-1 rounded inline-block mt-1">
@@ -638,8 +647,8 @@ export default function EmailAssistant() {
                   <span className="text-[10px]">{t("email.creds.restartHint")}</span>
                 </li>
                 <li>
-                  <strong className="text-amber-200">{t("email.creds.option2")}</strong> {t("email.creds.option2Rest")}{" "}
-                  <strong className="text-amber-200">Settings → Google</strong> {t("email.creds.option2End")}
+                  <strong className="text-amber-200 light:text-amber-900">{t("email.creds.option2")}</strong> {t("email.creds.option2Rest")}{" "}
+                  <strong className="text-amber-200 light:text-amber-900">Settings → Google</strong> {t("email.creds.option2End")}
                 </li>
               </ul>
               <p className="text-ink-faint text-[10px] italic">
@@ -814,7 +823,7 @@ export default function EmailAssistant() {
                 }`}
               >
                 <p className="text-[9px] text-ink-faint uppercase tracking-wider">{t("email.stats.sent")}</p>
-                <p className="text-base font-semibold text-emerald-300">
+                <p className="text-base font-semibold text-emerald-300 light:text-emerald-800">
                   {activityStats.sent?.total || 0}
                 </p>
                 {(activityStats.sent?.unread || 0) > 0 && (
@@ -830,7 +839,7 @@ export default function EmailAssistant() {
                 }`}
               >
                 <p className="text-[9px] text-ink-faint uppercase tracking-wider">{t("email.stats.drafts")}</p>
-                <p className="text-base font-semibold text-amber-300">
+                <p className="text-base font-semibold text-amber-300 light:text-amber-800">
                   {activityStats.draft?.total || 0}
                 </p>
                 {(activityStats.draft?.unread || 0) > 0 && (
@@ -846,11 +855,11 @@ export default function EmailAssistant() {
                 }`}
               >
                 <p className="text-[9px] text-ink-faint uppercase tracking-wider">{t("email.stats.alerts")}</p>
-                <p className="text-base font-semibold text-rose-300">
+                <p className="text-base font-semibold text-rose-300 light:text-rose-800">
                   {activityStats.alert?.total || 0}
                 </p>
                 {(activityStats.alert?.unread || 0) > 0 && (
-                  <p className="text-[9px] text-rose-300 font-medium">
+                  <p className="text-[9px] text-rose-300 light:text-rose-800 font-medium">
                     {t("email.stats.needsAttention", { n: activityStats.alert.unread })}
                   </p>
                 )}
@@ -864,11 +873,11 @@ export default function EmailAssistant() {
                 }`}
               >
                 <p className="text-[9px] text-ink-faint uppercase tracking-wider">{t("email.stats.urgent")}</p>
-                <p className="text-base font-semibold text-orange-300">
+                <p className="text-base font-semibold text-orange-300 light:text-orange-800">
                   {activityStats.urgent?.total || 0}
                 </p>
                 {(activityStats.urgent?.unread || 0) > 0 && (
-                  <p className="text-[9px] text-orange-300 font-medium">
+                  <p className="text-[9px] text-orange-300 light:text-orange-800 font-medium">
                     {t("email.stats.unreadCount", { n: activityStats.urgent.unread })}
                   </p>
                 )}
@@ -882,7 +891,7 @@ export default function EmailAssistant() {
                 }`}
               >
                 <p className="text-[9px] text-ink-faint uppercase tracking-wider">{t("email.stats.meetings")}</p>
-                <p className="text-base font-semibold text-violet-300">
+                <p className="text-base font-semibold text-violet-300 light:text-violet-800">
                   {(activityStats.meeting_proposal?.total || 0) + (activityStats.meeting_confirmed?.total || 0)}
                 </p>
                 {(activityStats.meeting_proposal?.unread || 0) > 0 && (
@@ -989,7 +998,7 @@ export default function EmailAssistant() {
                       </p>
                       {/* Detalles especificos segun action_type */}
                       {entry.action_type === "sent" && details.is_meeting && (
-                        <p className="text-[11px] text-emerald-300/80 mt-0.5">
+                        <p className="text-[11px] text-emerald-300/80 light:text-emerald-800 mt-0.5">
                           {details.calendar_status === "libre" ? t("email.activity.meetingConfirmed") : t("email.activity.counterProposalSent")}
                           {details.proposed_new_date && (
                             <> {t("email.activity.forDate")} {new Date(details.proposed_new_date).toLocaleString(dateLocale, { dateStyle: "short", timeStyle: "short" })}</>
@@ -1000,25 +1009,25 @@ export default function EmailAssistant() {
                         </p>
                       )}
                       {entry.action_type === "draft" && details.is_meeting && (
-                        <p className="text-[11px] text-amber-300/80 mt-0.5">
+                        <p className="text-[11px] text-amber-300/80 light:text-amber-800 mt-0.5">
                           {t("email.activity.aiDraftMeeting")}{" "}
                           {details.proposed_new_date ? t("email.activity.withNewDate") : t("email.activity.confirmsDate")}
                         </p>
                       )}
                       {entry.action_type === "alert" && details.is_meeting && (
-                        <p className="text-[11px] text-rose-300/90 mt-0.5 font-medium">
+                        <p className="text-[11px] text-rose-300/90 light:text-rose-800 mt-0.5 font-medium">
                           {details.calendar_status === "ocupado"
                             ? t("email.activity.youAreBusy", { date: details.original_date || "?", suggestion: details.proposed_new_date || "?" })
                             : t("email.activity.meetingProposedFor", { date: details.proposed_date || details.original_date || "?" })}
                         </p>
                       )}
                       {entry.action_type === "alert" && !details.is_meeting && (
-                        <p className="text-[11px] text-rose-300/90 mt-0.5">
+                        <p className="text-[11px] text-rose-300/90 light:text-rose-800 mt-0.5">
                           {details.reason || t("email.activity.importantEmail")}
                         </p>
                       )}
                       {entry.action_type === "meeting_proposal" && (
-                        <p className="text-[11px] text-violet-300/90 mt-0.5">
+                        <p className="text-[11px] text-violet-300/90 light:text-violet-800 mt-0.5">
                           {t("email.activity.original")}: {details.original_date ? new Date(details.original_date).toLocaleString(dateLocale, { dateStyle: "short", timeStyle: "short" }) : "?"} →
                           {t("email.activity.suggestion")}: {details.proposed_new_date ? new Date(details.proposed_new_date).toLocaleString(dateLocale, { dateStyle: "short", timeStyle: "short" }) : "?"}
                         </p>
@@ -1044,7 +1053,7 @@ export default function EmailAssistant() {
                           <button
                             onClick={() => handleRespondFromAlert(entry.id, "draft")}
                             disabled={respondingId === entry.id}
-                            className="text-[10px] px-2 py-1 rounded bg-amber-500/15 text-amber-300 hover:bg-amber-500/25 disabled:opacity-50"
+                            className="text-[10px] px-2 py-1 rounded bg-amber-500/15 text-amber-300 light:text-amber-800 hover:bg-amber-500/25 disabled:opacity-50"
                             title={t("email.activity.generateDraftTitle")}
                           >
                             {respondingId === entry.id ? t("email.activity.generating") : t("email.activity.generateProposal")}
@@ -1072,7 +1081,7 @@ export default function EmailAssistant() {
                           </button>
                           <button
                             onClick={() => handleRuleFeedback(entry.rule_id!, "edited")}
-                            className="text-[9px] px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-400 hover:bg-amber-500/25"
+                            className="text-[9px] px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-400 light:text-amber-800 hover:bg-amber-500/25"
                             title={t("email.activity.feedbackEditedTitle")}
                           >
                             ✎ {t("email.activity.feedbackEdited")}
@@ -1224,7 +1233,7 @@ export default function EmailAssistant() {
                         className={`text-[10px] px-1.5 py-0.5 rounded ${
                           rule.autonomy === "auto"
                             ? "bg-signal-ok/20 text-signal-ok"
-                            : "bg-amber-500/20 text-amber-400"
+                            : "bg-amber-500/20 text-amber-400 light:text-amber-800"
                         }`}
                         title={
                           rule.autonomy === "auto"
@@ -1433,7 +1442,7 @@ export default function EmailAssistant() {
               {t("email.addRule.variablesAvailable")}: {"{sender}"}, {"{subject}"}, {"{body}"}
             </p>
             {formDetectMeeting && !formReplyTemplate.trim() && (
-              <p className="text-[10px] text-emerald-400 mt-1">
+              <p className="text-[10px] text-emerald-400 light:text-emerald-800 mt-1">
                 {t("email.addRule.noTemplateHint")}
               </p>
             )}
@@ -1470,7 +1479,7 @@ export default function EmailAssistant() {
                 onClick={() => setFormAutonomy("propose")}
                 className={`text-xs px-3 py-2 rounded-lg border text-left ${
                   formAutonomy === "propose"
-                    ? "bg-amber-500/20 border-amber-500/50 text-amber-300"
+                    ? "bg-amber-500/20 border-amber-500/50 text-amber-300 light:text-amber-800"
                     : "bg-base-700/50 border-base-600 text-ink-dim hover:bg-base-700"
                 }`}
               >

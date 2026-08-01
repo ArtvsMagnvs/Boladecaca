@@ -66,6 +66,13 @@ class AgentTask:
     # vez de la de calidad del usuario: en voz la fluidez manda. Solo lo pone el
     # camino corto de voz; el chat de texto lo deja en False (calidad del usuario).
     conversational: bool = False
+    # [FIX 2026-08-02] `context` trae material obtenido con herramientas REALES
+    # en un paso anterior de esta misma misión (la tubería de S5), no solo
+    # recuerdos del MOS. Campo append-only, con default seguro: sin él, el
+    # camino de chat añadiría su coletilla de "no he ejecutado ninguna
+    # herramienta" encima de un resumen construido sobre material auténtico —
+    # que es exactamente cómo un paso de síntesis acababa desdiciéndose solo.
+    grounded_context: bool = False
 
     @staticmethod
     def new_id() -> str:
@@ -165,13 +172,23 @@ def _model_override_from_hint(model_hint: Optional[str]) -> Optional[str]:
 # Las de solo-consulta (email, calendar, search, memory, process…) se quedan
 # con el presupuesto base — más vueltas ahí solo alarga un atasco.
 _WRITE_TOOLS = {"filesystem", "shell", "powershell", "git", "browser", "desktop", "aithera", "download"}
+# Tools que LEEN contenido que puede no caber de una vez: necesitan varias
+# vueltas solo para terminar de leer (ver `_iters_for`).
+_READ_HEAVY_TOOLS = {"document"}
 
 
 def _iters_for(node_tools: list) -> int:
-    """Presupuesto de iteraciones del bucle según las tools del nodo (doc 25 §S2)."""
+    """Presupuesto de iteraciones del bucle según las tools del nodo (doc 25 §S2).
+
+    [2026-08-02] `document` entra en el presupuesto ALTO. Desde que la lectura
+    es paginada, un GDD de 60 páginas son 4-5 llamadas seguidas a `read_docx`
+    más la respuesta: con las 5 vueltas del presupuesto de solo-lectura se
+    quedaba a medias y volvíamos exactamente al fallo que la paginación cierra.
+    (`filesystem` ya estaba en el presupuesto alto por otra razón — escribe.)"""
     from app.core.config import settings
 
-    if any(t in _WRITE_TOOLS for t in (node_tools or [])):
+    tools = node_tools or []
+    if any(t in _WRITE_TOOLS or t in _READ_HEAVY_TOOLS for t in tools):
         return settings.TIE_TOOL_MAX_ITERS_WRITE
     return settings.TIE_TOOL_MAX_ITERS
 
@@ -248,6 +265,12 @@ class NullRuntime(AgentRuntime):
                 model_override=_model_override_from_hint(task.model_hint),  # [E2b] override explícito
                 project_id=task.project_id,                                 # [E2b] pin de proyecto
                 session_id=task.session_id,                                 # [A·VOZ-7] caché de contexto por sesión
+                # [FIX 2026-08-02] EL CONTEXTO DEL NODO VIAJA. Esta llamada lo
+                # ignoraba por completo: `chat_service.answer()` ni siquiera
+                # tenía dónde recibirlo. Un nodo sin tools —el que sintetiza—
+                # trabajaba a ciegas del paso que acababa de leer el documento.
+                context=task.context or "",
+                grounded=task.grounded_context,
             )
             dur = int((time.monotonic() - t0) * 1000)
             return AgentResult(
@@ -283,7 +306,12 @@ class NullRuntime(AgentRuntime):
             # ya se hizo en M4 con el system prompt.
             history = chat_service.recent_turns(task.session_id)
             system_prompt = await chat_service.build_system_prompt(
-                task.instruction, history=history, session_id=task.session_id)
+                task.instruction, history=history, session_id=task.session_id,
+                # [FIX 2026-08-02] Mismo trato que el camino sin streaming: si la
+                # tarea trae material de un paso previo, entra en el prompt. Hoy
+                # el camino corto no tiene grafo (llega vacío), pero dejar las dos
+                # variantes divergiendo es justo cómo nació el fallo original.
+                task_context=(task.context or None))
             # [A·VOZ-8] En VOZ, la respuesta se enruta por la política rápida
             # (VOICE_CHAT_POLICY, p.ej. "speed"): fluidez > máxima calidad. El chat
             # de texto (conversational=False) mantiene la política del usuario. Un

@@ -131,6 +131,8 @@ export class ParticleEngine {
       uWaveSeed: this.bus.uWaveSeed,
       uWaveThickness: this.bus.uWaveThickness,
       uAudioEnv: this.bus.uAudioEnv,
+      // [PU5g] golpe por sílaba — amplitud del trazo ECG de los anillos.
+      uAudioPunch: this.bus.uAudioPunch,
       uGenome: { value: this.genomeTex },
       uAnchor: { value: this.anchorTex },
     });

@@ -106,6 +106,8 @@ export class HubEngine {
     this.audio.update(d);
     const af = this.audio.frame;
     this.particles.bus.uAudioEnv.value = af.envelope;
+    // [PU5g] Golpe por sílaba → altura del trazo ECG de los anillos al hablar.
+    this.particles.bus.uAudioPunch.value = af.punch;
     this.particles.bus.uAudioBands.value.set(af.bands[0], af.bands[1], af.bands[2]);
 
     this.rhythm.update(d, this.time, this.lifePhase);

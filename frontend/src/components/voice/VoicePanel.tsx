@@ -658,7 +658,7 @@ export default function VoicePanel() {
                       toggleFavorite(voice.voice_id);
                     }}
                     className={`absolute top-2 right-2 w-7 h-7 rounded-full flex items-center justify-center transition-colors ${
-                      isFav ? "text-amber-300 hover:text-amber-200" : "text-ink-faint hover:text-ink"
+                      isFav ? "text-amber-300 light:text-amber-700 hover:text-amber-200 light:hover:text-amber-800" : "text-ink-faint hover:text-ink"
                     }`}
                     title={isFav ? t("settings.voz.panel.unfavorite") : t("settings.voz.panel.favorite")}
                     aria-label={isFav ? t("settings.voz.panel.unfavorite") : t("settings.voz.panel.favorite")}
@@ -676,11 +676,11 @@ export default function VoicePanel() {
                             <span
                               className={`px-1.5 py-0.5 rounded ${
                                 voice.category === "cloned"
-                                  ? "bg-amber-500/15 text-amber-300"
+                                  ? "bg-amber-500/15 text-amber-300 light:text-amber-800"
                                   : voice.category === "professional"
-                                    ? "bg-purple-500/15 text-purple-300"
+                                    ? "bg-purple-500/15 text-purple-300 light:text-purple-800"
                                     : voice.category === "generated"
-                                      ? "bg-emerald-500/15 text-emerald-300"
+                                      ? "bg-emerald-500/15 text-emerald-300 light:text-emerald-800"
                                       : "bg-base-700/50 text-ink-faint"
                               }`}
                             >

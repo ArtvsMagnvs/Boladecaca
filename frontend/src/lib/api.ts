@@ -155,6 +155,10 @@ export interface AgentExecution {
   result: string | null;
   error_message: string | null;
   tool_calls: string | null;
+  /** [2026-08-02] Rastro de actividad (JSON: string[]). El chat del orquestador
+   *  sondea esta fila, así que el rastro en vivo le llega por aquí (no por SSE
+   *  como en el chat principal). */
+  progress: string | null;
   started_at: string | null;
   completed_at: string | null;
   created_at: string | null;
@@ -1351,6 +1355,10 @@ export const api = {
     opts?: {
       onStatus?: (status: string) => void;
       onMission?: (traceId: string) => void;
+      // [2026-08-02] Rastro de actividad en vivo: una línea corta por cada
+      // cosa que Aithera va haciendo ("Leyendo GDD.docx", "Paso 2 de 3: …").
+      // Se acumulan; `onStatus` en cambio SUSTITUYE (es un estado, no un log).
+      onActivity?: (line: string) => void;
       // [2026-07-19] Para poder PARAR desde el botón del chat. Sin esto no había
       // forma de interrumpir una respuesta ya lanzada.
       signal?: AbortSignal;
@@ -1387,6 +1395,7 @@ export const api = {
       eventName = "";
       if (data === "[DONE]") return true;
       if (name === "status") opts?.onStatus?.(data.replace(/\\n/g, "\n"));
+      else if (name === "activity") opts?.onActivity?.(data.replace(/\\n/g, "\n"));
       else if (name === "mission") opts?.onMission?.(data);
       else if (name === "" ) onChunk(data.replace(/\\n/g, "\n"));
       return false;

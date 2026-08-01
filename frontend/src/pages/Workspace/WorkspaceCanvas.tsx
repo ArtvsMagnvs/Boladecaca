@@ -109,7 +109,13 @@ export function WorkspaceCanvas({ projects, onCreateProject, onEditProject, onPr
         <Shelf projects={projects} getLayout={getLayout} onOpen={openFromShelf} onDragOut={handleDragOut} onCreate={onCreateProject} />
       </div>
 
-      <div ref={canvasRef} className="flex-1 min-w-0 relative rounded-2xl overflow-hidden holo-frame bg-base-900/20 border border-base-700/30">
+      {/* [PU7, 2026-08-02] `holo-frame-canvas` — marca este lienzo como el
+          ÚNICO que conserva el cometa DORADO en tema claro (petición
+          explícita del usuario tras ver el dorado fundirse en las tarjetas
+          blancas: el resto de `.holo-frame` — ProjectCard/AgentWindowCard/
+          Shelf/Modal/UserQuestionCard — pasa a violeta en claro; ver
+          styles/index.css). */}
+      <div ref={canvasRef} className="flex-1 min-w-0 relative rounded-2xl overflow-hidden holo-frame holo-frame-canvas bg-base-900/20 border border-base-700/30">
         {/* [PU6b-vent t4] Los textos centrados ("no hay proyectos" / "todo en
             la estantería") se retiraron junto con el orbe — el usuario pidió
             ver SOLO el AVCS real a través del marco. La estantería con su "+"

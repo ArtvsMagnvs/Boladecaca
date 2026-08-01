@@ -45,6 +45,8 @@ export function createUniformBus(): UniformBus {
     uAura: { value: aura },
     uField: { value: field },
     uAudioEnv: { value: 0 },
+    // [PU5g] golpe por sílaba (ver AudioReactor): amplitud del trazo ECG.
+    uAudioPunch: { value: 0 },
     uAudioBands: { value: new THREE.Vector3(0, 0, 0) },
     // Tamaño de punto base (= Q4). ParticleEngine.init() lo multiplica por el
     // `pointScale` del tier — moderado, y siempre junto a `uEdgeHardness`.

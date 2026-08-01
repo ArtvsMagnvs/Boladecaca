@@ -766,6 +766,98 @@ iterativa más que código complejo).
 > (mirar un minuto seguido, que es cuando se notaba), el ondeo de las bandas, y
 > contar si a veces hay 3-4 ondas a la vez.
 
+> **Cierre PU5e 2026-07-31 (Sonnet) — el AVCS "se apagaba" al volver de otra
+> pestaña.** Marcado aquí a posteriori: estaba hecho en código
+> (`PerformanceManager.ts`, `HubEngine.ts`) y sin registrar en este documento.
+> Al volver a la ventana llegaba un `dt` enorme (el navegador congela el rAF en
+> segundo plano) y el medidor lo interpretaba como un frame lentísimo, bajando
+> el tier de calidad. Ahora los frames por encima del umbral se descartan como
+> medida y el `dt` crudo se pasa aparte.
+
+> **Cierre PU5f 2026-07-31 (Sonnet) — animaciones de ESCUCHA y HABLA.** También
+> marcado a posteriori (17 marcas `[PU5f]` en código, ninguna aquí): envolventes
+> `uListenEnv`/`uSpeakEnv` con crossfade en `RhythmEngine`, contracción de los
+> anillos al escuchar, expansión + ondulación al hablar, giro de las líneas
+> interiores de la semilla y relámpagos.
+
+> **Cierre PU5g 2026-08-02 (Opus) — el ECG al hablar y el DESCENSO al escuchar.**
+> Dos peticiones directas del usuario tras ver PU5f en vivo.
+>
+> **1 · "Al escuchar, la semilla y los círculos DESCIENDEN" — DOS causas, las
+> dos reales.**
+> (a) **La principal, y es literal**: `RHYTHM_SETTLE_Y.listening = -0.4` se lee
+> cada frame en `HubEngine` como `object3D.position.y`, o sea una TRASLACIÓN
+> RÍGIDA de todo el sistema de partículas. Con el anillo externo a r≈3.04, el
+> conjunto entero bajaba ~13% de su tamaño. El propio comentario del código lo
+> delataba: se había subido desde -0.08 "para que el efecto se note claramente".
+> Puesto a **0** — en Escucha el recogimiento ya lo expresa la contracción de
+> los anillos, que el usuario dio explícitamente por buena.
+> (b) **La secundaria**: la gravedad de Escucha (peso 0.55, dirección -Y) se
+> repartía con `mix(0.2, 1.0, wanderAllow(role))`, y `ROLE.RING` vale 0.38 — un
+> rol BAJO —, así que los anillos recibían ~86% de la gravedad y la semilla un
+> 20%. Ese proxy quedó obsoleto en PU5b, donde los anillos pasaron a ser rígidos
+> subiendo su `bind` a 0.88: la gravedad seguía mirando el ROL en vez del
+> ANCLAJE. Ahora el factor sale del propio `bind` — `pow(1.0 - bind, 2.0)` —, con
+> lo que semilla (0.005) y anillos (0.014) quedan inmunes y campo (0.61) y
+> estrellas (0.88) siguen derivando: la ambientación se conserva y el artefacto
+> desaparece. Al ser la misma fuente que usa el resto del archivo, no puede
+> volver a desincronizarse. **La contracción de los anillos no se ha tocado.**
+>
+> **2 · "Que el zig-zag de electrocardiógrafo SE NOTE" — por qué no se notaba.**
+> El diagnóstico obvio (la envolvente del TTS es plana) era cierto pero
+> INSUFICIENTE. La causa dominante es física y estaba oculta: el anclaje de cada
+> partícula es un muelle amortiguado (`ret`, con `uDamping = 0.9` por frame). Con
+> la rigidez de reposo k ≈ 6 y c ≈ 6 s⁻¹ el sistema está SOBREAMORTIGUADO, con
+> constante de tiempo efectiva ≈ 1 s: es decir, **el anclaje es un filtro paso
+> bajo de ~1 Hz y borra cualquier gesto rápido**. Simulado numéricamente el
+> integrador real: del pico del ancla llegaba a pantalla un **7%**. Ninguna
+> cantidad de amplitud lo arreglaba — de ahí que la ondulación de PU5f fuese
+> imperceptible por mucho que se subiera.
+>
+> Tres piezas, en este orden:
+> · **`AudioReactor.punch`** (nuevo campo de `AudioFrame`, append-only): detección
+>   de transitorios con dos seguidores de envolvente (rápido 12 ms ataque / 110 ms
+>   caída, lento 420 ms). El punch es la diferencia RELATIVA normalizada por el
+>   nivel medio, así que mide "cuánto destaca esta sílaba sobre lo que venía" y
+>   funciona igual con voz fuerte o floja — que es exactamente lo que el usuario
+>   pedía ("el volumen no cambia, busca la manera"). `envelope` seguía con 100 ms
+>   de suavizado, justo la duración de una sílaba: aplanaba los ataques.
+> · **`ecgTrace(x)`** en `fields.glsl`: complejo PQRST real con cinco gaussianas
+>   (línea plana el 59% del ciclo + pico R estrecho), barrido alrededor del
+>   anillo como la cinta de papel del monitor. Se suma como **desplazamiento
+>   radial ABSOLUTO**, no como factor de escala, para que el pico mida lo mismo
+>   en el anillo interno que en el externo — como las trazas de un monitor real,
+>   y sin disparar partículas fuera de cuadro desde el anillo grande.
+> · **`SPEAK_RING_STIFF = 26`**: la pieza que faltaba. Sube la rigidez del
+>   anclaje de los anillos MIENTRAS habla (ponderada por `uSpeakEnv`, así que en
+>   reposo el valor efectivo es 1.0 exacto y no hay riesgo de regresión). k ≈ 158,
+>   ω ≈ 11.6 rad/s → τ ≈ 40 ms, y el trazo se dibuja al ~90%. Sigue muy lejos del
+>   límite de estabilidad del integrador explícito (ω·dt ≈ 0.19 ≪ 2).
+>
+> Constantes calibradas por simulación, no a ojo: desviación radial real de
+> **0.36** unidades con sílaba fuerte y **0.10** con voz sin acento (rango ×3.5),
+> frente a una separación entre anillos de ~0.40. `SPEAK_ECG_SPEED` bajó de 0.42
+> a 0.20 por la misma razón física: a 0.42 el pico pasaba en ~95 ms y la partícula
+> solo recorría un tercio del camino.
+>
+> **Verificación**: `tsc` limpio · `glslcheck` (sim+fields con includes resueltos)
+> OK · simulación numérica del integrador con los valores finales (adjunta en los
+> comentarios de `constants.ts`/`fields.glsl`). **Pendiente en Windows**: verlo
+> hablar (que el trazo se lea como un ECG y que las sílabas fuertes den picos
+> mayores) y confirmar que al escuchar la figura ya no baja.
+>
+> **Nota honesta**: `RHYTHM_SETTLE_Y.communication = 0.3` es el mismo mecanismo
+> en sentido contrario (el conjunto SUBE al hablar). No se ha tocado porque no
+> se reportó; si también molesta, es un solo número.
+
+> **PU5 · Fallo 2 (escala a pantalla completa) — ✅ RESUELTO, aunque no aquí.**
+> Marcado a posteriori: lo entregó **PU6a-bis v2**, no una pasada de PU5. El
+> encuadre se resuelve por cámara (`AitheraPresence.tsx` ajusta la distancia para
+> que `CONTENT_HALF_WIDTH/HEIGHT × FIT_MARGIN` quepan siempre, en cualquier
+> viewport), los radios de anillo se bajaron ×0.88 para que el externo quedara
+> por encima del dock, el starfield se amplió a ±9.5 para cubrir monitores
+> anchos, y la presencia se dibuja en TODAS las rutas. No queda trabajo de PU5.
+
 ---
 
 ## PU6 · Hub sin UI + botones inferiores (adiós sidebar)
@@ -809,6 +901,29 @@ funcionalidad actual se pierde (checklist de ítems de la Sidebar vieja),
 interacciones), o Sonnet esfuerzo máximo si el diseño del usuario llega muy
 cerrado.
 
+> ✅ **PU6 HECHA (2026-07-31, marcada aquí a posteriori el 2026-08-02).** Estaba
+> completa en código y sin registrar en este documento — de ahí las marcas
+> `PU6a`, `PU6a-bis` y `PU6b-vent` repartidas por el frontend y ninguna aquí.
+>
+> **§2 Botonera inferior**: `components/layout/Dock.tsx` + `DockButton.tsx` +
+> `DockIcons.tsx`, montada en `AppLayout` para TODAS las rutas. `Sidebar.tsx`
+> **eliminado**. El diseño lo envió el usuario (lámina de referencia) y de ahí
+> salen los iconos y el lenguaje del botón (cuerpo, rim, cometa orbitando,
+> polvo al pulsar).
+> **§1 Hub sin UI**: se materializa como el **Modo Presencia** que ya existía
+> (AVCS S3, doc 13 §13.4): `useAppStore.presenceMode` pliega dock, paneles y
+> botones (`BriefingButton` se oculta, el dock se retira), dejando la presencia
+> a pantalla completa. Entrar/salir con **F9** y **Esc** y con el
+> `PresenceToggle`, que se queda visible atenuado por ser la única vía de ratón
+> para salir; alineado con el resto del dock en PU6a-bis.
+> **§3 Paneles del Hub**: conservados en el modo normal, reorganizados
+> alrededor del dock.
+>
+> **Lo que NO se hizo (honestidad)**: el punto §1 pedía también entrar/salir
+> **por voz** ("modo inmersivo" / "pantalla completa"). No existe: no hay
+> herramienta de UI que el TIE pueda invocar para cambiar `presenceMode`. Es
+> trabajo pequeño y aislado (una acción de `ui_tool` + su intent) si se quiere.
+
 ---
 
 ## PU7 · Modo claro profesional
@@ -846,6 +961,15 @@ nueva — por eso va después.
 inventario pendiente; capturas archivadas en `test-lab/` como referencia.
 **Tamaño**: grande. **Modelo**: Opus o Fable (criterio estético fino +
 sistematicidad), esfuerzo alto.
+
+> ❌ **PU7 NO HECHA (estado a 2026-08-02).** Revisado en código: no hay ni una
+> marca `PU7`. El tema claro EXISTE (variables por tema en `styles/index.css`,
+> del bloque de UX §25), pero la pasada sistemática que pide esta sección —
+> inventario visual página a página, resolución en variables y no en overrides,
+> contraste AA, capturas antes/después archivadas en `test-lab/` — **no se ha
+> hecho**. Sigue siendo la sesión grande que queda antes del instalador, y
+> ahora también tendría que tematizar el dock de PU6 y los añadidos de PU10 y
+> del fix de Workspace.
 
 ---
 
@@ -891,6 +1015,15 @@ saber dónde hay inyección de prompts, cuántos puntos y por qué.
 aplicadas con su verificación; lista priorizada de lo estructural (si queda).
 **Tamaño**: media-grande. **Modelo**: Fable u Opus (es criterio de diseño de
 prompts, el punto fuerte del modelo grande), esfuerzo alto.
+
+> ✅ **PU8 HECHA (2026-07-31, marcada aquí a posteriori el 2026-08-02).**
+> Entregada en **`PLAN_MAESTRO_2026/36_MAPA_DE_PROMPTS.md`**, que cubre las tres
+> entregas pedidas: §1 el mapa completo (núcleo chat/TIE, jobs de memoria y MEL,
+> email como superficie disparable por terceros, legacy, y las capas
+> DETERMINISTAS documentadas aparte como se pedía), §2 la auditoría de calidad
+> de la inyección propia uno a uno, §3 la auditoría adversaria (prompt injection
+> desde fuera), §4 las mejoras quirúrgicas aplicadas en la misma sesión con test
+> cada una, §5 verificación y §6 lo estructural priorizado y no bloqueante.
 
 ---
 
@@ -940,6 +1073,23 @@ otro metabuscador self-hosted merece una ficha futura (probablemente post-1.0).
 **Cierre PI-A**: informe con las 5 respuestas + demo de conexión CDP si
 aplica + recomendación GO/NO-GO con coste estimado de PU9.
 **Tamaño**: media (investigación). **Modelo**: Sonnet, esfuerzo alto.
+
+> ✅ **PI-A HECHA (2026-07-31, marcada aquí a posteriori el 2026-08-02).**
+> Informe completo en **`PLAN_MAESTRO_2026/37_PI-A_OBSCURA_INVESTIGACION.md`**:
+> las 5 preguntas respondidas una a una con veredicto, el detalle técnico para
+> un PU9 futuro, el coste estimado por camino y la alternativa al deseo original
+> (buscador local descargable). **Veredicto: NO-GO para 1.0** — hay binario
+> nativo Windows (P1 ✅, la distribución no era el problema), pero solo funciona
+> la mitad de las acciones del `browser_tool` por CDP (P2 ⚠️), el stealth sirve
+> para scraping y no para el caso real de Aithera (P3 ⚠️), y sustituir el Chrome
+> con perfil persistente perdería casi todo lo que motivó el diseño del
+> 2026-07-23 — cookies, sesión de Google, `consent_learned.json` (P4 ❌).
+> **Decisión del usuario registrada en el propio doc 37 (2026-07-31): NO-GO
+> confirmado; Obscura se retoma junto a Hermes, post-1.0.**
+>
+> ⛔ **PU9 (Obscura 1-click) — NO PROCEDE para 1.0**, por dependencia directa:
+> su condición de arranque era "PI-A = GO". Queda como candidata post-1.0 con el
+> alcance acotado que describe el doc 37, no con el original.
 
 ---
 
@@ -1042,59 +1192,6 @@ la pestaña queda visualmente al nivel de PU7.
 > detalladas sin asumir" y confirmar que NO pasa por "analizando" (sin
 > clasificador) y queda guardado igual.
 
-> ✅ **PU10-visual EJECUTADA (2026-08-02, Sonnet)** — petición directa del
-> usuario tras cerrar el PU10 funcional: "es la memoria de Aithera, quiero
-> que sea bonito, intuitivo y moderno" (el pulido de las 3 zonas quedó
-> pendiente en la primera pasada). `components/settings/MemoriaPanel.tsx`
-> (NUEVO): la pestaña Memoria pasa de bloque inline dentro de `Settings.tsx`
-> a panel AUTÓNOMO — mismo patrón que `BriefingPanel.tsx` (posee su propio
-> estado/carga, `Settings.tsx` solo lo monta con `<MemoriaPanel />`).
-> Reorganización 100% VISUAL, cero cambios de endpoint/comportamiento: los
-> 4 bloques que antes vivían apilados y separados por una simple línea
-> (`border-t`) pasan a tarjetas `glass-surface rounded-2xl p-4` con cabecera
-> propia (icono + título + descripción), siguiendo el mismo lenguaje que
-> `BriefingPanel`/PU4b. Iconografía nueva propia del panel (núcleo
-> concéntrico para la cabecera, burbuja/marcador/documento para las 3
-> estadísticas, chispa para "Resumen"/"Perfil", flecha circular para
-> refrescar) — mismo vocabulario fino de `DockIcons.tsx` (stroke 1.1-1.4,
-> `currentColor`) pero vive aquí porque son iconos INFORMATIVOS, no de
-> navegación. Cambios concretos: cabecera con icono+subtítulo (antes solo un
-> `<h3>`); el formulario manual de añadir preferencia pasa de SIEMPRE visible
-> a PLEGADO por defecto tras un botón "+ Añadir preferencia" (revelación
-> progresiva — reduce el ruido visual sin perder la función); las filas de
-> preferencias/perfil ganan una insignia de categoría y un botón de borrar
-> circular consistente (antes un botón "Eliminar" de texto suelto); estados
-> vacíos con caja de borde punteado en vez de una línea de texto perdida;
-> "Borrar historial de conversaciones" se separa en su propia franja
-> `signal-warn` (zona sensible diferenciada, patrón ya usado en otras partes
-> de la app para acciones irreversibles); el mensaje de feedback pasa de
-> texto suelto a una franja `signal-ok`/`signal-error` con fondo. El
-> mini-chat (`MemoryQuickChat.tsx`, MODIFICADO) gana burbujas con el MISMO
-> estilo que `ChatBubble` del chat principal (`bg-accent/20`/`bg-base-700/50`,
-> `rounded-xl`), 3 chips de ejemplo clicables cuando la conversación está
-> vacía (rellenan el input, nunca envían solos — el usuario conserva el
-> control) para que la frase exacta no haya que adivinarla, e indicador de
-> "escribiendo" (3 puntos con `animate-bounce`) mientras se resuelve.
-> **Estado movido, no duplicado**: `memStats`/`contextItems`/`profileFacts`/
-> `newCtx*`/`memMessage` y sus 5 handlers (`loadMemory`/`handleAddContext`/
-> `handleDeleteContext`/`handleDeleteProfileFact`/`handleClearConversations`)
-> se retiran de `Settings.tsx` (con su `loadMemory()` del `useEffect` de
-> montaje) y pasan a vivir DENTRO de `MemoriaPanel.tsx` — el import de los
-> tipos `MemoryStats`/`ContextItem`/`ProfileFact` en `Settings.tsx` se limpia
-> por quedar sin uso. 8 claves i18n nuevas ×4 idiomas (`settings.memoria.
-> panelTitle`, `.panelSubtitle`, `.summary.title`, `.clearHistoryHint`,
-> `.quickchat.chip1/2/3`, `.quickchat.tryHint`), insertadas en orden
-> alfabético en los 4 `i18n/locales/*.json` — paridad verificada
-> programáticamente (1256 claves en los 4 idiomas). Sin cambios de backend,
-> sin tests nuevos (es una reorganización visual sobre endpoints ya
-> cubiertos por `test_quick_memory.py`). Verificado en el sandbox:
-> `tsc --noEmit` limpio (rc=0, 15s) y `vite build` COMPLETO sin errores
-> (867 módulos, `Settings-DBbovIwo.js` 108.89 kB — a diferencia de PU6a, esta
-> vez el build terminó dentro del límite del sandbox). **Pendiente en
-> Windows**: vistazo visual real de la pestaña Memoria (las 3 tarjetas +
-> mini-chat + zona sensible), confirmar que los chips de ejemplo rellenan el
-> input sin enviarlo, y que expandir/colapsar el formulario manual funciona.
-
 ---
 
 ## PI-B · Obsidian como frontend de la memoria — investigación + propuesta honesta
@@ -1139,6 +1236,16 @@ opción 2 como opcional post-1.0; opción 3 descartada) + estimación de la
 sesión de implementación si es GO.
 **Tamaño**: pequeña-media (investigación). **Modelo**: Sonnet, esfuerzo alto.
 
+> ✅ **PI-B HECHA (2026-07-31, marcada aquí a posteriori el 2026-08-02).**
+> Propuesta en **`PLAN_MAESTRO_2026/38_PI-B_OBSIDIAN_INVESTIGACION.md`**, con las
+> 4 preguntas respondidas y el punto de partida verificado en código.
+> **Recomendación: GO a la Opción 1** (Obsidian como frontend de LECTURA) por
+> coste bajo y beneficio visible — que era justo la intuición del plan; Opción 2
+> (ingerir las notas del usuario) post-1.0 y opt-in; **Opción 3 descartada** con
+> el razonamiento explícito; Opción 4 resuelta por diseño (Aithera solo escribe
+> en su subcarpeta). **Queda una decisión del usuario**: dar el GO a
+> implementar la Opción 1 antes o después del instalador.
+
 ---
 
 ## Resumen ejecutivo del bloque
@@ -1148,15 +1255,21 @@ sesión de implementación si es GO.
 | **PU1** | Voces mezcladas (bug) ✅ hecha 2026-07-30 | S | Sonnet | — |
 | **PU2** | Skills reales + que se usen ✅ hecha 2026-07-30 | M | Sonnet | — |
 | **PU3** | Autónomo 100% + sin timeouts en gates ✅ hecha 2026-07-30 | M | Sonnet | — |
-| **PU5** | AVCS partículas ✅ Fallo 1 hecho 2026-07-30 (3 intentos; Fallo 2 escala pendiente) | M | Sonnet | — |
-| **PU6** | Hub sin UI + botonera inferior | L | Opus | **Diseño del usuario** + PU5 |
-| **PU7** | Modo claro profesional | L | Opus/Fable | PU6 |
+| **PU5** | AVCS ✅ **COMPLETA** — Fallo 1 2026-07-30 (3 intentos) · b/c/d/e/f · Fallo 2 vía PU6a-bis · **PU5g 2026-08-02** (ECG al hablar + fin del descenso al escuchar) | M | Sonnet/Opus | — |
+| **PU6** | Hub sin UI + botonera inferior ✅ hecha 2026-07-31 (falta solo entrar/salir POR VOZ) | L | Opus | **Diseño del usuario** + PU5 |
+| **PU7** | Modo claro profesional ❌ **NO HECHA — la única sesión grande que queda** | L | Opus/Fable | PU6 |
 | **PU4** | Briefing 2.0 + voz ✅ hecha 2026-08-01 | M-L | Sonnet/Opus | mejor tras PU6 |
-| **PU10** | Memoria: UI + chat directo | M-L | Sonnet | mejor tras PU7 |
-| **PU8** | Auditoría de prompts (→ doc 36) | M-L | Fable/Opus | — |
-| **PI-A** | Investigación Obscura (GO/NO-GO) | M | Sonnet | — |
-| **PU9** | Obscura 1-click (solo si GO) | M | Sonnet | PI-A = GO |
-| **PI-B** | Investigación Obsidian (propuesta) | S-M | Sonnet | — |
+| **PU10** | Memoria: UI + chat directo ✅ hecha 2026-08-01 (+visual 2026-08-02) | M-L | Sonnet | mejor tras PU7 |
+| **PU8** | Auditoría de prompts ✅ hecha 2026-07-31 (→ doc 36) | M-L | Fable/Opus | — |
+| **PI-A** | Investigación Obscura ✅ hecha 2026-07-31 (→ doc 37) — **NO-GO para 1.0** | M | Sonnet | — |
+| **PU9** | Obscura 1-click ⛔ **no procede para 1.0** (PI-A = NO-GO); post-1.0 con Hermes | M | Sonnet | PI-A = GO |
+| **PI-B** | Investigación Obsidian ✅ hecha 2026-07-31 (→ doc 38) — **GO a la opción 1**, pendiente decisión | S-M | Sonnet | — |
+
+> **Estado del bloque a 2026-08-02**: de las 11 entradas, **9 cerradas**, 1
+> descartada por dependencia (PU9) y **1 pendiente de verdad: PU7**. Marcado en
+> esta pasada de revisión: PU5e, PU5f, PU5g y Fallo 2 de PU5, PU6, PU8, PI-A,
+> PI-B y PU9 estaban hechas (o resueltas) en código y sin registrar aquí; PU7 se
+> marca explícitamente como NO hecha para que no se dé por cerrada por inercia.
 
 **Decisiones que quedan en manos del usuario** (recopiladas):
 1. PU6: enviar el diseño de la botonera inferior antes de esa sesión.
@@ -1166,7 +1279,11 @@ sesión de implementación si es GO.
 3. PU3: ratificar la matriz de timeouts propuesta y el alcance de Autónomo
    sobre `desktop_tool` (la propuesta es "sin excepciones", como pediste,
    con rastro siempre).
-4. PI-A / PI-B: GO/NO-GO tras leer las propuestas.
+4. ~~PI-A / PI-B: GO/NO-GO tras leer las propuestas.~~ ✅ **PI-A resuelta**
+   (NO-GO para 1.0, confirmado por el usuario el 2026-07-31, ver doc 37).
+   **PI-B sigue abierta**: el informe recomienda GO a la Opción 1 (Obsidian
+   como frontend de lectura) — falta el visto bueno y decidir si va antes o
+   después del instalador.
 
 **Después de este bloque**: MVP-beta (instalador NSIS, auto-start del backend,
 onboarding final) → bump a `1.0.0`. Ese plan es aparte (doc 03 §5 O5).
@@ -1189,6 +1306,31 @@ materializan, y el chat vive abajo de la `ProjectCard` reusando los endpoints
 de agente (de regalo: historial persistido en `agent_executions`). Su alcance
 lo impone `Authority` —proyecto + carpeta + tools—, no un prompt. 10 tests
 nuevos + 2 mutaciones; regresión 1337 passed. Detalle en CLAUDE.md §27.
+
+**Aithera puede PREGUNTAR (fuera de plan) — ✅ HECHO (2026-08-02)**: reportado
+por el usuario con el transcript completo de una misión de Cordyceps que se
+quedó a medias. Tres fallos encadenados. (1) **No existía forma de que Aithera
+hiciera una pregunta**: podía pedir permiso (gate) pero no pedir un DATO, así
+que ante una ambigüedad inventaba o abandonaba — que es exactamente lo que hizo
+(agente creado sin skills ni `project_id`). Ahora hay `aithera.ask_user`, con la
+ventana de opciones que pidió el usuario: 3 respuestas prefabricadas (la primera
+recomendada) + una 4ª en blanco para escribir. Vive en `tie/toolloop.py`, **no**
+en la tool, por una razón dura: `tool_manager.execute` capa el timeout a 300 s y
+el requisito es **espera INDEFINIDA** ("da igual si son 4 horas o dos días").
+Construida sobre `ApprovalGate`, hereda persistencia, idempotencia y
+reanudación tras reinicio. Aparece en Misiones **y** en los tres chats
+(principal, orquestador de proyecto, agentes) vía `usePendingQuestions` +
+`UserQuestionCard`. Detalle importante: el perfil **Autónomo** habría
+auto-respondido las preguntas con "permiso pre-autorizado" — o sea, inventando
+el criterio del usuario —, así que `USER_QUESTION_KIND` se excluye
+explícitamente de la pre-autorización: los permisos se pueden automatizar, una
+pregunta no. (2) **`update_agent`/`delete_agent` no existían**: un agente mal
+creado era irreparable desde el chat. (3) **El chat se quedaba en "Trabajando…"
+con la misión ya completada**: `agent_manager` mantenía abierta una sesión de BD
+durante toda la misión (minutos) y el manejador de error usaba esa misma sesión
+rota, así que la ejecución nunca se cerraba. Ahora se cierra antes de delegar al
+TIE y el cierre se hace en una sesión corta propia. 15 tests nuevos. Detalle en
+CLAUDE.md §27.
 
 ---
 

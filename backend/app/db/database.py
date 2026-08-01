@@ -310,6 +310,12 @@ class AgentExecution(Base):
     # V0.85 (MOS M5, doc 12 A3): indexado — filtro frecuente (ejecuciones en curso/fallidas).
     status = Column(String(20), default='pending', index=True)
     result = Column(Text)
+    # [2026-08-02] RASTRO DE ACTIVIDAD (JSON: lista de frases cortas). El chat
+    # del orquestador de un proyecto no va por SSE sino por sondeo de esta
+    # tabla, asi que el rastro en vivo que el chat principal recibe por el
+    # stream aqui tiene que estar PERSISTIDO para poder leerse. Se escribe
+    # mientras la mision corre y se conserva despues (el usuario lo despliega).
+    progress = Column(Text)
     error_message = Column(Text)
     # V0.5: registro de las herramientas que el agente decidio usar durante
     # esta ejecucion. Se guarda como JSON list de {tool_id, action, params, result}.

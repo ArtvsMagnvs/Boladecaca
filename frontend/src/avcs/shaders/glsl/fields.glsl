@@ -41,6 +41,74 @@ const float SPEAK_RING_EXPAND = 1.10;
 const float SPEAK_RING_RIPPLE = 0.30;
 const float SPEAK_RING_LOBES = 5.0;
 const float SPEAK_ALMOND_RATIO = 7.0;
+
+// [PU5g 2026-08-02] TRAZO DE ELECTROCARDIÓGRAFO al hablar. REPLICAN
+// constants.ts — comentario cruzado allí.
+const float TWO_PI = 6.28318530718;
+/** Cuántos latidos caben alrededor de un anillo. Pocos: lo que hace legible un
+ *  ECG es el espacio PLANO entre picos; con muchos se convierte en una greca. */
+const float SPEAK_ECG_BEATS = 3.0;
+/** Vueltas por segundo del trazo (la "cinta" avanzando). NO es un valor
+ *  estético libre: el anclaje de las partículas es un muelle sobredamortiguado
+ *  y por tanto un FILTRO PASO BAJO. Con 0.42 (el primer valor de este parche) el
+ *  pico R le pasaba por delante a la partícula en ~95 ms y ésta solo alcanzaba a
+ *  recorrer un tercio del camino, con lo que el trazo se veía a un tercio de su
+ *  altura. A 0.20 el pico dura ~200 ms y se dibuja al ~90%. Verificado por
+ *  simulación numérica del integrador (ver la nota de SPEAK_RING_STIFF). */
+const float SPEAK_ECG_SPEED = 0.20;
+/** Altura del pico R a amplitud 1, en UNIDADES DE ESCENA (no fracción de radio).
+ *  Absoluta a propósito: en un monitor real todas las trazas tienen la misma
+ *  altura de pico, y aquí además evita que el anillo externo (r≈3.04) dispare
+ *  partículas fuera de cuadro mientras el interno (r≈1.36) apenas se mueve.
+ *  Referencia de escala: los anillos distan ~0.36-0.44 entre sí, así que 0.34
+ *  a amplitud 1 es un pico del orden de la separación entre anillos — grande y
+ *  claramente visible, sin llegar a deshacer la figura. */
+const float SPEAK_ECG_GAIN = 0.34;
+/** Suelo de amplitud: con voz pero sin golpe, la línea sigue latiendo un poco. */
+const float SPEAK_ECG_BASE = 0.30;
+/** Cuánto suma el golpe de la sílaba (uAudioPunch) sobre ese suelo. */
+const float SPEAK_ECG_PUNCH = 0.90;
+
+// ---------------------------------------------------------------------------
+// [PU5g] POR QUÉ LA ANIMACIÓN ANTERIOR NO SE VEÍA — y la pieza que faltaba.
+// ---------------------------------------------------------------------------
+// El diagnóstico no era solo que la envolvente fuese plana. Aunque el ancla se
+// deforme mucho, la partícula NO la sigue: su ecuación es un muelle
+// amortiguado (`ret` en computeForce, con uDamping = 0.9 por frame). Con la
+// rigidez de reposo, k ≈ 7·0.87 ≈ 6 y c ≈ 6 s⁻¹: está SOBREAMORTIGUADO, con una
+// constante de tiempo efectiva c/k ≈ 1 s. Es decir, el anclaje se comporta como
+// un filtro paso bajo de ~1 Hz y borra por completo cualquier gesto rápido.
+// Medido en simulación: del pico del ancla solo llegaba a la pantalla un 7%.
+// Ésa es la razón física de que "la animación al hablar sea imperceptible", y
+// ninguna cantidad de amplitud en el ancla lo arregla.
+//
+// La corrección es subir la RIGIDEZ de los anillos MIENTRAS habla (ponderada por
+// uSpeakEnv, así que en reposo el comportamiento es idéntico al de siempre y no
+// hay riesgo de regresión). Con ×26: k ≈ 158, ω ≈ 11.6 rad/s → constante de
+// tiempo ~40 ms, el trazo se dibuja al ~90% y sigue lejos del límite de
+// estabilidad del integrador explícito (ω·dt ≈ 0.19 ≪ 2).
+const float SPEAK_RING_STIFF = 26.0;
+
+// ---------------------------------------------------------------------------
+// [PU5g] La onda del monitor: un latido completo en x ∈ [0,1).
+// ---------------------------------------------------------------------------
+// Reproduce el complejo PQRST real, que es lo que el ojo reconoce como "esto es
+// un electrocardiógrafo" y no una onda cualquiera:
+//   P  — jorobita previa, suave
+//   Q  — bajada corta justo antes del pico
+//   R  — EL PICO: estrecho y alto (lo que se ve)
+//   S  — rebote por debajo de la línea, más ancho que la Q
+//   T  — joroba de recuperación, ancha y baja
+// Todo con gaussianas: continuas y derivables, así que el trazo no da saltos
+// cuando la partícula cruza de un lado al otro (`fract` incluido).
+float ecgTrace(float x) {
+  float p = 0.16 * exp(-pow((x - 0.150) / 0.045, 2.0));
+  float q = -0.16 * exp(-pow((x - 0.262) / 0.017, 2.0));
+  float r = 1.00 * exp(-pow((x - 0.300) / 0.020, 2.0));
+  float s = -0.32 * exp(-pow((x - 0.348) / 0.027, 2.0));
+  float t = 0.20 * exp(-pow((x - 0.520) / 0.075, 2.0));
+  return p + q + r + s + t;
+}
 // [PU5f] Longitud de los "relámpagos" que brotan de la semilla al hablar, en
 // unidades de escena. La silueta mide ~3,5 de alto, así que 0.18 y 0.35 son
 // aproximadamente el "1 cm y 2 cm" pedidos a tamaño de pantalla normal.
@@ -88,16 +156,39 @@ vec3 spinRing(vec3 a) {
   // --- [PU5f] ESCUCHA: los anillos se recogen hacia el centro ---
   shrink *= mix(1.0, LISTEN_RING_CONTRACT, uListenEnv);
 
-  // --- [PU5f] HABLA: se expanden Y ondulan con la voz, como un frente de radio ---
-  // La ondulación depende del ÁNGULO (lóbulos alrededor del anillo) y viaja con
-  // el tiempo; su amplitud la manda `uAudioEnv`, la envolvente de voz real, así
-  // que el volumen se VE. Cada anillo lleva un desfase (idx) para que no ondulen
-  // los cinco al unísono, que parecería un solo objeto rígido.
+  // --- [PU5g 2026-08-02] HABLA: TRAZO DE ELECTROCARDIÓGRAFO ---
+  //
+  // Antes esto era un `sin()` suave alrededor del anillo: una ondulación
+  // continua que, con la envolvente casi plana del TTS, resultaba
+  // imperceptible. El usuario pidió el zig-zag de un monitor de pulsaciones de
+  // hospital, y con una razón de diseño clara: en un ECG la línea está PLANA la
+  // mayor parte del tiempo y lo que se ve es el PICO. Esa asimetría —reposo
+  // largo, golpe corto— es justo lo que hace legible cada sílaba.
+  //
+  // El anillo se lee como la cinta de papel del monitor: el ángulo es la
+  // posición a lo largo de la cinta y el trazo AVANZA con el tiempo.
   float ang2 = atan(r.y, r.x);
-  float radio = sin(ang2 * SPEAK_RING_LOBES - uTime * 2.4 + idx * 1.1) * uAudioEnv;
-  shrink *= mix(1.0, SPEAK_RING_EXPAND + SPEAK_RING_RIPPLE * radio, uSpeakEnv);
+  float tape = ang2 * (1.0 / TWO_PI);                    // -0.5..0.5 alrededor
+  float x = fract(tape * SPEAK_ECG_BEATS - uTime * SPEAK_ECG_SPEED + idx * 0.17);
+  float trace = ecgTrace(x);
 
-  return vec3(c.x + r.x * shrink, c.y + r.y * shrink, a.z * shrink);
+  // AMPLITUD = fonética. `uAudioPunch` (AudioReactor) es cuánto DESTACA la
+  // sílaba en curso sobre el nivel medio, no su volumen absoluto: por eso una
+  // sílaba fuerte dibuja un pico grande y una floja uno pequeño aunque el TTS
+  // hable siempre igual de alto. Se le deja un suelo con `uAudioEnv` para que
+  // mientras hay voz la línea nunca quede del todo muerta.
+  float amp = SPEAK_ECG_BASE + SPEAK_ECG_PUNCH * uAudioPunch + 0.25 * uAudioEnv;
+
+  // El trazo se suma como DESPLAZAMIENTO RADIAL ABSOLUTO, no como factor de
+  // escala: así el pico mide lo mismo en el anillo interno que en el externo
+  // (igual que las trazas de un monitor real) y no depende del radio. La
+  // expansión de base al hablar sí sigue siendo multiplicativa.
+  float rr = length(r);
+  vec2 dirv = rr > 1e-4 ? r / rr : vec2(1.0, 0.0);
+  float radial = rr * shrink * mix(1.0, SPEAK_RING_EXPAND, uSpeakEnv)
+               + SPEAK_ECG_GAIN * trace * amp * uSpeakEnv;
+
+  return vec3(c.x + dirv.x * radial, c.y + dirv.y * radial, a.z * shrink);
 }
 
 // Cuánto puede "viajar" una partícula según su rol (el núcleo nunca; el logo poco).
@@ -263,8 +354,14 @@ vec3 computeForce(vec3 pos, vec4 G, vec4 A) {
 
   float effBind = bind * (1.0 - 0.7 * w);
 
+  // [PU5g] Rigidez extra de los ANILLOS al hablar — sin esto el trazo ECG no
+  // llega a la pantalla (ver la nota de SPEAK_RING_STIFF arriba). Ponderada por
+  // uSpeakEnv: fuera del habla vale 1.0 exacto = comportamiento histórico.
+  float stiff = 1.0;
+  if (role > 0.31 && role < 0.45) stiff = mix(1.0, SPEAK_RING_STIFF, uSpeakEnv);
+
   vec3 target = targetAnchor(A.xyz, role, pseed);
-  vec3 ret = (target - pos) * (7.0 * effBind);
+  vec3 ret = (target - pos) * (7.0 * effBind * stiff);
 
   // curl: más fuerte cuando la partícula está "viajando".
   vec3 curl = fCurl(pos) * (0.25 + 1.1 * w);
@@ -280,9 +377,23 @@ vec3 computeForce(vec3 pos, vec4 G, vec4 A) {
   fCommon += uWeights[1] * wave;
   fCommon += uWeights[8] * ret;
   // Gravedad (Escucha/Comunicación, doc 13 §4): tira sobre todo de lo poco
-  // anclado (campo/tendrils → "raíces insinuadas"), casi nada del logo/núcleo,
-  // para no deformar la identidad (misma lección que targetAnchor()).
-  fCommon += uWeights[3] * uGravityDir * mix(0.2, 1.0, wanderAllow(role));
+  // anclado (campo/estrellas), NADA de lo que forma la identidad.
+  //
+  // [PU5g 2026-08-02 — BUG REAL reportado: "al escuchar, la semilla y los
+  // anillos DESCIENDEN en la pantalla"]. La causa era que este factor se
+  // derivaba de `wanderAllow(role)`, y `ROLE.RING` vale 0.38 — un rol BAJO,
+  // así que los anillos recibían ~86% de la gravedad y bajaban con todo el
+  // conjunto. Ese proxy se quedó obsoleto en PU5b: allí los anillos pasaron a
+  // ser RÍGIDOS subiendo su `bind` a 0.88, pero la gravedad nunca se enteró
+  // porque seguía mirando el rol, no el anclaje.
+  //
+  // Ahora el factor sale del PROPIO `bind`, que es literalmente "cuánto se
+  // aferra esta partícula a su sitio de diseño": semilla (0.93) y anillos
+  // (0.88) quedan prácticamente inmunes, mientras el campo (0.22) y las
+  // estrellas (0.06) siguen derivando igual que antes — la ambientación se
+  // conserva, el artefacto desaparece. Y al ser la MISMA fuente que usa el
+  // resto del archivo, no puede volver a desincronizarse.
+  fCommon += uWeights[3] * uGravityDir * pow(1.0 - bind, 2.0);
   fCommon += uWeights[4] * fRoot(pos, A.xyz, role);
   fCommon += uWeights[5] * fBranch(pos, A.xyz, role);
   fCommon += uWeights[6] * fMandala(pos);

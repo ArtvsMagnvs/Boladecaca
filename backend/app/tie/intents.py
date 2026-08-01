@@ -254,7 +254,54 @@ def _extract_json(text: str) -> Optional[dict]:
     if not candidate:
         return None
     out = _try_parse(candidate)
-    return out if isinstance(out, dict) else None
+    if isinstance(out, dict):
+        return out
+    # [2026-08-02] VARIOS objetos SUELTOS en un mismo mensaje: `{A}\n{B}` (sin
+    # array que los envuelva, así que el camino de arriba no aplica). La
+    # heurística primer-{...último-} produce `{A}\n{B}`, que NO es JSON válido,
+    # y hasta aquí eso equivalía a "el modelo respondió en prosa": la vuelta se
+    # quemaba y, si era la ÚLTIMA, el texto CRUDO —con los tool-calls dentro—
+    # se guardaba como resultado del nodo y aparecía tal cual en el Log de
+    # Misiones (caso real reportado por el usuario: un nodo "Hecha" cuyo
+    # contenido eran dos líneas `{"tool": {...}}`). Se toma el PRIMER objeto
+    # BALANCEADO, que es exactamente el contrato del bucle (elegir UNA acción,
+    # ejecutarla, observar) y el mismo criterio que ya se aplicaba al array.
+    first = _first_balanced_object(text)
+    if first is not None:
+        out = _try_parse(first)
+        if isinstance(out, dict):
+            return out
+    return None
+
+
+def _first_balanced_object(text: str) -> Optional[str]:
+    """El primer `{...}` con las llaves equilibradas, ignorando las que estén
+    dentro de una cadena JSON (y sus escapes). None si no hay ninguno cerrado."""
+    start = text.find("{")
+    if start == -1:
+        return None
+    depth = 0
+    in_str = False
+    escaped = False
+    for i in range(start, len(text)):
+        ch = text[i]
+        if in_str:
+            if escaped:
+                escaped = False
+            elif ch == "\\":
+                escaped = True
+            elif ch == '"':
+                in_str = False
+            continue
+        if ch == '"':
+            in_str = True
+        elif ch == "{":
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0:
+                return text[start:i + 1]
+    return None
 
 
 def _try_parse(candidate: str):

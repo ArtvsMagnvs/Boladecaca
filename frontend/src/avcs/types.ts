@@ -64,6 +64,14 @@ export interface AudioFrame {
   envelope: number; // 0-1 energía global (RMS suavizado)
   bands: readonly [number, number, number]; // graves/medios/agudos 0-1
   silence: boolean;
+  /** [PU5g 2026-08-02] Golpe RELATIVO de la sílaba en curso (0-1): cuánto
+   *  sobresale el ataque actual sobre el nivel medio al que se está hablando.
+   *  Campo AÑADIDO (append-only, con default 0 en SILENCE) — el contrato de
+   *  {envelope,bands,silence} no cambia para quien ya lo consumía.
+   *  `envelope` dice CUÁNTO suena; `punch`, cuánto DESTACA: es lo que hace que
+   *  una sílaba fuerte dibuje una onda más grande que una floja aunque el
+   *  volumen general del TTS sea plano. */
+  punch: number;
 }
 
 /** Estructuras procedurales materializables. Unión cerrada = congelada.
@@ -138,6 +146,9 @@ export interface UniformBus {
   uField: THREE.IUniform<THREE.Color>;
   // Audio (stub S1)
   uAudioEnv: THREE.IUniform<number>;
+  /** [PU5g] Golpe RELATIVO de la sílaba en curso (AudioFrame.punch). Gobierna la
+   *  altura del trazo de electrocardiógrafo de los anillos al hablar. */
+  uAudioPunch: THREE.IUniform<number>;
   uAudioBands: THREE.IUniform<THREE.Vector3>;
   // Render
   /** Tamaño de punto = BASE_POINT_SIZE × `pointScale` del tier. El escalado es

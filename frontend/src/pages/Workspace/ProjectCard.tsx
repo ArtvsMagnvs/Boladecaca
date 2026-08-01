@@ -23,6 +23,15 @@ import { useDragResize, MIN_CARD_W, MIN_CARD_H, type CardLayout, type Rect } fro
 // varios '.map((t) => …)' — evita sombrear/confundir.
 import { useT } from "@/store/useI18n";
 
+// [2026-08-02] Umbrales del CHAT LATERAL (petición del usuario). Sueltos y con
+// nombre para que ajustarlos sea cambiar un número, no releer el layout.
+/** Ancho de la tarjeta / ancho máximo del lienzo a partir del cual el chat se va al lateral. */
+const SIDE_CHAT_MIN_RATIO = 0.6;
+/** Ancho de la columna de chat = 70% del lado derecho, es decir 35% del ancho de la tarjeta. */
+const SIDE_CHAT_WIDTH_RATIO = 0.35;
+const SIDE_CHAT_MIN_PX = 240;
+const SIDE_CHAT_MAX_PX = 520;
+
 interface Props {
   project: Project;
   allProjects: Project[];
@@ -53,11 +62,14 @@ export function ProjectCard({
   // layout.h ya confirmado (el que vive en el padre + localStorage). Pedido
   // explicito: el contenido se reorganiza MIENTRAS se redimensiona, no solo
   // al soltar. Se limpia en cuanto el gesto termina (handleCommit).
-  const [liveH, setLiveH] = useState<number | null>(null);
+  // [2026-08-02] Se guarda el rect ENTERO (antes solo el alto): el chat lateral
+  // se decide por ANCHO, y tiene que reorganizarse durante el gesto igual que
+  // lo hacen las secciones que dependen del alto.
+  const [live, setLive] = useState<{ w: number; h: number } | null>(null);
 
   const handleCommit = useCallback(
     (patch: Partial<CardLayout>) => {
-      setLiveH(null);
+      setLive(null);
       onCommit(patch);
     },
     [onCommit],
@@ -66,7 +78,7 @@ export function ProjectCard({
   const { nodeRef, headerHandlers, resizeHandlers } = useDragResize({
     layout, bounds, onCommit: handleCommit, onInteractStart,
     isOverShelf, onDropOnShelf: onMinimize,
-    onLiveResize: useCallback((r: Rect) => setLiveH(r.h), []),
+    onLiveResize: useCallback((r: Rect) => setLive({ w: r.w, h: r.h }), []),
   });
 
   const [milestones, setMilestones] = useState<Milestone[]>([]);
@@ -160,19 +172,51 @@ export function ProjectCard({
   // MUY pequena -> solo cabecera+progreso; PEQUENA -> +milestones+iconos de
   // agente; GRANDE/expandida -> +tareas+actividad+tarjetas de agente
   // completas+hueco de automatizaciones.
-  const availableH = layout.expanded ? Infinity : (liveH ?? layout.h) - 56; // 56 ~ alto del header
+  const availableH = layout.expanded ? Infinity : (live?.h ?? layout.h) - 56; // 56 ~ alto del header
   const showMilestones = layout.expanded || availableH > 140;
   const showAgentsIcons = layout.expanded || availableH > 140;
   const showAgentsFull = layout.expanded || availableH > 320;
   const showTasksAndActivity = layout.expanded || availableH > 320;
+
+  // [2026-08-02, petición del usuario] CHAT LATERAL. Con la tarjeta ancha, el
+  // chat del orquestador deja de ir apilado abajo (donde apenas se veían dos
+  // turnos) y pasa a una columna propia a la derecha, de alto completo: lo que
+  // hace falta para trabajar es ver el RECORRIDO de la conversación.
+  //
+  // El disparador es el ancho de la tarjeta frente al maximo que puede ocupar
+  // en el lienzo (`bounds.width`, el mismo que usa `rectStyle` al expandir).
+  // Expandida es por definicion el 100%, asi que siempre entra en modo lateral.
+  const maxW = bounds.width || 1;
+  const currentW = layout.expanded ? maxW : (live?.w ?? layout.w);
+  const sideChat = showTasksAndActivity && currentW / maxW > SIDE_CHAT_MIN_RATIO;
+  // Ancho de la columna: el 70% del lado derecho de la tarjeta (= 35% del
+  // ancho total), acotado para que siga siendo usable en cualquier tamaño.
+  const sideChatW = Math.round(
+    Math.min(SIDE_CHAT_MAX_PX, Math.max(SIDE_CHAT_MIN_PX, currentW * SIDE_CHAT_WIDTH_RATIO)),
+  );
 
   const recentTasks = useMemo(
     () => [...tasks].sort((a, b) => (b.updated_at ?? "").localeCompare(a.updated_at ?? "")).slice(0, 5),
     [tasks],
   );
 
+  // [2026-08-02] EXPANDIR = exactamente el recuadro del lienzo, ni un pixel
+  // mas (peticion literal del usuario: expandida se salia por abajo del marco
+  // donde se abren los proyectos, y el chat del orquestador —que vive al final
+  // de la tarjeta— quedaba fuera de alcance).
+  //
+  // Antes esto era `undefined` + la clase `inset-0`, es decir: el tamano lo
+  // decidia el navegador a partir del contenedor, y ninguna de las dos cosas
+  // se escribia en el elemento. El problema de fondo es que `useDragResize`
+  // MUTA `style.transform/width/height` directamente en el DOM durante cada
+  // gesto (60fps, a espaldas de React); dejar el estilo vacio en el estado
+  // expandido significa depender de que React limpie por su cuenta lo que
+  // otro codigo escribio por debajo. Ahora las DOS ramas escriben SIEMPRE las
+  // mismas propiedades con valores concretos, medidos del propio lienzo
+  // (`bounds`, que ya llega por props desde el ResizeObserver de
+  // WorkspaceCanvas): no queda margen para heredar un tamano viejo.
   const rectStyle = layout.expanded
-    ? undefined
+    ? { transform: "translate(0px, 0px)", width: bounds.width, height: bounds.height, minWidth: 0, minHeight: 0 }
     : { transform: `translate(${layout.x}px, ${layout.y}px)`, width: layout.w, height: layout.h, minWidth: MIN_CARD_W, minHeight: MIN_CARD_H };
 
   return (
@@ -180,7 +224,7 @@ export function ProjectCard({
       ref={nodeRef}
       className={`glass-surface rounded-2xl shadow-glass flex flex-col overflow-hidden border ${
         isFront ? "border-accent/45 holo-frame" : "border-base-700"
-      } ${layout.expanded ? "absolute inset-0" : "absolute top-0 left-0"}`}
+      } absolute top-0 left-0`}
       style={{ ...rectStyle, zIndex: layout.zIndex }}
       onPointerDownCapture={onInteractStart}
     >
@@ -213,8 +257,11 @@ export function ProjectCard({
         <button onClick={(e) => { e.stopPropagation(); onMinimize(); }} className="text-ink-faint hover:text-ink text-sm px-1.5 shrink-0" title={tr("workspace.projectCard.minimize")}>—</button>
       </div>
 
-      {/* Cuerpo */}
-      <div className="flex-1 min-h-0 overflow-y-auto px-4 py-3.5 flex flex-col gap-3.5">
+      {/* Cuerpo — una sola columna, o dos cuando el chat se va al lateral.
+          El contenedor exterior es SIEMPRE flex: sin chat lateral, la columna
+          de contenido ocupa el 100% y el resultado es identico al de antes. */}
+      <div className="flex-1 min-h-0 flex">
+      <div className="flex-1 min-w-0 overflow-y-auto px-4 py-3.5 flex flex-col gap-3.5">
         {loading ? (
           <p className="text-xs text-ink-faint py-4">{tr("common.loading")}</p>
         ) : (
@@ -315,16 +362,32 @@ export function ProjectCard({
                   </section>
                 )}
 
-                {/* [hotfix 2026-08-02] El chat del ORQUESTADOR del proyecto —
-                    abajo del todo, como pidió el usuario. Se monta con el mismo
-                    umbral de alto que tareas/actividad para no ahogar una
-                    tarjeta pequeña; el orquestador se crea en el backend a la
+                {/* [hotfix 2026-08-02] El chat del ORQUESTADOR del proyecto.
+                    Apilado aquí abajo SOLO mientras la tarjeta sea estrecha;
+                    en cuanto pasa del umbral de ancho se va a su columna de la
+                    derecha (más abajo) para que se vea el recorrido entero de
+                    la conversación. El orquestador se crea en el backend la
                     primera vez que se abre (idempotente). */}
-                <OrchestratorChat projectId={project.id} expanded={layout.expanded} />
+                {!sideChat && (
+                  <OrchestratorChat projectId={project.id} expanded={layout.expanded} />
+                )}
               </>
             )}
           </>
         )}
+      </div>
+
+      {/* Columna de chat — solo con la tarjeta ancha. Alto completo y scroll
+          propio: el contenido del proyecto y la conversación se desplazan por
+          separado, que es lo que hace cómodo trabajar con las dos a la vez. */}
+      {sideChat && (
+        <aside
+          className="shrink-0 min-w-0 border-l border-base-700/60 px-3 py-3.5 flex flex-col"
+          style={{ width: sideChatW }}
+        >
+          <OrchestratorChat projectId={project.id} expanded={layout.expanded} placement="side" />
+        </aside>
+      )}
       </div>
 
       {/* Asas de resize — las 8 (4 bordes + 4 esquinas), solo cuando no esta

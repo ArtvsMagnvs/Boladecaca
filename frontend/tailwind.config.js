@@ -5,6 +5,8 @@
 // (.dark / .light en <html>), sin tocar ni una clase de los componentes. El
 // patrón `rgb(var(--x) / <alpha-value>)` conserva el soporte de opacidad de
 // Tailwind (bg-base-900/60 sigue funcionando).
+import plugin from "tailwindcss/plugin.js";
+
 const v = (name) => `rgb(var(${name}) / <alpha-value>)`;
 
 export default {
@@ -47,5 +49,20 @@ export default {
       },
     },
   },
-  plugins: [],
+  // [PU7, 2026-08-02] Variante `light:` (equivalente a `dark:` pero para el
+  // tema claro): las paletas fijas de Tailwind (amber-300, rose-400…) NO
+  // pasan por las variables CSS de tema — están calibradas para fondo
+  // OSCURO, así que sobre el lienzo gris claro (`--c-base-950` en `.light`)
+  // quedan poco legibles ("letras amarillas que no contrastan", reportado
+  // por el usuario). En vez de sustituir esas clases (perdiendo el color de
+  // acento por tipo/estado en oscuro, que funciona bien), se añade una
+  // variante que solo actúa bajo `.light`: `light:text-amber-800` deja el
+  // oscuro intacto y oscurece el tono SOLO en claro. La especificidad de
+  // `.light &` (2 clases) siempre gana sobre la utilidad sin prefijo (1
+  // clase), así que el orden de las clases en el JSX no importa.
+  plugins: [
+    plugin(({ addVariant }) => {
+      addVariant("light", ".light &");
+    }),
+  ],
 };

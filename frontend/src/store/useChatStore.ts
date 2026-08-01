@@ -22,6 +22,11 @@ export interface ChatMessage {
   // [V1.0 T4b] Si la respuesta vino de una misión del TIE (varios pasos), su
   // id para poder abrir el plan y su estado.
   missionId?: string;
+  // [2026-08-02] El rastro de lo que Aithera fue haciendo para producir ESTA
+  // respuesta ("Leyendo GDD.docx", "Paso 2 de 3: …"). Se muestra plegado bajo
+  // el mensaje, desplegable. Vive en el mensaje (no en la sesión) para que
+  // sobreviva a los turnos siguientes y a recargar la app.
+  activity?: string[];
 }
 
 export interface ChatSession {
@@ -35,6 +40,9 @@ export interface ChatSession {
   sending: boolean;
   streamingText: string;
   tieStatus: string;
+  // Rastro del turno EN CURSO. Al cerrarse el turno se vuelca al mensaje del
+  // asistente y esta lista se vacía.
+  activity: string[];
   missionId: string | null;
   createdAt: number;
 }
@@ -61,6 +69,7 @@ function makeSession(): ChatSession {
     sending: false,
     streamingText: "",
     tieStatus: "",
+    activity: [],
     missionId: null,
     createdAt: Date.now(),
   };
@@ -94,6 +103,8 @@ interface ChatState {
   setStreamingText: (sessionId: string, v: string) => void;
   appendStreamingText: (sessionId: string, chunk: string) => void;
   setTieStatus: (sessionId: string, v: string) => void;
+  appendActivity: (sessionId: string, line: string) => void;
+  clearActivity: (sessionId: string) => void;
   setMissionId: (sessionId: string, v: string | null) => void;
 }
 
@@ -150,6 +161,22 @@ export const useChatStore = create<ChatState>()(
       setTieStatus: (sessionId, v) =>
         set((state) => ({ sessions: patchSession(state.sessions, sessionId, { tieStatus: v }) })),
 
+      appendActivity: (sessionId, line) =>
+        set((state) => ({
+          sessions: patchSession(state.sessions, sessionId, (s) => {
+            // `|| []`: una sesión rehidratada de localStorage guardada ANTES de
+            // que este campo existiera no lo trae. Sin esto, el primer rastro
+            // sobre una conversación vieja reventaría con "cannot read length".
+            const prev = s.activity || [];
+            // Se ignora la repetición inmediata: dos lecturas idénticas
+            // seguidas no aportan una línea más, solo ruido.
+            return prev[prev.length - 1] === line ? {} : { activity: [...prev, line] };
+          }),
+        })),
+
+      clearActivity: (sessionId) =>
+        set((state) => ({ sessions: patchSession(state.sessions, sessionId, { activity: [] }) })),
+
       setMissionId: (sessionId, v) =>
         set((state) => ({ sessions: patchSession(state.sessions, sessionId, { missionId: v }) })),
     }),
@@ -166,6 +193,10 @@ export const useChatStore = create<ChatState>()(
           sending: false,
           streamingText: "",
           tieStatus: "",
+          // El rastro EN CURSO tampoco: si la app se cierra a media misión, al
+          // reabrir no debe quedar un rastro colgado sin respuesta. El de los
+          // mensajes YA cerrados sí persiste (vive dentro de `messages`).
+          activity: [],
         })),
       }),
     },

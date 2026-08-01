@@ -45,7 +45,7 @@ export function CoreDesignPanel({ model, value, onChange, onReset }: CoreDesignP
         onClick={() => setOpen(true)}
         aria-label={t("hub.designLab.openAria")}
         title="Design Lab · dev only"
-        className="rounded-full border border-amber-300/25 bg-base-900/70 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.2em] text-amber-200/80 shadow-lg backdrop-blur-md transition-colors hover:border-amber-300/50 hover:text-amber-100"
+        className="rounded-full border border-amber-300/25 light:border-amber-600/40 bg-base-900/70 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.2em] text-amber-200/80 light:text-amber-800 shadow-lg backdrop-blur-md transition-colors hover:border-amber-300/50 light:hover:border-amber-700/60 hover:text-amber-100 light:hover:text-amber-900"
       >
         ⚙ Design Lab
       </button>
@@ -54,12 +54,12 @@ export function CoreDesignPanel({ model, value, onChange, onReset }: CoreDesignP
 
   return (
     <section
-      className="w-full max-w-[520px] rounded-2xl border border-amber-300/15 bg-base-900/70 px-4 py-3 shadow-2xl backdrop-blur-md"
+      className="w-full max-w-[520px] rounded-2xl border border-amber-300/15 light:border-amber-600/30 bg-base-900/70 px-4 py-3 shadow-2xl backdrop-blur-md"
       aria-label={t("hub.designLab.panelAria")}
     >
       <div className="mb-3 flex items-center justify-between gap-3">
         <div className="min-w-0">
-          <p className="text-[10px] font-semibold uppercase tracking-[0.24em] text-amber-200/80">
+          <p className="text-[10px] font-semibold uppercase tracking-[0.24em] text-amber-200/80 light:text-amber-800">
             Design Lab · dev only
           </p>
           <p className="mt-0.5 truncate text-xs text-ink-faint">
@@ -70,7 +70,7 @@ export function CoreDesignPanel({ model, value, onChange, onReset }: CoreDesignP
           <button
             type="button"
             onClick={onReset}
-            className="rounded-full border border-base-700/80 px-3 py-1 text-[10px] uppercase tracking-wider text-ink-dim transition-colors hover:border-amber-300/40 hover:text-amber-100"
+            className="rounded-full border border-base-700/80 px-3 py-1 text-[10px] uppercase tracking-wider text-ink-dim transition-colors hover:border-amber-300/40 light:hover:border-amber-700/50 hover:text-amber-100 light:hover:text-amber-900"
           >
             {t("hub.designLab.reset")}
           </button>
@@ -79,7 +79,7 @@ export function CoreDesignPanel({ model, value, onChange, onReset }: CoreDesignP
             onClick={() => setOpen(false)}
             aria-label={t("hub.designLab.minimizeAria")}
             title={t("hub.designLab.minimize")}
-            className="rounded-full border border-base-700/80 px-2.5 py-1 text-sm leading-none text-ink-dim transition-colors hover:border-amber-300/40 hover:text-amber-100"
+            className="rounded-full border border-base-700/80 px-2.5 py-1 text-sm leading-none text-ink-dim transition-colors hover:border-amber-300/40 light:hover:border-amber-700/50 hover:text-amber-100 light:hover:text-amber-900"
           >
             —
           </button>
@@ -91,7 +91,7 @@ export function CoreDesignPanel({ model, value, onChange, onReset }: CoreDesignP
           <label key={slider.key} className="block">
             <div className="mb-1 flex items-center justify-between gap-2">
               <span className="text-[11px] text-ink-dim">{t(slider.labelKey)}</span>
-              <span className="font-mono text-[10px] text-amber-100/80">
+              <span className="font-mono text-[10px] text-amber-100/80 light:text-amber-800">
                 {formatValue(value[slider.key])}
               </span>
             </div>
@@ -102,7 +102,7 @@ export function CoreDesignPanel({ model, value, onChange, onReset }: CoreDesignP
               step={slider.step}
               value={value[slider.key]}
               onChange={(e) => onChange({ [slider.key]: Number(e.currentTarget.value) })}
-              className="h-1.5 w-full cursor-ew-resize accent-amber-300"
+              className="h-1.5 w-full cursor-ew-resize accent-amber-300 light:accent-amber-600"
             />
           </label>
         ))}

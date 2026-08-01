@@ -17,7 +17,9 @@ from typing import Optional, Union
 
 from app.ai.reasoning_filter import strip_reasoning
 from app.core.logging_config import get_system_logger
+from app.core.strings import t as _t
 from app.tie import graph as graph_mod
+from app.tie import progress as _progress
 from app.tie import router, tracer
 from app.tie.authority import Authority
 from app.tie.contracts import Intent, TaskGraph, TaskNode
@@ -297,6 +299,9 @@ async def plan(
     """
     mission_id = mission_id or uuid.uuid4().hex
 
+    # [2026-08-02] Rastro en vivo: planificar es la espera más larga y opaca de
+    # una misión (una llamada al modelo de razonamiento). Que se vea.
+    _progress.emit(_t("act.planning"))
     g, reason, model_used = await _generate_graph(goal, context, mission_id, authority=authority)
     if isinstance(g, PlanRejection):
         logger.info(f"[planner] rechazo honesto: {g.reason[:150]}")
@@ -311,7 +316,9 @@ async def plan(
         return g
     if g is None:
         logger.info(f"[planner] plan no válido tras reintento — se degradará a camino corto. Motivo: {reason}")
+        _progress.emit(_t("act.plan_none"))
         return None
+    _progress.emit(_t("act.plan_ready", n=len(g.nodes)))
 
     # Registro en Decision API (best-effort) + tracer.
     decision_id = await _record_decision(goal, g, intent, mission_id)

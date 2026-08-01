@@ -347,6 +347,12 @@ class AgentExecutionResponse(BaseModel):
     result: Optional[str] = None
     error_message: Optional[str] = None
     tool_calls: Optional[str] = None
+    # [2026-08-02] Rastro de actividad (JSON: lista de frases cortas). El chat
+    # del orquestador lo pinta en vivo mientras sondea, y plegado al terminar.
+    # SIN esta linea el campo existiria en BD pero el response_model lo
+    # RECORTARIA en la respuesta — el mismo fallo que ya mordio con
+    # `model_labels` en AIProviderConfigResponse (2026-07-21).
+    progress: Optional[str] = None
     started_at: Optional[datetime] = None
     completed_at: Optional[datetime] = None
     created_at: Optional[datetime] = None

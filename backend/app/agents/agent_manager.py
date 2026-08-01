@@ -121,6 +121,23 @@ class AgentManager:
 
         db = SessionLocal()
         try:
+            # [2026-08-02] `agents.name` es UNIQUE. Chocar contra ese índice
+            # levantaba un `IntegrityError` crudo que NADIE traducía: ni el
+            # endpoint HTTP (solo captura ValueError) ni `aithera_tool.
+            # _create_agent`. El modelo recibía un error de driver
+            # ininteligible y se ponía a dar vueltas probando variantes en vez
+            # de ver lo único que importaba: ya existe uno con ese nombre, y
+            # cuál es su id (que es justo lo que necesita para corregirlo con
+            # `update_agent`). Se comprueba ANTES de insertar — así el mensaje
+            # puede llevar el id, y de paso no se ensucia la sesión con un
+            # rollback.
+            clash = db.query(Agent).filter(Agent.name == name).first()
+            if clash is not None:
+                raise ValueError(
+                    f"ya existe un agente llamado '{name}' (id {clash.id}, "
+                    f"project_id={clash.project_id}). Los nombres son únicos: usa "
+                    f"'update_agent' sobre el id {clash.id} para corregirlo, o elige otro nombre."
+                )
             agent = Agent(
                 name=name,
                 agent_type=agent_type,
@@ -241,6 +258,54 @@ class AgentManager:
         finally:
             db.close()
 
+    def reconcile_orphan_executions(self) -> int:
+        """[FIX 2026-08-02] Cierra las ejecuciones que quedaron colgadas de un
+        proceso que ya no existe. Se llama UNA vez al arrancar.
+
+        EL FALLO REAL (reportado por el usuario): en la tarjeta del proyecto
+        Cordyceps, el orquestador y el investigador aparecian "escribiendo…"
+        indefinidamente. La UI pinta ese indicador cuando el agente tiene una
+        `AgentExecution` en `pending`/`running` (W2e), y habia DOS filas asi:
+        una desde el 28-jul y otra desde el 1-ago.
+
+        LA CAUSA: `status='running'` es la afirmacion de que hay una
+        `asyncio.Task` viva trabajando en ello. Al reiniciar el backend —algo
+        que en este proyecto pasa constantemente— esa task muere con el
+        proceso, pero NADIE tocaba la fila: se quedaba diciendo "running" para
+        siempre. El TIE ya tenia su reconciliacion de arranque
+        (`executor.resume_pending`, T3); las ejecuciones de agente no tenian
+        ninguna.
+
+        Se marcan como `failed`, no como `cancelled`: el usuario no las
+        cancelo, se interrumpieron. Y no se intenta reanudarlas — la corrutina
+        que esperaba el resultado ya no existe, asi que fingir que siguen vivas
+        seria repetir el mismo problema con otro nombre. Si la MISION del TIE
+        que habia detras era reanudable, el TIE la reanuda por su cuenta y se
+        ve en Mission Control."""
+        db = SessionLocal()
+        try:
+            huerfanas = db.query(AgentExecution).filter(
+                AgentExecution.status.in_(["pending", "running"])).all()
+            for ex in huerfanas:
+                ex.status = "failed"
+                ex.error_message = (
+                    "Interrumpida al reiniciarse el backend. Vuelve a lanzarla "
+                    "si sigue haciendo falta."
+                )
+                ex.completed_at = datetime.utcnow()
+            if huerfanas:
+                db.commit()
+            return len(huerfanas)
+        except Exception as e:      # noqa: BLE001 — arrancar nunca debe romperse por esto
+            db.rollback()
+            import logging
+
+            logging.getLogger("aithera").error(
+                f"[agent_manager] no se pudieron reconciliar las ejecuciones huerfanas: {e!r}")
+            return 0
+        finally:
+            db.close()
+
     def create_execution(self, agent_id: int, task: str) -> AgentExecution:
         """Crea un AgentExecution en estado 'pending' y lo lanza como
         asyncio.Task. Devuelve el registro persistido (status='pending'
@@ -340,12 +405,26 @@ class AgentManager:
                 db.close()
                 db = None
 
-                mission = await self._delegate_to_tie(
-                    task=task_text,
-                    allowed_tools=allowed_tools,
-                    project_id=agent_project_id,
-                    skills=agent_skills,
-                )
+                # [2026-08-02] RASTRO EN VIVO. El chat del orquestador sondea
+                # esta fila (no hay SSE por aqui), asi que las frases de "lo
+                # que estoy haciendo" hay que PERSISTIRLAS segun llegan. La
+                # cola se liga ANTES de crear la tarea de drenaje y de lanzar
+                # la mision: las dos heredan el contexto y comparten cola.
+                from app.tie import progress as _progress
+
+                cola = _progress.bind()
+                drenador = asyncio.ensure_future(
+                    self._drain_progress(execution_id, cola))
+                try:
+                    mission = await self._delegate_to_tie(
+                        task=task_text,
+                        allowed_tools=allowed_tools,
+                        project_id=agent_project_id,
+                        skills=agent_skills,
+                    )
+                finally:
+                    drenador.cancel()
+                    _progress.unbind()
 
                 # La mision puede acabar esperando una aprobacion del usuario
                 # (gate del plan de T4a). Eso NO es "completada": el agente sigue
@@ -377,6 +456,44 @@ class AgentManager:
         finally:
             if db is not None:
                 db.close()
+
+    @staticmethod
+    async def _drain_progress(execution_id: int, cola) -> None:
+        """[2026-08-02] Vuelca el rastro de la mision en la fila de la ejecucion
+        segun llega, para que el chat del orquestador (que SONDEA, no escucha un
+        stream) pueda pintarlo en vivo.
+
+        Best-effort de principio a fin: es observacion. Se agrupan las lineas
+        que lleguen juntas para no escribir en BD una vez por frase, y cualquier
+        fallo de escritura se traga — narrar jamas puede tumbar una mision.
+        Termina por cancelacion cuando la mision acaba (el caller la cancela)."""
+        import json as _json
+
+        lineas: List[str] = []
+        try:
+            while True:
+                lineas.append(await cola.get())
+                # Ráfaga: se recoge lo que ya esté en la cola sin esperar más.
+                while not cola.empty():
+                    try:
+                        lineas.append(cola.get_nowait())
+                    except Exception:
+                        break
+                db = SessionLocal()
+                try:
+                    ex = db.query(AgentExecution).filter(
+                        AgentExecution.id == execution_id).first()
+                    if ex is not None:
+                        ex.progress = _json.dumps(lineas[-200:], ensure_ascii=False)
+                        db.commit()
+                except Exception:
+                    db.rollback()
+                finally:
+                    db.close()
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            return
 
     @staticmethod
     def _finish_execution(execution_id: int, *, status: str, result: Optional[str] = None,

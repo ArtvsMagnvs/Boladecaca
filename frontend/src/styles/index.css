@@ -197,6 +197,96 @@ body {
   .holo-frame::after { animation: none; }
 }
 
+/* ─────────────────────────────────────────────────────────────────────────
+   [PU7, 2026-08-02] `.holo-frame` en tema CLARO — el cometa gira en VIOLETA
+   sobre las tarjetas claras; en DORADO solo en el lienzo de Proyectos.
+
+   Primer intento: dorado en TODO `.holo-frame`. Corrección del usuario tras
+   verlo en vivo: el dorado "queda muy bien para el marco del espacio general
+   donde se abren las tarjetas del apartado de Proyectos" (el LIENZO
+   semitransparente, `WorkspaceCanvas.tsx` — fondo oscurecido incluso en
+   claro, `bg-base-900/20`, así que el dorado SÍ contrasta ahí), "pero en el
+   resto de tarjetas blancas no se ve" — un dorado cálido sobre una tarjeta
+   `--c-base-900` casi blanca (238 240 245) se funde con el fondo.
+   Corrección: el lienzo del Workspace lleva la clase EXTRA
+   `.holo-frame-canvas` y conserva el dorado (regla de abajo, 3 clases de
+   especificidad → gana); TODAS las demás tarjetas (`ProjectCard`,
+   `AgentWindowCard`, `Shelf`, `Modal`, `UserQuestionCard`) solo llevan
+   `.holo-frame` y pasan a violeta, que sí contrasta sobre blanco/gris muy
+   claro.
+
+   Misma estructura exacta que el bloque oscuro de arriba (cometa
+   conic-gradient + borde diagonal permanente + 8 trazos de esquina +
+   drop-shadow) — solo cambian los colores. `--holo-a` y `holo-orbit` se
+   reutilizan tal cual (el ángulo no depende del tema). */
+.light .holo-frame::after {
+  background:
+    conic-gradient(
+      from var(--holo-a),
+      transparent 0%,
+      transparent 72%,
+      rgb(124 58 237 / 0.0) 72%,
+      rgb(124 58 237 / 0.55) 90%,
+      rgb(167 139 250 / 0.95) 100%
+    ),
+    linear-gradient(
+      135deg,
+      rgb(167 139 250 / 0.50) 0%,
+      rgb(124 58 237 / 0.26) 35%,
+      rgb(91 33 182 / 0.20) 65%,
+      rgb(124 58 237 / 0.40) 100%
+    );
+}
+.light .holo-frame::before {
+  background:
+    linear-gradient(rgb(167 139 250 / 0.9), rgb(167 139 250 / 0.9)) left 0 top 0 / 14px 1.5px,
+    linear-gradient(rgb(167 139 250 / 0.9), rgb(167 139 250 / 0.9)) left 0 top 0 / 1.5px 14px,
+    linear-gradient(rgb(167 139 250 / 0.9), rgb(167 139 250 / 0.9)) right 0 top 0 / 14px 1.5px,
+    linear-gradient(rgb(167 139 250 / 0.9), rgb(167 139 250 / 0.9)) right 0 top 0 / 1.5px 14px,
+    linear-gradient(rgb(91 33 182 / 0.75), rgb(91 33 182 / 0.75)) left 0 bottom 0 / 14px 1.5px,
+    linear-gradient(rgb(91 33 182 / 0.75), rgb(91 33 182 / 0.75)) left 0 bottom 0 / 1.5px 14px,
+    linear-gradient(rgb(124 58 237 / 0.9), rgb(124 58 237 / 0.9)) right 0 bottom 0 / 14px 1.5px,
+    linear-gradient(rgb(124 58 237 / 0.9), rgb(124 58 237 / 0.9)) right 0 bottom 0 / 1.5px 14px;
+  background-repeat: no-repeat;
+  filter: drop-shadow(0 0 3px rgb(124 58 237 / 0.5));
+}
+
+/* El lienzo de Proyectos (`WorkspaceCanvas.tsx`, clase EXTRA
+   `.holo-frame-canvas` junto a `.holo-frame`) conserva el DORADO original:
+   3 clases de especificidad > las 2 del bloque violeta de arriba, así que
+   estas reglas ganan sin depender del orden en el CSS generado. */
+.light .holo-frame.holo-frame-canvas::after {
+  background:
+    conic-gradient(
+      from var(--holo-a),
+      transparent 0%,
+      transparent 72%,
+      rgb(191 149 43 / 0.0) 72%,
+      rgb(191 149 43 / 0.55) 90%,
+      rgb(224 190 96 / 0.95) 100%
+    ),
+    linear-gradient(
+      135deg,
+      rgb(224 190 96 / 0.55) 0%,
+      rgb(191 149 43 / 0.28) 35%,
+      rgb(163 120 24 / 0.20) 65%,
+      rgb(191 149 43 / 0.40) 100%
+    );
+}
+.light .holo-frame.holo-frame-canvas::before {
+  background:
+    linear-gradient(rgb(224 190 96 / 0.9), rgb(224 190 96 / 0.9)) left 0 top 0 / 14px 1.5px,
+    linear-gradient(rgb(224 190 96 / 0.9), rgb(224 190 96 / 0.9)) left 0 top 0 / 1.5px 14px,
+    linear-gradient(rgb(224 190 96 / 0.9), rgb(224 190 96 / 0.9)) right 0 top 0 / 14px 1.5px,
+    linear-gradient(rgb(224 190 96 / 0.9), rgb(224 190 96 / 0.9)) right 0 top 0 / 1.5px 14px,
+    linear-gradient(rgb(163 120 24 / 0.75), rgb(163 120 24 / 0.75)) left 0 bottom 0 / 14px 1.5px,
+    linear-gradient(rgb(163 120 24 / 0.75), rgb(163 120 24 / 0.75)) left 0 bottom 0 / 1.5px 14px,
+    linear-gradient(rgb(191 149 43 / 0.9), rgb(191 149 43 / 0.9)) right 0 bottom 0 / 14px 1.5px,
+    linear-gradient(rgb(191 149 43 / 0.9), rgb(191 149 43 / 0.9)) right 0 bottom 0 / 1.5px 14px;
+  background-repeat: no-repeat;
+  filter: drop-shadow(0 0 3px rgb(191 149 43 / 0.5));
+}
+
 /* Panel de modal (Modal.tsx): borde/sombra dependientes del tema, en vez del
    azul hardcodeado que en claro resultaba chillón. */
 .modal-panel {

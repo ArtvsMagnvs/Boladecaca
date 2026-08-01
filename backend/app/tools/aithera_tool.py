@@ -148,11 +148,16 @@ class AitheraTool(BaseTool):
                         "status": "string opcional", "priority": "string opcional",
                         "project_id": "int opcional (para move_task)", "milestone_id": "int opcional"}},
             # ---- Agentes ----
-            {"id": "create_agent", "description": "Crea un agente nuevo.",
+            {"id": "create_agent",
+             "description": ("Crea un agente nuevo DENTRO de un proyecto. Dale de una vez todo lo "
+                             "que necesite (allowed_tools y skills): así no hacen falta llamadas "
+                             "extra después."),
              "requires_confirmation": True,
-             "params": {"name": "string", "agent_type": "string opcional (default generic)",
+             "params": {"name": "string (único en todo el sistema)",
+                        "project_id": "int OBLIGATORIO — el proyecto al que pertenece",
+                        "agent_type": "string opcional (default generic)",
                         "description": "string opcional", "allowed_tools": "lista de tool_id opcional",
-                        "project_id": "int opcional", "skills": "lista de strings opcional"}},
+                        "skills": "lista de strings opcional"}},
             {"id": "assign_tools", "description": "Cambia las tools permitidas de un agente existente.",
              "requires_confirmation": True,
              "params": {"agent_id": "int", "allowed_tools": "lista de tool_id"}},
@@ -379,20 +384,74 @@ class AitheraTool(BaseTool):
     # ------------------------------------------------------------------
 
     async def _create_agent(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """[2026-08-02] UN AGENTE SIEMPRE NACE DENTRO DE UN PROYECTO.
+
+        Regla explícita del usuario tras el caso "CordycepsDev": «si el agente
+        que se intenta crear no se ha podido asignar a un proyecto, la misión
+        tiene que terminar eliminándolo antes de dejarlo ahí».
+
+        Se aplica en el orden más fuerte posible — comprobar ANTES de crear, de
+        modo que en el caso normal no haya nada que borrar:
+          1. sin `project_id` → no se crea nada y se dice qué falta (la misión
+             de un proyecto ya lo recibe inyectado por `toolloop`; en el chat
+             general el modelo tiene `list_projects` y `ask_user` para
+             resolverlo, en vez de suponer);
+          2. `project_id` que no existe → tampoco se crea (la columna es un
+             Integer suelto, sin FK: la BD aceptaría encantada un id fantasma);
+          3. red de seguridad: si aun así el agente acabara sin vincular, se
+             BORRA en el acto y se informa. Nunca se deja un huérfano detrás.
+
+        El huérfano no era un detalle cosmético: su propio creador ya no podía
+        ni configurarlo (`Authority` lo veía fuera de su proyecto), así que la
+        misión se quedaba dando vueltas entre un agente que no podía tocar y un
+        nombre que ya no podía reutilizar."""
         from app.agents.agent_manager import agent_manager
+        from app.db.database import Project, SessionLocal
 
         missing = _missing(params, ["name"])
         if missing:
             return {"success": False, "result": None, "error": "faltan parámetros", "missing": missing}
+
+        raw_project = params.get("project_id")
+        if raw_project in (None, "", 0):
+            return {"success": False, "result": None,
+                    "error": ("un agente tiene que pertenecer a un proyecto: falta 'project_id'. "
+                              "Consulta 'list_projects' y, si no sabes cuál quiere el usuario, "
+                              "pregúntaselo con 'ask_user'. No se ha creado nada."),
+                    "missing": ["project_id"]}
+        try:
+            project_id = int(raw_project)
+        except (TypeError, ValueError):
+            return {"success": False, "result": None,
+                    "error": f"'project_id' debe ser un número entero, no {raw_project!r}. No se ha creado nada."}
+
+        db = SessionLocal()
+        try:
+            if db.get(Project, project_id) is None:
+                return {"success": False, "result": None,
+                        "error": (f"el proyecto {project_id} no existe, así que el agente no se ha "
+                                  f"creado. Comprueba el id con 'list_projects'.")}
+        finally:
+            db.close()
+
         try:
             agent = agent_manager.create_agent(
                 name=params["name"], agent_type=params.get("agent_type", "generic"),
                 description=params.get("description"), allowed_tools=params.get("allowed_tools"),
-                project_id=params.get("project_id"), skills=params.get("skills"),
+                project_id=project_id, skills=params.get("skills"),
             )
         except ValueError as e:
             return {"success": False, "result": None, "error": str(e)}
-        return {"success": True, "result": {"id": agent.id, "name": agent.name}, "error": None}
+
+        if agent.project_id is None:
+            agent_manager.delete_agent(agent.id)
+            return {"success": False, "result": None,
+                    "error": (f"el agente '{params['name']}' se creó sin quedar vinculado al proyecto "
+                              f"{project_id}, así que se ha ELIMINADO para no dejarlo huérfano. "
+                              f"Vuelve a intentarlo indicando el proyecto.")}
+        return {"success": True, "result": {
+            "id": agent.id, "name": agent.name, "project_id": agent.project_id,
+        }, "error": None}
 
     async def _assign_tools(self, params: Dict[str, Any]) -> Dict[str, Any]:
         from app.agents.agent_manager import agent_manager

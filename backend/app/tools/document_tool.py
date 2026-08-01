@@ -48,6 +48,64 @@ MAX_XLSX_ROWS = 5000                    # filas leidas/escritas por hoja
 MAX_XLSX_COLS = 256
 MAX_WRITE_BLOCKS = 5000                 # bloques de un write_docx
 
+# [2026-08-02] VENTANA DE LECTURA. El fallo que cierra (reportado varias veces
+# por el usuario: "el contenido del documento se cortó durante la lectura"):
+# leer devolvia el texto ENTERO y quien lo recortaba era el toolloop, con un
+# aviso honesto pero SIN SALIDA — el modelo veia "truncado" y no tenia forma
+# de pedir el resto, asi que respondia con medio documento y lo confesaba.
+# Ahora la lectura es paginada, como cualquier lector de archivos serio: el
+# resultado dice cuanto queda y desde donde seguir, y el bucle puede recorrer
+# un documento de cualquier tamano en varias vueltas.
+DEFAULT_READ_CHARS = 20_000             # ventana por llamada si no se pide otra
+MAX_READ_CHARS = 100_000                # techo por llamada (protege el contexto)
+
+
+def _window(text: str, params: Dict[str, Any]) -> Dict[str, Any]:
+    """Aplica la ventana `offset`/`max_chars` a un texto ya extraido y devuelve
+    los campos del contrato de paginacion. Funcion pura: la comparten los tres
+    lectores para que no puedan divergir.
+
+    El corte se hace en el ULTIMO salto de linea de la ventana cuando queda
+    resto: partir una frase a la mitad no ayuda a nadie, y el solape de unas
+    pocas lineas no cuesta nada."""
+    total = len(text)
+    try:
+        offset = max(0, int(params.get("offset") or 0))
+    except (TypeError, ValueError):
+        offset = 0
+    try:
+        pedido = int(params.get("max_chars") or DEFAULT_READ_CHARS)
+    except (TypeError, ValueError):
+        pedido = DEFAULT_READ_CHARS
+    limite = max(1000, min(pedido, MAX_READ_CHARS))
+
+    if offset >= total:
+        # Se acota al final: devolver un offset mayor que el documento seria
+        # informacion falsa ("vas por el caracter 10^9 de 3000").
+        return {"text": "", "offset": min(offset, total), "next_offset": None,
+                "has_more": False, "total_chars": total, "truncated": False}
+
+    trozo = text[offset:offset + limite]
+    fin = offset + len(trozo)
+    if fin < total:
+        corte = trozo.rfind("\n")
+        if corte > limite // 2:          # solo si no deja la ventana ridicula
+            trozo = trozo[:corte]
+            fin = offset + corte
+    hay_mas = fin < total
+    return {"text": trozo, "offset": offset,
+            "next_offset": fin if hay_mas else None, "has_more": hay_mas,
+            "total_chars": total, "truncated": hay_mas}
+
+
+def _read_params(extra: str = "") -> Dict[str, Any]:
+    """Los parametros de paginacion, descritos igual en las tres lecturas."""
+    base = {
+        "offset": f"int opcional (default 0) — desde que caracter leer",
+        "max_chars": f"int opcional (default {DEFAULT_READ_CHARS}, max {MAX_READ_CHARS})",
+    }
+    return base
+
 
 def _check_readable(path_str: str):
     """Resuelve y valida un path de ENTRADA. Devuelve (path, error_dict|None)."""
@@ -113,18 +171,23 @@ class DocumentTool(BaseTool):
         return [
             {
                 "id": "read_pdf",
-                "description": "Extrae el texto de un PDF (de texto; un PDF escaneado no tiene texto que extraer).",
+                "description": ("Extrae el texto de un PDF (de texto; un PDF escaneado no tiene "
+                                "texto que extraer). Si es largo se lee POR PARTES: mira "
+                                "'has_more' y vuelve a llamar con 'offset'=next_offset."),
                 "requires_confirmation": False,
                 "params": {
                     "path": "string (path a un .pdf, absoluto o relativo a HOME)",
                     "pages": "string opcional, rango 1-indexado (ej. '1-5' o '3'); default: todo (max 200 pag)",
+                    **_read_params(),
                 },
             },
             {
                 "id": "read_docx",
-                "description": "Lee un documento Word: devuelve sus parrafos y el contenido de sus tablas.",
+                "description": ("Lee un documento Word: parrafos y contenido de sus tablas. Si es "
+                                "largo se lee POR PARTES: mira 'has_more' y vuelve a llamar con "
+                                "'offset'=next_offset hasta terminarlo."),
                 "requires_confirmation": False,
-                "params": {"path": "string (path a un .docx)"},
+                "params": {"path": "string (path a un .docx)", **_read_params()},
             },
             {
                 "id": "read_xlsx",
@@ -195,17 +258,28 @@ class DocumentTool(BaseTool):
                     break
             full_text = "\n\n".join(t["text"] for t in texts)
             has_text = bool(full_text.strip())
+            # Aviso honesto: un PDF escaneado devuelve texto vacio.
+            note = (None if has_text else
+                    "El PDF no contiene texto extraible (probablemente escaneado/solo imagen). "
+                    "Para leer texto de una imagen usa OCR (desktop_tool).")
+            # [2026-08-02] Ventana sobre el texto ya extraido: el rango de
+            # PAGINAS sigue existiendo (es lo natural en un PDF) y ademas se
+            # puede recorrer por caracteres, igual que docx/read_file.
+            ventana = _window(full_text, params)
+            if ventana["has_more"]:
+                extra = (f"Documento largo: parte {ventana['offset']}-{ventana['next_offset']} "
+                         f"de {ventana['total_chars']} caracteres. Vuelve a llamar con "
+                         f"offset={ventana['next_offset']} para seguir.")
+                note = f"{note} {extra}" if note else extra
+            primera = ventana["offset"] == 0
             return {
                 "path": str(path),
                 "total_pages": total,
                 "pages_read": len(texts),
-                "pages": texts,
-                "text": full_text,
-                "truncated": truncated,
-                # Aviso honesto: un PDF escaneado devuelve texto vacio.
-                "note": (None if has_text else
-                         "El PDF no contiene texto extraible (probablemente escaneado/solo imagen). "
-                         "Para leer texto de una imagen usa OCR (desktop_tool)."),
+                "pages": texts if primera else [],
+                "pages_truncated": truncated,
+                "note": note,
+                **ventana,
             }
 
         result = await asyncio.to_thread(_do)
@@ -243,29 +317,32 @@ class DocumentTool(BaseTool):
 
             partes = headers + paragraphs + footers
             full_text = "\n".join(partes)
-            truncated = len(full_text) > MAX_TEXT_CHARS
-            if truncated:
-                full_text = full_text[:MAX_TEXT_CHARS]
 
             # Aviso honesto SIEMPRE (mismo patron que el `note` de read_pdf):
             # python-docx no expone cuadros de texto ni objetos incrustados, y
             # el que lee no tiene forma de saberlo si no se le dice.
             note = ("Extraidos cuerpo, tablas, cabeceras y pies. Los cuadros de texto y "
                     "objetos incrustados NO se extraen: si falta contenido, puede estar ahi.")
-            if truncated:
-                note += f" Texto recortado a {MAX_TEXT_CHARS} caracteres."
 
+            ventana = _window(full_text, params)
+            if ventana["has_more"]:
+                note += (f" Documento largo: esta es la parte {ventana['offset']}-"
+                         f"{ventana['next_offset']} de {ventana['total_chars']} caracteres. "
+                         f"Vuelve a llamar con offset={ventana['next_offset']} para seguir.")
+
+            # `paragraphs`/`tables` solo se devuelven en la PRIMERA ventana: en
+            # las siguientes duplicarian el contenido y se comerian el contexto.
+            primera = ventana["offset"] == 0
             return {
                 "path": str(path),
-                "paragraphs": paragraphs,
-                "tables": tables,
-                "headers": headers,
-                "footers": footers,
-                "text": full_text,
+                "paragraphs": paragraphs if primera else [],
+                "tables": tables if primera else [],
+                "headers": headers if primera else [],
+                "footers": footers if primera else [],
                 "paragraph_count": len(paragraphs),
                 "table_count": len(tables),
-                "truncated": truncated,
                 "note": note,
+                **ventana,
             }
 
         result = await asyncio.to_thread(_do)

@@ -21,6 +21,7 @@ from app.core.config import settings
 from app.core.logging_config import get_system_logger
 from app.core.strings import t as _t
 from app.tie import authority as authority_mod
+from app.tie import progress as _progress
 from app.tie import (conversation, enricher, executor, intents, planner,
                      quick_answers, responder, tracer)
 from app.tie.authority import Authority
@@ -334,6 +335,9 @@ async def handle_stream(text: str, *, channel: str = "web", intent: Optional[Int
                                      prefetched, force_model, session_id=session_id):
             yield ev
     finally:
+        # El rastro muere con el turno: una cola viva de un turno anterior
+        # recibiría líneas de una misión de fondo que ya nadie está mirando.
+        _progress.unbind()
         _close_if_orphan(trace_id)
 
 
@@ -496,12 +500,16 @@ async def _stream_body(text, intent, mission, trace_id, channel, prefetched, for
     if intent.is_direct_action:
         yield ("text", _t("pipeline.ack_mission", goal=(intent.goal or text)[:120]) + "\n\n")
         yield ("status", _t("status.executing"))
-        # [S4] Una acción directa encadena varias llamadas a herramientas: puede
-        # tardar minutos legítimos. Con latido, nunca en silencio.
+        # [2026-08-02] RASTRO EN VIVO. La cola se liga ANTES de crear la tarea:
+        # `ensure_future` copia el contexto, así que todo lo que corra dentro
+        # (toolloop, tools) escribe aquí y en ninguna otra misión.
+        _q = _progress.bind()
         _act = asyncio.ensure_future(_direct_action_path(
             text, intent, mission, trace_id, force_model=force_model,
             channel=channel, session_id=session_id))
-        async for ev in _heartbeat_until(_act, every_s=settings.TIE_HEARTBEAT_S):
+        # `drain_until` absorbe el latido de S4: cuenta lo que pasa cuando hay
+        # algo que contar, y sigue avisando "sigo trabajando" en los ratos mudos.
+        async for ev in _progress.drain_until(_act, _q, heartbeat_s=settings.TIE_HEARTBEAT_S):
             yield ev
         try:
             out = await _act
@@ -517,11 +525,12 @@ async def _stream_body(text, intent, mission, trace_id, channel, prefetched, for
     yield ("status", _t("status.planning"))
     yield ("mission", trace_id)
     context = prefetched if not intent.memory_types else await _context_for(intent, text)
-    # [S4] Igual que la acción directa: planner + ejecución del grafo pueden ser
-    # minutos. El latido mantiene viva la conversación mientras tanto.
+    # [2026-08-02] Mismo rastro que la acción directa; aquí además se ven el
+    # plan ("Plan listo: 3 pasos") y cada paso del grafo.
+    _q = _progress.bind()
     _cx = asyncio.ensure_future(
         _complex_path(text, intent, mission, trace_id, context, force_model=force_model))
-    async for ev in _heartbeat_until(_cx, every_s=settings.TIE_HEARTBEAT_S):
+    async for ev in _progress.drain_until(_cx, _q, heartbeat_s=settings.TIE_HEARTBEAT_S):
         yield ev
     try:
         await _cx

@@ -42,11 +42,16 @@ const MONTH_KEYS = [
 // común (bg-base-900/90 en la celda): con el AVCS real de fondo en todas las
 // páginas, las celdas al 15-40% dejaban pasar las partículas y el calendario
 // costaba de leer. El tinte puede ser suave porque ya no compite con el fondo.
+// [PU7] `text` lleva siempre su pareja `light:` — los tonos 300 de Tailwind
+// están calibrados para fondo oscuro y quedan poco legibles sobre el lienzo
+// gris claro del tema `.light` (reportado por el usuario). La variante
+// `light:` (tailwind.config.js) solo actúa bajo `.light`, así que el oscuro
+// no se toca.
 const STATUS_COLORS: Record<string, { bg: string; ring: string; text: string }> = {
-  available:   { bg: "bg-emerald-500/20", ring: "ring-emerald-500/40", text: "text-emerald-300" },
-  unavailable: { bg: "bg-rose-500/25",    ring: "ring-rose-500/50",    text: "text-rose-300" },
-  busy:        { bg: "bg-amber-500/20",   ring: "ring-amber-500/40",   text: "text-amber-300" },
-  mixed:       { bg: "bg-orange-500/20",  ring: "ring-orange-500/40",  text: "text-orange-300" },
+  available:   { bg: "bg-emerald-500/20", ring: "ring-emerald-500/40", text: "text-emerald-300 light:text-emerald-800" },
+  unavailable: { bg: "bg-rose-500/25",    ring: "ring-rose-500/50",    text: "text-rose-300 light:text-rose-800" },
+  busy:        { bg: "bg-amber-500/20",   ring: "ring-amber-500/40",   text: "text-amber-300 light:text-amber-800" },
+  mixed:       { bg: "bg-orange-500/20",  ring: "ring-orange-500/40",  text: "text-orange-300 light:text-orange-800" },
   neutral:     { bg: "bg-base-800/50",    ring: "ring-base-700/40",    text: "text-ink-dim" },
 };
 

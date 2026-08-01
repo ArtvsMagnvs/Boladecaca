@@ -22,9 +22,22 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, type Agent, type AgentExecution } from "@/lib/api";
 import { MiniMarkdown } from "@/lib/miniMarkdown";
+import ActivityTrail from "@/components/chat/ActivityTrail";
 import { UserQuestionCard } from "@/components/UserQuestionCard";
 import { usePendingQuestions } from "@/hooks/usePendingQuestions";
 import { useT } from "@/store/useI18n";
+
+/** El rastro viaja como JSON en un campo de texto. Nunca lanza: un `progress`
+ *  corrupto o de una versión anterior simplemente no pinta nada. */
+function parseProgress(raw: string | null | undefined): string[] {
+  if (!raw) return [];
+  try {
+    const v = JSON.parse(raw);
+    return Array.isArray(v) ? v.filter((x) => typeof x === "string") : [];
+  } catch {
+    return [];
+  }
+}
 
 const POLL_MS = 2000;
 
@@ -32,9 +45,18 @@ interface Props {
   projectId: number;
   /** Alto disponible: con la tarjeta expandida el chat respira más. */
   expanded: boolean;
+  /**
+   * [2026-08-02] Dónde vive el chat dentro de la tarjeta:
+   *  - "stack" (por defecto): apilado abajo del todo, con alto acotado.
+   *  - "side": columna propia a la derecha, ocupando TODO el alto disponible.
+   * El modo lateral es el que pidió el usuario para tarjetas anchas: con el
+   * chat abajo apenas se veían un par de turnos, y lo que hace falta para
+   * trabajar es ver el recorrido de la conversación.
+   */
+  placement?: "stack" | "side";
 }
 
-export function OrchestratorChat({ projectId, expanded }: Props) {
+export function OrchestratorChat({ projectId, expanded, placement = "stack" }: Props) {
   const tr = useT();
   const [agent, setAgent] = useState<Agent | null>(null);
   const [executions, setExecutions] = useState<AgentExecution[]>([]);
@@ -120,11 +142,17 @@ export function OrchestratorChat({ projectId, expanded }: Props) {
     }
   };
 
-  const bodyH = expanded ? "max-h-72" : "max-h-44";
+  // Apilado: alto acotado, para no ahogar al resto del contenido de la tarjeta.
+  // Lateral: se come TODO el alto que le den (`flex-1`), que es justo el motivo
+  // de existir del modo — ver el recorrido de la conversación.
+  const side = placement === "side";
+  const bodyH = side ? "flex-1 min-h-0" : expanded ? "max-h-72" : "max-h-44";
 
   return (
-    <section className="border-t border-base-700/60 pt-3">
-      <div className="flex items-center justify-between mb-2">
+    <section className={side
+      ? "h-full min-h-0 flex flex-col"
+      : "border-t border-base-700/60 pt-3"}>
+      <div className="flex items-center justify-between mb-2 shrink-0">
         <h3 className="text-xs font-medium text-ink-dim flex items-center gap-1.5">
           <span aria-hidden>🧠</span>
           {tr("workspace.orchestrator.title")}
@@ -136,7 +164,7 @@ export function OrchestratorChat({ projectId, expanded }: Props) {
         )}
       </div>
 
-      <p className="text-[10px] text-ink-faint mb-2">{tr("workspace.orchestrator.hint")}</p>
+      <p className="text-[10px] text-ink-faint mb-2 shrink-0">{tr("workspace.orchestrator.hint")}</p>
 
       <div ref={scrollRef} className={`${bodyH} overflow-y-auto flex flex-col gap-2 mb-2 pr-1`}>
         {executions.length === 0 && !error && (
@@ -151,20 +179,32 @@ export function OrchestratorChat({ projectId, expanded }: Props) {
             {/* Lo que respondió — o en qué estado está, sin fingir que terminó */}
             <div className="self-start max-w-[92%] rounded-xl rounded-bl-sm glass-surface border border-base-700 px-2.5 py-1.5">
               {ex.status === "pending" || ex.status === "running" ? (
-                <p className="text-[11px] text-accent flex items-center gap-1.5">
-                  <span className="h-1.5 w-1.5 rounded-full bg-accent animate-pulse" />
-                  {tr("workspace.orchestrator.working")}
-                </p>
+                <>
+                  <p className="text-[11px] text-accent flex items-center gap-1.5">
+                    <span className="h-1.5 w-1.5 rounded-full bg-accent animate-pulse" />
+                    {tr("workspace.orchestrator.working")}
+                  </p>
+                  {/* [2026-08-02] EL RASTRO EN VIVO. Este chat no tiene stream
+                      (sondea `agent_executions`), así que las líneas llegan
+                      persistidas en `progress` — mismo componente y misma
+                      lectura que en el chat principal. */}
+                  <ActivityTrail lines={parseProgress(ex.progress)} live />
+                </>
               ) : ex.status === "cancelled" ? (
                 <p className="text-[11px] text-ink-faint">{tr("workspace.orchestrator.cancelled")}</p>
               ) : ex.result ? (
                 <div className="text-[11px] text-ink-dim leading-relaxed break-words">
                   <MiniMarkdown text={ex.result} />
+                  {/* Terminado: el rastro se pliega a un resumen desplegable. */}
+                  <ActivityTrail lines={parseProgress(ex.progress)} />
                 </div>
               ) : (
-                <p className="text-[11px] text-signal-error break-words">
-                  {ex.error_message || tr("workspace.orchestrator.noAnswer")}
-                </p>
+                <>
+                  <p className="text-[11px] text-signal-error break-words">
+                    {ex.error_message || tr("workspace.orchestrator.noAnswer")}
+                  </p>
+                  <ActivityTrail lines={parseProgress(ex.progress)} />
+                </>
               )}
             </div>
           </div>
@@ -174,7 +214,7 @@ export function OrchestratorChat({ projectId, expanded }: Props) {
       {/* [2026-08-02] Si Aithera está esperando una respuesta, la pregunta va
           ANTES del cuadro de escribir: es lo que bloquea el trabajo. */}
       {questions.length > 0 && (
-        <div className="flex flex-col gap-2 mb-2">
+        <div className="flex flex-col gap-2 mb-2 shrink-0">
           {questions.map((q) => (
             <UserQuestionCard
               key={q.gate_id}
@@ -189,9 +229,9 @@ export function OrchestratorChat({ projectId, expanded }: Props) {
         </div>
       )}
 
-      {error && <p className="text-[11px] text-signal-error mb-2">{error}</p>}
+      {error && <p className="text-[11px] text-signal-error mb-2 shrink-0">{error}</p>}
 
-      <div className="flex gap-2">
+      <div className="flex gap-2 shrink-0">
         <input
           value={input}
           onChange={(e) => setInput(e.target.value)}

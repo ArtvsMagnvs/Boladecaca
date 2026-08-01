@@ -182,8 +182,14 @@ export default function Missions() {
   // Las preguntas de la misión abierta. Se comparan contra los DOS ids porque
   // `mission_id` y `trace_id` pueden diferir (S7·S8) y el toolloop etiqueta
   // con el de la misión.
+  // [2026-08-02] `detail.id` NO EXISTE en `MissionDetail` (los campos son
+  // `mission_id` y `trace_id`): la comparación era siempre `=== undefined`, así
+  // que la mitad "por id de misión" nunca casaba y solo quedaba `selected`, que
+  // es el trace_id. Justo el caso que S7·S8 documentó como distinto — resultado:
+  // una misión que había preguntado al usuario podía no mostrar aquí ni la
+  // pregunta ni la respuesta. `tsc` lo señalaba; el error estaba sin corregir.
   const missionQuestions = allQuestions.filter(
-    (q) => q.mission_id && (q.mission_id === detail?.id || q.mission_id === selected),
+    (q) => q.mission_id && (q.mission_id === detail?.mission_id || q.mission_id === selected),
   );
 
   return (

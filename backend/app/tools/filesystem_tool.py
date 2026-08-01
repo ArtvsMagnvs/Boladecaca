@@ -121,9 +121,13 @@ class FilesystemTool(BaseTool):
         return [
             {
                 "id": "read_file",
-                "description": "Lee el contenido de un archivo de texto (max 1MB).",
+                "description": ("Lee el contenido de un archivo de texto (max 1MB). Si es largo se "
+                                "lee POR PARTES: mira 'has_more' y vuelve a llamar con "
+                                "'offset'=next_offset hasta terminarlo."),
                 "requires_confirmation": False,
-                "params": {"path": "string (path absoluto o relativo a HOME)"},
+                "params": {"path": "string (path absoluto o relativo a HOME)",
+                           "offset": "int opcional (default 0) — desde que caracter leer",
+                           "max_chars": "int opcional (default 20000)"},
             },
             {
                 "id": "file_exists",
@@ -179,9 +183,17 @@ class FilesystemTool(BaseTool):
             return path.read_text(encoding="utf-8")
 
         content = await asyncio.to_thread(_do_read)
+        # [2026-08-02] Ventana de lectura, igual que document_tool: un archivo
+        # largo se lee POR PARTES en vez de llegar recortado sin remedio al
+        # modelo. `content` se conserva (contrato publico) y vale lo mismo que
+        # `text`; los campos de paginacion son aditivos.
+        from .document_tool import _window
+
+        ventana = _window(content, params)
         return {
             "success": True,
-            "result": {"path": str(path), "size": path.stat().st_size, "content": content},
+            "result": {"path": str(path), "size": path.stat().st_size,
+                       "content": ventana["text"], **ventana},
             "error": None,
         }
 

@@ -46,7 +46,7 @@ const CORE_MODELS: CoreModel[] = [
     labelKey: "hub.core.model.aithera_seed.label",
     shortLabelKey: "hub.core.model.aithera_seed.short",
     hintKey: "hub.core.model.aithera_seed.hint",
-    dotClass: "bg-amber-300",
+    dotClass: "bg-amber-300 light:bg-amber-600",
   },
   {
     id: "blue_orb",
@@ -60,14 +60,14 @@ const CORE_MODELS: CoreModel[] = [
     labelKey: "hub.core.model.poop_sphere.label",
     shortLabelKey: "hub.core.model.poop_sphere.short",
     hintKey: "hub.core.model.poop_sphere.hint",
-    dotClass: "bg-amber-400",
+    dotClass: "bg-amber-400 light:bg-amber-700",
   },
   {
     id: "rasengan",
     labelKey: "hub.core.model.rasengan.label",
     shortLabelKey: "hub.core.model.rasengan.short",
     hintKey: "hub.core.model.rasengan.hint",
-    dotClass: "bg-sky-300",
+    dotClass: "bg-sky-300 light:bg-sky-600",
   },
 ];
 

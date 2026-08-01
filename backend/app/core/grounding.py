@@ -183,10 +183,24 @@ _MD_LINK = re.compile(r"\[[^\]\n]{1,80}\]\(https?://[^)\s]+\)")
 # quedar DONE. Mirar solo la CABECERA evita ese falso positivo.
 _SURRENDER_HEAD_CHARS = 200
 
+# [2026-08-02] El OBJETO de la rendición se factoriza: el caso real que se
+# escapó era "No he podido completar EL OBJETIVO DEL PASO" — el patrón exigía
+# el demostrativo ("este objetivo") y el artículo no colaba. Sigue exigiéndose
+# un objeto de la lista (nunca un "no puedo completar" a secas): eso es lo que
+# separa una rendición TOTAL de un resultado parcial honesto ("no he podido
+# completar la sección de X, pero el resto está").
+_SURRENDER_OBJ = r"(?:este|el|la|esta) (?:objetivo|tarea|paso|encargo)|esto"
+
 _SURRENDER = re.compile(
     r"\b("
-    r"no puedo completar (?:este objetivo|esta tarea|este paso|esto)"
-    r"|no puedo cumplir (?:este objetivo|esta tarea|este paso|esto)"
+    rf"no puedo completar (?:{_SURRENDER_OBJ})"
+    rf"|no puedo cumplir (?:{_SURRENDER_OBJ})"
+    # "no he podido / no pude / no he conseguido / no he logrado …" — las
+    # formas en PASADO, que son las que de verdad usa un nodo al informar de
+    # lo que ya intentó. Sin ellas, el nodo quedaba en verde ("Hecha")
+    # diciendo por escrito que había fallado, y el resumen final de la misión
+    # lo contaba como éxito: la contradicción exacta que reportó el usuario.
+    rf"|no (?:he podido|pude|he conseguido|consegui|he logrado|logre) (?:completar|cumplir|realizar|terminar) (?:{_SURRENDER_OBJ})"
     r"|no consegui completar"
     r"|no ha sido posible completar"
     r"|no fue posible completar"
@@ -194,6 +208,8 @@ _SURRENDER = re.compile(
     r"|las herramientas disponibles[^\n]{0,60}no incluyen"
     r"|i cannot complete this"
     r"|i can't complete this"
+    r"|i couldn't complete this"
+    r"|i could not complete this"
     r"|i was unable to complete"
     r"|unable to complete this"
     r")\b",

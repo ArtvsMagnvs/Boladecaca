@@ -125,9 +125,26 @@ export const RHYTHM_GRAVITY_Y: Record<RhythmName, number> = {
  *  mueve el logo entero sin deformarlo un ápice, así que es la palanca más segura
  *  para que el efecto se note claramente (ajustado tras feedback: los valores
  *  iniciales ±0.08/0.12 eran imperceptibles a la distancia de cámara real). */
+//
+// [PU5g 2026-08-02 — BUG REPORTADO: "al escuchar, la semilla y los círculos
+// DESCIENDEN en la pantalla"]. ÉSTA era la causa principal, y es literal: el
+// valor de `listening` se lee cada frame en HubEngine como
+// `object3D.position.y`, es decir, una TRASLACIÓN RÍGIDA de TODO el sistema de
+// partículas. Con -0.4 sobre un anillo externo de radio 3.04, el conjunto
+// entero bajaba ~13% de su tamaño — exactamente lo descrito. El comentario de
+// arriba lo delata: se subió desde -0.08 justamente "para que el efecto se note
+// claramente", y se notó demasiado.
+//
+// Se pone a 0: en Escucha el recogimiento lo expresa la CONTRACCIÓN de los
+// anillos (LISTEN_RING_CONTRACT), que el usuario dio explícitamente por buena,
+// sin mover la figura de su sitio.
+//
+// NOTA: `communication: 0.3` es el mismo mecanismo en sentido contrario (el
+// conjunto SUBE al hablar). No se ha tocado porque no se reportó, pero si
+// también molesta, ponerlo a 0 aquí basta.
 export const RHYTHM_SETTLE_Y: Record<RhythmName, number> = {
   repose: 0,
-  listening: -0.4,
+  listening: 0,
   communication: 0.3,
   comprehension: 0,
   action: 0,
@@ -208,6 +225,34 @@ export const SPEAK_RING_EXPAND = 1.10;
  *  de ser constante y ondula con el ángulo, como un frente de radio. Se
  *  multiplica por la envolvente de voz real, así que el volumen SE VE. */
 export const SPEAK_RING_RIPPLE = 0.30;
+
+/* [PU5g 2026-08-02] TRAZO DE ELECTROCARDIÓGRAFO al hablar (sustituye a la
+ * ondulación `sin()` de SPEAK_RING_RIPPLE, que con la envolvente casi plana del
+ * TTS resultaba imperceptible). Los anillos dibujan el complejo PQRST de un
+ * monitor de pulsaciones: línea plana + pico corto. La ALTURA del pico la manda
+ * `AudioReactor.punch` — cuánto destaca la sílaba sobre el nivel medio — así que
+ * una sílaba fuerte da una onda grande y una floja, pequeña.
+ * REPLICADAS en fields.glsl (GLSL no puede importar) — comentario cruzado allí. */
+/** Latidos que caben alrededor de un anillo (pocos: el espacio PLANO entre
+ *  picos es lo que hace que se lea como un ECG y no como una greca). */
+export const SPEAK_ECG_BEATS = 3.0;
+/** Vueltas por segundo de la "cinta". Limitado por la física del anclaje, no
+ *  por gusto: el muelle de retorno es un paso bajo de ~1 Hz, así que un pico
+ *  más rápido que ~200 ms no llega a dibujarse (ver SPEAK_RING_STIFF). */
+export const SPEAK_ECG_SPEED = 0.20;
+/** Altura del pico R a amplitud 1 en UNIDADES DE ESCENA (los anillos distan
+ *  ~0.40 entre sí, así que es un pico del orden de esa separación). */
+export const SPEAK_ECG_GAIN = 0.34;
+/** Suelo de amplitud mientras hay voz sin acento. */
+export const SPEAK_ECG_BASE = 0.30;
+/** Cuánto suma el golpe de la sílaba (AudioReactor.punch) sobre ese suelo. */
+export const SPEAK_ECG_PUNCH = 0.90;
+/** Multiplicador de rigidez del anclaje de los anillos MIENTRAS habla. Es la
+ *  pieza que hace visible el trazo: con la rigidez de reposo el muelle está
+ *  sobreamortiguado (τ ≈ 1 s) y de un pico de 200 ms solo llegaba a pantalla un
+ *  ~7%. Con ×26, τ ≈ 40 ms y se dibuja al ~90%. Se pondera por la envolvente de
+ *  habla, así que en reposo el valor efectivo es 1.0 exacto. */
+export const SPEAK_RING_STIFF = 26.0;
 /** Nº de lóbulos de esa ondulación (cuántas crestas da la vuelta al anillo). */
 export const SPEAK_RING_LOBES = 5.0;
 /** HABLA — velocidad angular base del giro de las líneas de la semilla (rad/s).

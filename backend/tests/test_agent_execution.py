@@ -366,8 +366,10 @@ def test_orquestador_no_puede_crear_cosas_en_otro_proyecto():
 
 
 def test_agente_inexistente_se_deniega_fail_closed():
-    """Un `agent_id` que no existe no puede colarse: su proyecto es None, que no
-    coincide con ninguno concreto. Mismo criterio fail-closed que A3b."""
+    """Un `agent_id` que no existe no puede colarse. [2026-08-02] El motivo ya
+    no es "su proyecto es None" — desde el fix del huérfano, no tener proyecto
+    SÍ se permite (ver `test_agente_huerfano.py`); lo que deniega aquí es que
+    la fila no se pudo leer, que es un caso distinto. Fail-closed igual que A3b."""
     authority = Authority(project_id=1, allowed_tools=["aithera"])
     assert authority.check("aithera", "assign_tools",
                            {"agent_id": 999999, "allowed_tools": []}) is not None
@@ -478,3 +480,99 @@ def test_browser_solo_restringe_descarga_no_navegacion():
     assert a.check("browser", "open_url", {"tab_id": "t1", "url": "https://youtube.com"}) is None
     assert a.check("browser", "google_search", {"tab_id": "t1", "query": "cordyceps"}) is None
     assert a.check("browser", "click", {"tab_id": "t1", "selector": "#play"}) is None
+
+
+# ---------------------------------------------------------------------------
+# [FIX 2026-08-02] Ejecuciones huerfanas de un reinicio del backend
+#
+# EL FALLO REAL (reportado por el usuario): en la tarjeta del proyecto
+# Cordyceps, el orquestador y el investigador salian "escribiendo…" sin parar.
+# La UI pinta ese indicador con `pending`/`running` (W2e), y en la BD real habia
+# dos filas asi: una desde hacia CINCO DIAS.
+#
+# `running` significa "hay una asyncio.Task viva trabajando en esto". Tras
+# reiniciar el backend eso es falso para TODAS, porque el proceso que las
+# llevaba ya no existe — pero nadie tocaba la fila. El TIE ya reconciliaba sus
+# misiones al arrancar (`executor.resume_pending`, T3); las ejecuciones de
+# agente no tenian equivalente.
+# ---------------------------------------------------------------------------
+def _mk_execution(agent_id: int, status: str) -> int:
+    db = SessionLocal()
+    try:
+        ex = AgentExecution(agent_id=agent_id, task_description="tarea", status=status)
+        db.add(ex)
+        db.commit()
+        db.refresh(ex)
+        return ex.id
+    finally:
+        db.close()
+
+
+def _status_of(execution_id: int) -> str:
+    db = SessionLocal()
+    try:
+        return db.query(AgentExecution).filter(AgentExecution.id == execution_id).first().status
+    finally:
+        db.close()
+
+
+def test_una_ejecucion_colgada_de_un_reinicio_se_cierra_al_arrancar():
+    """La reproduccion exacta: la fila decia 'running' y el agente salia
+    'escribiendo…' indefinidamente."""
+    from app.agents.agent_manager import agent_manager
+
+    aid = _mk_agent(name="Orquestador de prueba")
+    corriendo = _mk_execution(aid, "running")
+    esperando = _mk_execution(aid, "pending")
+
+    cerradas = agent_manager.reconcile_orphan_executions()
+
+    assert cerradas == 2
+    assert _status_of(corriendo) == "failed"
+    assert _status_of(esperando) == "failed"
+
+
+def test_no_toca_las_ejecuciones_ya_terminadas():
+    """Cero regresion sobre el historial: lo que ya acabo no se reescribe."""
+    from app.agents.agent_manager import agent_manager
+
+    aid = _mk_agent(name="Agente con historial")
+    ok = _mk_execution(aid, "completed")
+    ko = _mk_execution(aid, "failed")
+    cancelada = _mk_execution(aid, "cancelled")
+
+    agent_manager.reconcile_orphan_executions()
+
+    assert _status_of(ok) == "completed"
+    assert _status_of(ko) == "failed"
+    assert _status_of(cancelada) == "cancelled"
+
+
+def test_la_ejecucion_cerrada_explica_por_que():
+    """Honestidad: el usuario tiene que poder distinguir "fallo la tarea" de
+    "se corto el backend a media faena"."""
+    from app.agents.agent_manager import agent_manager
+
+    aid = _mk_agent(name="Agente interrumpido")
+    eid = _mk_execution(aid, "running")
+
+    agent_manager.reconcile_orphan_executions()
+
+    db = SessionLocal()
+    try:
+        ex = db.query(AgentExecution).filter(AgentExecution.id == eid).first()
+        assert "reinici" in (ex.error_message or "").lower()
+        assert ex.completed_at is not None
+    finally:
+        db.close()
+
+
+def test_sin_huerfanas_no_hace_nada():
+    """Idempotente: pasarla dos veces seguidas no cambia nada la segunda."""
+    from app.agents.agent_manager import agent_manager
+
+    aid = _mk_agent(name="Agente limpio")
+    _mk_execution(aid, "running")
+
+    assert agent_manager.reconcile_orphan_executions() == 1
+    assert agent_manager.reconcile_orphan_executions() == 0

@@ -23,6 +23,7 @@ from app.core import grounding
 from app.core.logging_config import get_system_logger
 from app.core.strings import t as _t
 from app.tie import graph as graph_mod
+from app.tie import progress as _progress
 from app.tie import tracer
 from app.tie.contracts import Mission, NodeState, TaskGraph, TaskNode
 from app.tie.runtime import AgentResult, AgentTask, get_runtime
@@ -239,6 +240,10 @@ async def _execute_node(node: TaskNode, graph: TaskGraph, mission: Mission, trac
     from app.tools import tool_manager
 
     _transition(node, NodeState.RUNNING, graph, trace_id)
+    # [2026-08-02] Rastro en vivo: "Paso 2 de 3: …". El índice sale del ORDEN
+    # del grafo (dict ordenado por inserción, que es el orden del plan), no de
+    # cuántos van hechos — así el número no baila si un paso se salta.
+    _emit_step(node, graph)
     t0 = time.monotonic()
 
     # Contexto del nodo: el enricher con presupuesto de latencia duro (T2).
@@ -281,6 +286,12 @@ async def _execute_node(node: TaskNode, graph: TaskGraph, mission: Mission, trac
         # [S3, F-1] La misión dueña: el bucle aísla por ella los recursos con
         # estado (sesión del navegador) frente a otras misiones concurrentes.
         mission_id=mission.id,
+        # [FIX 2026-08-02] Hay material REAL de un paso anterior en el contexto
+        # (no solo recuerdos del MOS): el camino de chat no debe rematar la
+        # respuesta con "no he ejecutado ninguna herramienta" — sí se ejecutaron,
+        # en el paso de al lado, y ese desmentido es lo que hacía que un resumen
+        # correcto se presentara como una lectura fallida.
+        grounded_context=bool(handoff),
     )
     runtime = get_runtime(node.runtime)
 
@@ -325,9 +336,30 @@ async def _execute_node(node: TaskNode, graph: TaskGraph, mission: Mission, trac
         if result.tokens:
             mission.spent_tokens += result.tokens
         _transition(node, NodeState.DONE, graph, trace_id)
+        _progress.emit(_t("act.step_done", i=_step_index(node, graph)))
     else:
         node.error = result.error or node.validation.get("notes") or "el nodo no produjo un resultado válido"
+        _progress.emit(_t("act.step_failed", i=_step_index(node, graph),
+                          obj=str(node.error)[:70]))
         _fail_node(node, graph, mission, trace_id)
+
+
+def _step_index(node: TaskNode, graph: TaskGraph) -> int:
+    """Posición 1-based del nodo en el plan (orden de inserción del grafo)."""
+    try:
+        return list(graph.nodes.keys()).index(node.id) + 1
+    except Exception:
+        return 0
+
+
+def _emit_step(node: TaskNode, graph: TaskGraph) -> None:
+    """Una línea del rastro por paso que arranca. Best-effort — narrar nunca
+    puede afectar a la ejecución."""
+    try:
+        _progress.emit(_t("act.step", i=_step_index(node, graph), n=len(graph.nodes),
+                          obj=(node.goal or "")[:70]))
+    except Exception:
+        pass
 
 
 def _validate_result(node: TaskNode, result: AgentResult) -> dict:

@@ -156,11 +156,36 @@ class Authority:
         """Un agente/orquestador con proyecto asignado solo manda sobre lo de su
         propio proyecto (doc 14 §4.3c)."""
         if action in _AITHERA_AGENT_ACTIONS:
+            # [2026-08-02] El DESTINO de un `update_agent` también es alcance.
+            # Hasta aquí solo se miraba de quién ERA el agente, así que el
+            # orquestador del proyecto A podía coger un agente suyo y, con
+            # `project_id=B`, REGALÁRSELO a otro proyecto — la misma frontera
+            # que este método existe para cerrar, saltada por el otro lado.
+            # También es lo que hace segura la adopción de un huérfano de más
+            # abajo: solo se puede adoptar HACIA el proyecto propio.
+            destino = params.get("project_id")
+            if destino is not None and not _same_project(destino, self.project_id):
+                return (f"no puedes mover un agente al proyecto {destino}: tu autoridad se "
+                        f"limita a tu propio proyecto (id {self.project_id}).")
+
             agent_id = params.get("agent_id")
             if agent_id is None:
                 return None      # sin objetivo concreto: lo rechazará la propia tool por `missing`
-            owner = _agent_project_id(agent_id)
-            if owner != self.project_id:
+            found, owner = _agent_owner(agent_id)
+            if not found:
+                # No se pudo leer: fail-closed, igual que el resto del módulo.
+                return (f"no he podido comprobar a qué proyecto pertenece el agente {agent_id}. "
+                        f"Compruébalo con 'list_agents' antes de tocarlo.")
+            if owner is None:
+                # [2026-08-02] AGENTE SIN PROYECTO. No pertenece a nadie, así
+                # que tocarlo no cruza ninguna frontera — y bloquearlo era lo
+                # que dejaba la misión en un callejón sin salida: el agente
+                # huérfano ni se podía configurar ni se podía reutilizar su
+                # nombre (es único), así que el modelo daba vueltas entre las
+                # dos paredes. Adoptarlo solo puede llevarlo a ESTE proyecto,
+                # por la comprobación de destino de arriba.
+                return None
+            if not _same_project(owner, self.project_id):
                 return (f"el agente {agent_id} no pertenece a este proyecto "
                         f"(id {self.project_id}); tu autoridad se limita a los agentes de tu "
                         f"propio proyecto. Informa al usuario en vez de intentarlo por otra vía.")
@@ -169,7 +194,7 @@ class Authority:
         # Acciones que nombran un proyecto explícitamente (crear tarea/hito,
         # consultar estado…): tiene que ser el suyo.
         target = params.get("project_id")
-        if target is not None and int(target) != int(self.project_id):
+        if target is not None and not _same_project(target, self.project_id):
             return (f"el proyecto {target} no es el tuyo (id {self.project_id}); "
                     f"tu autoridad se limita a tu propio proyecto.")
         return None
@@ -195,6 +220,17 @@ class Authority:
                 return (f"la ruta '{value}' está fuera de la carpeta de este proyecto "
                         f"({self.repo_path}). No puedes salir de ahí.")
         return None
+
+
+def _same_project(a: Any, b: Any) -> bool:
+    """¿Los dos ids apuntan al mismo proyecto? Un valor que ni siquiera es un
+    número entero NO es el proyecto propio (fail-closed): un `int()` suelto
+    sobre lo que dijo el modelo levantaría un ValueError que reventaría el
+    `check()` entero en vez de denegar limpiamente."""
+    try:
+        return int(a) == int(b)
+    except (TypeError, ValueError):
+        return False
 
 
 def _internal_tool_ids() -> set:
@@ -329,18 +365,25 @@ def ensure_orchestrator(project_id: int) -> Optional[dict]:
     return orchestrator_of(project_id)
 
 
-def _agent_project_id(agent_id: Any) -> Optional[int]:
-    """`project_id` real del agente objetivo. Ante cualquier problema devuelve
-    None, que NO coincidirá con un `project_id` concreto y por tanto DENIEGA:
-    fail-closed, igual que `permission_service.is_pre_authorized` (A3b)."""
+def _agent_owner(agent_id: Any) -> tuple[bool, Optional[int]]:
+    """`(se_pudo_leer, project_id)` del agente objetivo.
+
+    [2026-08-02] Antes esto devolvía un `Optional[int]` a secas y `None`
+    significaba TRES cosas incompatibles: "el agente no tiene proyecto", "el
+    agente no existe" y "falló la consulta". Como todas se comparaban con un
+    `project_id` concreto, las tres denegaban — fail-closed, sí, pero también
+    imposible distinguir el caso legítimo (un agente sin dueño) del fallo. Con
+    la tupla, quien pregunta decide: no-leído sigue denegando, sin-dueño no."""
     try:
         from app.db.database import Agent, SessionLocal
 
         db = SessionLocal()
         try:
             agent = db.get(Agent, int(agent_id))
-            return agent.project_id if agent else None
+            if agent is None:
+                return False, None
+            return True, agent.project_id
         finally:
             db.close()
     except Exception:
-        return None
+        return False, None

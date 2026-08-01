@@ -371,6 +371,18 @@ async def lifespan(app: FastAPI):
             # resolvio con el backend caido (el bus no persiste, doc 17).
             resumed = await tie.executor.resume_pending()
             log_info("startup", f"TIE v1 activo ({destino}); {resumed} mision(es) reanudada(s)")
+
+            # [FIX 2026-08-02] La otra mitad de la reconciliacion de arranque:
+            # las EJECUCIONES DE AGENTE que se quedaron a medias. Su asyncio.Task
+            # murio con el proceso anterior, pero la fila seguia diciendo
+            # "running" — y la tarjeta del proyecto pintaba "escribiendo…" para
+            # siempre (habia una asi desde hacia cinco dias).
+            from app.agents.agent_manager import agent_manager
+
+            huerfanas = agent_manager.reconcile_orphan_executions()
+            if huerfanas:
+                log_info("startup",
+                         f"{huerfanas} ejecucion(es) de agente huerfanas cerradas (interrumpidas por un reinicio)")
         else:
             log_info("startup", "TIE desactivado (TIE_ENABLED=false): el Gateway sigue con el chat legacy")
     except Exception as e:

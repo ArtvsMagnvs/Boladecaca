@@ -186,9 +186,28 @@ async def test_create_rule_action_type_desconocido_no_se_inventa():
 # ---------------------------------------------------------------------------
 # Agentes reales
 # ---------------------------------------------------------------------------
+def _mk_project(name="Proyecto R3") -> int:
+    """[2026-08-02] Desde el fix del agente huérfano, `create_agent` EXIGE
+    project_id: un agente sin proyecto no lo podía configurar ni su propio
+    creador. Estos tests, escritos cuando era opcional, necesitan un proyecto
+    real — lo que comprueban (asignar tools, propagar errores) no cambia."""
+    from app.db.database import Project, SessionLocal
+
+    db = SessionLocal()
+    try:
+        p = Project(name=name, status="active")
+        db.add(p)
+        db.commit()
+        db.refresh(p)
+        return p.id
+    finally:
+        db.close()
+
+
 @pytest.mark.anyio
 async def test_crea_agente_y_le_asigna_tools():
-    r = await tool_manager.execute("aithera", "create_agent", {"name": "Agente R3", "allowed_tools": ["git"]})
+    r = await tool_manager.execute("aithera", "create_agent", {
+        "name": "Agente R3", "allowed_tools": ["git"], "project_id": _mk_project()})
     assert r["success"], r
     agent_id = r["result"]["id"]
 
@@ -202,7 +221,8 @@ async def test_crea_agente_y_le_asigna_tools():
 
 @pytest.mark.anyio
 async def test_assign_tools_con_tool_desconocida_falla_claro():
-    r = await tool_manager.execute("aithera", "create_agent", {"name": "Agente R3b"})
+    r = await tool_manager.execute("aithera", "create_agent", {
+        "name": "Agente R3b", "project_id": _mk_project("Proyecto R3b")})
     agent_id = r["result"]["id"]
     r = await tool_manager.execute("aithera", "assign_tools",
                                     {"agent_id": agent_id, "allowed_tools": ["no_existe_esta_tool"]})

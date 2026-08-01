@@ -216,8 +216,10 @@ export function AgentWindowCard({
     }
   };
 
+  // [2026-08-02] Mismo criterio que ProjectCard (ver el comentario largo alli):
+  // expandida = el recuadro del lienzo medido, escrito siempre, nunca heredado.
   const rectStyle = layout.expanded
-    ? undefined
+    ? { transform: "translate(0px, 0px)", width: bounds.width, height: bounds.height, minWidth: 0, minHeight: 0 }
     : { transform: `translate(${layout.x}px, ${layout.y}px)`, width: layout.w, height: layout.h, minWidth: MIN_CARD_W, minHeight: MIN_CARD_H };
 
   // Contenido adaptativo por alto disponible (mismo patron que ProjectCard).
@@ -391,9 +393,7 @@ export function AgentWindowCard({
   return (
     <div
       ref={nodeRef}
-      className={`glass-surface holo-frame rounded-2xl border border-base-700 shadow-glass flex flex-col overflow-hidden ${
-        layout.expanded ? "absolute inset-0" : "absolute top-0 left-0"
-      }`}
+      className="glass-surface holo-frame rounded-2xl border border-base-700 shadow-glass flex flex-col overflow-hidden absolute top-0 left-0"
       style={{ ...rectStyle, zIndex: layout.zIndex }}
       onPointerDownCapture={onInteractStart}
     >

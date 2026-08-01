@@ -9,6 +9,7 @@ import { UserQuestionCard } from "@/components/UserQuestionCard";
 import { usePendingQuestions } from "@/hooks/usePendingQuestions";
 import { attachVoiceAudio } from "@/avcs";
 import { MiniMarkdown } from "@/lib/miniMarkdown";
+import ActivityTrail from "@/components/chat/ActivityTrail";
 import { usePolling } from "@/hooks/usePolling";
 import { useT, useI18n } from "@/store/useI18n";
 
@@ -66,6 +67,7 @@ export default function Chat() {
   const messages = activeSession.messages;
   const streamingText = activeSession.streamingText;
   const tieStatus = activeSession.tieStatus;
+  const activity = activeSession.activity ?? [];
   const sending = activeSession.sending;
   const t = useT();
   // [2026-08-02] Preguntas del asistente pendientes de respuesta (todas, no
@@ -505,6 +507,9 @@ export default function Chat() {
           // respuesta ("analizando" → "planificando"): feedback inmediato en vez
           // de un "Pensando..." mudo mientras clasifica y planifica.
           onStatus: (s) => useChatStore.getState().setTieStatus(sid, s),
+          // [2026-08-02] Rastro en vivo: a diferencia del status (que SUSTITUYE
+          // la línea anterior), esto se ACUMULA — es el "qué ha ido haciendo".
+          onActivity: (line) => useChatStore.getState().appendActivity(sid, line),
           onMission: (id) => useChatStore.getState().setMissionId(sid, id),
           signal: controller.signal,
           // [R6.5b] La pestaña ya tenía identidad en localStorage desde el
@@ -515,11 +520,16 @@ export default function Chat() {
       );
       const finalSession = useChatStore.getState().sessions.find((s) => s.id === sid);
       const reply = finalSession?.streamingText || t("chat.noResponse");
+      // El rastro deja de ser "en vivo" y pasa a vivir DENTRO del mensaje, ya
+      // plegado. Así sobrevive a los turnos siguientes y a recargar la app.
+      const trail = finalSession?.activity ?? [];
       useChatStore.getState().appendMessage(sid, {
         role: "assistant", content: reply, missionId: finalSession?.missionId ?? undefined,
+        activity: trail.length ? trail : undefined,
       });
       useChatStore.getState().setStreamingText(sid, "");
       useChatStore.getState().setTieStatus(sid, "");
+      useChatStore.getState().clearActivity(sid);
       // V0.8.1 (Paso 2): thinking -> idle explicito antes del finally.
       setCoreState("idle");
       // El caller decide si habla la respuesta (voz / conversación).
@@ -528,17 +538,29 @@ export default function Chat() {
       // Parar NO es un fallo: es lo que el usuario ha pedido. Se conserva lo
       // que ya se habia escrito, para no tirar una respuesta a medio leer.
       if ((error as Error)?.name === "AbortError") {
-        const parcial = useChatStore.getState().sessions.find((x) => x.id === sid)?.streamingText || "";
+        const parada = useChatStore.getState().sessions.find((x) => x.id === sid);
+        const parcial = parada?.streamingText || "";
+        const trailParcial = parada?.activity ?? [];
         useChatStore.getState().appendMessage(sid, {
           role: "assistant",
           content: parcial ? `${parcial}
 
 ${t("chat.stoppedByYou")}` : t("chat.stoppedByYou"),
+          // Lo que SÍ llegó a hacerse antes de parar no se tira: es justo lo
+          // que el usuario necesita saber para decidir qué hacer después.
+          activity: trailParcial.length ? trailParcial : undefined,
         });
+        useChatStore.getState().clearActivity(sid);
         return null;
       }
       console.error("Error en streamChat:", error);
-      useChatStore.getState().appendMessage(sid, { role: "assistant", content: t("chat.genericError") });
+      useChatStore.getState().appendMessage(sid, {
+        role: "assistant", content: t("chat.genericError"),
+        activity: (useChatStore.getState().sessions.find((x) => x.id === sid)?.activity ?? []).length
+          ? useChatStore.getState().sessions.find((x) => x.id === sid)?.activity
+          : undefined,
+      });
+      useChatStore.getState().clearActivity(sid);
       pulseError();
       return null;
     } finally {
@@ -901,7 +923,8 @@ ${t("chat.stoppedByYou")}` : t("chat.stoppedByYou"),
         {/* Historial compacto */}
         <div className="flex-1 min-h-0 overflow-y-auto px-3 py-3 flex flex-col gap-2">
           {messages.map((msg, i) => (
-            <ChatBubble key={i} role={msg.role} content={msg.content} missionId={msg.missionId} />
+            <ChatBubble key={i} role={msg.role} content={msg.content} missionId={msg.missionId}
+                        activity={msg.activity} />
           ))}
           {sending && (
             <div className="flex justify-start">
@@ -910,6 +933,10 @@ ${t("chat.stoppedByYou")}` : t("chat.stoppedByYou"),
                     muestra QUÉ está haciendo en vez de un "Pensando..." mudo. */}
                 {streamingText ? <MiniMarkdown text={streamingText} /> : (tieStatus ? `${tieStatus}…` : t("chat.thinking"))}
                 <span className="animate-pulse">|</span>
+                {/* [2026-08-02] EN VIVO: la lista de lo que va haciendo, con la
+                    última línea destacada. Debajo del texto porque el acuse
+                    ("me pongo con ello") llega primero y es lo que se lee. */}
+                {activity.length > 0 && <ActivityTrail lines={activity} live />}
               </div>
             </div>
           )}
@@ -1071,10 +1098,11 @@ ${t("chat.stoppedByYou")}` : t("chat.stoppedByYou"),
 // página entera y, sin esto, se re-parseaba el MiniMarkdown de TODOS los
 // mensajes anteriores en cada chunk — coste que crece con la conversación.
 // Con memo, un mensaje ya escrito no vuelve a parsearse jamás.
-const ChatBubble = memo(function ChatBubble({ role, content, missionId }: {
+const ChatBubble = memo(function ChatBubble({ role, content, missionId, activity }: {
   role: string;
   content: string;
   missionId?: string;
+  activity?: string[];
 }) {
   const t = useT();
   return (
@@ -1085,6 +1113,9 @@ const ChatBubble = memo(function ChatBubble({ role, content, missionId }: {
           : "bg-base-700/50 text-ink"
       }`}>
         {role === "assistant" ? <MiniMarkdown text={content} /> : content}
+        {/* [2026-08-02] Lo que se hizo para llegar a esta respuesta, plegado.
+            Se despliega con un clic; el detalle completo sigue en Misiones. */}
+        {activity && activity.length > 0 && <ActivityTrail lines={activity} />}
         {/* [V1.0 T4b] La respuesta vino de una misión de varios pasos:
             enlace para ver el plan, su estado, o aprobarlo. */}
         {missionId && (

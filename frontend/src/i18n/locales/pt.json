@@ -168,6 +168,7 @@
   "calendar.weekdayFull.thu": "quinta-feira",
   "calendar.weekdayFull.tue": "terça-feira",
   "calendar.weekdayFull.wed": "quarta-feira",
+  "chat.activity.summary": "{steps} passo(s) · {tools} ferramenta(s)",
   "chat.approval.allow": "Permitir",
   "chat.approval.denied": "Entendido, não o farei.",
   "chat.approval.deny": "Não",
