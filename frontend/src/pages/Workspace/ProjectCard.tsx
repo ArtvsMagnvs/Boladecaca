@@ -27,10 +27,13 @@ import { useT } from "@/store/useI18n";
 // nombre para que ajustarlos sea cambiar un número, no releer el layout.
 /** Ancho de la tarjeta / ancho máximo del lienzo a partir del cual el chat se va al lateral. */
 const SIDE_CHAT_MIN_RATIO = 0.6;
-/** Ancho de la columna de chat = 70% del lado derecho, es decir 35% del ancho de la tarjeta. */
-const SIDE_CHAT_WIDTH_RATIO = 0.35;
+/** Ancho de la columna de chat = 70% del ancho TOTAL de la tarjeta. */
+const SIDE_CHAT_WIDTH_RATIO = 0.7;
 const SIDE_CHAT_MIN_PX = 240;
-const SIDE_CHAT_MAX_PX = 520;
+// [2026-08-02, corrección] Con el 70% en vez del 35% de antes, el tope tenía
+// que subir en la misma proporción — si no, se alcanzaba con tarjetas de
+// apenas ~740px de ancho y el 70% dejaba de cumplirse en la práctica.
+const SIDE_CHAT_MAX_PX = 1040;
 
 interface Props {
   project: Project;
@@ -189,8 +192,9 @@ export function ProjectCard({
   const maxW = bounds.width || 1;
   const currentW = layout.expanded ? maxW : (live?.w ?? layout.w);
   const sideChat = showTasksAndActivity && currentW / maxW > SIDE_CHAT_MIN_RATIO;
-  // Ancho de la columna: el 70% del lado derecho de la tarjeta (= 35% del
-  // ancho total), acotado para que siga siendo usable en cualquier tamaño.
+  // Ancho de la columna: el 70% del ancho TOTAL de la tarjeta (petición
+  // explícita del usuario), acotado para que siga siendo usable en cualquier
+  // tamaño y para no dejar el contenido del proyecto en una franja inservible.
   const sideChatW = Math.round(
     Math.min(SIDE_CHAT_MAX_PX, Math.max(SIDE_CHAT_MIN_PX, currentW * SIDE_CHAT_WIDTH_RATIO)),
   );
