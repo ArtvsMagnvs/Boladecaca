@@ -66,7 +66,12 @@ def test_ensure_crea_el_orquestador_si_no_existe():
     assert orch["repo_path"] == repo, "hereda la carpeta del proyecto"
     # Las mínimas del encargo: trabajar sobre la carpeta. Mandar sobre sus
     # agentes NO necesita permiso listado (`aithera` es interna) — ver test 4.
-    assert set(orch["allowed_tools"]) == {"filesystem", "document"}
+    # [2026-08-02] El contrato CAMBIÓ por decisión explícita del usuario: el
+    # orquestador tiene SIEMPRE todas las herramientas (antes eran 2). Su
+    # alcance lo limita la carpeta del proyecto, no la lista de tools.
+    from app.tie import orchestrator_tools
+
+    assert set(orch["allowed_tools"]) == set(orchestrator_tools())
 
     s = SessionLocal()
     try:
@@ -92,15 +97,20 @@ def test_ensure_es_idempotente():
     assert n == 1, "una segunda llamada no puede crear un orquestador nuevo"
 
 
-def test_ensure_respeta_un_orquestador_ya_configurado_a_mano():
-    """Si el usuario ya creó el suyo (con otras tools), `ensure` NO lo pisa."""
+def test_ensure_reutiliza_el_orquestador_existente_y_le_completa_las_tools():
+    """[2026-08-02] Antes este test afirmaba que `ensure` NO tocaba un
+    orquestador ya creado. El contrato cambió: al orquestador no se le pueden
+    quitar herramientas, así que uno anterior (con 2) se RE-SINCRONIZA en vez de
+    quedarse mutilado para siempre. Lo que no cambia: no se crea otro."""
+    from app.tie import orchestrator_tools
+
     pid, _ = _project()
     mio = agent_manager.create_agent(
         name="Mi jefe", project_id=pid, role="orchestrator", allowed_tools=["filesystem", "search"],
     )
     orch = ensure_orchestrator(pid)
-    assert orch["id"] == mio.id
-    assert set(orch["allowed_tools"]) == {"filesystem", "search"}, "no se reconfigura"
+    assert orch["id"] == mio.id, "creó otro en vez de reutilizar el que había"
+    assert set(orch["allowed_tools"]) == set(orchestrator_tools())
 
 
 def test_ensure_con_proyecto_inexistente_no_explota():
@@ -146,19 +156,33 @@ def test_orquestador_NO_escribe_fuera_de_la_carpeta_del_proyecto():
     assert dentro is None, "dentro de su carpeta sí puede"
 
     fuera = auth.check("filesystem", "write_file", {"path": os.path.join(repo_b, "notas.txt")})
-    assert fuera and "fuera de la carpeta" in fuera
+    assert fuera and "fuera de las carpetas" in fuera
 
     # `document` también (es la tool del caso real de S10: el .docx que acabó
     # en C:\Users\... en vez de dentro del proyecto).
     doc = auth.check("document", "write_docx", {"path": os.path.expanduser("~/fuera.docx")})
-    assert doc and "fuera de la carpeta" in doc
+    assert doc and "fuera de las carpetas" in doc
 
 
-def test_orquestador_no_gana_herramientas_que_no_tiene():
+def test_la_frontera_de_tools_sigue_existiendo_para_los_demas():
+    """[2026-08-02] El orquestador ya las tiene TODAS, así que el caso negativo
+    se prueba donde sigue aplicando: un agente normal con una whitelist corta.
+    La frontera no desapareció, solo dejó de afectar al orquestador."""
+    from app.tie.authority import Authority
+
     pid, _ = _project()
-    auth = _authority_of(ensure_orchestrator(pid), pid)
+    auth = Authority(project_id=pid, allowed_tools=["filesystem"])
     motivo = auth.check("browser", "open_url", {"url": "https://x.com"})
     assert motivo and "fuera de las herramientas" in motivo
+
+
+def test_el_orquestador_si_puede_usar_cualquier_tool():
+    pid, _ = _project()
+    auth = _authority_of(ensure_orchestrator(pid), pid)
+    for tool, accion, params in [("browser", "open_url", {"url": "https://x.com"}),
+                                 ("shell", "run", {"command": "python --version"}),
+                                 ("search", "search_web", {"query": "x"})]:
+        assert auth.check(tool, accion, params) is None, f"{tool} denegada al orquestador"
 
 
 # ---------------------------------------------------------------------------
@@ -172,7 +196,9 @@ def test_endpoint_devuelve_el_orquestador_y_es_idempotente(client):
     body = r1.json()
     assert body["role"] == "orchestrator"
     assert body["project_id"] == pid
-    assert set(body["allowed_tools"]) == {"filesystem", "document"}
+    from app.tie import orchestrator_tools
+
+    assert set(body["allowed_tools"]) == set(orchestrator_tools())
 
     r2 = client.post(f"/api/projects/{pid}/orchestrator")
     assert r2.status_code == 200

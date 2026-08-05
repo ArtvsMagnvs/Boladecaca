@@ -17,7 +17,13 @@
 #   tocar la version de PyTorch ya usada por el MOS -- ver requirements.txt).
 #
 # Acciones: click, double_click, type, hotkey, move_mouse, screenshot, ocr,
-# find_text_on_screen.
+# find_text_on_screen, find_and_click.
+#
+# [B·WEB-2, doc 32] `find_and_click` cierra el hueco entre "se donde esta" y
+# "se COMO se llama": el OCR (find_text_on_screen) solo encuentra TEXTO, asi que
+# un icono, un boton sin etiqueta o un menu grafico quedaban fuera de alcance.
+# La vision resuelve esos casos describiendo el elemento en lenguaje natural.
+# Sigue pidiendo confirmacion: es un clic real, con vision o sin ella.
 
 import asyncio
 import base64
@@ -25,6 +31,7 @@ import io
 from typing import Dict, Any, List, Optional
 
 from .base import BaseTool
+from . import vision_click
 
 # Import LAZY (igual que Playwright en browser_tool.py): pyautogui por si solo
 # cuesta ~0.3s de import (arrastra Pillow/pyscreeze/pygetwindow) -- si se
@@ -89,11 +96,12 @@ class DesktopTool(BaseTool):
                 "screenshot": self._screenshot,
                 "ocr": self._ocr,
                 "find_text_on_screen": self._find_text_on_screen,
+                "find_and_click": self._find_and_click,
             }.get(action)
             if not handler:
                 return {
                     "success": False, "result": None,
-                    "error": f"Accion desconocida: {action}. Disponibles: click, double_click, type, hotkey, move_mouse, screenshot, ocr, find_text_on_screen",
+                    "error": f"Accion desconocida: {action}. Disponibles: click, double_click, type, hotkey, move_mouse, screenshot, ocr, find_text_on_screen, find_and_click",
                 }
             return await handler(params)
         except getattr(pyautogui, "FailSafeException", Exception) as e:
@@ -119,6 +127,14 @@ class DesktopTool(BaseTool):
              "requires_confirmation": False, "params": {}},
             {"id": "find_text_on_screen", "description": "Busca un texto en pantalla y devuelve su posicion si lo encuentra.",
              "requires_confirmation": False, "params": {"text": "string (subcadena a buscar, case-insensitive)"}},
+            {"id": "find_and_click", "description": (
+                "Localiza un elemento en pantalla POR SU DESCRIPCION (usando un "
+                "modelo con vision) y hace clic en el. Para iconos, botones sin "
+                "texto o menus graficos que el OCR no encuentra. Si no lo ve con "
+                "seguridad, NO hace clic y lo dice."),
+             "requires_confirmation": True,
+             "params": {"description": "string (ej. 'el boton de guardar', 'el icono de la papelera')",
+                        "double": "bool opcional (doble clic, default false)"}},
         ]
 
     # ------------------------------------------------------------------
@@ -201,6 +217,49 @@ class DesktopTool(BaseTool):
                     center = None
                 return {"success": True, "result": {"found": True, "text": line.text, "center": center}, "error": None}
         return {"success": True, "result": {"found": False, "text": None, "center": None}, "error": None}
+
+    async def _find_and_click(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """[B·WEB-2] Captura → modelo con visión → coordenadas → clic REAL.
+
+        Sin DOM que numerar (esto es el escritorio), así que se va por
+        coordenadas puras — el modo de último recurso descrito en el paso 3 del
+        plan. El clic lo hace `_click`/`_double_click`, los MISMOS de siempre:
+        esta acción decide DÓNDE, nunca reimplementa el CÓMO."""
+        description = (params.get("description") or "").strip()
+        if not description:
+            return {"success": False, "result": None, "error": "falta parametro: description"}
+
+        img = await asyncio.to_thread(pyautogui.screenshot)
+        buf = io.BytesIO()
+        img.save(buf, format="PNG")
+        b64 = base64.b64encode(buf.getvalue()).decode()
+
+        # Escalado de pantalla: la captura sale en pixeles FISICOS y el raton se
+        # mueve en LOGICOS. Se le dice al modelo y luego se convierte de verdad.
+        screen_w, screen_h = pyautogui.size()
+        nota = ""
+        if (img.width, img.height) != (screen_w, screen_h):
+            nota = (f"La pantalla real mide {screen_w}x{screen_h}; responde en píxeles "
+                    f"de la IMAGEN, la conversión la hace el sistema.")
+
+        ubic, error = await vision_click.locate(
+            description, b64, width=img.width, height=img.height, scale_note=nota)
+        if ubic is None:
+            return {"success": False, "result": None, "error": error}
+
+        x, y = vision_click.to_screen_coords(
+            ubic.x, ubic.y, image_size=(img.width, img.height),
+            screen_size=(screen_w, screen_h))
+        doble = bool(params.get("double"))
+        resultado = await (self._double_click({"x": x, "y": y}) if doble
+                           else self._click({"x": x, "y": y}))
+        if not resultado.get("success"):
+            return resultado
+        resultado["result"] = {**(resultado.get("result") or {}),
+                               "description": description,
+                               "located_by": "vision",
+                               "image_coords": [ubic.x, ubic.y]}
+        return resultado
 
     # ------------------------------------------------------------------
 

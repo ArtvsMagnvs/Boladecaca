@@ -117,6 +117,25 @@ class ExecutionRequest:
     # NINGÚN camino de producción lo activa (default False = comportamiento
     # idéntico al de siempre, bit a bit).
     fitness_exempt: bool = False
+    # [2026-08-04, append-only] DIRECTORIO DE TRABAJO de la petición. Solo lo
+    # usan los proveedores que ejecutan de verdad en una carpeta — hoy los
+    # agentes CLI (Claude Code, Codex), que traen sus propias herramientas y
+    # trabajan sobre el repositorio donde se les lance. Es la pieza que hace que
+    # "el agente del proyecto X" toque los ficheros de X y no otros.
+    # Los proveedores HTTP lo ignoran (el registry degrada solo si el proveedor
+    # no lo acepta), así que `None` = comportamiento idéntico al de siempre.
+    workdir: Optional[str] = None
+    # [B·WEB-2, append-only] IMÁGENES de la petición, en base64 PNG/JPEG SIN el
+    # prefijo `data:` (la frontera lo normaliza). Es lo que hace utilizable la
+    # `Capability.VISION`, que hasta aquí existía en el enum sin transporte.
+    #
+    # Diferencia IMPORTANTE con `messages`/`workdir`: esos degradan en silencio
+    # si el proveedor no los acepta (el historial es una mejora, no una
+    # necesidad). Una imagen NO puede degradar así — un modelo que no la recibe
+    # respondería igualmente, inventándose lo que "ve". Por eso el registry
+    # LANZA en vez de reintentar sin ella, y el executor lo trata como fallo de
+    # ese candidato y salta al siguiente (fail-closed, doc 32 B·WEB-2 paso 1).
+    images: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)

@@ -98,6 +98,26 @@ def test_una_tool_nueva_aparece_sin_tocar_el_mapa():
     assert "Descripción interna con detalles de implementación" not in text
 
 
+def test_ninguna_categoria_se_cae_del_presupuesto_en_silencio():
+    """[C·WEB-4] HALLAZGO REAL: el recorte de `MAX_CHARS` descarta LÍNEAS
+    ENTERAS, así que alargar una sola frase curada puede hacer desaparecer la
+    última categoría del mapa —sin error, sin aviso, y el chat deja de saber que
+    puede hacer esas cosas—. Lo destapó el test de la tool sintética al fallar
+    por una frase nueva del navegador; este test lo vigila de frente.
+
+    Si esto falla, hay dos salidas conscientes: acortar frases curadas o subir
+    `MAX_CHARS` sabiendo que se paga en el contexto de CADA mensaje del chat."""
+    text = capabilities_map.summary(force=True)
+    ids_registradas = {t["tool_id"] for t in tool_manager.tie_catalog()}
+    for categoria, ids in capabilities_map._CATEGORIES:
+        if ids_registradas & set(ids):
+            assert f"Para {categoria}:" in text, (
+                f"la categoría «{categoria}» tiene tools registradas pero no "
+                f"llega al modelo: el mapa no cabe en MAX_CHARS "
+                f"({len(text)}/{capabilities_map.MAX_CHARS})"
+            )
+
+
 def test_el_generico_usa_el_nombre_no_la_descripcion_cruda():
     blurb = capabilities_map._generic_blurb("Cosa Nueva Tool", 2)
     assert "cosa nueva" in blurb.lower()

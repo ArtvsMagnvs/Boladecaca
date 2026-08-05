@@ -746,7 +746,7 @@ era `apscheduler` ausente del sandbox — instalado, **12/12 passed**.
 > Origen: revisión de Mark-L. Su fiabilidad en YouTube/música viene de **NO
 > automatizar**: abre la URL en el navegador real del usuario. Robamos eso.
 
-## B·WEB-1 — Abrir medios/URL en el navegador por defecto ⭐
+## B·WEB-1 — Abrir medios/URL en el navegador por defecto ⭐ ✅ HECHO (2026-08-05, Sonnet)
 **Modelo: Sonnet · Esfuerzo: Bajo** — *(el mayor impacto por el menor cambio)*
 
 Decisión tomada: reproducir un medio NO necesita un navegador pilotado; necesita
@@ -775,9 +775,74 @@ Pasos exactos:
 **Criterio de cierre (en vivo)**: "pon X canción" reproduce de verdad en el
 navegador real, sin muro de cookies que frene la misión.
 
+**Implementación real** (`app/tools/browser_tool.py`): dos acciones nuevas
+sobre la MISMA tool `browser` (no una tool `media` aparte — mismo `tool_id`,
+mismo permiso `browser.use`, cero fricción de catálogo). Ninguna de las dos
+toca Playwright/`_get_page`/`_sessions`: `open_in_default_browser(url)` valida
+http(s) (completa `https://` si falta, respeta el esquema si ya viene) y
+delega en `_launch_default_browser(url)`, un wrapper de 1 línea sobre
+`webbrowser.open()` (stdlib, cubre Windows/macOS/Linux sin ramificar por
+`sys.platform` — en Windows llama a `os.startfile` por debajo, que es
+exactamente lo que pedía el paso 1) despachado con `asyncio.to_thread` para no
+bloquear el loop. `play_media(query)` reusa `search_tool._search("videos",
+query, 5)` **por import directo** (`from .search_tool import _search`, mismo
+patrón ya establecido por `from .filesystem_tool import _resolve_user_path,
+_is_path_allowed` unas líneas más arriba en el mismo archivo — sin pasar por
+`ToolManager`, sin ciclo de imports porque `search_tool.py` no importa
+`browser_tool.py`), toma el primer resultado con URL real (salta los que no
+la traigan) y lo abre con `open_in_default_browser`. **Nunca** llama a
+`browser.google_search` (verificado con un test que sustituye
+`_google_search` por una función que hace fallar el test si se invoca).
+
+**Enrutado** (paso 3 del plan): la regla 6 de `_SYSTEM_PROMPT` en
+`app/tie/toolloop.py` (el prompt que de verdad elige tool+acción en cada
+vuelta del bucle — es el sitio correcto, no el clasificador de intents, que
+solo decide si hace falta navegador en general) se reescribió para separar
+dos casos: ABRIR/REPRODUCIR algo → `browser.play_media`/`browser.open_in_
+default_browser` (navegador real); LEER/INTERACTUAR con el contenido de una
+página → sigue siendo `search.search_web`+`browser.open_url` (navegador
+pilotado, necesario para extraer texto/clicar/rellenar formularios). La
+prohibición de `browser.google_search` se conserva intacta.
+
+**Permisos** (paso 4): confirmado por lectura de `app/automation/
+permissions.py` — `_TOOL_PERMISSION["browser"] = "browser.use"` mapea CUALQUIER
+acción de `tool_id="browser"` a ese permiso automáticamente (sin entradas en
+`_ACTION_PERMISSION`), y las dos acciones nuevas se registraron con
+`requires_confirmation: False` (igual que `open_url`/`new_tab`: navegar no
+interactúa con una página de verdad, a diferencia de `click`/`type`). Cero
+cambios en `permissions.py` — el catálogo ya cubría el caso tal como
+anticipaba el plan.
+
+Tests: `backend/tests/test_bweb1_media.py` (NUEVO, 20 — el wrapper de
+`webbrowser.open` en sus dos salidas, validación de URL vacía/con y sin
+esquema, fallo del lanzador y excepción del lanzador no rompen, confirma que
+NO se toca `_sessions`/Playwright, `play_media` resuelve vía `_search` y abre
+en el navegador real —incluida la aserción exacta de que se llama con
+`("videos", query, 5)`—, nunca invoca `_google_search`, propaga el motivo real
+si la búsqueda falla o no hay proveedor configurado, honesto sin resultados,
+salta ítems sin URL hasta encontrar uno con URL, catálogo/`build_catalog` del
+TIE expone ambas sin pedir aprobación, `permission_for_tool_action` resuelve
+`browser.use` para las dos, y el prompt del toolloop menciona ambas acciones).
+**Comprobación de mutación** (2, restauradas y verificadas): revertir la
+regla 6 del prompt tumba el test del prompt; cambiar el vertical de
+`_search` de `"videos"` a `"web"` tumba el test de resolución — ambas
+restauradas y confirmadas byte a byte contra el texto original. Regresión:
+**152 passed** (subconjunto `test_bweb1_media` + `test_new_tools` +
+`test_audit_s3_browser` + `test_audit_s9_browser_lock` +
+`test_audit_s9b_browser_muerto` + `test_module_boundaries` +
+`test_permissions` + `test_toolloop_progreso` + `test_audit_s9c_bucle_y_texto`
++ `test_tie_contracts`), 5 fallos son los de siempre del sandbox
+(`test_desktop_*`, sin pantalla/pyautogui, ajenos a este cambio) y 5 skips son
+los tests de Playwright real (paquete no instalado en este sandbox — su
+propia suite ya los saltaba antes de este cambio). `py_compile` limpio en
+los dos archivos tocados. **Pendiente en Windows**: el criterio de cierre en
+vivo en sí — decir "pon [canción] en YouTube" y confirmar que Chrome (el
+navegador por defecto real del usuario) la abre y suena, sin que el toolloop
+pase por el navegador pilotado ni por `browser.google_search`.
+
 ---
 
-## B·WEB-2 — Clic por visión como fallback (screenshot → modelo → coordenadas)
+## B·WEB-2 — Clic por visión como fallback (screenshot → modelo → coordenadas) ✅ HECHO (2026-08-05, Opus)
 **Modelo: Opus · Esfuerzo: Alto**
 
 Decisión tomada: cuando los selectores DOM fallan, localizar el elemento por
@@ -809,6 +874,152 @@ Pasos exactos:
 **Criterio de cierre**: en una web donde el DOM no basta, Aithera localiza y
 clica el elemento correcto por visión (verificado en vivo en 1-2 casos reales).
 
+**Hallazgo del paso 1 (la razón por la que este paso NO era cosmético)**:
+`Capability.VISION` no estaba solo "reservada" — era una capacidad FANTASMA.
+`_compile_policy` recorre TODAS las capacidades del enum, así que ya venía
+compilando una cadena de visión para CUALQUIER modelo con el score por defecto
+(40), incluidos los que no aceptan imágenes. Pedirle a uno de esos las
+coordenadas de un botón habría devuelto un `x,y` inventado con total aplomo —
+exactamente lo que este sprint prohíbe. Lo que faltaba no era "dar de alta la
+capacidad", era **el dato de qué modelo ve de verdad**.
+
+**Fail-closed, en el punto único** (`mel/catalog.py::supports_vision` +
+`mel/policies.py::is_capable`): declaración explícita de multimodalidad — por
+FAMILIA (`gemini`/`anthropic`/`openai`/`grok`) y por MARCADOR EN EL NOMBRE del
+modelo (`-vl`, `vision`, `llava`, `moondream`, `minicpm-v`, `gemma3`), para que
+un `ollama pull llava` funcione sin tocar código. Los agentes CLI (Claude Code,
+Codex) quedan fuera a propósito aunque el modelo detrás sea multimodal: se les
+habla por línea de comandos y no hay por dónde pasarles un PNG. El chequeo se
+enchufa en `is_capable()` —el punto ÚNICO de aptitud del MEL— así que las tres
+capas salen gratis: compilación de políticas, filtro RETROACTIVO en ejecución
+(sanea una política editada antes de existir la regla) y bloqueo en la UI. Con
+cero modelos de visión, la cadena queda VACÍA (no se rellena con un ciego "por
+si acaso") y la acción lo dice con su nombre. `vision=` explícito añadido a las
+familias multimodales del catálogo: sin él heredaban el 40 de "no es
+multimodal" y habrían ordenado la cadena al revés.
+
+**Transporte de la imagen — la diferencia clave con `messages`/`workdir`**:
+`ExecutionRequest.images` (append-only, base64 sin `data:`) llega a los 4
+formatos reales de proveedor (`base.normalize_images` normaliza en la frontera):
+`image_url` con data-URI en los compatibles con OpenAI, bloque `image` con
+`source.base64` en Anthropic, `inline_data` en Gemini, y `images: [...]` dentro
+del payload en Ollama (en sus DOS endpoints). Sin imágenes, los cuatro
+construyen el payload de siempre byte a byte. **Y aquí NO hay degradación
+silenciosa**: el historial y el `workdir` se reintentan sin ellos si el
+proveedor no los acepta, porque son mejoras; una imagen no puede — un modelo
+que no la recibe responde igual, inventándose lo que "ve". Por eso
+`registry.execute` LANZA, el executor lo cuenta como fallo de ese candidato y
+salta al siguiente. `mel.vision_available()` se expone en el barrel para poder
+decir "no puedo ver" ANTES de gastar una llamada.
+
+**`app/tools/vision_click.py` (NUEVO)** — el cerebro compartido de las dos
+acciones, para que no puedan divergir (patrón LOG-1, ya ha pasado tres veces en
+este proyecto). Todo puro y testeable sin pantalla/navegador/modelo:
+`build_prompt` (dos modos, con y sin cajas), `parse_location` (JSON, JSON en
+markdown, y un `"x, y"` suelto como último recurso — los modelos pequeños
+responden así a menudo y rechazarlo por formato sería perder una localización
+correcta), `to_screen_coords` y `locate` (la única que habla con el MEL).
+
+**Paso 5, el escalado — la fragilidad que el propio plan señalaba**: con
+escalado de Windows (125%, 150%…) la captura sale en píxeles FÍSICOS y el ratón
+se mueve en LÓGICOS; un modelo que acierta de pleno en una imagen 2560×1440
+haría clic 1,5 veces más abajo y a la derecha. Se ataca por las dos mitades: se
+le DICE al modelo (nota de resolución en el prompt) y se CONVIERTE de verdad
+(`to_screen_coords`, con el resultado siempre acotado a la pantalla — ni un clic
+fuera de límites). Con las dos medidas iguales es la identidad.
+
+**Paso 2 — `desktop.find_and_click`**: captura → visión → coordenadas → clic.
+Sin DOM que numerar, va por coordenadas puras. El clic lo hacen `_click`/
+`_double_click`, los MISMOS de siempre: esta acción decide DÓNDE, nunca
+reimplementa el CÓMO (y por tanto conserva el `requires_confirmation: True` y
+el clamp de coordenadas). Cierra un hueco real: `find_text_on_screen` (OCR) solo
+encuentra TEXTO, así que un icono o un botón sin etiqueta quedaban fuera de
+alcance.
+
+**Paso 3 — `browser.find_and_click` con SET-OF-MARK**: se numeran los elementos
+interactivos VISIBLES del viewport, se les dibuja su caja con el número encima
+(JS inyectado, tope 60) y el modelo elige un ÍNDICE; el clic va entonces al
+centro de un elemento REAL del DOM, no a una estimación de píxeles. Si la página
+bloquea la inyección (CSP) o el elemento no tiene caja (canvas, componente no
+estándar), cae a coordenadas puras. **Las marcas se retiran SIEMPRE antes de
+clicar**, en un `finally` — dejarlas pintadas haría que el clic cayera sobre el
+overlay y no sobre la página (el mismo tipo de fallo que el muro de cookies de
+A-3). Un índice que no existe NO se aproxima: se rechaza.
+
+**Paso 4 — enrutado como RESPALDO, no como primera opción**: regla 9 nueva en
+el `_SYSTEM_PROMPT` del toolloop (la vieja 9 pasa a 10) — primero
+`browser.click` con selector CSS / `desktop.click` con las coordenadas del OCR,
+que es barato y preciso; la visión solo cuando eso no encuentra el elemento. Y
+si la visión dice que no lo ha localizado, prohibido insistir con la misma
+descripción.
+
+**Permisos** (sin cambios en `permissions.py`): `find_and_click` hereda el
+permiso de su tool por el mapa que ya existía — `computer.use` en desktop,
+`browser.use` en browser — y ambas nacen con `requires_confirmation: True`. Un
+clic es un clic: que lo decida un modelo de visión no lo hace menos real.
+
+Tests: `backend/tests/test_bweb2_vision.py` (NUEVO, 41 — el fail-closed de la
+capacidad en sus 4 formas incl. los CLI, que una política no compila un ciego
+en visión y que con solo ciegos la cadena queda vacía; los 4 payloads de
+proveedor CON y SIN imagen; que el registry LANZA ante un proveedor ciego en vez
+de aceptar su respuesta; el parseo en sus 4 formatos y sus 4 formas de basura;
+la escala en identidad/150%/fuera de límites; el prompt; `locate` fallando
+cerrado sin modelo —sin gastar ni una llamada—, con el MEL en error y con
+respuesta ininteligible; `desktop.find_and_click` real con pyautogui falso
+—clic donde dijo el modelo, conversión de escala, y **sin clic** cuando no hay
+visión o el modelo no lo ve—; y `browser.find_and_click` con dobles de
+Playwright —elige por índice y clica el centro real, retira las marcas antes de
+clicar, rechaza un índice inexistente, y cae a coordenadas si el DOM no se puede
+marcar—). **Comprobación de mutación** (3, restauradas y verificadas byte a
+byte): desactivar el fail-closed de `is_capable` tumba 2; desactivar la
+conversión de escala tumba 2; aceptar una localización ininteligible tumba 1.
+Regresión: **220 passed, 5 skipped** (bweb2 + bweb1 + los 5 de mel +
+module_boundaries + permissions + new_tools + los 3 de browser); los 5 fallos
+son los de siempre del sandbox (`test_desktop_*`, sin `pyautogui` ni display) y
+los 5 skips los de Playwright real, ambos idénticos antes y después del cambio.
+`py_compile` limpio en los 15 archivos tocados.
+
+> **Corrección post-cierre (2026-08-05, reportada por el usuario)**: «no aparece
+> ningún espacio de "visión" en Inteligencia para seleccionar un modelo». Era
+> cierto y tenía DOS causas, una visible y otra silenciosa.
+>
+> 1. **La visible**: `MEL_CAPS_ORDER` en `Settings.tsx` es una whitelist de
+>    capacidades mostradas, y `vision` estaba fuera con el comentario «las
+>    reservadas research/vision/agentic no se muestran — no aportan al usuario
+>    aún». Ese comentario dejó de ser verdad en el momento en que `find_and_click`
+>    existió. Añadida la fila (`research`/`agentic` siguen ocultas a propósito:
+>    son internas, el usuario no elige modelo para ellas).
+> 2. **La silenciosa, y la de fondo**: `mel.list_models()` —lo que la UI usa
+>    para poblar y FILTRAR los selectores— calculaba `unfit` desde
+>    `catalog.unfit_for(provider)`, que es por PROVEEDOR. Pero la visión se
+>    decide por (proveedor, modelo): `gemini` ve, `ollama` solo con un modelo
+>    VL. Resultado: el selector habría ofrecido modelos ciegos para la
+>    capacidad de visión y, al elegir uno, `set_primary` lo habría rechazado
+>    por dentro (usa `is_capable`) — el usuario vería que su elección «no se
+>    guarda», sin explicación. Cerrado sumando `supports_vision` a
+>    `list_models`, con un test de INVARIANTE que exige que para cada modelo y
+>    cada capacidad la UI (`unfit`) y la ejecución (`is_capable`) digan lo
+>    mismo: si mañana se añade otra regla de aptitud en un solo sitio, salta.
+>
+> Además, con cero modelos de visión la fila no dice «— (sin modelo)» sino qué
+> hacer: conectar un multimodal o `ollama pull qwen2.5vl:7b`. Dos claves i18n
+> nuevas ×4 idiomas (paridad verificada, 1296). **Dos tests previos actualizados
+> al contrato corregido, no debilitados**: afirmaban `unfit_catalog == []` para
+> `llama3` y MiniMax, que ahora arrastran `vision` con razón; lo que fijaban
+> —la separación entre no-aptitud de catálogo y medida— sigue intacto, y el de
+> "sin marcas" pasa a usar Gemini, que sí lo puede todo. Mutación confirmada y
+> restaurada. `tsc --noEmit` limpio; 197 passed en el subconjunto MEL/visión/web.
+
+**Pendiente en Windows** (nada de esto es verificable aquí — hace falta un
+modelo multimodal conectado y una pantalla real): conectar un modelo con visión
+(Gemini es el más barato por imagen; o `ollama pull qwen2.5vl:7b` para hacerlo
+en local y gratis), comprobar en Ajustes → Inteligencia que aparece una cadena
+para la capacidad de visión, y probar los dos casos del criterio de cierre —
+uno en web donde el selector no baste, y uno de escritorio sobre un icono sin
+texto. Con escalado de pantalla distinto de 100%, confirmar que el clic cae
+donde debe (es justo lo que `to_screen_coords` corrige, y solo se puede
+comprobar de verdad en la máquina del usuario).
+
 ---
 
 # BLOQUE C — WEB PROFUNDA / AGENTIC (mayormente post-1.0)
@@ -826,7 +1037,7 @@ clica el elemento correcto por visión (verificado en vivo en 1-2 casos reales).
 > muestran un screenshot con cajas numeradas, y el modelo elige por índice +
 > acción. Es la clave de su fiabilidad en flujos multi-paso.
 
-## C·WEB-3 — Spike de decisión + bucle agentic de navegación
+## C·WEB-3 — Spike de decisión + bucle agentic de navegación ✅ HECHO (2026-08-05, Opus)
 **Modelo: Opus · Esfuerzo: Muy Alto**
 
 Decisión tomada (para que el ejecutor no decida): **construir un bucle agentic
@@ -864,6 +1075,127 @@ Pasos exactos:
 y llegar hasta el carrito **sin** confirmar la compra) se completa por índices
 de forma repetible en un sitio real de prueba.
 
+### Resultado del SPIKE (paso 1, 2026-08-05)
+
+Leídos del repo real: `browser_use/dom/views.py`, `dom/serializer/serializer.py`
+y `dom/serializer/clickable_elements.py`. Lo que de verdad importa, anotado:
+
+- **El mapa es lo esencial**: `DOMSelectorMap = dict[int, EnhancedDOMTreeNode]` —
+  índice → elemento. El índice ES el handle con el que el modelo actúa.
+- **Formato para el LLM**: `[índice]<tag atributos>texto</tag>`, con el texto
+  capado y una lista curada de atributos. Compacto y autoexplicativo.
+- **Texto útil por prioridad** (`get_meaningful_text_for_llm`): `value` →
+  `aria-label` → `title` → `placeholder` → `alt` → texto visible. No es un
+  detalle: en un botón de icono lo único que hay es el `aria-label`.
+- **Detección de interactividad** (`ClickableElementDetector.is_interactive`),
+  en orden: tags interactivos · roles ARIA interactivos · atributos de evento /
+  `tabindex` / `contenteditable` · **`cursor: pointer`** (el mejor indicio para
+  los `div` clicables de React/Vue, y el que más elementos rescata) · tamaño de
+  icono 10-50px con señales · clases/id de búsqueda. Descarta `disabled` y
+  `aria-hidden`.
+- **Lo que NO copiamos**: toda su maquinaria CDP + árbol de accesibilidad +
+  DOMSnapshot (`cdp_use`, hashes estables, paint order, shadow DOM completo).
+  Es la razón de que su `views.py` tenga ~800 líneas y de que necesiten un
+  cliente CDP propio. Con `getComputedStyle` + atributos vía
+  `page.evaluate` —que Playwright ya nos da— se consigue prácticamente la misma
+  señal en ~70 líneas de JS. **Copiamos la idea, no el paquete**, tal como la
+  decisión de arriba mandaba.
+
+### Implementación
+
+**Paso 2 — `browser.page_state()`** (`browser_tool.py`): la OBSERVACIÓN.
+Devuelve url + título + la lista numerada de elementos interactivos (índice,
+tag, rol, texto, si es editable, centro) + `elements_text` ya serializado en el
+formato del spike + estado de scroll (`can_down`/`can_up`) + `truncated`. El
+`_SET_OF_MARK_JS` de B·WEB-2 se reescribió con las heurísticas del spike y pasa
+a ser **UNA sola implementación compartida** por `find_and_click` y
+`page_state` — si se duplicara, una de las dos se quedaría atrás (patrón LOG-1,
+tres veces visto ya en este proyecto). **La captura es OPCIONAL**
+(`screenshot: true`): en la mayoría de pasos la lista de texto basta para
+elegir, y mandar una imagen en cada vuelta multiplicaría el coste por diez —
+misma filosofía que la visión en B·WEB-2, el último recurso y no el primero.
+Ventaja real sobre Mark-L: `_dismiss_consent` se ejecuta ANTES de mirar; si no,
+la "página" que el modelo ve es el muro de cookies.
+
+**Actuar por índice** — `click_index` / `type_index`. **Decisión de diseño
+importante**: el índice se REVALIDA releyendo la página en el momento de
+actuar, en vez de guardar el mapa de la última `page_state`. Entre observar y
+actuar la página puede cambiar (un menú que se despliega, contenido que carga);
+un índice guardado apuntaría entonces a otra cosa y el clic caería donde no
+debe. Releer cuesta milisegundos. Un índice que ya no existe **no se aproxima
+al más parecido: se rechaza** y se pide observar de nuevo.
+
+**Paso 3 — `app/tie/webloop.py` (NUEVO)**: el bucle. Módulo APARTE del
+`toolloop` a propósito — el toolloop es general (catálogo estático de tools);
+éste es especializado en una página, y su "catálogo" son los elementos
+numerados de ESE instante, que cambian en cada vuelta. Meter un catálogo
+dinámico dentro del estático habría complicado el camino que usa el 100% de las
+misiones para servir al 5% que navega. Seis acciones (`click`/`type`/`scroll`/
+`goto`/`done`/`give_up`), enrutado por MEL con capacidad **AGENTIC** (la rápida
+— es elegir de una lista, no razonar), corte por **atasco a las 4 vueltas
+estériles** antes que por el techo de 25 pasos (misma regla que la Sesión A del
+doc 40), y rastro en vivo por el canal de `progress` para que el chat muestre
+la navegación en marcha. `build_observation` y `parse_decision` son puras. El
+objetivo viaja en CADA vuelta (si no, el modelo lo pierde a las 15) junto a un
+resumen de lo ya hecho (si no, repite el mismo clic para siempre).
+
+**Paso 4 — la frontera de seguridad**, escrita explícitamente en el propio
+módulo para que nadie tenga que deducirla:
+1. **Aithera NUNCA teclea credenciales ni datos de pago** — ni con permiso, ni
+   en modo Autónomo. El modo autónomo significa "no me preguntes", jamás
+   "escribe mi contraseña". Si un formulario los pide, el bucle para y lo dice.
+   Misma política que el OAuth de Google: los introduce el usuario.
+2. **Comprar, pagar, enviar, confirmar o firmar SIEMPRE pasan por el
+   ApprovalGate** (auto-resuelto CON RASTRO bajo perfil Autónomo, regla de oro
+   de A3b). Se reusa `toolloop._wait_gate` — el mismo ciclo sin timeout de todos
+   los gates del TIE (PU3).
+La detección es DETERMINISTA por texto, nunca "que lo juzgue el modelo": el
+modelo es justo la parte que no queremos que decida si algo es peligroso.
+
+**Entrada de alto nivel**: `browser.browse(goal)` — una sola tool call del
+toolloop general cede un flujo web entero al bucle especializado. Import
+diferido de `app.tie` (el bucle llama al ToolManager, que conoce esta tool:
+importarlo arriba crearía un ciclo). `app.tie.browse` en el barrel;
+`app.tie.webloop` declarado interno en `test_module_boundaries`.
+
+**HALLAZGO REAL de los tests (de seguridad, no cosmético)**: la comparación de
+campos prohibidos era sensible a acentos, así que **«Contraseña» y «Código de
+seguridad» —como los escribe literalmente cualquier web española— NO casaban**
+con las entradas `contrasena`/`codigo de seguridad` del catálogo: Aithera
+habría tecleado en el CVV. Corregido con normalización acento-insensible
+(`unicodedata`, mismo criterio que `skills_catalog._match_category`) aplicada
+**también a los propios catálogos al construirse**, para que una entrada nueva
+escrita con tilde no pueda abrir un agujero en silencio.
+
+Tests: `backend/tests/test_cweb3_webloop.py` (NUEVO, 29 — `page_state` con
+índices/url/título, sin captura por defecto, aviso de lista recortada, fallo
+limpio con CSP; el formato `[i]<tag>texto</tag>`; `click_index`/`type_index`
+reales; **un índice inexistente no clica nada** y **la revalidación clica el
+centro NUEVO tras cambiar la página**; las dos funciones de seguridad en
+positivo y en negativo —incluido que "Añadir al carrito" NO es sensible, porque
+marcarlo todo haría el bucle inservible—; el bucle navegando por índices hasta
+`done` con el ToolManager real; objetivo e historial en cada vuelta; un paso
+sensible abre gate y **sin permiso no se pulsa**, con permiso sí; un paso
+normal NO abre gate; **jamás escribe en un campo de contraseña ni con un gate
+que aprueba todo**; corte por atasco; `give_up` con motivo real; modelo caído
+sin romper; scroll y goto; parseo en sus casos buenos y malos; catálogo,
+permisos y barrel). **Comprobación de mutación** (3, restauradas y verificadas):
+desactivar el bloqueo de campos prohibidos tumba 1; desactivar el gate de
+pasos sensibles tumba 1; aproximar un índice inexistente al primer elemento
+tumba 1. Regresión: **247 passed, 5 skipped** (cweb3 + bweb2 + bweb1 +
+boundaries + permissions + tie_contracts/handle + toolloop_progreso + los 4 de
+browser + new_tools); los 5 fallos son los conocidos del sandbox
+(`test_desktop_*`, sin `pyautogui` ni display), idénticos antes y después.
+
+**Pendiente en Windows** (el criterio de cierre es en vivo por definición):
+lanzar el flujo de prueba real —«busca [producto] en [tienda] y añádelo al
+carrito, PARA antes de pagar»— y confirmar que se completa por índices de forma
+repetible, que el paso de pago abre el gate, y que rechazarlo deja el carrito
+hecho y la compra sin hacer. **Alcance honesto de lo que queda**: C·WEB-4 (los
+casos de uso concretos —compra, citas, descargas, API keys, research en foros—)
+sigue pendiente y es una sesión aparte; esto es el motor sobre el que se
+construyen.
+
 ## C·WEB-4 — Casos de uso reales sobre el bucle agentic
 **Modelo: Opus · Esfuerzo: Alto** (varias sub-sesiones, una por caso)
 
@@ -889,6 +1221,88 @@ documentada, respetando SIEMPRE los gates de acción sensible.
 **Criterio de cierre**: al menos compra-hasta-carrito y research-en-foro
 verificados en vivo, con los gates disparando en los puntos sensibles.
 
+> **✅ Cierre (2026-08-05, Opus)** — los cinco casos cableados sobre el motor de
+> C·WEB-3, con la frontera de cada uno impuesta por CÓDIGO, no por prompt.
+>
+> **`app/tie/webflows.py` (NUEVO)**: un playbook es DATO, no una rama del bucle
+> —triggers, guía para el prompt, fronteras y modo solo-lectura—, así que el
+> sexto caso será una entrada más en `PLAYBOOKS` y el motor no se entera. Se
+> DETECTA solo del objetivo (determinista, por palabras completas: «compra» es
+> subcadena de «comprando», y detectar por subcadena convertiría «seguir
+> comprando» en una orden de compra) y se puede forzar con `browse(playbook=…)`.
+> Ante la duda no se activa ninguno: un falso negativo solo cuesta orientación,
+> un falso positivo pondría fronteras que no tocan.
+>
+> **LA DECISIÓN DE DISEÑO — parada dura, no otro gate.** El bucle ya sabía abrir
+> un ApprovalGate ante un paso que compromete, y lo natural habría sido reusarlo
+> para el paso final de cada flujo. No se ha hecho, por un motivo concreto: con
+> el perfil Autónomo un gate se AUTO-APRUEBA (A3b, con rastro pero sin
+> preguntar), así que un gate sobre «Pagar» significaría que Aithera paga sola —
+> justo lo contrario de lo que el encargo dice («el usuario paga»). El límite de
+> estos flujos es una PARADA que no levanta ningún permiso, misma categoría que
+> «no se escribe en un campo de contraseña». Llegar a ella NO es fallar: se
+> entrega lo conseguido (`ok=True`) contando qué se hizo y dónde se paró. **El
+> gate genérico sigue vivo** para todo lo demás: en mitad de una compra,
+> «Suscribirme al boletín» es sensible pero no es la frontera → pregunta como
+> siempre (test dedicado a que las dos capas conviven).
+>
+> Por caso: **compra** llena el carrito y para en pagar/tramitar · **cita**
+> rellena el formulario multi-paso y para antes de confirmar · **descarga**
+> localiza el enlace, nunca pulsa instalar/ejecutar, y devuelve un `handoff`
+> explícito a `download.download_url` (el bucle general no tiene que adivinar el
+> siguiente paso, y `browser_tool` no importa un interno del TIE) con aviso
+> determinista de fuente dudosa (crack/repack/torrent) y de archivo ejecutable —
+> **informa, no bloquea**: bloquear por heurística cerraría descargas legítimas ·
+> **api_key** enseña dónde se genera y para ante iniciar sesión o crear la clave
+> · **foro** es SOLO-LECTURA (solo se escribe en la caja de búsqueda, y no se
+> responde, vota ni publica) con más vueltas que los demás, que entrar en hilos y
+> paginar las necesita.
+>
+> **Credenciales fuera del log, siempre** (con playbook o sin él): la respuesta
+> del bucle acaba en la traza de la misión, en la telemetría y en la memoria; si
+> el usuario ya tenía la sesión abierta y su clave estaba en pantalla, el modelo
+> puede repetirla sin malicia y quedaría escrita en tres sitios. `redact_secrets`
+> tapa formas reconocibles (sk-, AIza, ghp_, JWT, Bearer) y cadenas largas de
+> alta entropía, y deja intacto lo que no lo es —un SHA de git son 40 hex en
+> minúscula y es legítimo reportarlo—.
+>
+> **HALLAZGO REAL, y es un fallo de C·WEB-3 que estos tests destaparon**: la
+> comparación de campos prohibidos era por subcadena, así que **«pin» casaba
+> dentro de «o-PIN-iones»** y escribir «opiniones» en el buscador de un foro se
+> rechazaba con «no relleno contraseñas». Corregido con `marcador_en`: palabra
+> completa para los términos de ≤3 letras (`pin`, `cvv`, `dni`), subcadena para
+> el resto — «CVV», «CVV:» y «cvv-input» siguen casando, que son las formas en
+> las que una web real etiqueta ese campo. **Segundo hallazgo**: el mapa de
+> capacidades (doc 23 R6) recorta por `MAX_CHARS` descartando LÍNEAS ENTERAS, así
+> que alargar la frase del navegador hizo desaparecer la última categoría del
+> mapa sin error ni aviso; frase acortada y **test nuevo que vigila que ninguna
+> categoría con tools registradas se caiga del presupuesto en silencio**.
+>
+> Tests: `backend/tests/test_cweb4_flujos.py` (NUEVO, 31 — detección de los cinco
+> con sus negativos, la frontera de cada uno en positivo y en negativo (que
+> «Añadir al carrito» y «Seguir comprando» NO paren es tan importante como que
+> «Pagar» sí), un flujo de humo por caso con el bucle y la `BrowserTool` reales
+> usando **el gate más permisivo posible** —si la frontera dependiera del gate,
+> ahí se habría pagado—, la regresión del «pin»/«opiniones», redacción de
+> credenciales con sus 4 no-regresiones, avisos de fuente, y que sin flujo el
+> bucle es exactamente el de C·WEB-3). **Comprobación de mutación** (3,
+> restauradas y verificadas byte a byte con `cmp`): desactivar la parada dura
+> tumba 5; desactivar el bloqueo de escritura en solo-lectura tumba 1; desactivar
+> la redacción tumba 2. **Dos tests de C·WEB-3 actualizados al contrato nuevo, no
+> debilitados**: sus objetivos («compra algo», «confirma el pedido») ahora activan
+> un flujo, donde esos elementos son parada y no gate; lo que fijan —el gate
+> genérico— sigue intacto con un objetivo que no encaja en ningún flujo.
+> Regresión: **299 passed** (cweb4+cweb3+bweb1/2+los 4 de browser+boundaries+
+> permissions+selector+capabilities+tie_handle/e2e/contracts+toolloop_progreso+
+> s11+product_contracts), cero rotos.
+>
+> **Pendiente en Windows** (el criterio de cierre es en vivo por definición): los
+> dos casos que el plan exige —«añádeme X e Y al carrito de [tienda]» hasta ver
+> el carrito lleno y la parada en el pago, y «busca en [foro] qué opinan de X»
+> hasta una síntesis real— más, si se quiere, el de descarga (que el enlace salga
+> con su aviso y que sea `download_tool` quien lo baje). Nada de esto es
+> reproducible en el sandbox: no hay navegador ni red.
+
 ---
 
 ## Resumen de sesiones
@@ -902,10 +1316,10 @@ verificados en vivo, con los gates disparando en los puntos sensibles.
 | ✅ A·VOZ-5 | Voz | Kokoro-onnx opcional (sin Docker) | Opus | Alto | ➖ opcional |
 | ✅ A·VOZ-6 | Voz | Pulido STT/TTS + medir TTFB<2s | Sonnet | Medio | ✅ |
 | ✅ A·VOZ-7 | Voz/Orq | Contexto de sesión cacheado (no re-consultar el MOS cada turno) | **Opus** | Medio | ✅ |
-| B·WEB-1 | Web | Abrir medios/URL en navegador real ⭐ | Sonnet | Bajo | ✅ **prioritario** |
-| B·WEB-2 | Web | Clic por visión (fallback) | Opus | Alto | ✅ |
-| C·WEB-3 | Web+ | Bucle agentic DOM+visión (set-of-mark) | Opus | Muy Alto | ➖ post-1.0 |
-| C·WEB-4 | Web+ | Casos reales (compra/citas/descargas/research) | Opus | Alto | ➖ post-1.0 |
+| ✅ B·WEB-1 | Web | Abrir medios/URL en navegador real ⭐ | Sonnet | Bajo | ✅ **prioritario** |
+| ✅ B·WEB-2 | Web | Clic por visión (fallback) | Opus | Alto | ✅ |
+| ✅ C·WEB-3 | Web+ | Bucle agentic DOM+visión (set-of-mark) | Opus | Muy Alto | ➖ post-1.0 |
+| ✅ C·WEB-4 | Web+ | Casos reales (compra/citas/descargas/research) | Opus | Alto | ➖ post-1.0 |
 
 **Ruta crítica de latencia (hazlo primero)**: A·VOZ-2 → A·VOZ-3 → A·VOZ-4.
 Con eso la conversación por voz vuelve a ser fluida. B·WEB-1 es el otro

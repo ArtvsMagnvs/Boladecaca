@@ -116,27 +116,32 @@ CATALOG: dict[str, dict] = {
                               "relative_cost": 0, "is_local": True},
         },
     },
+    # [B·WEB-2] `vision=` explícito en las familias multimodales de verdad (ver
+    # `supports_vision`): sin él heredaban el 40 de "no es multimodal" y la
+    # cadena de visión los habría ordenado por detrás de cualquier cosa.
     "openai": {
-        "default": {"scores": _scores(88, 85, 85, 86, 87, 88, 88, 86),
+        "default": {"scores": _scores(88, 85, 85, 86, 87, 88, 88, 86, vision=86),
                     "relative_cost": 75, "is_local": False},
         "models": {
-            "gpt-5.2": {"scores": _scores(90, 86, 87, 88, 89, 92, 91, 89),
+            "gpt-5.2": {"scores": _scores(90, 86, 87, 88, 89, 92, 91, 89, vision=89),
                         "relative_cost": 85, "is_local": False},
         },
     },
     "anthropic": {
-        "default": {"scores": _scores(90, 84, 86, 90, 91, 89, 90, 88),
+        "default": {"scores": _scores(90, 84, 86, 90, 91, 89, 90, 88, vision=87),
                     "relative_cost": 78, "is_local": False},
         "models": {
-            "claude-opus-4-8": {"scores": _scores(92, 85, 88, 92, 93, 94, 93, 91),
+            "claude-opus-4-8": {"scores": _scores(92, 85, 88, 92, 93, 94, 93, 91, vision=90),
                                 "relative_cost": 92, "is_local": False},
         },
     },
     "gemini": {
-        "default": {"scores": _scores(86, 84, 85, 85, 84, 85, 84, 86),
+        # Gemini es, de los tres, el más barato por imagen y de los más
+        # precisos localizando elementos en una captura — de ahí el pico.
+        "default": {"scores": _scores(86, 84, 85, 85, 84, 85, 84, 86, vision=88),
                     "relative_cost": 60, "is_local": False},
         "models": {
-            "gemini-3.5-flash": {"scores": _scores(82, 86, 84, 84, 80, 78, 80, 82),
+            "gemini-3.5-flash": {"scores": _scores(82, 86, 84, 84, 80, 78, 80, 82, vision=86),
                                  "relative_cost": 35, "is_local": False},
         },
     },
@@ -160,7 +165,7 @@ CATALOG: dict[str, dict] = {
         "models": {},
     },
     "grok": {
-        "default": {"scores": _scores(84, 82, 80, 82, 84, 84, 82, 84),
+        "default": {"scores": _scores(84, 82, 80, 82, 84, 84, 82, 84, vision=80),
                     "relative_cost": 65, "is_local": False},
         "models": {},
     },
@@ -309,3 +314,85 @@ UNFIT_CAPABILITIES: dict[str, frozenset] = {
 def unfit_for(provider: str) -> frozenset:
     """Capacidades para las que un proveedor NO es apto (vacío = apto en todas)."""
     return UNFIT_CAPABILITIES.get(provider, frozenset())
+
+
+# ---------------------------------------------------------------------------
+# [2026-08-04, corrección de diseño del usuario] AGENTES CLI AUTOSUFICIENTES.
+#
+# Claude Code y Codex no son "modelos de chat lentos": son AGENTES completos con
+# SUS PROPIAS herramientas (leen y escriben ficheros, ejecutan comandos, buscan
+# en el repo). El error de diseño anterior fue tratarlos como un modelo más
+# dentro del bucle de herramientas de Aithera — eso es meter un agente dentro de
+# otro agente, y de ahí salían las respuestas del tipo "soy Claude Code, no
+# tengo acceso al navegador": se les pedía usar tools ajenas teniendo las suyas.
+#
+# La forma correcta de usarlos es delegarles la TAREA ENTERA con `cwd` puesto en
+# la carpeta del proyecto, y devolver su salida al chat del agente. Por eso
+# siguen siendo NO APTOS para AGENTIC (el bucle de tools de Aithera) y para
+# CLASSIFY/CHAT (hot path e identidad), pero SÍ valen —y mucho— como ejecutores
+# de la tarea de un agente de proyecto. Que digan "soy Claude" da igual: lo que
+# importa es que el trabajo quede hecho en la carpeta que toca.
+# ---------------------------------------------------------------------------
+CLI_AGENT_PROVIDERS: frozenset = frozenset({"claude_code", "codex"})
+
+
+def is_cli_agent(provider: str) -> bool:
+    """¿Es un agente CLI autosuficiente (trae sus propias herramientas)?
+
+    Si lo es, NO debe entrar en el bucle de tools de Aithera: se le delega la
+    tarea completa con la carpeta del proyecto como directorio de trabajo."""
+    return provider in CLI_AGENT_PROVIDERS
+
+
+# ---------------------------------------------------------------------------
+# [B·WEB-2, doc 32] MULTIMODALIDAD REAL — qué modelo puede MIRAR una imagen.
+#
+# Hasta aquí `Capability.VISION` existía en el enum pero era una capacidad
+# fantasma: `_compile_policy` recorre TODAS las capacidades, así que compilaba
+# una cadena de visión para CUALQUIER modelo con el score por defecto (40) —
+# incluidos los que no aceptan imágenes. Pedirle a uno de esos las coordenadas
+# de un botón devolvería un "x,y" INVENTADO con total aplomo: exactamente el
+# fallo que B·WEB-2 prohíbe ("no inventa coordenadas").
+#
+# Este es el dato que faltaba. Se consulta desde `policies.is_capable()`, el
+# punto ÚNICO de aptitud del MEL — así el fail-closed sale gratis en las tres
+# capas que ya existen: compilación de políticas, filtro retroactivo en
+# ejecución (sanea políticas editadas antes de esta regla) y bloqueo en la UI.
+#
+# FAIL-CLOSED por diseño: lo que no está declarado NO ve. Un modelo multimodal
+# que se quede fuera solo pierde una capacidad; uno ciego dado por vidente
+# devuelve coordenadas falsas y Aithera hace clic donde no debe.
+# ---------------------------------------------------------------------------
+# Proveedores cuya familia ENTERA acepta imágenes en la API que usa Aithera.
+_VISION_PROVIDERS: frozenset = frozenset({
+    "gemini",      # toda la familia Gemini es multimodal
+    "anthropic",   # Claude 3+ acepta bloques de imagen
+    "openai",      # GPT-4o en adelante
+    "grok",        # los Grok con visión de xAI
+})
+
+# Marcadores en el NOMBRE del modelo que delatan una variante con visión. Es lo
+# que permite que un modelo local recién descargado (`ollama pull llava`) o un
+# id de OpenRouter funcionen sin tocar el código: el usuario los nombra, no
+# nosotros. Se comparan en minúsculas sobre el id completo del modelo.
+_VISION_MODEL_MARKERS: tuple = (
+    "-vl", ":vl", "vl:", "vision", "llava", "moondream", "minicpm-v", "gemma3",
+)
+
+
+def supports_vision(provider: str, model: str = "") -> bool:
+    """¿Este (proveedor, modelo) puede MIRAR una imagen de verdad?
+
+    Fail-closed: ante la duda, False. Un `False` de más solo deja una capacidad
+    sin cubrir (y se nota al instante: la acción lo dice); un `True` de más
+    produce coordenadas inventadas, que es el fallo que no puede pasar.
+
+    Los agentes CLI (Claude Code, Codex) quedan fuera A PROPÓSITO aunque el
+    modelo detrás sea multimodal: nuestra integración les habla por línea de
+    comandos y no tiene por dónde pasarles un PNG."""
+    if is_cli_agent(provider):
+        return False
+    low = (model or "").lower()
+    if any(marca in low for marca in _VISION_MODEL_MARKERS):
+        return True
+    return provider in _VISION_PROVIDERS

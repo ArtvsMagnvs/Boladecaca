@@ -282,6 +282,10 @@ class AgentUpdate(BaseModel):
     skills: Optional[List[str]] = None
     icon: Optional[str] = None
     role: Optional[str] = None
+    # [2026-08-02] Politica de aprobacion de ESTE agente y carpetas extra.
+    autonomy: Optional[str] = None
+    extra_paths: Optional[List[str]] = None
+
 
 
 class AgentResponse(BaseModel):
@@ -307,6 +311,10 @@ class AgentResponse(BaseModel):
     role: Optional[str] = None
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
+
+    # [2026-08-02] Politica de aprobacion de ESTE agente y carpetas extra.
+    autonomy: Optional[str] = None
+    extra_paths: Optional[List[str]] = None
 
     class Config:
         from_attributes = True
@@ -335,6 +343,9 @@ class AgentExecutionCreate(BaseModel):
     """V0.5: payload para lanzar una tarea sobre un agente."""
     task: str
     context: Optional[dict] = None
+    # [2026-08-02] Modelo elegido en el selector del chat PARA ESTE MENSAJE
+    # ("proveedor:modelo"). Opcional: sin el, decide el MEL como siempre.
+    model: Optional[str] = None
 
 
 class AgentExecutionResponse(BaseModel):
@@ -353,6 +364,8 @@ class AgentExecutionResponse(BaseModel):
     # RECORTARIA en la respuesta — el mismo fallo que ya mordio con
     # `model_labels` en AIProviderConfigResponse (2026-07-21).
     progress: Optional[str] = None
+    # [2026-08-02] Modelo elegido por el usuario para esta interaccion.
+    model: Optional[str] = None
     started_at: Optional[datetime] = None
     completed_at: Optional[datetime] = None
     created_at: Optional[datetime] = None

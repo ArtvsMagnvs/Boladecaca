@@ -6,7 +6,6 @@ import { useEffect, useState } from "react";
 import { api, type Agent, type ToolInfo } from "@/lib/api";
 import { Modal, ErrorBanner, fieldLabel, fieldInput, btnPrimary, btnGhost } from "./Modal";
 import { SkillPickerPopup } from "./SkillPickerPopup";
-import { useModeloIAOptions } from "./useModeloIAOptions";
 // Alias 'tr' (no 't'): este archivo usa 't' como variable de tool en
 // '.map((t) => …)' — evita sombrear/confundir.
 import { useT } from "@/store/useI18n";
@@ -22,7 +21,6 @@ interface Props {
 export function AgentCreatePopup({ projectId, onSave, onClose }: Props) {
   const tr = useT();
   const [name, setName] = useState("");
-  const [agentType, setAgentType] = useState("generic");
   const [description, setDescription] = useState("");
   const [tools, setTools] = useState<ToolInfo[]>([]);
   const [allowedTools, setAllowedTools] = useState<string[]>([]);
@@ -32,7 +30,6 @@ export function AgentCreatePopup({ projectId, onSave, onClose }: Props) {
   const [isActive, setIsActive] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const modeloOptions = useModeloIAOptions();
 
   useEffect(() => {
     api.getTools().then((r) => setTools(r.tools)).catch(() => {});
@@ -48,7 +45,6 @@ export function AgentCreatePopup({ projectId, onSave, onClose }: Props) {
     try {
       await onSave({
         name: name.trim(),
-        agent_type: agentType,
         description: description || null,
         allowed_tools: allowedTools,
         is_active: isActive,
@@ -101,20 +97,12 @@ export function AgentCreatePopup({ projectId, onSave, onClose }: Props) {
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-3">
-        <div>
-          <label className={fieldLabel}>{tr("workspace.agentCard.model")}</label>
-          <select value={agentType} onChange={(e) => setAgentType(e.target.value)} className={fieldInput}>
-            {modeloOptions.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-          </select>
-        </div>
-        <div>
-          <label className={fieldLabel}>{tr("workspace.agentCreate.statusLabel")}</label>
-          <select value={isActive ? "1" : "0"} onChange={(e) => setIsActive(e.target.value === "1")} className={fieldInput}>
-            <option value="1">{tr("agents.field.active")}</option>
-            <option value="0">{tr("workspace.agentCard.inactive")}</option>
-          </select>
-        </div>
+      <div>
+        <label className={fieldLabel}>{tr("workspace.agentCreate.statusLabel")}</label>
+        <select value={isActive ? "1" : "0"} onChange={(e) => setIsActive(e.target.value === "1")} className={`${fieldInput} max-w-[180px]`}>
+          <option value="1">{tr("agents.field.active")}</option>
+          <option value="0">{tr("workspace.agentCard.inactive")}</option>
+        </select>
       </div>
 
       <div>
@@ -143,11 +131,13 @@ export function AgentCreatePopup({ projectId, onSave, onClose }: Props) {
 
       <div>
         <label className={fieldLabel}>{tr("agents.field.tools")}</label>
-        <div className="flex flex-col gap-1 max-h-32 overflow-y-auto">
+        {/* [2026-08-02] REJILLA, no columna: con 15 herramientas la lista
+            vertical obligaba a hacer scroll para ver la mitad. */}
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-3 gap-y-1 max-h-40 overflow-y-auto">
           {tools.map((t) => (
-            <label key={t.tool_id} className="flex items-center gap-2 text-xs text-ink-dim">
-              <input type="checkbox" checked={allowedTools.includes(t.tool_id)} onChange={() => toggleTool(t.tool_id)} className="accent-accent h-3.5 w-3.5" />
-              {t.name}
+            <label key={t.tool_id} className="flex items-center gap-1.5 text-[11px] text-ink-dim min-w-0" title={t.name}>
+              <input type="checkbox" checked={allowedTools.includes(t.tool_id)} onChange={() => toggleTool(t.tool_id)} className="accent-accent h-3.5 w-3.5 shrink-0" />
+              <span className="truncate">{t.name}</span>
             </label>
           ))}
           {tools.length === 0 && <p className="text-[11px] text-ink-faint">{tr("workspace.agentCard.loadingCatalog")}</p>}

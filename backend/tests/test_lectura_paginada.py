@@ -178,12 +178,15 @@ class TestObservacionAccionable:
 # 4 — Presupuesto de vueltas: leer por partes tiene que CABER
 # ===========================================================================
 def test_document_tiene_presupuesto_para_varias_lecturas():
+    """[Sesión A, 2026-08-04 — actualizado al contrato nuevo] El presupuesto es
+    por PROGRESO: `_iters_for` devuelve el techo duro único para todos, y un
+    documento largo cabe porque cada lectura con éxito resetea el detector de
+    atasco. Lo que este test protege: que el techo dé de sobra para leer un
+    documento grande por partes (>= 6 llamadas medidas para 114k chars)."""
     from app.core.config import settings
     from app.tie.runtime import _iters_for
 
-    assert _iters_for(["document"]) == settings.TIE_TOOL_MAX_ITERS_WRITE
-    assert _iters_for(["document"]) > settings.TIE_TOOL_MAX_ITERS, (
-        "con el presupuesto de solo-lectura un documento largo se queda a medias"
+    assert _iters_for(["document"]) == settings.TIE_TOOL_HARD_CEILING
+    assert settings.TIE_TOOL_HARD_CEILING >= 20, (
+        "el techo debe dar de sobra para lecturas paginadas largas + síntesis"
     )
-    # No-regresión: una tool de solo lectura ligera sigue con el presupuesto corto.
-    assert _iters_for(["search"]) == settings.TIE_TOOL_MAX_ITERS

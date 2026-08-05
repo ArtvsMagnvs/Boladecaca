@@ -33,6 +33,14 @@ const COLUMNS: Array<{ key: TaskColumnKey; labelKey: string }> = [
 ];
 const COLUMN_KEYS = COLUMNS.map((c) => c.key);
 
+// Color del borde superior de cada columna: identifica la fase de un vistazo
+// sin depender de leer la etiqueta.
+const COLUMN_ACCENT: Record<TaskColumnKey, string> = {
+  pending: "border-base-600",
+  in_progress: "border-accent/60",
+  completed: "border-signal-ok/60",
+};
+
 function statusToColumn(status: string | null | undefined): TaskColumnKey {
   const s = (status || "").toLowerCase();
   if (s === "in_progress") return "in_progress";
@@ -252,8 +260,12 @@ export function TaskBoard({ tasks, milestones, onOpen, onQuickCreate, onReorder,
 
       <div className="grid grid-cols-3 gap-3">
         {COLUMNS.map(({ key, labelKey }) => (
-          <div key={key} className="flex flex-col gap-2 min-w-0">
-            <div className="flex items-center justify-between">
+          /* [2026-08-02, petición del usuario] Cada fase con su MARCO: sin él
+             las tres columnas se leían como una sola mancha de tarjetas. El
+             borde superior de color identifica la fase de un vistazo. */
+          <div key={key}
+               className="flex flex-col gap-2 min-w-0 rounded-xl border border-base-700/60 bg-base-900/40 p-2">
+            <div className={`flex items-center justify-between pb-1.5 border-b-2 ${COLUMN_ACCENT[key]}`}>
               <span className="text-[11px] font-medium text-ink-dim">{tr(labelKey)}</span>
               <div className="flex items-center gap-1.5">
                 <span className="text-[10px] text-ink-faint tabular-nums">{cols[key].length}</span>

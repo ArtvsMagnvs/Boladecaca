@@ -56,7 +56,8 @@ from app.tie.capabilities_map import summary as capabilities_summary
 # que el chat del proyecto (capa API) llega a él por aquí. `ensure_orchestrator`
 # es lo que hace que "cada proyecto tiene su orquestador" deje de ser solo una
 # columna en la BD y pase a existir de verdad.
-from app.tie.authority import ensure_orchestrator, orchestrator_of
+from app.tie.authority import (ensure_orchestrator, orchestrator_of,
+                               orchestrator_tools)
 
 
 def register_handlers() -> None:
@@ -92,6 +93,12 @@ quick_answer_async = _quick_answers.try_answer_async
 # confundirse con esto.
 from app.memory import quick_memory as _quick_memory  # noqa: E402
 quick_memory_answer_async = _quick_memory.try_answer_async
+# [C·WEB-3, doc 32] El bucle agentic de NAVEGACIÓN: observar la página →
+# elegir por índice → actuar → repetir. Se expone como `browse` (el módulo
+# `webloop` es interno, igual que `toolloop`). Lo usa `browser_tool.browse`,
+# que es la puerta por la que el TIE general llega a la navegación profunda.
+from app.tie import webloop as _webloop  # noqa: E402
+browse = _webloop.run
 
 __all__ = [
     # contratos
@@ -135,4 +142,7 @@ __all__ = [
     # orquestador de proyecto (R4 + hotfix 2026-08-02)
     "ensure_orchestrator",
     "orchestrator_of",
+    "orchestrator_tools",
+    # bucle agentic de navegación web (C·WEB-3)
+    "browse",
 ]

@@ -97,6 +97,13 @@ export function ProjectCard({
   // botón visible como la tecla "?" del Kanban (delegada via onToggleHelp)
   // abren/cierran lo mismo.
   const [helpOpen, setHelpOpen] = useState(false);
+  // [2026-08-02, petición del usuario] En el chat lateral, qué conversación
+  // se muestra: `null` = el orquestador general del proyecto (comportamiento
+  // de siempre), o el id de un agente concreto elegido en la lista lateral
+  // (equivalente a cambiar de sesión). Se resetea al minimizar/cambiar de
+  // proyecto no hace falta explícitamente: ProjectCard se desmonta y remonta
+  // por proyecto (key en WorkspaceCanvas), así que el estado nace limpio.
+  const [selectedAgentId, setSelectedAgentId] = useState<number | null>(null);
 
   const activeMilestone = useMemo(
     () => milestones.find((m) => m.status === "active") ?? milestones[0] ?? null,
@@ -315,12 +322,43 @@ export function ProjectCard({
                 el umbral muchas veces en un solo gesto de resize, y desmontar/
                 remontar aqui dispararia el fetch de AgentsSection en cada cruce.
                 Ocultar por CSS mantiene sus datos ya cargados entre umbrales. */}
+            {/* [2026-08-02, petición del usuario] EL ORQUESTADOR TIENE SU SITIO,
+                aparte de "Agentes": no es uno más de la lista — es el
+                responsable del proyecto, no se puede eliminar y siempre está.
+                `AgentsSection` lo filtra fuera, así que no sale duplicado. */}
+            {showAgentsIcons && (
+              <section
+                // [2026-08-02, petición del usuario] Con el chat lateral, esta
+                // caja es también el botón para VOLVER a la conversación
+                // general del orquestador (equivalente a "cerrar" la sesión de
+                // un agente concreto). Fuera del modo lateral no hace nada
+                // distinto de mostrar información, así que no se hace clicable.
+                onClick={sideChat ? () => setSelectedAgentId(null) : undefined}
+                className={`rounded-xl border px-2.5 py-2 transition-colors ${
+                  sideChat && selectedAgentId === null
+                    ? "border-accent/50 bg-accent/[0.08]"
+                    : "border-accent/25 bg-accent/[0.04]"
+                } ${sideChat ? "cursor-pointer hover:border-accent/40" : ""}`}
+              >
+                <div className="flex items-baseline justify-between gap-2 mb-0.5">
+                  <h3 className="text-xs font-medium text-accent">
+                    {tr("workspace.orchestrator.section")}
+                  </h3>
+                </div>
+                <p className="text-[10px] text-ink-faint">
+                  {tr("workspace.orchestrator.sectionHint")}
+                </p>
+              </section>
+            )}
+
             <div className={showAgentsIcons ? "" : "hidden"}>
               <AgentsSection
                 projectId={project.id}
-                size={showAgentsFull ? "full" : "icon"}
+                size={sideChat ? "name" : showAgentsFull ? "full" : "icon"}
                 onOpenAgent={onOpenAgentWindow}
                 refreshTick={agentsRefreshTick}
+                onSelectAgent={sideChat ? setSelectedAgentId : undefined}
+                selectedAgentId={selectedAgentId}
               />
             </div>
 
@@ -389,7 +427,12 @@ export function ProjectCard({
           className="shrink-0 min-w-0 border-l border-base-700/60 px-3 py-3.5 flex flex-col"
           style={{ width: sideChatW }}
         >
-          <OrchestratorChat projectId={project.id} expanded={layout.expanded} placement="side" />
+          <OrchestratorChat
+            projectId={project.id}
+            expanded={layout.expanded}
+            placement="side"
+            agentId={selectedAgentId}
+          />
         </aside>
       )}
       </div>

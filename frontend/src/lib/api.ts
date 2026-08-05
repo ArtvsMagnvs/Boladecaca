@@ -143,6 +143,11 @@ export interface Agent {
   // V0.87 (WPMS W2e, doc 14 §4.3c): esqueleto, sin UI ni logica todavia.
   // Reservado para "orchestrator" — lo usara de verdad el TIE v1 (V1.0).
   role?: string | null;
+  /** [2026-08-02] "manual" | "auto" — si este agente pide permiso para las
+   *  acciones sensibles (shell/powershell y demás) o las concede solo. */
+  autonomy?: string | null;
+  /** [2026-08-02] Carpetas EXTRA concedidas a mano, además de la del proyecto. */
+  extra_paths?: string[] | null;
   created_at?: string | null;
   updated_at?: string | null;
 }
@@ -818,8 +823,19 @@ export interface MelModel {
   model: string;
   is_local: boolean;
   label: string;      // "MiniMax", "Ollama (Local)", ...
-  /** [2026-07-21] Capacidades para las que NO es apto (ej. Claude CLI en chat). */
+  /** [2026-08-02] Nombre COMPLETO del modelo ("MiniMax M2.7 highspeed (rápido)",
+   *  "Fable 5 (el más capaz)"...) — para selectores que NO deben abreviar. */
+  model_label: string;
+  /** [2026-07-21] Capacidades para las que NO es apto (ej. Claude CLI en chat).
+   *  Unión de las dos fuentes de abajo — se conserva por compatibilidad. */
   unfit?: string[];
+  /** [2026-08-04] No apto por DISEÑO (catálogo): los CLI de Claude/Codex
+   *  arrancan un proceso por llamada y conservan su identidad de asistente de
+   *  código — no sirven para el bucle de herramientas. */
+  unfit_catalog?: string[];
+  /** [2026-08-04] No apto por MEDICIÓN (task-bench): ese modelo falló de verdad
+   *  los escenarios reales de uso de herramientas. */
+  unfit_measured?: string[];
 }
 
 // Un pin de modelo por proyecto (override explícito persistente, E2b).
@@ -917,10 +933,31 @@ export const api = {
     request<Agent>(`/agents/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
   deleteAgent: (id: number) => request(`/agents/${id}`, { method: "DELETE" }),
   // V0.5 (Fase 2): ejecucion de tareas sobre agentes
-  executeAgent: (id: number, task: string, context?: object) =>
+  // `model` [2026-08-02]: el proveedor/modelo que el usuario eligió en el
+  // selector del chat PARA ESTE MENSAJE ("proveedor:modelo"). Cambiarlo entre
+  // turnos no pierde el hilo: el contexto vive en las ejecuciones, no en el
+  // modelo.
+  executeAgent: (id: number, task: string, context?: object, model?: string | null) =>
     request<AgentExecution>(`/agents/${id}/execute`, {
       method: "POST",
-      body: JSON.stringify({ task, context }),
+      body: JSON.stringify({ task, context, model: model || null }),
+    }),
+  /** Adjunta un archivo (cualquier formato) a la carpeta del proyecto del agente. */
+  attachToAgent: async (id: number, file: File) => {
+    const fd = new FormData();
+    fd.append("file", file);
+    const res = await fetch(`${API_URL}/agents/${id}/attach`, { method: "POST", body: fd });
+    if (!res.ok) {
+      const detail = await res.json().catch(() => null);
+      throw new Error(detail?.detail || `HTTP ${res.status}`);
+    }
+    return (await res.json()) as { path: string; name: string; size: number };
+  },
+  /** Da a ESTE agente acceso a una carpeta concreta, además de la del proyecto. */
+  grantAgentFolder: (id: number, path: string) =>
+    request<Agent>(`/agents/${id}/folders`, {
+      method: "POST",
+      body: JSON.stringify({ path }),
     }),
   getAgentExecutions: (id: number, limit = 50) =>
     request<AgentExecution[]>(`/agents/${id}/executions?limit=${limit}`),

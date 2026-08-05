@@ -2,7 +2,7 @@
 import json
 import httpx
 from typing import Dict, Any, List, Optional, AsyncIterator
-from .base import BaseAIProvider, normalize_history
+from .base import BaseAIProvider, normalize_history, normalize_images
 
 
 class OllamaProvider(BaseAIProvider):
@@ -24,7 +24,8 @@ class OllamaProvider(BaseAIProvider):
     # varios modelos — el clon reusa el mismo cliente httpx.
 
     def _endpoint_and_payload(self, prompt: str, system_prompt: Optional[str],
-                              history: Optional[List[Dict[str, Any]]], stream: bool):
+                              history: Optional[List[Dict[str, Any]]], stream: bool,
+                              images: Optional[List[str]] = None):
         """[R6.5a] Ollama tiene DOS APIs y solo una admite conversacion:
           - `/api/generate`: un prompt suelto + system. Es la que se ha usado
             siempre y NO puede llevar historial.
@@ -36,17 +37,28 @@ class OllamaProvider(BaseAIProvider):
         texto en sitios distintos (`response` vs `message.content`), y de eso se
         encarga `_extract_chunk`."""
         turnos = normalize_history(history)
+        # [B·WEB-2] Ollama es el mas comodo de los cuatro formatos: `images` es
+        # una lista de base64 PUROS (sin data-URI) que va DENTRO del propio
+        # payload — en `/api/generate` al nivel de arriba, y en `/api/chat`
+        # dentro del mensaje del usuario. Sin imagenes, todo queda byte a byte
+        # como siempre.
+        imgs = normalize_images(images)
         if not turnos:
             payload = {"model": self.model, "prompt": prompt, "stream": stream}
             if system_prompt:
                 payload["system"] = system_prompt
+            if imgs:
+                payload["images"] = imgs
             return f"{self.base_url}/api/generate", payload, False
 
         messages = []
         if system_prompt:
             messages.append({"role": "system", "content": system_prompt})
         messages.extend(turnos)
-        messages.append({"role": "user", "content": prompt})
+        turno_actual: Dict[str, Any] = {"role": "user", "content": prompt}
+        if imgs:
+            turno_actual["images"] = imgs
+        messages.append(turno_actual)
         return f"{self.base_url}/api/chat", {
             "model": self.model, "messages": messages, "stream": stream,
         }, True
@@ -59,9 +71,11 @@ class OllamaProvider(BaseAIProvider):
         return data.get("response", "")
 
     async def generate(self, prompt: str, system_prompt: Optional[str] = None,
-                       messages: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
+                       messages: Optional[List[Dict[str, Any]]] = None,
+                       images: Optional[List[str]] = None) -> Dict[str, Any]:
         """Generate response using Ollama."""
-        url, payload, es_chat = self._endpoint_and_payload(prompt, system_prompt, messages, stream=False)
+        url, payload, es_chat = self._endpoint_and_payload(prompt, system_prompt, messages,
+                                                           stream=False, images=images)
 
         try:
             client = self._get_client()  # V0.9 A2a: cliente persistente por proveedor

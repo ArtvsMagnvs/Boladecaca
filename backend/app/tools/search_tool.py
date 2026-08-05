@@ -201,6 +201,28 @@ class SearchTool(BaseTool):
     )
     requires_confirmation = False
 
+    def preflight(self) -> Optional[str]:
+        """[Sesión A, 2026-08-04] ¿Está la búsqueda OPERATIVA ahora mismo?
+
+        El contrato (duck-typed, lo consulta `toolloop.run` antes de arrancar el
+        bucle): None = operativa; un texto = motivo legible por el que NO lo
+        está. Sin API key configurada, CADA llamada de búsqueda falla — y antes
+        el bucle quemaba su presupuesto entero descubriéndolo a base de
+        intentos (una llamada al LLM por intento). Este chequeo cuesta una
+        consulta a la tabla Config y lo dice en el segundo 1.
+
+        Si el propio chequeo falla (BD no disponible, tests con fakes…), se
+        devuelve None: un preflight roto jamás debe bloquear una tool que
+        quizá funcione — el error real, si lo hay, saldrá al ejecutar."""
+        try:
+            keys = _configured_providers()
+        except Exception:
+            return None
+        if keys.get("brave") or keys.get("serpapi"):
+            return None
+        return ("la búsqueda web no está configurada: añade una API key de "
+                "SerpAPI o Brave en Ajustes → Búsqueda web")
+
     async def execute(self, action: str, params: Dict[str, Any]) -> Dict[str, Any]:
         try:
             vertical_by_action = {

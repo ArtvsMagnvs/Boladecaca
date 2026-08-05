@@ -247,17 +247,21 @@ def test_b1_techo_de_nodos_flexible():
     assert planner._MAX_REASONABLE_NODES == 8
 
 
-def test_b1_nodos_de_escritura_reciben_presupuesto_ampliado():
-    """Un nodo con filesystem/shell/git recibe TIE_TOOL_MAX_ITERS_WRITE; uno de
-    consulta (email) se queda con el base."""
+def test_b1_todo_nodo_recibe_el_techo_duro_unico():
+    """[Sesión A, 2026-08-04 — contrato NUEVO, sustituye al reparto 5/12 de S2]
+    El presupuesto pasó de fijo a basado en PROGRESO: `_iters_for` devuelve el
+    TECHO DURO de seguridad para cualquier nodo (el corte real lo hace el
+    detector de atasco del bucle, TIE_TOOL_STALL_LIMIT). El techo tiene que ser
+    claramente mayor que el muro viejo de 12 — si no, el cambio no arregla el
+    caso real (Cordyceps necesitaba ~30 pasos legítimos)."""
     from app.core.config import settings
     from app.tie.runtime import _iters_for
 
-    assert _iters_for(["filesystem"]) == settings.TIE_TOOL_MAX_ITERS_WRITE
-    assert _iters_for(["shell", "search"]) == settings.TIE_TOOL_MAX_ITERS_WRITE
-    assert _iters_for(["email"]) == settings.TIE_TOOL_MAX_ITERS
-    assert _iters_for([]) == settings.TIE_TOOL_MAX_ITERS
-    assert settings.TIE_TOOL_MAX_ITERS_WRITE > settings.TIE_TOOL_MAX_ITERS
+    assert _iters_for(["filesystem"]) == settings.TIE_TOOL_HARD_CEILING
+    assert _iters_for(["email"]) == settings.TIE_TOOL_HARD_CEILING
+    assert _iters_for([]) == settings.TIE_TOOL_HARD_CEILING
+    assert settings.TIE_TOOL_HARD_CEILING > 12          # más que el muro viejo
+    assert 2 <= settings.TIE_TOOL_STALL_LIMIT <= 10     # el corte efectivo, sano
 
 
 # ---------------------------------------------------------------------------

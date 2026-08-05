@@ -16,18 +16,33 @@ import { usePolling } from "@/hooks/usePolling";
 
 const POLL_MS = 2500;
 
-/** Preguntas pendientes. Con `missionId`, solo las de ESA misión; sin él,
- *  TODAS (el Chat principal las muestra todas: si Aithera pregunta algo, el
- *  usuario tiene que poder responder desde donde esté). */
+// [Sesión B, doc 40 §B5] Los gates que una misión abre EN PLENO VUELO y que
+// bloquean su trabajo hasta que el usuario contesta (PU3: no caducan nunca):
+//   · `tie_tool_permission` — una acción sensible que el plan no anticipó (R1).
+//   · `tie_tool_grant`      — una herramienta que al paso le faltaba (S11).
+// A diferencia de una pregunta, se responden con SÍ/NO. Están aquí, en el mismo
+// hook, para que ninguna pantalla pueda quedarse sin mostrar uno: era el hueco
+// del chat de agente (una misión esperando permiso se veía como "trabajando…"
+// indefinido, sin forma de desbloquearla desde ahí).
+const IN_FLIGHT_GATE_TYPES = ["tie_tool_permission", "tie_tool_grant"];
+
+/** Preguntas y gates pendientes. Con `missionId`, solo los de ESA misión; sin
+ *  él, TODOS (el Chat principal y el chat de agente los muestran todos: si
+ *  Aithera está esperando algo, el usuario tiene que poder desbloquearlo desde
+ *  donde esté). */
 export function usePendingQuestions(missionId?: string | null) {
   const [questions, setQuestions] = useState<Approval[]>([]);
+  const [gates, setGates] = useState<Approval[]>([]);
 
   const load = useCallback(async () => {
     try {
-      const todas = await api.getApprovals();
-      const preguntas = todas.filter((a) => a.is_question && a.status === "pending");
-      setQuestions(
-        missionId ? preguntas.filter((q) => q.mission_id === missionId) : preguntas,
+      const todas = (await api.getApprovals()).filter((a) => a.status === "pending");
+      const mia = (a: Approval) => !missionId || a.mission_id === missionId;
+      setQuestions(todas.filter((a) => a.is_question && mia(a)));
+      setGates(
+        todas.filter(
+          (a) => !a.is_question && IN_FLIGHT_GATE_TYPES.includes(a.action_type) && mia(a),
+        ),
       );
     } catch {
       // Fail-soft: sin conexión no se pinta nada, nunca se rompe la pantalla.
@@ -40,5 +55,5 @@ export function usePendingQuestions(missionId?: string | null) {
 
   usePolling(load, POLL_MS);
 
-  return { questions, refresh: load };
+  return { questions, gates, refresh: load };
 }

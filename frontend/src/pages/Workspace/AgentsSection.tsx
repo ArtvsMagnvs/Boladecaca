@@ -41,9 +41,17 @@ interface Props {
   // edicion) — esa ventana es OTRA instancia con sus propios datos, asi que
   // esta seccion no se entera sola.
   refreshTick?: number;
+  // [2026-08-02, size="name"] Clic en la FILA de un agente (no en "Abrir")
+  // cambia el chat lateral a la conversacion de ese agente.
+  onSelectAgent?: (agentId: number) => void;
+  // [2026-08-02, size="name"] Cual esta seleccionado ahora mismo, para
+  // resaltar su fila. `null`/`undefined` = ninguno (chat del orquestador).
+  selectedAgentId?: number | null;
 }
 
-export function AgentsSection({ projectId, size, onOpenAgent, refreshTick }: Props) {
+export function AgentsSection({
+  projectId, size, onOpenAgent, refreshTick, onSelectAgent, selectedAgentId,
+}: Props) {
   const t = useT();
   const [agents, setAgents] = useState<Agent[]>([]);
   const [order, setOrder] = useState<number[]>(() => loadOrder(projectId));
@@ -56,7 +64,10 @@ export function AgentsSection({ projectId, size, onOpenAgent, refreshTick }: Pro
   const dragState = useRef<{ id: number; startX: number; startY: number; moved: boolean } | null>(null);
 
   const load = useCallback(async () => {
-    const list = await api.getAgents(projectId);
+    // [2026-08-02] El ORQUESTADOR sale de esta lista: tiene su propio sitio en
+    // la tarjeta (petición del usuario). Aquí solo van los agentes de trabajo,
+    // que son los que se crean, reordenan y borran.
+    const list = (await api.getAgents(projectId)).filter((a) => a.role !== "orchestrator");
     setAgents(list);
     // V0.87 (WPMS W2e): ejecuciones de TODOS los agentes, en todos los
     // tamaños — antes solo se pedian para los inactivos (marco gris/rojo) o
@@ -150,7 +161,8 @@ export function AgentsSection({ projectId, size, onOpenAgent, refreshTick }: Pro
     return !!execs && execs.length > 0 && execs[0].status === "failed";
   };
 
-  const wrapClass = size === "icon" ? "flex flex-wrap gap-2" : "flex flex-col gap-1.5";
+  const wrapClass =
+    size === "icon" ? "flex flex-wrap gap-2" : size === "name" ? "flex flex-col gap-1" : "flex flex-col gap-1.5";
 
   return (
     <section>
@@ -172,6 +184,8 @@ export function AgentsSection({ projectId, size, onOpenAgent, refreshTick }: Pro
                 executions={execByAgent[a.id] ?? []}
                 isDragging={dragId === a.id}
                 onOpen={() => onOpenAgent(a.id)}
+                onSelect={onSelectAgent ? () => onSelectAgent(a.id) : undefined}
+                selected={selectedAgentId === a.id}
               />
             </div>
           ))}

@@ -161,7 +161,8 @@ def _instance_for(ref: ModelRef):
 
 
 async def execute(ref: ModelRef, prompt: str, system_prompt: Optional[str] = None,
-                  messages: Optional[list] = None) -> dict:
+                  messages: Optional[list] = None, workdir: Optional[str] = None,
+                  images: Optional[list] = None) -> dict:
     """Ejecuta una petición contra un (proveedor, modelo) CONCRETO — el MEL
     enruta él mismo. Devuelve el dict del proveedor (`{response, model, tokens?,
     error?}`). Lanza si el proveedor no existe (el executor lo trata como fallo y
@@ -170,8 +171,31 @@ async def execute(ref: ModelRef, prompt: str, system_prompt: Optional[str] = Non
     `messages` [R6.5a]: turnos previos de la conversación. Se pasa TAL CUAL al
     proveedor, que lo traduce a su formato. Si un proveedor no lo acepta (una
     implementación antigua, o de terceros), se reintenta sin él: el historial es
-    una mejora, nunca un motivo para quedarse sin respuesta."""
+    una mejora, nunca un motivo para quedarse sin respuesta.
+
+    `images` [B·WEB-2]: al revés que todo lo anterior, NO degrada. Si el
+    proveedor no acepta imágenes se LANZA: seguir sin ella significaría que el
+    modelo responde sobre una captura que nunca vio (coordenadas inventadas)."""
     inst = _instance_for(ref)
+    if images:
+        try:
+            return await inst.generate(prompt, system_prompt, messages=messages or None,
+                                       images=list(images))
+        except TypeError as e:
+            raise RuntimeError(
+                f"{ref.provider}:{ref.model} no acepta imágenes; no se envía la petición "
+                f"para no obtener una respuesta inventada ({e})"
+            ) from e
+    # [2026-08-04] `workdir`: los agentes CLI (Claude Code, Codex) trabajan EN
+    # una carpeta con sus propias herramientas. Misma degradación que el
+    # historial: si el proveedor no acepta el parámetro, se sigue sin él — un
+    # proveedor HTTP no tiene carpeta de trabajo y eso no es un fallo.
+    if workdir:
+        try:
+            return await inst.generate(prompt, system_prompt, messages=messages or None,
+                                       workdir=workdir)
+        except TypeError:
+            logger.info(f"[registry] {ref.provider} no acepta carpeta de trabajo; sigo sin ella")
     if messages:
         try:
             return await inst.generate(prompt, system_prompt, messages=messages)

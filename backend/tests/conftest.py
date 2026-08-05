@@ -20,6 +20,13 @@ os.environ["AITHERA_CHROMA_PATH"] = os.path.join(_TEST_DB_DIR, "chroma")
 # V0.85 (MOS vault, doc 07 §9): mismo aislamiento para el espejo Markdown —
 # los tests NUNCA escriben en %APPDATA%/Aithera/vault del usuario real.
 os.environ["AITHERA_VAULT_PATH"] = os.path.join(_TEST_DB_DIR, "vault")
+# [Sesión C, doc 40] Mismo patrón para los logs: sin esto, la suite entera
+# escribía miles de líneas fake en logs/system.log de PRODUCCIÓN (LOG-2,
+# doc 34 campaña 00). setdefault() para no pisar un valor que el propio
+# entorno ya hubiera fijado (p.ej. un subproceso de test que lo necesita
+# apuntando a otro sitio).
+os.environ.setdefault("AITHERA_LOG_DIR",
+                      str(os.path.join(tempfile.gettempdir(), "aithera-test-logs")))
 
 import pytest  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402

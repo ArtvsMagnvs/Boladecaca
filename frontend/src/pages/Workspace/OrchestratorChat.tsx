@@ -23,6 +23,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { api, type Agent, type AgentExecution } from "@/lib/api";
 import { MiniMarkdown } from "@/lib/miniMarkdown";
 import ActivityTrail from "@/components/chat/ActivityTrail";
+import { ChatComposer } from "./ChatComposer";
 import { UserQuestionCard } from "@/components/UserQuestionCard";
 import { usePendingQuestions } from "@/hooks/usePendingQuestions";
 import { useT } from "@/store/useI18n";
@@ -54,13 +55,25 @@ interface Props {
    * trabajar es ver el recorrido de la conversación.
    */
   placement?: "stack" | "side";
+  /**
+   * [2026-08-02, petición del usuario] Si se pasa, el chat lateral deja de
+   * mostrar SIEMPRE al orquestador y muestra la conversación de ESTE agente
+   * (el mismo mecanismo — `agent_executions` — solo que de otro `Agent`).
+   * `undefined`/`null` = comportamiento de siempre, el orquestador general.
+   */
+  agentId?: number | null;
 }
 
-export function OrchestratorChat({ projectId, expanded, placement = "stack" }: Props) {
+export function OrchestratorChat({ projectId, expanded, placement = "stack", agentId }: Props) {
   const tr = useT();
   const [agent, setAgent] = useState<Agent | null>(null);
   const [executions, setExecutions] = useState<AgentExecution[]>([]);
   const [input, setInput] = useState("");
+  // [2026-08-02] Modelo elegido para el PRÓXIMO mensaje. Se conserva entre
+  // turnos (comodidad) pero puede cambiarse en cada uno: el contexto de la
+  // conversación vive en `agent_executions`, no en el modelo, así que
+  // cambiar de proveedor a mitad de charla no pierde el hilo.
+  const [model, setModel] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const pollRef = useRef<number | null>(null);
@@ -69,14 +82,22 @@ export function OrchestratorChat({ projectId, expanded, placement = "stack" }: P
   // por misión a propósito: desde esta tarjeta el usuario lanza los encargos,
   // y una pregunta sin responder BLOQUEA el trabajo — es justo lo que tiene
   // que ver aquí, aunque naciera en un paso interno de otra misión suya.
-  const { questions, refresh: refreshQuestions } = usePendingQuestions();
+  const { questions, gates, refresh: refreshQuestions } = usePendingQuestions();
 
-  // Prepara (o recupera) el orquestador de ESTE proyecto. Idempotente en el
-  // backend, así que montar la tarjeta varias veces no crea agentes de más.
+  // Prepara (o recupera) al agente de ESTE panel: el orquestador del
+  // proyecto por defecto, o el agente concreto que el usuario haya
+  // seleccionado en la lista lateral (`agentId`). Idempotente en el backend
+  // para el orquestador, así que montar la tarjeta varias veces no crea
+  // agentes de más. Se resetea TODO el estado de conversación al cambiar de
+  // agente/proyecto — si no, un turno de un agente podría verse un instante
+  // pegado a la conversación de otro mientras carga el nuevo.
   useEffect(() => {
     let cancelado = false;
-    api
-      .ensureProjectOrchestrator(projectId)
+    setAgent(null);
+    setExecutions([]);
+    setError(null);
+    const p = agentId != null ? api.getAgent(agentId) : api.ensureProjectOrchestrator(projectId);
+    p
       .then((a) => {
         if (!cancelado) setAgent(a);
       })
@@ -87,7 +108,7 @@ export function OrchestratorChat({ projectId, expanded, placement = "stack" }: P
       cancelado = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [projectId]);
+  }, [projectId, agentId]);
 
   const loadExecutions = useCallback(async () => {
     if (!agent) return;
@@ -132,7 +153,7 @@ export function OrchestratorChat({ projectId, expanded, placement = "stack" }: P
     setSending(true);
     setError(null);
     try {
-      await api.executeAgent(agent.id, texto);
+      await api.executeAgent(agent.id, texto, undefined, model);
       setInput("");
       await loadExecutions();
     } catch (e) {
@@ -152,23 +173,33 @@ export function OrchestratorChat({ projectId, expanded, placement = "stack" }: P
     <section className={side
       ? "h-full min-h-0 flex flex-col"
       : "border-t border-base-700/60 pt-3"}>
-      <div className="flex items-center justify-between mb-2 shrink-0">
-        <h3 className="text-xs font-medium text-ink-dim flex items-center gap-1.5">
-          <span aria-hidden>🧠</span>
-          {tr("workspace.orchestrator.title")}
-        </h3>
-        {agent && (
-          <span className="text-[10px] text-ink-faint truncate max-w-[45%]" title={agent.name}>
-            {agent.name}
+      {/* [2026-08-02, corrección] Antes el nombre del agente iba aparte, en
+          pequeño, a la derecha — pedido explícito: que vaya PEGADO al título,
+          con la MISMA tipografía ("Chat del agente Cordyceps Game Dev"), no
+          como una etiqueta secundaria. Una sola línea, sin truncar el resto
+          del encabezado. */}
+      <div className="flex items-center justify-between mb-2 shrink-0 min-w-0">
+        <h3 className="text-xs font-medium text-ink-dim flex items-center gap-1.5 min-w-0 truncate">
+          <span aria-hidden className="shrink-0">{agentId != null ? "🤖" : "🧠"}</span>
+          <span className="truncate">
+            {agentId != null ? tr("workspace.orchestrator.agentChat") : tr("workspace.orchestrator.title")}
+            {agent && <> {agent.name}</>}
           </span>
-        )}
+        </h3>
       </div>
 
-      <p className="text-[10px] text-ink-faint mb-2 shrink-0">{tr("workspace.orchestrator.hint")}</p>
+      {agentId == null && (
+        <p className="text-[10px] text-ink-faint mb-2 shrink-0">{tr("workspace.orchestrator.hint")}</p>
+      )}
 
       <div ref={scrollRef} className={`${bodyH} overflow-y-auto flex flex-col gap-2 mb-2 pr-1`}>
         {executions.length === 0 && !error && (
-          <p className="text-[11px] text-ink-faint py-2">{tr("workspace.orchestrator.empty")}</p>
+          <p className="text-[11px] text-ink-faint py-2">
+            {/* [2026-08-02, corrección] El texto de "reparte el trabajo entre
+                los agentes" solo tiene sentido para el ORQUESTADOR — un
+                agente normal NO reparte nada, es el que hace el trabajo. */}
+            {agentId != null ? tr("workspace.orchestrator.emptyAgent") : tr("workspace.orchestrator.empty")}
+          </p>
         )}
         {executions.map((ex) => (
           <div key={ex.id} className="flex flex-col gap-1">
@@ -211,6 +242,62 @@ export function OrchestratorChat({ projectId, expanded, placement = "stack" }: P
         ))}
       </div>
 
+      {/* [Sesión B, doc 40 §B5] Un gate abierto en pleno vuelo (permiso de
+          acción sensible o concesión de herramienta) BLOQUEA la misión hasta
+          que se responda — y desde PU3 no caduca nunca. Sin estos botones aquí,
+          el chat del agente se quedaba en "trabajando…" para siempre y había
+          que ir a otra pantalla a desbloquearlo (o no enterarse). Mismo patrón
+          de resolución que Missions.tsx: el endpoint genérico de A1. */}
+      {gates.length > 0 && (
+        <div className="flex flex-col gap-2 mb-2 shrink-0">
+          {gates.map((g) => (
+            <div
+              key={g.gate_id}
+              className="rounded-xl p-3 bg-signal-warn/10 border border-signal-warn/30"
+            >
+              <p className="text-[11px] font-medium text-signal-warn">
+                {tr("missions.toolGate.title")}
+              </p>
+              <p className="text-[11px] text-ink-dim mt-1 break-words">
+                {g.summary || g.title}
+              </p>
+              <div className="flex gap-2 mt-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    void api
+                      .resolveApproval(g.gate_id, true)
+                      .catch(() => {})
+                      .finally(() => {
+                        void refreshQuestions();
+                        void loadExecutions();
+                      });
+                  }}
+                  className="text-[11px] px-2.5 py-1 rounded-lg bg-signal-ok/15 text-signal-ok border border-signal-ok/30 hover:bg-signal-ok/25"
+                >
+                  {tr("missions.toolGate.approve")}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    void api
+                      .resolveApproval(g.gate_id, false)
+                      .catch(() => {})
+                      .finally(() => {
+                        void refreshQuestions();
+                        void loadExecutions();
+                      });
+                  }}
+                  className="text-[11px] px-2.5 py-1 rounded-lg bg-signal-error/10 text-signal-error border border-signal-error/30 hover:bg-signal-error/20"
+                >
+                  {tr("missions.toolGate.reject")}
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
       {/* [2026-08-02] Si Aithera está esperando una respuesta, la pregunta va
           ANTES del cuadro de escribir: es lo que bloquea el trabajo. */}
       {questions.length > 0 && (
@@ -231,29 +318,21 @@ export function OrchestratorChat({ projectId, expanded, placement = "stack" }: P
 
       {error && <p className="text-[11px] text-signal-error mb-2 shrink-0">{error}</p>}
 
-      <div className="flex gap-2 shrink-0">
-        <input
+      {/* [2026-08-02, peticiones 6 y 7] Adjuntar, dar acceso a carpetas,
+          política de aprobación, selector de proveedor/modelo POR MENSAJE y
+          micrófono. Mismo componente que el chat de un agente cualquiera. */}
+      <div className="shrink-0">
+        <ChatComposer
+          agent={agent}
           value={input}
-          onChange={(e) => setInput(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && !e.shiftKey) {
-              e.preventDefault();
-              void send();
-            }
-          }}
-          disabled={!agent}
-          className="flex-1 min-w-0 bg-base-800/70 border border-base-600 rounded-lg px-2.5 py-1.5 text-xs text-ink focus:outline-none focus:border-accent/60 disabled:opacity-50"
-          placeholder={
-            agent ? tr("workspace.orchestrator.placeholder") : tr("workspace.orchestrator.preparing")
-          }
+          onChange={setInput}
+          onSend={() => void send()}
+          sending={sending}
+          model={model}
+          onModelChange={setModel}
+          onAgentChanged={() => { void api.getAgent(agent!.id).then(setAgent).catch(() => {}); }}
+          compact
         />
-        <button
-          onClick={() => void send()}
-          disabled={!agent || !input.trim() || sending}
-          className="shrink-0 text-xs px-3 py-1.5 rounded-lg bg-accent/15 text-accent border border-accent/30 hover:bg-accent/25 disabled:opacity-40"
-        >
-          {sending ? "…" : tr("chat.send")}
-        </button>
       </div>
     </section>
   );

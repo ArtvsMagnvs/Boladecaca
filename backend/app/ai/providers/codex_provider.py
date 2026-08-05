@@ -181,8 +181,12 @@ class CodexProvider(BaseAIProvider):
         )
 
     async def generate(self, prompt: str, system_prompt: Optional[str] = None,
-                       messages: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
-        return await self._run(self._with_history(prompt, messages), system_prompt)
+                       messages: Optional[List[Dict[str, Any]]] = None,
+                       workdir: Optional[str] = None) -> Dict[str, Any]:
+        """[2026-08-04] `workdir`: la carpeta del proyecto donde Codex debe
+        trabajar con SUS propias herramientas (mismo trato que Claude Code)."""
+        return await self._run(self._with_history(prompt, messages), system_prompt,
+                               cwd=workdir)
 
     async def generate_stream(self, prompt: str, system_prompt: Optional[str] = None,
                               messages: Optional[List[Dict[str, Any]]] = None) -> AsyncIterator[str]:

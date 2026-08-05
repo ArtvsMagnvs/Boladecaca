@@ -51,6 +51,26 @@ def stream(req: ExecutionRequest):
     return _executor.stream(req)
 
 
+def vision_available() -> bool:
+    """[B·WEB-2, doc 32] ¿Hay AHORA MISMO algún modelo capaz de mirar una imagen?
+
+    Existe para que una tool pueda decirlo ANTES de intentarlo (su `preflight()`,
+    patrón de la Sesión A del doc 40) en vez de gastar una llamada al LLM para
+    descubrirlo. Consulta el mismo punto único de aptitud que usan las políticas
+    (`is_capable` → `supports_vision`), así que no puede desalinearse con lo que
+    de verdad ejecutaría el MEL.
+
+    Fail-closed: si algo falla al consultarlo, False. Decir "no puedo ver" de más
+    solo cuesta una funcionalidad; decirlo de menos acaba en coordenadas
+    inventadas."""
+    try:
+        from app.mel.policies import is_capable
+
+        return any(is_capable(ref, Capability.VISION) for ref in _registry.list_available())
+    except Exception:
+        return False
+
+
 def decision_trace(decision_id: str) -> Optional[DecisionTrace]:
     """La traza de una decisión reciente (por qué se eligió ese modelo)."""
     return _decision.get_trace(decision_id)
@@ -78,24 +98,71 @@ def set_active_policy(name: str) -> bool:
     return _policy_store.set_active(name)
 
 
+def is_cli_agent_model(model_key: Optional[str]) -> bool:
+    """[2026-08-04] ¿Ese `provider:model` es un AGENTE CLI autosuficiente
+    (Claude Code, Codex)?
+
+    Lo consulta `agent_manager` para decidir el camino de ejecución: a un agente
+    CLI se le delega la tarea ENTERA en la carpeta del proyecto (trae sus
+    propias herramientas), en vez de meterlo en el bucle de tools de Aithera —
+    que es un agente dentro de otro agente y era la causa real de que "no
+    sirvieran". Vive aquí (API pública) para que `app.agents` no tenga que
+    importar internos del MEL (doc 16)."""
+    from app.mel.catalog import is_cli_agent
+
+    if not model_key:
+        return False
+    return is_cli_agent(model_key.split(":", 1)[0])
+
+
 def list_models() -> list[dict]:
     """Los (proveedor, modelo) realmente configurados, para que la UI pueble los
     selectores de la personalización. `key` es el `provider:model` que usan las
     cadenas de política (petición del usuario, 2026-07-18)."""
     from app.ai.catalog import get_provider_info
-    from app.mel.catalog import unfit_for
+    from app.mel.catalog import supports_vision as _supports_vision, unfit_for
     from app.mel import benchmark as _benchmark
     out = []
     for ref in _registry.list_available():
-        label = get_provider_info(ref.provider).get("label", ref.provider)
+        info = get_provider_info(ref.provider)
+        label = info.get("label", ref.provider)
+        # [2026-08-02, petición del usuario] Nombre COMPLETO del modelo, no
+        # abreviado — el catálogo curado ya lo tiene ("MiniMax M2.7 highspeed
+        # (rápido)", "Fable 5 (el más capaz)"...). Para modelos sin entrada en
+        # el catálogo (típicamente los locales de Ollama: "llama3",
+        # "qwen3:8b"...) se usa el propio nombre tal cual — ya es "completo",
+        # solo no tiene un alias comercial que traducir.
+        model_label = info.get("model_labels", {}).get(ref.model, ref.model)
         # [2026-07-21] capacidades para las que NO es apto (la UI lo excluye/
         # marca; p.ej. Claude CLI en chat/classify). [2026-07-22] Se suma la
         # no-aptitud MEDIDA por el task-bench: un modelo con fallo real medido
         # no es asignable a esa tarea NI SIQUIERA en Personalizado.
-        unfit = {c.value for c in unfit_for(ref.provider)} | _benchmark.measured_unfit(ref)
+        # [2026-08-04] Las dos fuentes se exponen POR SEPARADO además de la
+        # unión. Motivo real: la UI borraba en silencio todo lo no-apto y el
+        # usuario preguntó tres veces "¿por qué solo salen los de MiniMax?".
+        # Sin saber si la exclusión viene del CATÁLOGO (decisión de diseño,
+        # p.ej. los CLI de Claude/Codex) o de una MEDICIÓN (el task-bench vio
+        # fallar ese modelo de verdad), la UI solo puede decir "no está" — que
+        # es justo lo que no sirve. `unfit` (la unión) se conserva intacto
+        # porque Ajustes → Inteligencia ya lo consume.
+        catalog_unfit = {c.value for c in unfit_for(ref.provider)}
+        # [B·WEB-2, 2026-08-05] La VISIÓN no se decide por proveedor sino por
+        # (proveedor, modelo) —`gemini` ve, `ollama` solo con un modelo VL—, así
+        # que `unfit_for()` no puede saberlo y hay que sumarla aquí.
+        #
+        # EL FALLO QUE CIERRA: sin esto, el selector de Inteligencia OFRECÍA
+        # modelos ciegos para la capacidad de visión y, al elegir uno,
+        # `set_primary` lo rechazaba por dentro (usa `is_capable`) — el usuario
+        # veía que su elección "no se guardaba" sin ninguna explicación. La UI y
+        # la ejecución tienen que compartir el MISMO criterio de aptitud.
+        if not _supports_vision(ref.provider, ref.model):
+            catalog_unfit.add(Capability.VISION.value)
+        measured_unfit = set(_benchmark.measured_unfit(ref))
         out.append({"key": ref.key, "provider": ref.provider, "model": ref.model,
-                    "is_local": ref.is_local, "label": label,
-                    "unfit": sorted(unfit)})
+                    "is_local": ref.is_local, "label": label, "model_label": model_label,
+                    "unfit": sorted(catalog_unfit | measured_unfit),
+                    "unfit_catalog": sorted(catalog_unfit),
+                    "unfit_measured": sorted(measured_unfit)})
     return out
 
 
@@ -237,4 +304,5 @@ __all__ = [
     "set_project_override", "overrides_for", "list_overrides", "clear_override",
     "set_policy_slot", "health_summary",
     "benchmark_summary", "benchmark_missing",
+    "vision_available",
 ]

@@ -21,20 +21,47 @@ class WindowsSafeRotatingFileHandler(RotatingFileHandler):
         try:
             super().doRollover()
         except PermissionError:
-            # El archivo sigue bloqueado por el proceso anterior.
-            # Cerramos y truncamos en lugar de rotar.
+            # [Sesión C, doc 40] El proceso anterior aún bloquea el archivo
+            # (taskkill). ANTES se truncaba — destruía el forense de cada
+            # sesión anterior (por eso jamás existió un system.log.1 pese a
+            # backupCount=3). AHORA: el bloqueado se queda intacto y este
+            # proceso escribe en un hermano con timestamp. La historia
+            # SIEMPRE sobrevive.
             if self.stream:
                 self.stream.close()
                 self.stream = None
-            try:
-                open(self.baseFilename, 'w').close()
-            except PermissionError:
-                pass  # Si ni siquiera podemos truncar, seguimos sin crashear
+            base = Path(self.baseFilename)
+            stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+            self.baseFilename = str(base.with_name(f"{base.stem}.{stamp}{base.suffix}"))
             self.stream = self._open()
 
-# Crear directorio de logs si no existe
-LOGS_DIR = Path(__file__).parent.parent.parent / "logs"
-LOGS_DIR.mkdir(exist_ok=True)
+
+def _prune_sibling_logs(base: Path, keep: int = 10) -> None:
+    """[Sesión C] Limpieza acotada de los hermanos con timestamp que deja
+    `doRollover` al encontrar el archivo bloqueado — para que no crezcan sin
+    límite. Best-effort total: nunca debe romper el arranque del logger."""
+    try:
+        hermanos = sorted(
+            p for p in base.parent.glob(f"{base.stem}.*{base.suffix}")
+            if p != base
+        )
+        sobrantes = hermanos[:-keep] if keep > 0 else hermanos
+        for p in sobrantes:
+            try:
+                p.unlink()
+            except OSError:
+                pass
+    except OSError:
+        pass
+
+
+# [Sesión C, doc 40] AITHERA_LOG_DIR: los TESTS (conftest.py) y cualquier
+# entorno aislado apuntan los logs a su propia carpeta — mismo patrón exacto
+# que AITHERA_CHROMA_PATH para la BD vectorial. Cierra LOG-2 (doc 34, campaña
+# 00): la suite escribía miles de líneas fake en el system.log de producción.
+_env_dir = os.getenv("AITHERA_LOG_DIR", "").strip()
+LOGS_DIR = Path(_env_dir) if _env_dir else Path(__file__).parent.parent.parent / "logs"
+LOGS_DIR.mkdir(parents=True, exist_ok=True)
 
 # Archivos de log
 SYSTEM_LOG = LOGS_DIR / "system.log"
@@ -77,6 +104,7 @@ def setup_logger(name: str, log_file: Path, level=logging.INFO) -> logging.Logge
     )
     file_handler.setLevel(level)
     file_handler.setFormatter(formatter)
+    _prune_sibling_logs(Path(log_file))
     
     # Handler para consola
     console_handler = logging.StreamHandler()

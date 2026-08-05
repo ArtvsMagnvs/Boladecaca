@@ -101,7 +101,11 @@ async def _synthesize(mission, done, failed, skipped, cancelled, graph) -> str:
         res = await router.complete(prompt, system_prompt=system, capability="summarize")
         if not res.get("error"):
             text = strip_reasoning(res.get("response", "") or "").strip()
-            if text and _is_grounded(text, graph):
+            # [Sesión B] DOS comprobaciones, no una: que no invente una espera de
+            # aprobación (S2·S6) y que no invente un ENTREGABLE (§B3). Ambas
+            # degradan igual — a la plantilla determinista, que solo enumera lo
+            # que los nodos produjeron de verdad.
+            if text and _is_grounded(text, graph) and _deliverables_backed(text, done):
                 return text
     except Exception as e:
         logger.error(f"[responder] síntesis falló, se usa plantilla: {type(e).__name__}: {e}")
@@ -122,6 +126,77 @@ def _is_grounded(text: str, graph) -> bool:
         logger.info("[responder] descartado: el texto dice que falta aprobación y no hay "
                     f"ningún paso esperándola — se usa la plantilla. Texto: {text[:200]!r}")
         return False
+    return True
+
+
+def _written_targets(done) -> dict[str, str]:
+    """[Sesión B, doc 40 §B3] {nombre_base_minúsculas: ruta} de los archivos que
+    los pasos COMPLETADOS escribieron DE VERDAD.
+
+    La fuente es `node.tool_calls` — el rastro que el toolloop anota con
+    `target` solo cuando una acción de entregable se ejecutó con ÉXITO (§B1), y
+    que el executor copia entero al nodo. No es una promesa del modelo: es lo
+    que pasó."""
+    import os
+
+    escritos: dict[str, str] = {}
+    for n in done:
+        for c in (getattr(n, "tool_calls", None) or []):
+            if not (isinstance(c, dict) and c.get("ok") and c.get("target")):
+                continue
+            ruta = str(c["target"])
+            base = os.path.basename(ruta.replace("\\", "/")).lower()
+            if base:
+                escritos.setdefault(base, ruta)
+    return escritos
+
+
+def _deliverables_backed(text: str, done) -> bool:
+    """[Sesión B, doc 40 §B3] ¿Todo entregable que el texto AFIRMA haber creado
+    tiene detrás una escritura real (y sigue en disco)?
+
+    EL FALLO QUE CIERRA (2026-08-04): la respuesta final dijo "He escrito
+    CORDYCEPS_PLAN_2026.md" y el archivo no existía. Ninguna comprobación
+    anterior lo cazaba: `_is_grounded` solo mira si se inventa una espera de
+    aprobación, y el grounding del camino corto no aplica aquí (esta misión SÍ
+    ejecutó herramientas, solo que ninguna escribió ese archivo).
+
+    Devuelve False → la síntesis del LLM se descarta y sale la plantilla
+    determinista, que enumera únicamente lo que los nodos produjeron.
+
+    CERO COSTE en el caso normal: si el texto no afirma ningún archivo (la
+    inmensa mayoría), se sale en la primera línea. Y JAMÁS descarta por un
+    fallo del propio chequeo: si el acceso a disco revienta (permisos, ruta
+    rara, unidad de red), se acepta el texto — en la duda, no acusar."""
+    import os
+
+    afirmados = grounding.claimed_written_files(text)
+    if not afirmados:
+        return True
+
+    escritos = _written_targets(done)
+    for nombre in afirmados:
+        ruta = escritos.get(nombre)
+        if ruta is None:
+            logger.info(
+                f"[responder] descartado: el texto afirma haber creado {nombre!r} y "
+                f"ningún paso lo escribió (escrituras reales: {sorted(escritos)}). "
+                f"Se usa la plantilla."
+            )
+            return False
+        # El archivo se escribió… ¿y sigue ahí? (contrato de producto nº 5:
+        # "si te pido un archivo, el archivo existe"). Solo se comprueba con
+        # ruta absoluta: una relativa depende del cwd del proceso y un `False`
+        # ahí sería un falso positivo, justo lo que no se quiere.
+        try:
+            if os.path.isabs(ruta) and not os.path.exists(ruta):
+                logger.info(
+                    f"[responder] descartado: {nombre!r} se escribió pero ya no está en "
+                    f"disco ({ruta!r}). Se usa la plantilla."
+                )
+                return False
+        except Exception as e:      # noqa: BLE001 — un chequeo roto nunca acusa
+            logger.info(f"[responder] no se pudo verificar {ruta!r} en disco: {e!r}")
     return True
 
 

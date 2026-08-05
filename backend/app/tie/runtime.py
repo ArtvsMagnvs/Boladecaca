@@ -167,30 +167,19 @@ def _model_override_from_hint(model_hint: Optional[str]) -> Optional[str]:
     return None
 
 
-# [S2, B-1] Tools cuyo trabajo típico es CONSTRUIR (múltiples escrituras
-# encadenadas): esos nodos reciben el presupuesto ampliado de iteraciones.
-# Las de solo-consulta (email, calendar, search, memory, process…) se quedan
-# con el presupuesto base — más vueltas ahí solo alarga un atasco.
-_WRITE_TOOLS = {"filesystem", "shell", "powershell", "git", "browser", "desktop", "aithera", "download"}
-# Tools que LEEN contenido que puede no caber de una vez: necesitan varias
-# vueltas solo para terminar de leer (ver `_iters_for`).
-_READ_HEAVY_TOOLS = {"document"}
-
-
 def _iters_for(node_tools: list) -> int:
-    """Presupuesto de iteraciones del bucle según las tools del nodo (doc 25 §S2).
-
-    [2026-08-02] `document` entra en el presupuesto ALTO. Desde que la lectura
-    es paginada, un GDD de 60 páginas son 4-5 llamadas seguidas a `read_docx`
-    más la respuesta: con las 5 vueltas del presupuesto de solo-lectura se
-    quedaba a medias y volvíamos exactamente al fallo que la paginación cierra.
-    (`filesystem` ya estaba en el presupuesto alto por otra razón — escribe.)"""
+    """[Sesión A, 2026-08-04] TECHO DURO de seguridad — ya no un presupuesto de
+    trabajo. El corte real lo hace el detector de PROGRESO del bucle
+    (`toolloop`, TIE_TOOL_STALL_LIMIT): un nodo que avanza puede dar 60 vueltas
+    legítimas; uno atascado se corta a las 4 estériles. La distinción
+    escritura/lectura de S2 (`_WRITE_TOOLS`/`_READ_HEAVY_TOOLS`, 5 vs 12
+    vueltas) queda RETIRADA: era una heurística para repartir un presupuesto
+    fijo, y con el presupuesto por progreso el reparto sobra — el trabajo
+    legítimo se autolimita solo por su propio progreso. El parámetro se
+    conserva por estabilidad de la firma (los callers no cambian)."""
     from app.core.config import settings
 
-    tools = node_tools or []
-    if any(t in _WRITE_TOOLS or t in _READ_HEAVY_TOOLS for t in tools):
-        return settings.TIE_TOOL_MAX_ITERS_WRITE
-    return settings.TIE_TOOL_MAX_ITERS
+    return settings.TIE_TOOL_HARD_CEILING
 
 
 class NullRuntime(AgentRuntime):

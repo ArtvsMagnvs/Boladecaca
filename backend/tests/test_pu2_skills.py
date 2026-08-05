@@ -190,15 +190,96 @@ def test_validate_skills_termino_suelto_por_palabra_clave():
 
 
 def test_validate_skills_categoria_no_rompe_el_typo_existente():
-    """No-regresión: un nombre CASI correcto (no una categoría, no un
-    término temático) sigue cayendo en la sugerencia por substring/difflib
-    de siempre, no en las dos capas nuevas."""
+    """No-regresión: un typo de UNA sola palabra que no comparte ninguna
+    palabra completa con el catálogo (le falta una letra: "Anthropologst")
+    sigue cayendo en la sugerencia por substring/difflib de siempre, no en
+    las dos capas nuevas — nada en el catálogo contiene ese fragmento roto
+    como palabra ni como frase."""
     with pytest.raises(ValueError) as exc:
-        skills_catalog.validate_skills(["Growth Hacking Expert"])
+        skills_catalog.validate_skills(["Anthropologst"])
     msg = str(exc.value)
     assert "categoría" not in msg
     assert "relacionadas" not in msg
+    assert "Anthropologist" in msg
+
+
+def test_validate_skills_typo_de_varias_palabras_ahora_encuentra_por_palabra_clave():
+    """[2026-08-02, fix de las búsquedas multi-palabra] "Growth Hacking
+    Expert" comparte la palabra COMPLETA "growth" con la skill real "Growth
+    Hacker" — antes de este fix esa coincidencia se perdía porque
+    `_keyword_candidates` solo miraba la FRASE ENTERA como un substring (y
+    "growth hacking expert" nunca aparece completo en ningún sitio); ahora la
+    encuentra por palabra suelta, igual que encuentra "Unity Architect" al
+    buscar "unity UI". El nombre correcto sigue apareciendo, primero en la
+    lista — el mensaje cambia (vía 'relacionadas' en vez del difflib de
+    siempre) pero sigue siendo correcto y útil."""
+    with pytest.raises(ValueError) as exc:
+        skills_catalog.validate_skills(["Growth Hacking Expert"])
+    msg = str(exc.value)
+    assert "relacionadas" in msg
     assert "Growth Hacker" in msg
+
+
+# ---------------------------------------------------------------------------
+# El fallo real (2026-08-02): "crea un agente para el frontend de un
+# videojuego Unity" — el orquestador probó `search_skills` con consultas de
+# VARIAS palabras ("unity UI", "C# csharp scripting", "UI frontend Canvas")
+# porque la instrucción del tool las invitaba; NINGUNA de esas frases aparece
+# nunca completa en el catálogo, así que la búsqueda por frase entera devolvía
+# vacío una y otra vez — 12 intentos, la mitad con resultados (las de UNA
+# palabra: "unity", "frontend"), la mitad en blanco, hasta agotar el
+# presupuesto de iteraciones del bucle sin crear ningún agente.
+# ---------------------------------------------------------------------------
+def test_keyword_candidates_encuentra_por_palabra_suelta_en_consulta_multipalabra():
+    """"unity UI" — la frase completa no aparece en ningún sitio del
+    catálogo, pero "unity" sí es una palabra real de 4 skills reales
+    (Unity Architect, Unity Editor Tool Developer, Unity Multiplayer
+    Engineer, Unity Shader Graph Artist). Antes de este fix esta consulta
+    devolvía CERO resultados."""
+    encontradas = skills_catalog._keyword_candidates("unity UI", limit=12)
+    nombres = {s["name"] for s in encontradas}
+    assert "Unity Architect" in nombres
+    assert any("Unity" in n for n in nombres)
+
+
+def test_keyword_candidates_token_corto_exige_palabra_completa():
+    """[2026-08-02] Regresión concreta encontrada al implementar el fix: un
+    token de 2-3 letras ("ui") como substring LIBRE aparece dentro de
+    docenas de palabras normales ("build", "quick", "require"...) y
+    convertía cualquier búsqueda corta en ruido puro — la primera versión de
+    este fix devolvía "Reddit Community Builder" al buscar "unity UI" antes
+    de exigir palabra completa para tokens cortos. Verificado aquí: "ui"
+    solo debe casar con skills que tengan "UI" como palabra suelta real
+    (p.ej. "UI Designer"), nunca por estar oculto dentro de otra palabra."""
+    encontradas = skills_catalog._keyword_candidates("ui", limit=20)
+    nombres = {s["name"] for s in encontradas}
+    assert "UI Designer" in nombres
+    # Ninguna de las que colaban por el bug del substring libre.
+    assert "Reddit Community Builder" not in nombres
+
+
+def test_keyword_candidates_c_sharp_encuentra_por_token_corto():
+    """"C#" es justo el caso que exige palabra COMPLETA para tokens cortos
+    (2 caracteres): el catálogo SÍ lo menciona ("Godot Gameplay Scripter" —
+    "Masters GDScript 2.0, C# integration...") como palabra suelta real, y
+    debe encontrarse; nunca por accidente dentro de otra palabra."""
+    encontradas = skills_catalog._keyword_candidates("C# csharp scripting")
+    nombres = {s["name"] for s in encontradas}
+    assert "Godot Gameplay Scripter" in nombres
+
+
+def test_keyword_candidates_termino_sin_ninguna_coincidencia_da_lista_vacia():
+    """Un término que de verdad no aparece en ningún sitio (ni como frase, ni
+    por token) debe devolver vacío sin romper, para que `_search_skills` caiga
+    en su tercer escalón (sugerencias/categorías)."""
+    assert skills_catalog._keyword_candidates("zzzqqqxxx wwwyyy") == []
+
+
+def test_search_skills_multipalabra_unity_ui_ya_no_falla():
+    """El punto de entrada real que usaba el orquestador (`aithera.
+    search_skills`) — antes esta consulta exacta devolvía `skills: []`."""
+    r = skills_catalog._keyword_candidates("unity UI frontend", limit=12)
+    assert r, "la consulta multi-palabra sigue sin encontrar nada"
 
 
 def test_validate_skills_termino_corto_no_da_ruido():

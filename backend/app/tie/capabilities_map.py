@@ -56,8 +56,12 @@ _cache: dict[str, tuple[float, str]] = {}
 _TOOL_BLURBS: dict[str, str] = {
     "email": "leer, buscar y enviar tu correo, y gestionar respuestas automáticas",
     "calendar": "leer y crear eventos en tu calendario, y comprobar tu disponibilidad",
+    # [C·WEB-4] Mencionar los flujos completos, pero MUY corto: este bloque
+    # entra en el system prompt de cada mensaje y `MAX_CHARS` recorta líneas
+    # enteras — una frase larga aquí tira la última categoría del mapa.
     "browser": "navegar por internet de verdad: abrir páginas, hacer clic, escribir, "
-               "leer lo que hay en pantalla",
+               "leer lo que hay en pantalla, y llevar flujos enteros (compra, "
+               "cita, research) parando antes de pagar o confirmar",
     "search": "buscar en la web (páginas, noticias, imágenes, vídeos)",
     "filesystem": "leer, escribir y organizar archivos y carpetas en tu ordenador",
     "shell": "ejecutar comandos de desarrollo (Python, git, npm...) con una lista "

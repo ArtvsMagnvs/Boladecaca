@@ -593,6 +593,10 @@ async def submit_mission(
     repo_path: Optional[str] = None,
     intent: Optional[Intent] = None,
     skills: Optional[list[str]] = None,
+    extra_paths: Optional[list[str]] = None,
+    autonomy: Optional[str] = None,
+    model: Optional[str] = None,
+    agent_prompt: Optional[str] = None,
 ) -> Mission:
     """Entrada PROGRAMÁTICA (AE `AgentTaskAction`, WPMS, Orquestador) — ya sabe
     que es una misión, así que NO hay camino corto: siempre planifica y ejecuta.
@@ -611,7 +615,10 @@ async def submit_mission(
     de `skills_catalog.py`, ya validados al crear/editar el agente). Viaja
     DENTRO de `Authority` (descriptivo, no de seguridad) para que sobreviva al
     checkpoint y el executor las incluya en el contexto de cada nodo — antes
-    se guardaban en BD y no llegaban a ningún sitio."""
+    se guardaban en BD y no llegaban a ningún sitio.
+
+    `agent_prompt` [2026-08-02]: el prompt de comportamiento libre del agente
+    (`Agent.system_prompt`), mismo criterio y mismo canal que `skills`."""
     mission = new_mission(goal=goal, source=source, channel=channel, project_id=project_id,
                           run_id=run_id, parent_id=parent_id)
     # [S2, C-1] `intent` opcional (mismo patrón que handle_stream): quien ya
@@ -634,6 +641,13 @@ async def submit_mission(
     # aquí: una aclaración de alcance ("reply") se ignora y se sigue normal.
     explicit = await _resolve_explicit_model(intent, project_id=project_id)
     force_model = explicit["model_key"] if explicit and explicit.get("action") == "force" else None
+    # [2026-08-02] `model` lo elige el USUARIO en el selector del chat, para ESE
+    # mensaje. Manda sobre lo que el goal insinúe: es una orden explícita, no
+    # una interpretación. El contexto de la conversación no depende del modelo
+    # (vive en `agent_executions`/`chat_messages`), así que cambiar de proveedor
+    # a mitad de charla no pierde el hilo.
+    if model:
+        force_model = model
 
     # [R4] La frontera de la misión.
     #
@@ -660,6 +674,9 @@ async def submit_mission(
         repo_path=repo_path,
         allowed_tools=allowed_tools,
         skills=skills,
+        extra_paths=extra_paths,
+        autonomy=autonomy,
+        agent_prompt=agent_prompt,
     )
 
     context = await _context_for(intent, goal, project_id=project_id)

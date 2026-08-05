@@ -117,9 +117,52 @@ def _ensure_columns():
         conn.commit()
 
 
+def check_schema_drift() -> dict:
+    """[2026-08-02] Compara el modelo ORM con las columnas REALES de la BD y
+    devuelve lo que falta: {tabla: [columnas]}.
+
+    POR QUÉ EXISTE: en PostgreSQL las columnas las gestiona Alembic, y olvidar
+    `alembic upgrade head` tras un `git pull` ha roto la app varias veces en
+    este proyecto. El síntoma era un `UndefinedColumn` en mitad de un endpoint
+    cualquiera — un traceback de 200 líneas que no dice lo único que importa:
+    «falta correr la migración». Esto NO toca el esquema (Alembic sigue siendo
+    la fuente de verdad, §16.7): solo mira y avisa, para que el arranque diga
+    en una línea qué pasa y cómo arreglarlo."""
+    from sqlalchemy import inspect
+
+    faltan: dict = {}
+    try:
+        inspector = inspect(engine)
+        existentes = set(inspector.get_table_names())
+        for tabla, meta in Base.metadata.tables.items():
+            if tabla not in existentes:
+                continue  # create_all la habría creado entera; no es un desfase
+            reales = {c["name"] for c in inspector.get_columns(tabla)}
+            ausentes = [c.name for c in meta.columns if c.name not in reales]
+            if ausentes:
+                faltan[tabla] = ausentes
+    except Exception:
+        # Diagnóstico best-effort: si la introspección falla, no es motivo para
+        # impedir el arranque.
+        return {}
+    return faltan
+
+
 def init_db():
     Base.metadata.create_all(bind=engine)
     _ensure_columns()
+
+    desfase = check_schema_drift()
+    if desfase:
+        import logging
+
+        detalle = "; ".join(f"{t}: {', '.join(cols)}" for t, cols in desfase.items())
+        logging.getLogger("aithera").error(
+            "[BD] FALTAN COLUMNAS en la base de datos: %s. "
+            "Casi seguro falta aplicar una migración: para el backend y ejecuta "
+            "`cd backend && alembic upgrade head`. Hasta entonces, cualquier "
+            "endpoint que toque esas tablas devolverá error 500.", detalle,
+        )
     db = SessionLocal()
     try:
         config = db.query(Config).first()
@@ -275,6 +318,20 @@ class Agent(Base):
     # laxo que Task.milestone_id/Milestone.project_id en W1, por un motivo
     # distinto pero igual de real. Integridad a nivel app.
     project_id = Column(Integer, index=True)  # -> projects.id (ver comentario)
+    # [2026-08-02] AUTONOMIA POR AGENTE (decision del usuario). Gobierna si las
+    # acciones sensibles —shell/powershell y demas— se le preguntan al usuario
+    # o se conceden solas para ESTE agente:
+    #   'manual' (default): pregunta, como siempre.
+    #   'auto'  : concede sin preguntar, PERO dejando rastro en `approvals`
+    #             igual que el perfil Autonomo global (regla de oro de A3b:
+    #             pre-autorizado NUNCA significa silencioso).
+    # Es una capa POR AGENTE encima del perfil global de Ajustes -> Permisos:
+    # si el perfil global ya es Autonomo, esto no puede hacerlo mas restrictivo.
+    autonomy = Column(String(10), default="manual")
+    # [2026-08-02] Carpetas EXTRA a las que este agente tiene acceso, ademas de
+    # la del proyecto (`Project.repo_path`). Lista JSON de rutas absolutas; el
+    # usuario las concede desde el chat con el boton de carpeta.
+    extra_paths = Column(JSON, default=list)
     # skills: tags simples que teclea el usuario — NO el sistema LSL de doc 09
     # (derivacion automatica, linaje, versionado), que sigue sin construir.
     skills = Column(JSON)
@@ -316,6 +373,11 @@ class AgentExecution(Base):
     # stream aqui tiene que estar PERSISTIDO para poder leerse. Se escribe
     # mientras la mision corre y se conserva despues (el usuario lo despliega).
     progress = Column(Text)
+    # [2026-08-02] Modelo elegido por el usuario en el selector del chat para
+    # ESTA interaccion (formato "proveedor:modelo"). Es una decision por
+    # mensaje, no una configuracion del agente: por eso vive aqui. Cambiar de
+    # modelo entre turnos NO pierde el hilo — el contexto son estas filas.
+    model = Column(String(120))
     error_message = Column(Text)
     # V0.5: registro de las herramientas que el agente decidio usar durante
     # esta ejecucion. Se guarda como JSON list de {tool_id, action, params, result}.

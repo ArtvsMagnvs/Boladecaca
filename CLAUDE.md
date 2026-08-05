@@ -35,12 +35,31 @@ genérica.
 
 ## 1. Estado actual del proyecto
 
-**Versión real**: `0.9.2` (consistente en `backend/app/main.py`,
-`backend/app/core/config.py` y `frontend/package.json`; tag de git `v0.9.2`).
+**Versión real**: `1.0.0` (consistente en `backend/app/main.py`,
+`backend/app/core/config.py` y `frontend/package.json`; tag de git `v1.0.0`).
+Bump 0.9.5 → 1.0.0 (2026-08-02) al **cerrar V1.0 — decisión de versión del
+usuario**: se cierra la fase SIN el instalador/MVP-beta (doc 03 §5 O5), que
+había quedado como el último hito antes de `1.0.0` (ver §21/§26/§27) —
+todavía no hay beta testers y se prefiere seguir desarrollando funcionalidad
+en vez de empaquetar. El bloque TIE (T1-T5), el MEL (E1-E2b), la integración
+Orquestador (R1-R7), el bloque de auditoría global del runtime (S1-S11 +
+NEW-4/5/6/7/7b) y el bloque de pulido pre-instalador (PU1-PU10) están todos
+CERRADOS — es lo que hace defendible el bump. El instalador/onboarding
+empaquetado queda como trabajo **POST-1.0**, no como condición para el
+número de versión. `[pendiente]` documentar aquí el detalle punto por punto
+de qué cambia en producto con el 1.0 — de momento la fuente de verdad es el
+propio historial de bumps y bloques cerrados más abajo en este archivo.
+**Nota de higiene de este archivo**: el bump 0.9.2 → 0.9.5 (2026-07-20, al
+cerrar el bloque ORQUESTRATOR R1-R7, ver §21) no se reflejó en su momento en
+este párrafo — quedó desincronizado con el código real durante casi dos
+semanas de trabajo (S1-S11 + PU1-PU10 se hicieron con la versión de código
+en `0.9.5`, pero este párrafo seguía diciendo `0.9.2`). Corregido al cerrar
+`1.0.0`; ver §19 (regla de mantenimiento) para no repetirlo.
 Bump 0.9.0 → 0.9.2 (2026-07-17) al **cerrar el bloque TIE v1 completo (V1.0
 T1-T5)** — decisión de versión del usuario (2026-07-16): V1.0 se desarrolla por
 bloques, el TIE cierra en `0.9.2`; MEL → integración Orchestrator → MVP-beta
-vendrán después y cerrarán la fase completa en `1.0.0` — ver más abajo.
+vendrán después y cerrarán la fase completa en `1.0.0` (decisión posterior:
+el MVP-beta se descarta del cierre, ver arriba).
 Bump 0.8.7 → 0.9.0 (2026-07-16) al **cerrar V0.9 completa (Automation Engine +
 ApprovalGate, sprints A1 → A2a → A2b → A3 → A3b → A4)** — ver más abajo.
 Bump 0.7.3 → 0.8.0 (2026-07-09) al cerrar el grueso de V0.8: Gateway +
@@ -49,10 +68,12 @@ EdgeTTS/ElevenLabs/Kokoro/eSpeak, conversación continua) + Hub responsivo.
 Bump 0.8.0 → 0.8.5 (2026-07-13) al **cerrar V0.85 completa (MOS Skeleton,
 sprints M1-M5)**. Bump 0.8.5 → 0.8.7 (2026-07-15) al **cerrar V0.87 completa
 (WPMS Workspace & Project Management, sprints W1 → W2a-W2e → W3b → W4)** —
-ver más abajo. Banners de los `.bat` de arranque actualizados a 0.9.2
-(`iniciar_backend.bat`, `iniciar_todo.bat`, `iniciar_frontend_react.bat`;
-`backend/iniciar_app.bat` sigue con un banner `0.3.0` heredado y
-desactualizado — deuda menor, no tocado).
+ver más abajo. Banners de los `.bat` de arranque actualizados a 1.0.0 (los 4:
+`backend/iniciar_app.bat`, `backend/iniciar_backend.bat`,
+`backend/iniciar_todo.bat`, `iniciar_frontend_react.bat` — la deuda del
+banner `0.3.0` heredado de `iniciar_app.bat`, documentada en versiones
+anteriores de este archivo, ya no aplica: en algún bump intermedio se
+sincronizó y no se actualizó esta nota).
 
 **Fases completadas**: V0.2 (base) → V0.3 (Hub) → V0.4 (PostgreSQL + Alembic) →
 V0.5 (AgentManager + ToolManager) → V0.6 (Memory ChromaDB) → V0.7 (Email + Calendar) →
@@ -1780,7 +1801,9 @@ Exception handler global en `main.py:113` que captura y loguea todo.
 
 ---
 
-## 8. ToolManager — 15 herramientas registradas (96 acciones)
+## 8. ToolManager — 15 herramientas registradas (105 acciones públicas, contadas
+con `tool_manager.list_tools()` el 2026-08-05; `tie_catalog()` da 126 porque
+incluye además las de la tool interna `aithera`)
 
 El paquete `app.tools` se importa en `main.py:15` como efecto secundario
 para auto-registrar las herramientas en el `ToolManager`. Sin este import,
@@ -1802,8 +1825,8 @@ registrar una tool nueva la hace asignable sin tocar el frontend.
 | `model` | `model_tool.py` | list/load/pull/delete modelos de Ollama + gpu_ram_status (psutil + nvidia-smi) | V1.0 |
 | `download` | `download_tool.py` | download_url (tarea de fondo, no bloquea el timeout del manager), get_download_status, cancel_download | V1.0 |
 | `search` | `search_tool.py` | search_web/news/images/videos — Brave Search API primero, SerpAPI como respaldo (Ajustes → Búsqueda web) | V1.0 |
-| `browser` | `browser_tool.py` | Playwright/Chromium real: open_url, new_tab, close_tab, google_search, click, type, scroll, wait_for_element, download_file, upload_file, screenshot, get_html, get_text | V1.0 |
-| `desktop` | `desktop_tool.py` | click, double_click, type, hotkey, move_mouse (SIEMPRE confirmación) + screenshot, ocr, find_text_on_screen (OCR nativo de Windows vía winocr) | V1.0 |
+| `browser` | `browser_tool.py` | Playwright/Chromium real: open_url, new_tab, close_tab, google_search, click, type, scroll, wait_for_element, download_file, upload_file, screenshot, get_html, get_text + **open_in_default_browser, play_media** (navegador REAL del sistema, B·WEB-1) + **find_and_click** (visión con set-of-mark, B·WEB-2) + **page_state, click_index, type_index, browse** (navegación agentic por índices, C·WEB-3) | V1.0 |
+| `desktop` | `desktop_tool.py` | click, double_click, type, hotkey, move_mouse (SIEMPRE confirmación) + screenshot, ocr, find_text_on_screen (OCR nativo de Windows vía winocr) + **find_and_click** (visión, B·WEB-2) | V1.0 |
 | `document` | `document_tool.py` | read_pdf (texto, rango de páginas), read_docx, read_xlsx (lectura, sin confirmación) + write_docx (bloques: heading/paragraph/table), write_xlsx (filas/hojas) (escritura, confirmación → `filesystem.write`). pypdf/python-docx/openpyxl lazy. Solo dentro de HOME. #218 | V1.0 |
 | — | `base.py` | Interfaz `BaseTool` que implementan todas | V0.4 |
 | — | `tool_manager.py` | Registro centralizado + whitelist por agente + timeout duro + log de auditoría | V0.4 |
@@ -4649,6 +4672,232 @@ pestaña Memoria de Ajustes con chat directo.
   trabaja y se pliegan al terminar, y (b) que el resumen cubre el documento
   ENTERO y ya no dice que se cortó.
 
+- ✅ **Orquestador de proyecto + skills reales + borrar agentes (2026-08-02,
+  Opus)** — primera tanda de las 7 peticiones del usuario (orden elegido por él:
+  5+2+1 antes que el chat y el pulido visual).
+  **(2) EL ORQUESTADOR NO PODÍA ASIGNAR SKILLS — causa raíz encontrada.** No era
+  terquedad del modelo: `create_agent` pedía «skills: lista de strings opcional»
+  sin decir CUÁLES existen. Son 254 nombres exactos, no caben en el prompt, y
+  nadie puede elegir de una lista que no ve. La validación de PU2 rechazaba los
+  inventados con candidatos, pero eso llega DESPUÉS del fallo — así que el
+  orquestador se rendía, creaba el agente sin skills y volcaba todo el diseño
+  en la descripción (el texto kilométrico que reportó el usuario). Nace la
+  acción **`aithera.search_skills`**: busca por categoría, por palabra en el
+  nombre o en la descripción, y devuelve los NOMBRES EXACTOS que hay que pasar;
+  sin resultados, ofrece las 17 categorías reales para reintentar. Reusa
+  `_match_category`/`_keyword_candidates`/`suggest` de `skills_catalog` — la
+  misma maquinaria que ya alimentaba las sugerencias del error, ahora como
+  consulta de primera clase. Verificado: "unity" → 4 skills reales de Unity;
+  "game" → categoría Game Development. La descripción de `create_agent` pasa a
+  decir que las skills NO se inventan y que la descripción es "para qué es el
+  agente, NO sus especialidades".
+  **(5) EL ORQUESTADOR, con todas las tools y sin poder borrarlo.**
+  `ORCHESTRATOR_DEFAULT_TOOLS` (2 tools fijas) → **`orchestrator_tools()`**,
+  calculado en ejecución sobre el registro real: una tool nueva entra sola, que
+  es lo que "todas" significa de verdad. **Decisión explícita del usuario tras
+  exponerle el matiz**: incluidas `shell`/`powershell`, que NO se pueden acotar
+  a una carpeta (ejecutan comandos, y un comando navega a donde quiera con
+  rutas absolutas) — queda escrito en el propio código para que nadie lo
+  descubra por sorpresa. Las que reciben ruta sí siguen encerradas en
+  `repo_path`. `ensure_orchestrator` **re-sincroniza** las tools de un
+  orquestador ya existente: sin eso, los proyectos creados antes de esta
+  decisión se quedaban con el suyo mutilado para siempre. `delete_agent` lanza
+  `ValueError` si el agente es orquestador (409 en el endpoint, motivo legible
+  en el chat) y `update_agent` rechaza cualquier recorte de sus tools.
+  **Hallazgo real al implementarlo**: la validación de `allowed_tools` miraba
+  solo el catálogo PÚBLICO, así que asignar `aithera` (interna) reventaba con
+  "tool desconocida" aunque exista — nace `_tool_ids_existentes()`.
+  **(1) Borrar agentes**: botón en el modo "editar" de la ficha, con
+  confirmación (`useConfirm`), oculto para el orquestador. El agente sale de la
+  lista de "Agentes" cuando es orquestador (`AgentsSection` lo filtra): su sitio
+  propio en la tarjeta es lo único que queda pendiente de esta petición.
+  **Tres tests preexistentes actualizados al contrato nuevo, no debilitados**:
+  dos afirmaban las 2 tools viejas; y uno, `test_un_agente_no_puede_asignarse_
+  la_tool_interna`, afirmaba una protección **ILUSORIA** — el test de justo
+  debajo demuestra que `Authority.check` deja pasar SIEMPRE las internas, esté o
+  no en la whitelist, así que un agente ya podía usar `aithera` sin tenerla
+  listada. Se reescribió para probar el contrato real (listarla es legítimo y no
+  concede nada extra; una tool INVENTADA sigue rechazándose). El test de
+  fronteras cazó de paso que `agent_manager` importaba `app.tie.authority`
+  directo: corregido por el barrel. Tests: `test_orquestador_y_skills.py` (NUEVO,
+  13) + 3 mutaciones confirmadas y restauradas byte a byte. Regresión: **207
+  passed**; `tsc` limpio y `vite build` completo (26,6 s).
+  **Pendiente de esta tanda**: el bloque visual propio del orquestador en la
+  tarjeta (hoy ya no aparece entre los agentes, pero su chat sigue donde
+  estaba). **Pendientes las otras 4 peticiones**: tools en rejilla (3), chat del
+  agente al 70% (4), adjuntos + acceso a carpetas (6), micrófono + selector de
+  proveedor/modelo por mensaje (7).
+
+- ✅ **Chat de agente completo + autonomía por agente (2026-08-02, Opus)** —
+  segunda tanda: puntos 3, 4, 5-UI, 6 y 7 de las 7 peticiones, más la decisión
+  nueva del usuario sobre shell/powershell.
+  **AUTONOMÍA POR AGENTE (lo nuevo).** El usuario reconsideró el alcance de
+  shell/powershell: en vez de una regla global, «el agente u orquestador que
+  quiera usarlas pedirá permiso», y en el chat un selector con «Aprobar
+  manualmente» / «Omitir todas las aprobaciones» para decidirlo POR AGENTE.
+  Columna `Agent.autonomy` (migración 24.ª, aditiva e idempotente) → viaja en
+  `Authority.autonomy` (que NO participa en `check()`: es política de
+  aprobación, no frontera) → lo lee `toolloop._ask_permission`. **En modo
+  automático el gate se abre IGUALMENTE y se auto-resuelve**, por el mismo
+  camino que una resolución manual: la regla de oro de A3b es que
+  pre-autorizado nunca significa silencioso, así que el rastro en `approvals`
+  existe también aquí. Un test lo comprueba explícitamente.
+  **CARPETAS EXTRA (punto 6, segunda mitad).** `Agent.extra_paths` +
+  `Authority.roots()`: `_check_path_scope` pasa de una raíz a varias — la del
+  proyecto MÁS las que el usuario conceda a mano con el botón de carpeta.
+  Nunca sustituyen a la del proyecto, la amplían. `POST /agents/{id}/folders`
+  valida que la carpeta exista antes de concederla.
+  **ADJUNTOS (punto 6, primera mitad).** `POST /agents/{id}/attach`, cualquier
+  formato sin filtrar (petición literal), tope de 50 MB, y **el archivo se
+  COPIA a `<proyecto>/_adjuntos/`** (decisión del usuario): así el agente puede
+  volver a consultarlo en misiones futuras y cae dentro de `repo_path`, donde
+  ya puede trabajar — sin inventar permisos nuevos. El chat NOMBRA la ruta en
+  el mensaje para que el modelo sepa que existe y dónde.
+  **PROVEEDOR/MODELO POR MENSAJE (punto 7).** `AgentExecution.model` +
+  `create_execution(model=)` → `submit_mission(model=)` → `force_model`. El
+  contexto NO depende del modelo (vive en `agent_executions`), así que cambiar
+  de proveedor a mitad de conversación no pierde el hilo — que era la
+  condición explícita del usuario. El selector agrupa por proveedor con
+  `<optgroup>`, que es "proveedor + sus modelos" sin inventar dos desplegables
+  encadenados. **Micrófono**: Web Speech API del navegador; si no está, el
+  botón no se pinta (mejor que uno que no hace nada).
+  **`ChatComposer.tsx` (NUEVO)**: los cinco controles en un solo componente,
+  usado por el chat del orquestador Y por el de un agente cualquiera — un
+  sitio, dos usos, imposible que diverjan.
+  **Punto 3**: el selector de tools pasa de `flex flex-col` (una debajo de
+  otra, con scroll para ver la mitad) a rejilla de 2-3 columnas.
+  **Punto 4**: el chat de la tarjeta de AGENTE gana columna lateral al 70% con
+  los mismos umbrales y constantes que `ProjectCard`, para que las dos se
+  comporten igual; `useDragResize` pasa a reportar también el ancho en vivo
+  (antes solo el alto), así el chat se recoloca MIENTRAS se arrastra el asa.
+  **Punto 5-UI**: el orquestador sale de la lista de "Agentes"
+  (`AgentsSection` lo filtra) y tiene su bloque propio en la tarjeta.
+  **Hallazgo real**: `_tool_ids_existentes()` — la validación de tools miraba
+  solo el catálogo público, así que asignar `aithera` (interna) reventaba
+  aunque exista; salió al dar TODAS las herramientas al orquestador.
+  Tests: 6 nuevos en `test_orquestador_y_skills.py` (19 en total) + 2
+  mutaciones confirmadas y restauradas byte a byte (sin la autonomía cae el
+  test del rastro; sin las carpetas extra cae el de ampliación). **3 tests
+  preexistentes actualizados** al contrato nuevo (mensaje "fuera de las
+  carpetas" en plural, tools del orquestador). Regresión: **219 passed**;
+  `tsc` limpio y `vite build` completo (26,2 s). 12 claves i18n nuevas ×4
+  idiomas (paridad verificada, 1283).
+  **Pendiente en Windows**: `cd backend && alembic upgrade head` — hay DOS
+  migraciones sin aplicar (la 23.ª del rastro y la 24.ª de autonomía/carpetas);
+  sin ellas el chat del agente dará error. Después, reiniciar el backend y
+  probar: adjuntar un archivo, conceder una carpeta, cambiar de modelo a mitad
+  de conversación (y comprobar que sigue el hilo), y poner un agente en
+  «omitir aprobaciones» para ver que shell ya no pregunta pero SÍ deja rastro
+  en Ajustes → Automatización.
+
+- ✅ **Fix crítico: la columna que faltaba en la migración (2026-08-02, Opus)** —
+  cuatro fallos reportados en vivo, **dos de ellos con la MISMA causa**.
+  **(2 y 4) `column "model" of relation "agent_executions" does not exist`.**
+  Añadí `AgentExecution.model` al modelo ORM y **no a la migración**. En SQLite
+  no se nota (`create_all` la crea, por eso los 219 tests pasaban); el Postgres
+  real se quedó atrás y **cualquier** consulta a esa tabla devolvía 500. Eso
+  tumbó el chat del orquestador… y también el **borrado de agentes**, porque
+  `delete_agent` consulta `agent_executions` para cancelar las ejecuciones en
+  curso: de ahí que «no sucediera absolutamente nada» al confirmar. Corregida la
+  migración 24.ª para cubrir las dos tablas (`agents` + `agent_executions`), con
+  las columnas como FÁBRICAS (`lambda`) y no instancias: un objeto `Column`
+  solo puede usarse en un `add_column`, y compartirlo entre upgrade y downgrade
+  revienta a la segunda. **Ya van CUATRO veces que este desfase rompe la app**
+  (W1, W2c, A1 y esta), así que además nace **`check_schema_drift()`**
+  (`db/database.py`): al arrancar compara el modelo ORM con las columnas REALES
+  y, si falta alguna, lo dice en UNA línea con el comando exacto para
+  arreglarlo. NO toca el esquema — Alembic sigue siendo la fuente de verdad
+  (§16.7): solo mira y avisa, para que el síntoma deje de ser un traceback de
+  200 líneas. Y el borrado ahora muestra su error JUNTO al botón: el
+  `ErrorBanner` vive arriba del formulario y en una tarjeta pequeña queda fuera
+  de vista, que es exactamente por lo que el fallo se veía como silencio.
+  **(3) El selector de proveedor/modelo mostraba "MiniMax, MiniMax, MiniMax…".**
+  Causa: en `mel.list_models()` el campo `label` es el nombre del PROVEEDOR, no
+  del modelo, y yo lo usaba para las dos cosas. Ahora el `<optgroup>` dice el
+  proveedor (`PROVIDER_SHORT`) y cada opción el modelo (`shortModel()`, nuevo en
+  `lib/modelNames.ts`). Además, **conectado al "Modelo IA" de la ficha**
+  (petición del usuario): si el agente está atado a un proveedor, el chat solo
+  ofrece SUS modelos; con "Flexible según necesidad", todos. Se excluyen los
+  no-aptos para `chat`/`agentic` (misma regla que Ajustes → Inteligencia: el CLI
+  de Claude no vale para conversar) y, si el modelo elegido deja de estar
+  disponible al cambiar el "Modelo IA", se limpia solo.
+  **(1) Tools en rejilla + fases del Kanban diferenciadas.** El cambio anterior
+  tocó la rejilla de la ficha del agente pero NO la del popup de **crear**, que
+  es la que se veía en columna con scroll — corregidas las dos. Y cada columna
+  del Kanban gana marco propio (`rounded-xl` + borde) con un borde superior de
+  color por fase, para que no se lean como una sola mancha de tarjetas.
+  Tests: `test_migracion_columnas.py` (NUEVO, 6) — la migración declara lo que
+  el ORM añade (con un test de INVARIANTE general, no solo del caso concreto),
+  el detector encuentra una columna ausente y la nombra, no se inventa
+  problemas con la BD al día, y nunca tumba el arranque aunque la introspección
+  falle. **Comprobación de mutación** (2, restauradas y verificadas byte a
+  byte): volver a olvidar `agent_executions.model` en la migración tumba 1;
+  desactivar el detector tumba 1. Regresión: **206 passed**; `tsc` limpio y
+  `vite build` completo (37,9 s).
+  **Pendiente en Windows**: `cd backend && alembic upgrade head` (hay dos
+  migraciones sin aplicar) y reiniciar el backend. Sin eso, nada de esto
+  funciona — es justo el fallo que se está arreglando.
+
+- ✅ **Segundo round del fix anterior — editar una migración YA aplicada no
+  hace nada (2026-08-02, Opus)**: el usuario corrió `alembic upgrade head`
+  tal como se le pidió y respondió "ya estaba en head, no hizo falta ningún
+  cambio" — pero el arranque siguió avisando (vía `check_schema_drift()`, el
+  propio detector del fix anterior funcionando como debía) que
+  `agent_executions.model` seguía sin existir. **Causa**: Alembic identifica
+  una revisión aplicada por su ID en la tabla `alembic_version`, NUNCA por el
+  contenido del archivo. `e2f3a4b5c6d7` ya estaba stampeada en el Postgres
+  real de una ejecución ANTERIOR (cuando esa migración solo tocaba
+  `agents.autonomy`/`extra_paths`) — así que reescribir ese mismo archivo para
+  meterle además `agent_executions.model` no tenía ningún efecto: Alembic veía
+  "ya estoy en `e2f3a4b5c6d7`, ya estoy en head" y no volvía a ejecutar el
+  cuerpo. Es un error de forma mío, no del diseño de la migración en sí.
+  **Arreglo, el patrón correcto**: `e2f3a4b5c6d7` se revierte a su forma
+  original (solo `agents.autonomy`/`extra_paths`, con una nota en el
+  docstring explicando el incidente para que no se repita) y nace
+  **`f7a8b9c0d1e2_agent_execution_model.py`**, migración NUEVA encadenada
+  detrás (`Revises: e2f3a4b5c6d7`) con solo la columna que de verdad falta —
+  añadir algo después de que la anterior ya se aplicó siempre va en una
+  migración nueva, nunca editando la vieja. Tests actualizados: 2 nuevos en
+  `test_migracion_columnas.py` (la columna vive en el archivo NUEVO, no en el
+  viejo — con el cuerpo de la vieja comprobado aparte del docstring, que sí
+  puede mencionar la tabla en su nota histórica; y que la cadena de
+  revisiones encadena bien). Regresión: **7/7 en `test_migracion_columnas.py`**
+  + 45/45 en el subconjunto agentes/orquestador/skills. Verificado que la
+  cadena de revisiones no tiene ramas (un solo head, `f7a8b9c0d1e2`).
+  **Pendiente en Windows**: `cd backend && alembic upgrade head` otra vez —
+  esta vez SÍ debe aplicar algo (verás `Running upgrade e2f3a4b5c6d7 ->
+  f7a8b9c0d1e2`), y luego reiniciar el backend. El aviso de
+  `check_schema_drift` en el log debe desaparecer al arrancar.
+
+- ✅ **Tercer round del mismo bloque — "Flexible según necesidad" no
+  liberaba el selector en el chat del orquestador (2026-08-02, Opus)**:
+  reportado por el usuario tras el fix del selector de modelos — el
+  candado por proveedor funcionaba para un agente normal, pero el
+  orquestador seguía sin poder elegir NINGÚN modelo, con "Flexible" o sin
+  él. **Causa**: `ChatComposer.tsx` comparaba `agent.agent_type` solo
+  contra el literal `"generic"` para decidir si el agente estaba "atado" a
+  un proveedor — cualquier OTRO valor se trataba como el id de un
+  proveedor real. El orquestador nace con `agent_type: "orchestrator"`
+  (`authority.py::ensure_orchestrator`, un marcador interno, no un
+  proveedor), así que el filtro buscaba modelos con
+  `provider === "orchestrator"` — ninguno existe, y el selector se quedaba
+  sin ninguna opción salvo "auto". **Arreglo**: `proveedorFijo` ahora solo
+  se activa cuando `agent_type` coincide con un proveedor REAL presente en
+  `models` (el catálogo que devuelve el MEL) — `new Set(models.map(x =>
+  x.provider))`. Cualquier otro valor (`generic`, `orchestrator`, o el id
+  de un proveedor que el usuario ya desconectó) se trata como sin
+  restricción, que es el comportamiento correcto por diseño: no hay
+  ganancia en denegar elección cuando no se puede afirmar con certeza a
+  qué proveedor está atado el agente. Backend intacto — nunca hubo
+  restricción del lado del servidor por `agent_type`, era puramente un
+  filtro de conveniencia en el frontend. `tsc --noEmit` limpio. Sin tests
+  automatizados (el proyecto no tiene infraestructura de tests de
+  frontend — ni vitest ni jest configurados). **Pendiente en Windows**:
+  abrir el chat del orquestador y confirmar que el selector de modelo
+  ofrece TODOS los proveedores/modelos conectados, no solo "auto"; y que
+  un agente normal atado a un proveedor concreto sigue viendo solo los
+  suyos.
+
 - ✅ **PU5g (2026-08-02, Opus) — el ECG de los anillos al hablar + fin del
   DESCENSO al escuchar.** Dos peticiones del usuario tras ver PU5f en vivo.
   **(1) "Al escuchar, la semilla y los círculos DESCIENDEN en la pantalla" —
@@ -4798,9 +5047,790 @@ pestaña Memoria de Ajustes con chat directo.
   que ya hacían las secciones que dependen del alto. Expandida cuenta siempre
   como ancha. `tsc --noEmit` limpio y `vite build` completo.
 
+- ✅ **"Flexible según necesidad" no liberaba el selector en el chat del
+  orquestador (2026-08-02, Opus)**: reportado por el usuario tras el fix del
+  selector de modelos por mensaje — el candado por proveedor funcionaba para
+  un agente normal, pero el orquestador seguía sin poder elegir NINGÚN
+  modelo, "Flexible" o no. **Causa**: `ChatComposer.tsx` comparaba
+  `agent.agent_type` solo contra el literal `"generic"` para decidir si el
+  agente estaba "atado" a un proveedor — cualquier OTRO valor se trataba
+  como el id de un proveedor real. El orquestador nace con `agent_type:
+  "orchestrator"` (`authority.py::ensure_orchestrator`, un marcador interno,
+  no un proveedor), así que el filtro buscaba modelos con
+  `provider === "orchestrator"` — ninguno existe, y el selector se quedaba
+  sin ninguna opción salvo "auto". **Arreglo**: `proveedorFijo` solo se
+  activa cuando `agent_type` coincide con un proveedor REAL presente en
+  `models` (`new Set(models.map(x => x.provider))`, el catálogo que devuelve
+  el MEL). Cualquier otro valor (`generic`, `orchestrator`, o el id de un
+  proveedor ya desconectado) se trata como sin restricción — comportamiento
+  correcto por diseño: no hay ganancia en denegar elección cuando no se
+  puede afirmar con certeza a qué proveedor está atado el agente. Backend
+  intacto: nunca hubo restricción del lado del servidor por `agent_type`,
+  era puramente un filtro de conveniencia en el frontend. `tsc --noEmit`
+  limpio. Sin tests automatizados — el proyecto no tiene infraestructura de
+  tests de frontend (ni vitest ni jest configurados). **Pendiente en
+  Windows**: abrir el chat del orquestador y confirmar que el selector de
+  modelo ofrece TODOS los proveedores/modelos conectados, no solo "auto"; y
+  que un agente normal atado a un proveedor concreto sigue viendo solo los
+  suyos.
+
+- ✅ **`aithera.search_skills` sin agotar el bucle en búsquedas multi-palabra
+  (2026-08-02, Opus)**: el usuario pidió un agente Unity/frontend para
+  Cordyceps y la misión falló en el primer paso —"no se pudo completar el
+  paso en 12 iteraciones"— tras 12 llamadas a `search_skills` con consultas
+  cada vez más específicas ("unity UI", "C# csharp scripting", "UI frontend
+  Canvas"…). **Causa raíz**: `_keyword_candidates` (skills_catalog.py, PU2)
+  solo comprobaba si la FRASE ENTERA de la consulta aparecía como un único
+  substring en algún nombre/descripción — funciona para "unity" o "research"
+  (una palabra), pero NINGUNA frase de varias palabras aparece nunca completa
+  en el catálogo, así que toda consulta compuesta devolvía cero resultados
+  aunque palabras SUELTAS de esa misma consulta ("unity", "frontend") sí
+  tuvieran skills reales (Unity Architect, Unity Shader Graph Artist, Frontend
+  Developer…). El modelo, razonablemente, seguía refinando la frase esperando
+  dar con la coincidencia perfecta y se quedó sin presupuesto de iteraciones
+  antes de llamar nunca a `create_agent`. **Arreglo**: si la frase completa no
+  encuentra nada, `_keyword_candidates` cae a un segundo intento por TOKENS —
+  cualquier skill que comparta al menos una palabra de contenido con la
+  consulta cuenta, ordenada por cuántas palabras coinciden. **Hallazgo real al
+  verificarlo** (no en el diseño inicial): permitir que tokens CORTOS ("ui",
+  2 letras) casaran como substring libre convertía la búsqueda en ruido puro
+  — "ui" aparece dentro de "build", "quick", "require"… y la primera versión
+  de este fix devolvía "Reddit Community Builder" al buscar "unity UI".
+  Corregido exigiendo palabra COMPLETA para tokens de ≤3 letras (`_words()`,
+  comparación por conjunto de palabras) y dejando el substring-de-palabra solo
+  para tokens largos (permite variantes como "script"→"scripting"). Además,
+  la descripción del tool y la pista que devuelve una búsqueda con resultados
+  se refuerzan para que el modelo deje de refinar en cuanto tenga 2-4
+  candidatas razonables ("no sigas buscando la coincidencia perfecta, el
+  catálogo no siempre la tiene") — el catálogo real (254 skills, 17
+  categorías) no tiene una skill específica de "Unity UI/frontend", solo
+  roles generales de Unity (Architect, Editor Tool Developer, Multiplayer
+  Engineer, Shader Graph Artist), así que insistir nunca iba a encontrar la
+  coincidencia perfecta que el modelo buscaba. **Un test preexistente
+  actualizado, no debilitado**: `test_validate_skills_categoria_no_rompe_el_
+  typo_existente` asumía que CUALQUIER típo de un nombre real (aunque
+  comparta palabras completas con él, como "Growth Hacking Expert" vs "Growth
+  Hacker") caía siempre en el difflib de siempre — con el fix ahora también lo
+  encuentra por palabra clave (mismo nombre correcto, mensaje distinto); el
+  test se dividió en dos: uno con un typo de una sola palabra que NO comparte
+  ninguna palabra completa con el catálogo (sigue el difflib de siempre) y
+  otro nuevo que documenta el caso de varias palabras. Tests:
+  `test_pu2_skills.py` +5 (encuentra por palabra suelta en consulta
+  multi-palabra, token corto exige palabra completa —con la regresión
+  concreta nombrada—, "C#" se encuentra como palabra real del catálogo,
+  término sin ninguna coincidencia da lista vacía sin romper, typo de varias
+  palabras ahora vía palabra clave). **Comprobación de mutación**:
+  desactivado el fallback por tokens, los 4 tests que dependen de él fallan;
+  restaurado y verificado byte a byte con `diff`. Regresión: **44/44** en
+  `test_pu2_skills.py`+`test_orquestador_y_skills.py`, **87 passed** en el
+  subconjunto agentes/tools (los 5 fallos de `test_new_tools.py::test_desktop_
+  *` son los de siempre del sandbox, sin pantalla/pyautogui, ajenos a este
+  cambio). **Pendiente en Windows**: repetir el encargo exacto ("crea un
+  agente para el frontend del videojuego cordyceps en Unity y asígnale
+  skills…") y confirmar que el agente se crea con Unity Architect/Unity
+  Shader Graph Artist/Game Designer (o similares) en vez de fallar por
+  agotar las iteraciones.
+
+- ✅ **4 correcciones sobre el chat de agentes/orquestador (2026-08-02, Sonnet)**:
+  petición directa del usuario, 4 puntos. **(1) Chat lateral al 30% en vez
+  del 70%**: `AgentWindowCard.tsx` calculaba `anchoChatLateral` con un `* 0.5`
+  extra que `ProjectCard.tsx` (la referencia correcta desde el hotfix de la
+  sesión anterior) ya no tenía — quitado, ahora coincide con el 70% real.
+  **(2) Selector "Modelo IA" fuera de la ficha del agente; el chat pasa a ser
+  la única fuente de verdad para elegir proveedor/modelo, con nombres
+  COMPLETOS**: `AgentWindowCard.tsx`/`AgentCreatePopup.tsx` pierden el
+  `<select>` de "Modelo IA" (sustituido por un textarea de `system_prompt`,
+  ver punto 3) y `mel.list_models()` (`backend/app/mel/__init__.py`) gana
+  `model_label` — el nombre COMPLETO del modelo desde
+  `PROVIDER_CATALOG[provider]["model_labels"]` (ya existía para Ajustes →
+  Inteligencia, nunca se había expuesto al catálogo genérico del MEL).
+  `ChatComposer.tsx` (usado por el chat del orquestador Y el de cualquier
+  agente) deja de filtrar por un "proveedor fijo" inexistente — mostraba
+  SOLO MiniMax repetido porque comparaba `agent.agent_type` contra el
+  literal `"generic"`, y cualquier otro valor (incluido el proveedor real
+  del agente) se trataba como "atado a un proveedor" sin comprobar que ese
+  proveedor existiera de verdad en el catálogo — y pasa a listar TODOS los
+  proveedores/modelos activos agrupados por `<optgroup>`, con
+  `m.model_label` en vez del nombre abreviado. **(3) El orquestador se
+  puede editar, pero SOLO su prompt de comportamiento** — y de paso se
+  cerró un hallazgo real: `Agent.system_prompt` existe en el schema/BD
+  desde V0.5 pero NADIE lo leía nunca en la ejecución (mismo patrón de
+  "código muerto" que PU2 cerró para `skills`). Se decidió cerrarlo del
+  todo en vez de dejarlo cosmético: `Authority` (`app/tie/authority.py`)
+  gana `agent_prompt` (mismo canal no-seguridad que `skills`, sobrevive al
+  checkpoint), `executor._persona_block()` lo combina con el bloque de
+  skills ya existente ("Instrucciones de comportamiento definidas por el
+  usuario para este agente: …", tope 2000 chars), y
+  `submit_mission`/`_delegate_to_tie` lo pasan de punta a punta desde
+  `agent.system_prompt`. `AgentWindowCard.tsx`: el orquestador entra en
+  modo edición con un formulario reducido a un único textarea (nunca
+  nombre/tools/timeout — pedido explícito, "editable pero SOLO en su
+  prompt"); un agente normal gana el mismo campo como textarea adicional
+  dentro de su formulario completo (decisión conservadora: el mecanismo ya
+  estaba genérico para cualquier agente, no solo para el orquestador, así
+  que no tenía sentido dejarlo mudo ahí). **(4) Lista lateral de agentes
+  solo-nombre + cambio de conversación por clic**: nuevo `ChipSize="name"`
+  en `AgentChip.tsx` — fila con SOLO el nombre (nada de icono/skills/
+  contador), un punto verde si está trabajando, y un botón "Abrir" propio
+  (con `e.stopPropagation()`) que conserva el comportamiento viejo de abrir
+  la ventana-tarjeta del agente; clic en el RESTO de la fila dispara
+  `onSelect`. `AgentsSection.tsx` gana `onSelectAgent`/`selectedAgentId`
+  (pasados solo en modo `sideChat`). `OrchestratorChat.tsx` generaliza su
+  prop `agentId?: number | null` — con él usa `api.getAgent(agentId)` en
+  vez de `api.ensureProjectOrchestrator(projectId)`, resetea TODO el
+  estado de conversación al cambiar de agente (para que no se vea un
+  instante la charla de otro agente mientras carga la nueva), y cambia
+  cabecera/icono (🤖 en vez de 🧠, "Chat del agente" en vez de "Orquestador
+  del proyecto"). `ProjectCard.tsx`: nuevo estado `selectedAgentId`
+  (`null` = orquestador general); en modo lateral, `AgentsSection` pasa a
+  `size="name"`, y la caja informativa del orquestador se vuelve
+  CLICLABLE (resalta con `selectedAgentId===null`, clic vuelve al chat
+  general) — la propia caja hace de "pestaña" para volver, análogo a
+  cerrar la sesión de un agente concreto. Tests backend:
+  `test_agent_prompt.py` (NUEVO, 5 — el prompt llega al bucle de tool-use
+  real, sin prompt no hay bloque nuevo, sobrevive al round-trip del
+  checkpoint, `_persona_block` combina skills+prompt, vacío sin ninguno).
+  **Comprobación de mutación**: desactivar la condición del bloque de
+  `agent_prompt` en `_persona_block` tumba 2 de los 5 tests; restaurado y
+  verificado con `git diff --stat` idéntico al de antes de mutar.
+  Regresión: **131 passed** en el subconjunto agente/skills/orquestador/
+  tie/authority/module_boundaries (sandbox). `tsc --noEmit` limpio (frontend
+  completo disponible en este sandbox, a diferencia de sesiones anteriores).
+  2 claves i18n nuevas ×4 idiomas (`workspace.agentChip.open`,
+  `workspace.orchestrator.agentChat`) + 3 de la sesión anterior
+  (`orchestratorPrompt`/`Hint`/`Placeholder`), paridad verificada (1289
+  claves en los 4 idiomas). **Pendiente en Windows**: verificar visualmente
+  el ancho del chat lateral (debe verse claramente más ancho que antes);
+  abrir el selector de modelo del chat y confirmar que aparecen TODOS los
+  proveedores conectados con nombres completos («MiniMax M2.7-highspeed»,
+  no «MiniMax»); editar el orquestador y confirmar que solo se puede tocar
+  el prompt; y en la lista lateral de agentes, clicar el nombre de un
+  agente (debe cambiar la conversación mostrada sin abrir su ventana),
+  clicar "Abrir" (debe abrir su ventana, sin cambiar la conversación), y
+  clicar la caja del orquestador para volver a su chat general.
+
+- ✅ **3 correcciones sobre el chat de agentes, tanda 2 (2026-08-02, Sonnet)**:
+  petición directa del usuario tras probar la entrega anterior. **(1) El
+  texto "repartirá el trabajo entre los agentes" salía en el chat de un
+  AGENTE normal** — era literalmente falso ahí: ESE texto describe lo que
+  hace el orquestador, no un agente de trabajo (un agente no reparte nada,
+  es el que ejecuta). `OrchestratorChat.tsx`: el estado vacío ahora es
+  condicional — `agentId != null` (chat de un agente concreto) muestra
+  `workspace.orchestrator.emptyAgent` ("Pídele algo a este agente."),
+  `agentId == null` (orquestador) sigue con el texto de siempre. Clave i18n
+  nueva ×4 idiomas, paridad verificada (1290). **(2) El nombre del agente
+  iba aparte, en pequeño, a la derecha** — pedido explícito: pegado al
+  título, con la MISMA tipografía ("Chat del agente Cordyceps Game Dev" en
+  una sola línea, no "Chat del agente" + una etiqueta suelta). Se retira el
+  `<span>` separado y el nombre se concatena dentro del mismo `<h3>` que ya
+  llevaba el icono/título — mismo tamaño/peso/color para las dos partes.
+  **(3) El chat aparecía DENTRO de la tarjeta de editar de un agente** — la
+  ficha de edición (tools/skills/nombre/prompt) tenía la columna o franja del
+  chat al lado/debajo incluso en modo `editing`, cuando ese modo es solo
+  para configurar el agente, no para hablar con él. `AgentWindowCard.tsx`:
+  nueva rama de layout `editing ? (...) : anchaParaChatLateral ? (...) :
+  (...)` — con `editing=true` el cuerpo es SOLO el formulario a todo el
+  ancho disponible (`activeEditForm`), sin `chatPanel` en ningún sitio; las
+  otras dos ramas (ancha/estrecha) pierden su condicional `editing ?
+  activeEditForm : readInfo` porque ya no pueden estar en modo edición al
+  llegar ahí (`readInfo` siempre). `tsc --noEmit` limpio. Sin tests nuevos
+  (cambios puramente de presentación/layout condicional, sin lógica de
+  negocio ni contrato de API tocado). **Pendiente en Windows**: abrir el
+  chat de un agente normal (no el orquestador) y confirmar que el estado
+  vacío ya no habla de "repartir trabajo"; confirmar que el nombre del
+  agente aparece pegado al título con la misma tipografía; y entrar en modo
+  "editar" de un agente y confirmar que NO hay ningún chat visible, solo el
+  formulario.
+
+- ✅ **El selector de modelos del chat de agentes ya no oculta nada
+  (2026-08-04, Opus)** — reportado por el usuario TRES veces ("¿por qué solo
+  están los modelos de MiniMax?"). Los dos intentos anteriores fueron al sitio
+  equivocado (`agent_type`/candado por proveedor) y por eso no arreglaron nada.
+  **Causa raíz real, UNA línea** en `ChatComposer.tsx`:
+  `if (unfit.includes("chat") || unfit.includes("agentic")) continue;` —
+  BORRABA de la lista, en silencio, todo modelo marcado no apto. Y `unfit`
+  (`mel.list_models()`) es la unión de DOS fuentes: el CATÁLOGO
+  (`UNFIT_CAPABILITIES`: `claude_code` y `codex` excluidos de CHAT/CLASSIFY/
+  AGENTIC por el incidente real "caso Melendi", §25) y la MEDICIÓN del
+  task-bench (`benchmark.measured_unfit`, modelos que fallaron de verdad los
+  escenarios de uso de herramientas). En la máquina del usuario eso barría
+  Claude CLI, Codex y probablemente los locales medidos, dejando solo MiniMax
+  — desde fuera, "faltan modelos"; desde dentro, "están excluidos y no lo
+  digo". **El dato que hacía la corrección delicada** (y que convertía el
+  arreglo obvio en la 4ª repetición): `mel/executor.py` **rechaza duro** un
+  override explícito de un modelo no apto (`ExplicitModelUnfit`, línea 128-137)
+  — quitar el filtro sin más habría cambiado "no aparece" por "falla al
+  enviar". **Arreglo, en dos capas.** Backend (`mel/__init__.py::list_models`):
+  el dict gana `unfit_catalog` y `unfit_measured` POR SEPARADO (aditivo;
+  `unfit` se conserva intacto porque Ajustes → Inteligencia ya lo consume) —
+  sin saber el ORIGEN de la exclusión la UI solo puede decir "no está", que es
+  justo lo inútil. Frontend (`ChatComposer.tsx`): se retira el `continue`; el
+  `<select>` lista TODOS los proveedores y TODOS sus modelos, y los que este
+  chat no puede atender salen **`disabled` y con el motivo a la vista**
+  («Claude Opus 5 — no sirve para agentes con herramientas» / «— falló las
+  pruebas de herramientas»). El efecto de limpieza automática
+  (`sigueUsable`) pasa a exigir que el modelo elegido sea además USABLE, no
+  solo que exista. 3 claves i18n nuevas ×4 idiomas (paridad verificada, 1293).
+  **Nota honesta sobre Llama3**: si tras esto sigue sin aparecer NINGÚN modelo
+  de Ollama en la lista (ni siquiera desactivado), entonces no es este filtro
+  — es que `registry.list_available()` no lo devuelve, y eso se mira en
+  Ajustes → Proveedores (interruptor del proveedor) o en la tabla
+  `local_models` (`enabled`); no era diagnosticable desde aquí sin su BD.
+  Tests: `test_selector_modelos.py` (NUEVO, 5) que fija el CONTRATO —
+  `list_models()` nunca omite un modelo configurado (el invariante
+  "tantos salen como entran"), el origen de la no-aptitud viaja separado, y
+  un modelo apto no arrastra marcas. **Comprobación de mutación**:
+  reintroducido el `continue` que ocultaba lo no apto, caen 4 de los 5 tests;
+  restaurado y verificado byte a byte con `diff`. Regresión: **84 passed**
+  (selector + mel contracts/decision/overrides/benchmark + module_boundaries),
+  `tsc --noEmit` limpio. **Pendiente en Windows**: abrir el selector del chat
+  de un agente y confirmar que aparecen TODOS los proveedores conectados —
+  los usables elegibles y los no usables en gris CON su motivo escrito.
+
+- ✅ **Claude CLI y Codex pasan a ser AGENTES de proyecto de verdad
+  (2026-08-04, Opus)** — corrección de diseño del usuario sobre la entrega
+  anterior: *«Claude CLI y Codex SÍ que tienen que poder usarse, porque ellos
+  tienen sus propias herramientas… solo hay que asegurarse de que no intenten
+  usar las tools de Aithera»*. Tiene razón y reencuadra el problema entero:
+  **el error no era el veto, era el encuadre**. Claude Code y Codex no son
+  "modelos de chat lentos", son AGENTES completos (leen/escriben ficheros,
+  ejecutan comandos, buscan en el repo). Meterlos en el bucle de tools de
+  Aithera era **un agente dentro de otro agente** — de ahí salían las
+  respuestas "soy Claude Code, no tengo acceso al navegador": se les pedía usar
+  herramientas ajenas teniendo las suyas. **La forma correcta es delegarles la
+  TAREA ENTERA con `cwd` en la carpeta del proyecto.** Cambios: `mel/catalog.py`
+  gana `CLI_AGENT_PROVIDERS`+`is_cli_agent()` (con el porqué escrito, para que
+  nadie lo "limpie" luego); `ExecutionRequest` gana `workdir` (append-only —
+  `None` = comportamiento idéntico bit a bit); `registry.execute()` lo pasa al
+  proveedor con la MISMA degradación que ya usaba para `messages` (un proveedor
+  HTTP no tiene carpeta y eso no es un fallo); `claude_code_provider.generate()`
+  y `codex_provider.generate()` aceptan `workdir` y lo bajan a su `_run(cwd=…)`
+  — **el `cwd` existía en `_run` desde el primer día y la cabecera del archivo
+  ya decía que era "justo lo que se quiere para tareas de código sobre un
+  proyecto", pero NADIE se lo pasaba nunca**; `agent_manager._delegate_to_tie()`
+  bifurca: si el modelo elegido es un agente CLI, llama a
+  `_delegate_to_cli_agent()` (NUEVO) en vez de crear una misión del TIE —
+  capacidad **CODE, nunca AGENTIC** (AGENTIC significa literalmente "usa el
+  bucle de Aithera", que es lo que aquí NO se quiere: por eso el veto de
+  AGENTIC/CLASSIFY para estos proveedores **se mantiene intacto y sigue siendo
+  correcto**), con la carpeta del proyecto y un system prompt que le dice quién
+  es y dónde trabaja. **Salvaguarda**: si el proyecto no tiene `repo_path`, se
+  le dice explícitamente que NO modifique ficheros — sin eso trabajaría donde
+  corra el backend, que sí sería grave. Devuelve un shim con la forma mínima de
+  una misión (`state`/`outcome`/`id`) para que `_run_execution` no tenga que
+  distinguir el origen; `_tool_calls_of` ya era best-effort y devuelve `[]` sin
+  traza, así que no hizo falta tocarlo. Frontera modular respetada:
+  `app.agents` consulta `mel.is_cli_agent_model()` (API pública), nunca
+  internos del MEL ni `ai_manager`. Frontend (`ChatComposer.tsx`): los CLI
+  pasan a ser ELEGIBLES en el chat de un agente de proyecto, y quedan en gris
+  solo en el del ORQUESTADOR («solo en agentes, no en el orquestador») —
+  exactamente el reparto que pidió el usuario. Tests:
+  `test_agente_cli.py` (NUEVO, 13 — reconocimiento del modelo, el agente CLI
+  NO crea misión del TIE —un `submit_mission` que lanza `AssertionError` lo
+  vigila—, capacidad CODE + carpeta correcta, sin carpeta no toca ficheros,
+  fallo del CLI se reporta como `failed`, no-regresión de que un modelo normal
+  sigue yendo por el TIE, y el transporte real: el `workdir` llega al provider
+  y un proveedor sin soporte no se rompe). Regresión: **161 passed**
+  (agente_cli + selector_modelos + los 5 de mel + agent_execution/agent_prompt/
+  orquestador_y_skills + module_boundaries). `tsc --noEmit` limpio; 1 clave
+  i18n nueva ×4 idiomas (1294). **Pendiente en Windows** (nada de esto es
+  verificable aquí sin los CLI instalados y logueados): reiniciar el backend,
+  abrir el chat de un agente de un proyecto CON carpeta asignada, elegir
+  «Claude Opus 5» o Codex y pedirle algo real sobre el repo — confirmar que
+  trabaja en ESA carpeta y que su respuesta vuelve al chat del agente; y que
+  en el chat del orquestador siguen en gris.
+
 ---
 
-*Última actualización: 2026-08-02 — **LA TUBERÍA LLEGA AL CAMINO DE CHAT
+## 28. Bloque FIABILIDAD DE MISIONES LARGAS (doc 40, Sesiones A·B·C — en curso)
+
+Origen: fallos repetidos del encargo real "lee el GDD de Cordyceps, investiga
+en la web y escribe `CORDYCEPS_PLAN_2026.md`" (2026-08-03/04) — muro de 12
+iteraciones, búsqueda sin configurar quemando el presupuesto, y una afirmación
+falsa de entregable. Diagnóstico + propuesta aprobada por el usuario:
+**arreglos de raíz en 3 sesiones, sin regresión para ningún otro tipo de
+tarea**. Diseño ejecutable completo de las 3 en
+`PLAN_MAESTRO_2026/40_FIABILIDAD_MISIONES_SESIONES_ABC.md` (B y C quedan
+especificadas sin decisiones abiertas, para Opus y Sonnet respectivamente).
+
+- ✅ **Sesión A EJECUTADA (2026-08-04, Fable 5) — el presupuesto del toolloop
+  pasa de FIJO a basado en PROGRESO + preflight de tools.** El principio
+  (modelo Claude Code, pedido explícito del usuario): el límite es "¿sigo
+  progresando?", nunca "¿cuántos pasos llevo?". **(1) Presupuesto**:
+  `TIE_TOOL_MAX_ITERS`(5)/`TIE_TOOL_MAX_ITERS_WRITE`(12) RETIRADOS de
+  `config.py` junto con el reparto `_WRITE_TOOLS`/`_READ_HEAVY_TOOLS` de
+  `runtime.py` (eran heurísticas para repartir un número fijo — con progreso,
+  el reparto sobra); entran `TIE_TOOL_HARD_CEILING` (60, techo DURO cuya única
+  función es cortar un bucle desbocado) y `TIE_TOOL_STALL_LIMIT` (4, el corte
+  EFECTIVO). `_iters_for()` conserva su firma y devuelve el techo — los ~30
+  call-sites de `max_iters` en tests siguen válidos porque el parámetro
+  conserva su semántica de tope absoluto. **(2) Detector de atasco**
+  (`toolloop.run`, closures `_traba`/`_avanza`): progreso = tool ejecutada con
+  éxito, respuesta del usuario, o tool concedida; TODO lo demás (JSON
+  inválido, answer rechazado, denegación, fuera-de-alcance, permiso no
+  concedido, fallo de ejecución) es vuelta estéril. 4 consecutivas → si hubo
+  trabajo real previo, UNA última vuelta de cierre honesto ("ATASCO
+  CONFIRMADO … responde AHORA contando lo que SÍ conseguiste") — degradar
+  entregando, jamás fallo mudo tirando lo conseguido; sin trabajo previo,
+  corte inmediato con la causa real ("detenido por falta de progreso: … Último
+  obstáculo: …"). Corta ANTES que el muro viejo cuando algo va mal (4 vueltas,
+  no 12) y complementa a S9c (fallo IDÉNTICO ×3, que corta incluso antes) —
+  con test de que fallos DISTINTOS consecutivos, que S9c no agrupa, también
+  cortan. Telemetría nueva: evento `stalled`. **(3) Preflight**: antes del
+  bucle se consulta `tool.preflight() -> Optional[str]` (duck-typed, OPCIONAL
+  — tools sin el método no pagan nada; un preflight que LANZA se ignora, un
+  chequeo roto jamás quita capacidades). Tool inoperativa → excluida del
+  catálogo + "AVISO PREVIO" en la cabecera del transcript (nunca sale de la
+  ventana S4) + entra en `limitations` desde el arranque; TODAS inoperativas →
+  fallo honesto inmediato con el motivo y **0 llamadas LLM** (antes: 12
+  llamadas para descubrir que search no tenía API key).
+  `SearchTool.preflight()` implementado (consulta `_configured_providers()`;
+  sin keys → "añade una API key de SerpAPI o Brave en Ajustes → Búsqueda
+  web"). Telemetría: `preflight_not_ready`. Tests:
+  `test_toolloop_progreso.py` (NUEVO, 9 — la tarea grande de 16 vueltas que
+  el muro viejo mataba, atasco corta a 4 con fallos idénticos Y distintos,
+  cierre honesto con trabajo previo, reset del contador por éxito, preflight
+  en sus 3 variantes con 0-LLM verificado, y el preflight real de SearchTool
+  sin BD). **2 tests preexistentes actualizados al contrato nuevo** (no
+  debilitados): `test_audit_s2_fixes.py` (el reparto 5/12 → techo único +
+  cotas sanas del stall) y `test_lectura_paginada.py` (document cabe porque
+  cada lectura resetea el detector). **Comprobación de mutación** (2,
+  restauradas y verificadas byte a byte con `cmp`): desactivar el corte por
+  atasco tumba 3; desactivar el preflight tumba 2. Regresión: **234 passed**
+  en el subconjunto afectado (toolloop, s2_fixes, lectura_paginada, s9c, s11,
+  s1, s5, s7s8, progress_rastro, pu8, latency_autonomy, product_contracts,
+  tie_executor, tie_e2e, tie_handle, module_boundaries, telemetry_budget,
+  s4_hotpath), cero rotos. **Pendiente en Windows**: reiniciar el backend y
+  repetir el encargo real de Cordyceps (ver mensaje de cierre de la sesión);
+  nota: los tests de esta sesión añadieron ruido a `logs/system.log` (LOG-2,
+  se cierra en la Sesión C).
+- ✅ **Sesión B EJECUTADA (2026-08-04) — desenlaces honestos: si digo que he
+  escrito un archivo, el archivo existe.** El fallo que cierra: la respuesta
+  final de una misión dijo *"He escrito CORDYCEPS_PLAN_2026.md con el plan
+  completo"* y el archivo NO EXISTÍA. Ninguna capa anterior lo cazaba —
+  `_is_grounded` (S2·S6) solo mira que no se invente una espera de aprobación;
+  `presents_unverifiable_evidence` (NEW-7) mira evidencia PRESENTADA (listados,
+  código, recuentos) y "he escrito X.md" no presenta ninguna; y el grounding
+  del camino corto no aplica porque esta misión SÍ ejecutó herramientas — solo
+  que ninguna escribió ESE archivo. **La cadena, en tres piezas**: (1)
+  `toolloop` anota `tool_calls[i]["target"]` con la ruta de cada acción de
+  entregable (`filesystem.write_file`, `document.write_docx/write_xlsx`,
+  `download.download_url`) que se ejecuta **con éxito** — campo append-only,
+  y NUNCA en una escritura fallida (anotar la ruta de algo que no se escribió
+  convertiría el rastro en lo contrario de una prueba); (2)
+  `core/grounding.claimed_written_files()` (función pura, 0 LLM) detecta qué
+  archivos AFIRMA la respuesta haber creado — verbo de creación EN PASADO +
+  nombre con extensión en ventana corta, ignorando el contenido de los bloques
+  ``` (un ejemplo con `open("x.md","w")` no es una afirmación); (3)
+  `responder._deliverables_backed()` cruza ambos: un archivo afirmado sin
+  escritura real detrás, o con escritura pero ya ausente del disco (contrato de
+  producto nº 5), descarta la síntesis del LLM y saca la plantilla
+  determinista, que solo enumera lo que los nodos produjeron. **Cero coste en
+  el caso normal** (sin archivos afirmados se sale en la primera línea) y
+  **jamás acusa por un fallo propio**: si el acceso a disco revienta, se acepta
+  el texto; una ruta relativa no se verifica (depende del cwd → sería falso
+  positivo). **B4 no necesitó código**: `_template_failure` ya incluía el
+  `n.error` real y la clave i18n ya lo renderiza en los 4 idiomas — se fijó con
+  tests (los motivos de la Sesión A, preflight y atasco, llegan enteros al
+  usuario) en vez de tocar nada. **Hallazgo real en B5**: `Missions.tsx` solo
+  correlacionaba `tie_tool_permission`; el gate de CONCESIÓN de S11
+  (`tie_tool_grant`) se quedó fuera al escribir S7·S8, así que no tenía botones
+  NI en Misiones NI en el chat de agente — una misión esperándolo se veía como
+  "trabajando…" indefinido (y desde PU3 esos gates no caducan nunca). Cerrado
+  desde un solo sitio: `usePendingQuestions` pasa a devolver también `gates`
+  (los dos action_types en vuelo, mismo filtro, sin endpoint nuevo),
+  `OrchestratorChat.tsx` los pinta con Aprobar/Rechazar sobre el endpoint
+  genérico de A1, y `Missions.tsx` amplía su `find`. Tests:
+  `test_entregables_honestos.py` (NUEVO, 26 — el detector con 7 positivos y
+  **14 negativos** por el riesgo de ruido (futuro, pregunta, lectura, código en
+  fence, mención suelta), el toolloop anotando target solo en escritura
+  exitosa, la regresión EXACTA del fallo, el contrario —escritura real en disco
+  → el texto del LLM se respeta—, el archivo borrado, la ruta relativa, la
+  no-regresión byte a byte sin archivos, y los 2 de B4). **Comprobación de
+  mutación** (3, restauradas y verificadas con `cmp`): quitar
+  `_deliverables_backed` de la condición tumba 2; quitar el registro de
+  `target` tumba 1; vaciar `claimed_written_files` tumba 10. Regresión: **256
+  passed** en el subconjunto afectado (grounding s2s6/new7/new4, toolloop,
+  progreso, tie_e2e/handle/executor, product_contracts, module_boundaries,
+  s5/s7s8/s11, lectura_paginada, s2_fixes), cero rotos. `tsc --noEmit` limpio;
+  `vite build` transformó los 868 módulos sin error (cortado por el límite del
+  sandbox antes de escribir los chunks — mismo patrón ya documentado en
+  PU6a/PU10). **Pendiente en Windows**: repetir el encargo de Cordyceps que
+  escribe un archivo y confirmar que la respuesta final solo afirma lo que
+  existe en disco; y ver los botones de un gate de tool en el chat del agente.
+- ✅ **Sesión C EJECUTADA (2026-08-05, Sonnet) — observabilidad que sobrevive**:
+  cierra los 3 fallos del diagnóstico (LOG-2 — la suite escribía miles de
+  líneas fake en `logs/system.log` de PRODUCCIÓN; el handler de logs TRUNCABA
+  en vez de rotar cuando Windows tenía el archivo bloqueado, destruyendo el
+  forense en cada reinicio forzado; no había un comando único para "¿qué
+  falló y por qué?" con el backend apagado). **`AITHERA_LOG_DIR`**
+  (`app/core/logging_config.py`, mismo patrón exacto que
+  `AITHERA_CHROMA_PATH`/`AITHERA_VAULT_PATH`): los tests (`conftest.py`, fijada
+  ANTES de cualquier `import app.*`) apuntan sus logs a su propia carpeta
+  temporal. **Rotar, nunca truncar**: `WindowsSafeRotatingFileHandler.
+  doRollover` desvía la escritura a un hermano con timestamp
+  (`system.<stamp>.log`) cuando el archivo sigue bloqueado, dejando el
+  bloqueado intacto — `_prune_sibling_logs(keep=10)` evita que esos hermanos
+  crezcan sin límite. **`scripts/aithera_doctor.py`** (NUEVO, patrón de
+  `mission_report.py` — funciona con el backend apagado, read-only absoluto):
+  `collect(hours)` devuelve últimas 10 misiones (marcando las `waiting` con un
+  gate pendiente real), telemetría por misión (llamadas LLM, presupuesto,
+  eventos problemáticos del bucle como `stalled`/`preflight_not_ready`, tools
+  que más fallan), salud de configuración (proveedores IA/búsqueda/Telegram/
+  Google, nunca las keys), el desfase de esquema de `check_schema_drift()`, y
+  las aprobaciones pendientes con su edad en horas. Tests:
+  `tests/test_observabilidad.py` (NUEVO, 11 — AITHERA_LOG_DIR vía subproceso +
+  en el propio proceso, rollover bloqueado no trunca, prune acotado, el
+  doctor sobre una BD sembrada y JAMÁS escribe). 2 mutaciones confirmadas y
+  restauradas byte a byte (`cmp`). Regresión: **516 passed, 6 skipped, 0
+  failed** en el subconjunto ejercitado (observabilidad+arranque+boundaries,
+  todo `test_tie_*`, automation/orchestrator/agentes/audit/product_contracts);
+  el único fallo visto en una pasada más amplia (`test_action_intent.py`,
+  `search_skills`) es preexistente y ajeno, sin ninguna referencia cruzada a
+  los archivos de esta sesión. **Con esto se cierra el plan A·B·C completo**
+  (doc 40). **Pendiente en Windows**: `python scripts/aithera_doctor.py`
+  contra el Postgres real con el backend apagado; y confirmar que un
+  `taskkill` forzado deja `system.log` intacto con un hermano
+  `system.<timestamp>.log` nuevo, en vez de truncado a 0 bytes.
+
+---
+
+## 29. CIERRE DE V1.0 — tag `v1.0.0` (2026-08-02)
+
+**Decisión de versión del usuario**: cerrar V1.0 SIN el instalador/MVP-beta
+(doc 03 §5 O5) — todavía no hay beta testers y se prefiere seguir
+desarrollando funcionalidad en vez de empaquetar ahora. Bump `0.9.5` →
+`1.0.0` en las 3 ubicaciones sincronizadas (`backend/app/core/config.py`,
+`backend/app/main.py` ×2 — `FastAPI(version=...)` y `GET /` —,
+`frontend/package.json`) + los 4 `.bat` (`backend/iniciar_app.bat`,
+`backend/iniciar_backend.bat`, `backend/iniciar_todo.bat`,
+`iniciar_frontend_react.bat`).
+
+**Lo que justifica el bump** (bloques CERRADOS que llevaron a este punto,
+cada uno con su propio detalle completo más arriba en este archivo):
+- V0.2 → V0.9 (base, Hub, memoria, email/calendar, Automation Engine).
+- V1.0 TIE v1 (T1-T5, §1) — el motor cognitivo: intent → planner → grafo →
+  executor con checkpoints/gates/kill-switch → responder.
+- V1.0 MEL v1 (E1-E2b, §1) — capa universal de ejecución de modelos.
+- V1.0 Tools (§1) — 15 herramientas, 91+ acciones, incl. browser/desktop/
+  document reales.
+- V1.0 Orquestador (R1-R7, §21) — decompone encargos heterogéneos en
+  misiones independientes, con autoridad acotada por proyecto/agente.
+- Bloque de auditoría global del runtime (S1-S11 + NEW-4/5/6/7/7b, §26) —
+  grounding/narración anclada, concurrencia y recuperación del navegador,
+  fabricación sin verbo delator, tubería entre nodos dependientes.
+- Bloque PULIDO pre-instalador (PU1-PU10 + Fix Workspace, §27) — dock/AVCS,
+  briefing con voz, memoria conversacional, autonomía sin timeouts.
+- Fixes post-cierre de sesión (§27, último tramo): causa raíz del "no puedo
+  leer el documento entero" (la tubería no llegaba al camino de chat sin
+  herramientas), ejecuciones de agente huérfanas de un reinicio, chat lateral
+  del proyecto.
+
+**Lo que NO entra en este cierre, documentado explícitamente como deuda
+POST-1.0** (no bloquea el bump, es la decisión misma del usuario):
+- **Instalador/empaquetado** (NSIS, auto-start del backend, onboarding) —
+  doc 03 §5 O5. Sin beta testers todavía, se pospone sin fecha.
+- **Cliente Web + PWA** (§5, aplazado desde V0.85, nunca bloqueó nada).
+- **Hermes Runtime + Learning System** (V1.1, docs 10/15) — diseñado, sin
+  implementar; es la siguiente fase natural de desarrollo tras 1.0.0.
+- El fallo pre-existente y ajeno de `test_quick_memory.py::
+  test_forget_ambiguo_lista_sin_borrar` (detectado y NO tocado en la sesión
+  del chat lateral — de PU10, huele a colisión de claves en
+  `store_user_context`, sesión propia).
+- `NEW-5/S11` (doc 34 §26): brecha de diseño estrecha y no bloqueante,
+  documentada, sin cerrar.
+
+**No se corrió la suite completa ni se hizo verificación en vivo específica
+para ESTE commit de bump** — es un cambio de 7 archivos, todos strings de
+versión + comentarios, sin tocar lógica; la suite ya estaba verde en el
+commit inmediatamente anterior (`f0a5ab3`). **Pendiente en Windows**: crear
+el tag `git tag v1.0.0` tras el push (no incluido en este commit — decisión
+de dejarlo como paso explícito del usuario, ya que tagging es una acción de
+más alcance que un commit normal).
+
+---
+
+*Última actualización: 2026-08-05 — **C·WEB-4 ejecutada (doc 32, BLOQUE C) —
+CIERRA EL BLOQUE C Y EL DOC 32 ENTERO**: los cinco casos reales sobre el bucle
+agentic (compra, cita previa, descarga, buscar dónde se genera una API key,
+research en foro). `app/tie/webflows.py` NUEVO: un playbook es DATO, no una rama
+del bucle, y se detecta solo del objetivo por palabras completas («compra» es
+subcadena de «comprando»: por subcadena, «seguir comprando» sería una orden de
+compra). **La decisión de diseño**: la frontera de cada flujo es una PARADA
+DURA, no otro gate — con el perfil Autónomo un gate se auto-aprueba (A3b), así
+que un gate sobre «Pagar» significaría que Aithera paga sola, justo lo contrario
+del encargo. El gate genérico sigue vivo para lo demás (suscribirse a un boletín
+en mitad de una compra sí pregunta). La descarga localiza el enlace y devuelve un
+`handoff` explícito a `download_tool` con aviso de fuente dudosa que INFORMA sin
+bloquear; el foro es solo-lectura de verdad (solo se escribe en el buscador). Las
+credenciales se tapan SIEMPRE antes de que la respuesta llegue a la traza, la
+telemetría y la memoria. **Dos hallazgos reales**: (1) un fallo de C·WEB-3 —
+«pin» casaba dentro de «o-PIN-iones», así que buscar «opiniones» en un foro se
+rechazaba como si fuera una contraseña; (2) el mapa de capacidades recorta líneas
+enteras por `MAX_CHARS` y una frase larga hacía desaparecer la última categoría
+sin ningún aviso, ahora vigilado por un test. 31 tests nuevos, 3 mutaciones
+confirmadas y restauradas, 2 tests de C·WEB-3 actualizados al contrato nuevo, 299
+passed de regresión. **Pendiente en Windows**: los dos casos en vivo que exige el
+criterio de cierre —carrito lleno con parada en el pago, y research en un foro
+con síntesis real— (detalle completo en
+`PLAN_MAESTRO_2026/32_VOZ_CONVERSACION_Y_NAVEGACION_WEB.md`, sección C·WEB-4).*
+
+*Anterior: 2026-08-05 — **Fix: la capacidad de VISIÓN no aparecía
+en Ajustes → Inteligencia** (reportado por el usuario al ir a probar B·WEB-2).
+Dos causas: (1) `MEL_CAPS_ORDER` en `Settings.tsx` es una whitelist y `vision`
+seguía fuera con el comentario «reservada, no aporta al usuario aún» — dejó de
+ser verdad en cuanto existió `find_and_click`; (2) la de fondo y silenciosa:
+`mel.list_models()` —lo que la UI usa para filtrar los selectores— calculaba
+`unfit` por PROVEEDOR, pero la visión se decide por (proveedor, modelo), así
+que el selector habría ofrecido modelos ciegos y `set_primary` los habría
+rechazado por dentro: el usuario vería que su elección «no se guarda» sin
+explicación. Cerrado con un test de INVARIANTE que exige que la UI (`unfit`) y
+la ejecución (`is_capable`) coincidan para cada modelo y capacidad. Con cero
+modelos de visión la fila dice QUÉ hacer, no «sin modelo». 2 tests nuevos + 2
+previos actualizados al contrato corregido, mutación confirmada, `tsc` limpio,
+197 passed.*
+
+*Anterior: 2026-08-05 — **C·WEB-3 ejecutada (doc 32, BLOQUE C)**:
+el bucle agentic de NAVEGACIÓN — observar la página → elegir POR ÍNDICE →
+actuar → repetir. Es la técnica set-of-mark de browser-use/Skyvern, **copiada
+como idea, no como dependencia** (decisión ya tomada en doc 32: browser-use
+arrastra su propio stack LLM que pelearía con el MEL, los permisos y la traza
+del TIE). **Del spike** (leídos `dom/views.py`, `serializer.py` y
+`clickable_elements.py` del repo real) se copió lo que importa —el mapa
+índice→elemento, el formato `[i]<tag>texto</tag>`, la prioridad de texto útil y
+las heurísticas de interactividad, incluido `cursor:pointer`, que es lo que
+rescata los divs clicables de React/Vue— y se dejó fuera su maquinaria
+CDP+AX+snapshot (la razón de que necesiten `cdp_use`): con `getComputedStyle` +
+atributos vía Playwright se consigue casi la misma señal en ~70 líneas de JS.
+`browser.page_state()` es la observación (captura OPCIONAL: mandar imagen en
+cada vuelta costaría ×10 y la lista de texto basta casi siempre);
+`click_index`/`type_index` actúan **revalidando el índice al actuar**, porque
+entre observar y actuar la página cambia y un índice viejo clicaría donde no
+debe; `app/tie/webloop.py` (NUEVO) es el bucle, módulo aparte del toolloop
+porque su catálogo es dinámico. **Frontera de seguridad explícita**: Aithera
+NUNCA teclea credenciales ni datos de pago —ni en modo Autónomo, que significa
+"no me preguntes", jamás "escribe mi contraseña"— y comprar/pagar/enviar/
+confirmar SIEMPRE pasan por el ApprovalGate; la detección es determinista, no
+la juzga el modelo. **Hallazgo real de los tests, de seguridad**: la
+comparación era sensible a acentos, así que «Contraseña» y «Código de
+seguridad» NO casaban con el catálogo y Aithera habría tecleado en el CVV —
+corregido normalizando también los propios catálogos, para que una entrada
+nueva con tilde no abra un agujero en silencio. 29 tests nuevos, 3 mutaciones
+confirmadas y restauradas, 247 passed de regresión. **Pendiente en Windows**:
+el criterio de cierre es en vivo — «busca [producto] en [tienda] y añádelo al
+carrito, PARA antes de pagar». C·WEB-4 (los casos de uso concretos) sigue
+pendiente y es sesión aparte.*
+
+*Anterior: 2026-08-05 — **B·WEB-2 ejecutada (doc 32, BLOQUE B) —
+CIERRA EL BLOQUE B COMPLETO**: clic por VISIÓN como respaldo cuando el selector
+DOM no basta. **Hallazgo que hacía el paso 1 imprescindible**: `Capability.
+VISION` no estaba "reservada", era una capacidad FANTASMA — `_compile_policy`
+recorre todo el enum, así que ya compilaba cadena de visión para CUALQUIER
+modelo, incluidos los ciegos, que habrían devuelto coordenadas inventadas con
+total aplomo. Lo que faltaba era el DATO de quién ve: `catalog.supports_vision`
+(por familia y por marcador en el nombre del modelo, así un `ollama pull llava`
+funciona sin tocar código) enchufado en `policies.is_capable` — el punto ÚNICO
+de aptitud, de donde salen gratis las 3 capas (compilación, filtro retroactivo
+en ejecución, UI). `ExecutionRequest.images` (append-only) llega a los 4
+formatos reales de proveedor; y **a diferencia de `messages`/`workdir`, NO
+degrada en silencio**: un modelo que no recibe la imagen responde igual
+inventándose lo que ve, así que el registry lanza y el executor salta de
+candidato. `app/tools/vision_click.py` NUEVO (prompt, parseo y conversión de
+escala, puros y compartidos) + `find_and_click` en `desktop` (coordenadas) y en
+`browser` (**set-of-mark**: numera los elementos del DOM, el modelo elige un
+índice y se clica el centro REAL; las marcas se retiran siempre antes de
+clicar). Regla 9 nueva en el toolloop: la visión es el ÚLTIMO recurso, primero
+el selector. 41 tests nuevos, 3 mutaciones confirmadas y restauradas, 220
+passed de regresión (los 5 fallos y 5 skips son los conocidos del sandbox).
+**Pendiente en Windows**: conectar un modelo multimodal (Gemini, o
+`ollama pull qwen2.5vl:7b` gratis) y probar los dos casos del criterio de
+cierre; con escalado de pantalla ≠100%, confirmar que el clic cae donde debe
+(detalle completo en `PLAN_MAESTRO_2026/32_VOZ_CONVERSACION_Y_NAVEGACION_WEB.md`,
+sección B·WEB-2).*
+
+*Anterior: 2026-08-05 — **B·WEB-1 ejecutada (doc 32, BLOQUE B)**:
+Aithera reproduce medios/URLs en el navegador REAL por defecto del usuario en
+vez del navegador pilotado de Playwright — el truco robado de Mark-L, la
+solución honesta al bloqueo de Google a la navegación automatizada.
+`app/tools/browser_tool.py` gana `open_in_default_browser(url)` (envuelve
+`webbrowser.open`, stdlib, cubre Windows/macOS/Linux sin ramificar por
+`sys.platform`) y `play_media(query)` (reusa `search_tool._search` por import
+directo, mismo patrón ya usado con `filesystem_tool` — nunca
+`browser.google_search`, nunca scraping). Ninguna toca Playwright/`_sessions`.
+La regla 6 del prompt del toolloop (`app/tie/toolloop.py`) se reescribió para
+que ABRIR/REPRODUCIR use el navegador real y LEER/INTERACTUAR siga con el
+pilotado. Permisos sin cambios: `tool_id="browser"` ya mapeaba a `browser.use`
+para cualquier acción. 20 tests nuevos (`test_bweb1_media.py`), 2 mutaciones
+confirmadas y restauradas, 152 passed de regresión (los 5 fallos son los
+conocidos del sandbox sin pantalla, ajenos). **Pendiente en Windows**: el
+criterio de cierre en vivo — "pon [canción] en YouTube" debe abrir Chrome y
+sonar de verdad, sin muro de cookies que frene la misión (detalle completo en
+`PLAN_MAESTRO_2026/32_VOZ_CONVERSACION_Y_NAVEGACION_WEB.md`, sección B·WEB-1).*
+
+*Anterior: 2026-08-05 — **Sesión C del bloque FIABILIDAD DE
+MISIONES LARGAS ejecutada (§28, doc 40) — CIERRA EL PLAN A·B·C COMPLETO**:
+observabilidad que sobrevive a un reinicio forzado. `AITHERA_LOG_DIR` (mismo
+patrón que `AITHERA_CHROMA_PATH`/`AITHERA_VAULT_PATH`) cierra LOG-2 — los
+tests ya no ensucian `logs/system.log` de producción. El handler de logs deja
+de TRUNCAR cuando Windows tiene el archivo bloqueado (destruía el forense de
+cada reinicio) y pasa a desviar la escritura a un hermano con timestamp,
+podado a 10. Nace `scripts/aithera_doctor.py`: un comando único, read-only,
+que responde "¿qué falló y por qué?" con el backend apagado (misiones
+recientes con gates pendientes, telemetría de atascos/fallos de tool, salud de
+configuración, desfase de esquema, aprobaciones olvidadas). 11 tests nuevos, 2
+mutaciones confirmadas, 516 passed/6 skipped de regresión. **Pendiente en
+Windows**: correr el doctor contra el Postgres real y forzar un `taskkill`
+para confirmar que el log sobrevive (ver §28).*
+
+*Anterior: 2026-08-04 — **Sesión B del bloque FIABILIDAD DE
+MISIONES LARGAS ejecutada (§28, doc 40)**: desenlaces honestos — el responder
+descarta una síntesis que afirma haber creado un archivo que ninguna
+herramienta escribió (o que ya no está en disco), cerrando el "he escrito
+CORDYCEPS_PLAN_2026.md" sin archivo; y los gates de tool en vuelo pasan a tener
+botones en el chat del agente (donde no había ninguno) y en Misiones (donde el
+gate de concesión de S11 se había quedado fuera). B4 no necesitó código: el
+motivo real ya llegaba, se fijó con tests. 26 tests nuevos, 3 mutaciones
+confirmadas, 256 passed de regresión, `tsc` limpio. Queda la Sesión C (Sonnet,
+observabilidad) especificada en doc 40 §C.*
+
+*Anterior: 2026-08-04 — **Sesión A del bloque FIABILIDAD DE
+MISIONES LARGAS ejecutada (§28, doc 40)**: el presupuesto del toolloop pasa de
+fijo (5/12) a basado en PROGRESO (techo duro 60 + corte por atasco a las 4
+vueltas estériles + última vuelta de cierre honesto si hubo trabajo real) y
+nace el PREFLIGHT de tools (search sin API key se detecta en el segundo 1 con
+0 llamadas LLM, no tras quemar el presupuesto). 9 tests nuevos + 2 adaptados,
+2 mutaciones confirmadas, 234 passed de regresión. Sesiones B (Opus) y C
+(Sonnet) especificadas sin decisiones abiertas en doc 40. **Pendiente en
+Windows**: repetir el encargo real de Cordyceps (ver §28).*
+
+*Anterior: 2026-08-04 — **Claude CLI y Codex pasan a ser AGENTES
+de proyecto de verdad (§27)**. Corrección de diseño del usuario: el error no
+era el veto, era el ENCUADRE — Claude Code y Codex son agentes completos con
+sus propias herramientas, y meterlos en el bucle de tools de Aithera era un
+agente dentro de otro (de ahí el "soy Claude Code, no tengo acceso a..."). Ahora
+se les delega la TAREA ENTERA con `cwd` en la carpeta del proyecto y su salida
+vuelve al chat del agente; el veto de AGENTIC/CLASSIFY se mantiene intacto
+porque significa justo "usa el bucle de Aithera". El `cwd` existía en el
+provider desde el primer día y nadie se lo pasaba nunca. 13 tests nuevos, 161
+passed, `tsc` limpio. **Pendiente en Windows**: verificación en vivo con los
+CLI reales (ver §27).*
+
+*Anterior: 2026-08-04 — **El selector de modelos del chat de
+agentes ya no oculta nada (§27)**. Reportado 3 veces; las 2 correcciones
+anteriores fueron al sitio equivocado. Causa raíz real: UNA línea en
+`ChatComposer.tsx` que borraba en silencio todo modelo marcado no apto —
+y `unfit` incluye tanto los CLI de Claude/Codex (catálogo) como lo que el
+task-bench midió fallando, así que en su máquina solo sobrevivía MiniMax.
+El matiz que lo hacía delicado: el backend RECHAZA DURO un override de un
+modelo no apto, así que quitar el filtro sin más habría cambiado "no
+aparece" por "falla al enviar". Arreglo: el backend expone el ORIGEN de la
+exclusión (catálogo vs medición) y la UI muestra TODO — lo no usable en
+gris y con el motivo escrito. 5 tests de contrato ("tantos modelos salen
+como entran"), mutación confirmada, 84 passed, `tsc` limpio. **Pendiente en
+Windows**: verificación visual (ver §27).*
+
+*Anterior: 2026-08-02 — **3 correcciones sobre el chat de
+agentes, tanda 2 (§27)**: el texto "repartirá el trabajo entre los agentes"
+ya no sale en el chat de un agente normal (solo tiene sentido para el
+orquestador); el nombre del agente pasa a ir pegado al título con la MISMA
+tipografía en vez de en pequeño aparte; y la tarjeta de "editar" de un
+agente deja de mostrar el chat — en modo edición solo hay formulario. Sin
+tests nuevos (presentación pura), `tsc --noEmit` limpio. **Pendiente en
+Windows**: verificación visual (ver §27).*
+
+*Anterior: 2026-08-02 — **4 correcciones sobre el chat de
+agentes/orquestador (§27)**: chat lateral al 70% real (sobraba un `* 0.5`
+duplicado), fuera el selector "Modelo IA" de la ficha del agente —el chat
+pasa a ser la única fuente de verdad, con TODOS los proveedores y nombres
+COMPLETOS de modelo (`mel.list_models()` gana `model_label`)—, el
+orquestador editable pero SOLO en su prompt de comportamiento (con
+`Agent.system_prompt` cerrado de código muerto a funcional, mismo patrón
+que PU2 cerró para `skills`: `Authority.agent_prompt` →
+`executor._persona_block`), y la lista lateral de agentes pasa a
+solo-nombre con clic-para-cambiar-de-conversación + botón "Abrir" propio +
+la caja del orquestador como "pestaña" para volver. 5 tests nuevos, 1
+mutación confirmada, 131 passed de regresión, `tsc --noEmit` limpio.
+**Pendiente en Windows**: verificación visual (ver §27).*
+
+*Anterior: 2026-08-02 — **`aithera.search_skills` sin agotar
+el bucle en búsquedas multi-palabra (§27)**. El bug real: `_keyword_
+candidates` solo buscaba la FRASE ENTERA de la consulta como un único
+substring — funciona para "unity" (una palabra) pero NINGUNA frase de
+varias palabras ("unity UI", "C# csharp scripting") aparece nunca completa
+en el catálogo, así que esas consultas siempre devolvían cero aunque
+palabras sueltas de la misma consulta sí tuvieran skills reales; el modelo
+siguió refinando la frase buscando la coincidencia perfecta hasta agotar
+las 12 iteraciones sin crear el agente. Arreglado con un fallback por
+TOKENS (con hallazgo real durante la verificación: los tokens cortos como
+"ui" necesitaban exigir palabra completa, si no cualquier búsqueda corta
+se convertía en ruido). 5 tests nuevos, mutación confirmada, 44/44 + 87
+passed de regresión. **Pendiente en Windows**: repetir el encargo del
+agente Unity/Cordyceps y confirmar que ya no falla por agotar iteraciones.*
+
+*Anterior: 2026-08-02 — **"Flexible según necesidad" no
+liberaba el selector en el chat del orquestador (§27)**. El orquestador
+nace con `agent_type: "orchestrator"` — un marcador interno, no el id de
+ningún proveedor — y el selector del chat solo trataba `"generic"` como
+"sin restricción"; cualquier otro valor, incluido ese marcador, se leía
+como un proveedor real al que atarse, así que el filtro no encontraba
+ningún modelo y el selector se quedaba vacío. Corregido comparando contra
+los proveedores REALES del catálogo del MEL en vez de contra el literal
+`"generic"`. `tsc --noEmit` limpio. **Pendiente en Windows**: abrir el chat
+del orquestador y confirmar que ofrece todos los proveedores conectados.*
+
+*Anterior: 2026-08-02 — **Segundo round: editar una
+migración YA aplicada no hace nada (§27)**. El usuario corrió
+`alembic upgrade head` tal como se le pidió y no aplicó nada — porque
+`e2f3a4b5c6d7` ya estaba stampeada en su Postgres de una ejecución anterior
+(cuando solo tocaba `agents.autonomy`/`extra_paths`); Alembic identifica una
+revisión aplicada por ID, no por contenido del archivo, así que reescribirla
+después no la reejecuta. Corregido revirtiendo esa migración a su forma
+original y creando una NUEVA (`f7a8b9c0d1e2`) encadenada detrás con solo la
+columna que faltaba — el patrón correcto es siempre una migración nueva, nunca
+editar una ya aplicada. 2 tests nuevos, 7/7 + 45/45 de regresión, cadena de
+revisiones verificada sin ramas (un solo head). **Pendiente en Windows**:
+`alembic upgrade head` otra vez — esta vez sí debe imprimir
+`Running upgrade e2f3a4b5c6d7 -> f7a8b9c0d1e2`; luego reiniciar el backend.*
+
+*Anterior: 2026-08-02 — **Fix crítico: la columna que faltaba en la
+migración (§27)**. Añadí `AgentExecution.model` al modelo ORM y no a la
+migración: en SQLite no se nota (por eso los tests pasaban), pero el Postgres
+real devolvía 500 en TODA consulta a `agent_executions` — eso tumbó el chat del
+orquestador Y el borrado de agentes (que consulta esa tabla para cancelar
+ejecuciones; de ahí que «no pasara nada»). Cuarta vez que este desfase rompe la
+app, así que nace `check_schema_drift()`: el arranque compara ORM vs BD y avisa
+en una línea con el comando exacto, en vez de un traceback de 200 líneas.
+Además: el selector de modelos deja de repetir el nombre del proveedor y se ata
+al "Modelo IA" de la ficha del agente; tools en rejilla también en el popup de
+crear; columnas del Kanban con marco propio. 6 tests nuevos, 2 mutaciones, 206
+de regresión.*
+
+*Anterior: 2026-08-02 — **Chat de agente completo + autonomía por
+agente (§27)**: cierra los 7 puntos. Lo nuevo de fondo es la AUTONOMÍA POR
+AGENTE (`Agent.autonomy`): en vez de una regla global para shell/powershell,
+cada agente decide si pregunta o va en automático — y en automático el gate se
+abre y se auto-resuelve igual, para que quede rastro (regla de oro de A3b).
+Además: adjuntos que se copian a la carpeta del proyecto, carpetas extra
+concedidas a mano (`Authority.roots()`, de una raíz a varias), selector de
+proveedor/modelo POR MENSAJE sin perder el hilo, micrófono, tools en rejilla,
+chat lateral al 70% en la tarjeta de agente y el orquestador con su bloque
+propio. `ChatComposer.tsx` NUEVO, usado por los dos chats. 6 tests nuevos, 2
+mutaciones, 219 de regresión. **Pendiente en Windows**: `alembic upgrade head`
+— hay DOS migraciones sin aplicar (23.ª y 24.ª).*
+
+*Anterior: 2026-08-02 — **Orquestador + skills reales + borrar
+agentes (§27)**: primera tanda de las 7 peticiones (orden elegido por el
+usuario). La causa raíz de que el orquestador no asignara skills era que NUNCA
+veía el catálogo (254 nombres que no caben en el prompt) — nace
+`aithera.search_skills`. El orquestador pasa a tener TODAS las tools (shell
+incluido, decisión explícita tras exponerle que esa no se puede acotar a la
+carpeta), no se puede borrar ni recortar, y se re-sincroniza si es de antes. Y
+los agentes normales por fin se borran desde su ficha. 13 tests nuevos, 3
+mutaciones, 207 de regresión; un test viejo afirmaba una protección ilusoria y
+se reescribió al contrato real. **Pendiente**: la zona propia del orquestador en
+la tarjeta y las peticiones 3, 4, 6 y 7.*
+
+*Anterior: 2026-08-02 — **LA TUBERÍA LLEGA AL CAMINO DE CHAT
 (§27)**: causa raíz del "no he podido leer el documento entero" que se
 arrastraba desde hacía sesiones. S5 construía el handoff y lo metía en
 `AgentTask.context`… pero `chat_service.answer()` **no tenía un parámetro donde

@@ -15,7 +15,7 @@ from typing import Optional
 
 from app.core.logging_config import get_system_logger
 from app.mel.capabilities import is_smart
-from app.mel.catalog import cost_of, unfit_for
+from app.mel.catalog import cost_of, supports_vision, unfit_for
 # [E1b, doc 19 §5.4.3] el compilador usa el score EFECTIVO (catálogo curado
 # desplazado por el auto-catálogo investigado), no el catálogo puro — research.py
 # hace de wrapper de catalog.score_of() y no importa policies.py (sin ciclo).
@@ -68,14 +68,21 @@ def _bench(r: ModelRef) -> Optional[dict]:
 
 def is_capable(r: ModelRef, cap: Capability) -> bool:
     """[2026-07-22, orden del usuario] EL punto único de aptitud. False si el
-    modelo NO puede cumplir esta capacidad, por CUALQUIERA de las dos vías:
+    modelo NO puede cumplir esta capacidad, por CUALQUIERA de estas vías:
       - `unfit_for(provider)` — regla de catálogo (p.ej. Claude CLI en chat).
       - `measured_unfit` — fallo REAL medido por el task-bench (benchmark.py).
+      - [B·WEB-2] VISION sin multimodalidad real — un modelo que no acepta
+        imágenes no "ve peor": no ve, y respondería coordenadas inventadas.
     Un modelo no capaz no puede aparecer en NINGUNA posición de la cadena de
     esa capacidad, en NINGUNA política — un respaldo que no puede cumplir la
     tarea no es una red de seguridad, es un fallo aplazado. La evidencia no
     fiable (cuota/conexión/timeout) NUNCA excluye (ver benchmark.py)."""
     if cap in unfit_for(r.provider):
+        return False
+    # [B·WEB-2, doc 32] Fail-closed de la visión. Va aquí y no en un filtro
+    # aparte precisamente porque este es el punto único: heredamos gratis las
+    # tres capas (compilación, filtro retroactivo en ejecución, y la UI).
+    if cap is Capability.VISION and not supports_vision(r.provider, r.model):
         return False
     from app.mel import benchmark
     return cap.value not in benchmark.measured_unfit(r)

@@ -217,9 +217,24 @@ async def _try_one(req: ExecutionRequest, ref: ModelRef) -> tuple[Optional[dict]
             # Sin él, la llamada es byte a byte la de siempre — así el cambio es
             # ADITIVO de verdad: nada que envuelva o sustituya a `registry`
             # (tests, futuros decoradores) tiene que enterarse de nada.
-            call = (registry.execute(ref, req.prompt, req.system_prompt, messages=req.messages)
-                    if req.messages
-                    else registry.execute(ref, req.prompt, req.system_prompt))
+            # [2026-08-04] `workdir` viaja igual de aditivo: solo se nombra
+            # cuando el caller lo pidió (agentes CLI sobre la carpeta de un
+            # proyecto). Sin él, la llamada sigue siendo la de siempre.
+            # [B·WEB-2] Las imágenes van primero: son la razón de ser de la
+            # petición cuando existen (visión), y a diferencia del resto NO
+            # degradan — si el proveedor no las acepta, el registry lanza y
+            # este candidato cuenta como fallido (se salta al siguiente).
+            if req.images:
+                call = registry.execute(ref, req.prompt, req.system_prompt,
+                                        messages=req.messages or None,
+                                        images=list(req.images))
+            elif req.workdir:
+                call = registry.execute(ref, req.prompt, req.system_prompt,
+                                        messages=req.messages or None, workdir=req.workdir)
+            elif req.messages:
+                call = registry.execute(ref, req.prompt, req.system_prompt, messages=req.messages)
+            else:
+                call = registry.execute(ref, req.prompt, req.system_prompt)
             # [S4 · NEW-2] DEADLINE por petición. Antes el único límite era el
             # del propio provider (180 s en Ollama) y, con cadena de fallback,
             # eran 180 s POR SALTO — un proveedor colgado podía costar minutos.

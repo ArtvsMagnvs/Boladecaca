@@ -53,14 +53,40 @@ def test_aithera_es_INTERNA_no_asignable_a_un_agente():
     assert tool_manager.get_tool("aithera") is not None
 
 
-def test_un_agente_no_puede_asignarse_la_tool_interna():
-    """La validacion de `allowed_tools` usa el catalogo PUBLICO, asi que pedir
-    'aithera' a mano falla como cualquier tool inexistente."""
-    from app.agents.agent_manager import agent_manager
+def test_la_tool_interna_se_puede_listar_pero_no_da_alcance_extra():
+    """[2026-08-02] Este test afirmaba que asignar 'aithera' a mano REVENTABA
+    (la validacion miraba solo el catalogo publico). Esa proteccion era
+    ILUSORIA y el test de justo debajo lo demuestra: `Authority.check` deja
+    pasar SIEMPRE las internas, este o no en la whitelist. O sea, un agente sin
+    'aithera' en su lista ya podia usarla; lo que la acota de verdad es la
+    frontera de PROYECTO, nunca esta lista.
 
+    El contrato real, y el que ahora se prueba: listarla es legitimo (hizo
+    falta al dar TODAS las tools al orquestador, que necesita verla en su
+    catalogo de nodo) y no concede ni un permiso mas. Una tool INVENTADA sigue
+    rechazandose, que es para lo que existe la validacion."""
+    from app.agents.agent_manager import agent_manager
+    from app.db.database import Project, SessionLocal
+
+    db = SessionLocal()
+    try:
+        p = Project(name="[test] internas", status="active")
+        db.add(p)
+        db.commit()
+        db.refresh(p)
+        pid = p.id
+    finally:
+        db.close()
+
+    agente = agent_manager.create_agent(
+        name="[test] con interna", allowed_tools=["aithera"], project_id=pid)
+    assert "aithera" in agente.allowed_tools
+
+    # Lo que SÍ tiene que seguir fallando: una tool que no existe.
     with pytest.raises(ValueError) as exc:
-        agent_manager.create_agent(name="[test] colado", allowed_tools=["aithera"])
-    assert "aithera" in str(exc.value)
+        agent_manager.create_agent(
+            name="[test] inventada", allowed_tools=["tool_que_no_existe"], project_id=pid)
+    assert "tool_que_no_existe" in str(exc.value)
 
 
 def test_la_whitelist_de_un_agente_no_puede_quitar_las_internas():

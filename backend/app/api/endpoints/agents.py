@@ -15,7 +15,7 @@
 from typing import Optional, List
 from datetime import datetime
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, File, HTTPException, Query, UploadFile
 from pydantic import BaseModel
 
 from app.db.database import SessionLocal
@@ -32,6 +32,10 @@ from app.agents.agent_manager import agent_manager
 # prefix="/api" - los routers son responsables de anadir su propia
 # seccion del path.
 router = APIRouter(prefix="/agents", tags=["agents"])
+
+# [2026-08-02] Tope de un adjunto del chat. Generoso para un documento o una
+# captura, acotado para que nadie llene el disco desde el chat sin querer.
+MAX_ATTACH_BYTES = 50 * 1024 * 1024
 
 
 def _agent_to_response(agent: Agent) -> AgentResponse:
@@ -108,7 +112,12 @@ def update_agent(agent_id: int, payload: AgentUpdate):
 
 @router.delete("/{agent_id}", status_code=204)
 def delete_agent(agent_id: int):
-    ok = agent_manager.delete_agent(agent_id)
+    try:
+        ok = agent_manager.delete_agent(agent_id)
+    except ValueError as e:
+        # [2026-08-02] El orquestador de un proyecto no se borra. 409 y no 400:
+        # la peticion es valida, el estado del recurso es lo que lo impide.
+        raise HTTPException(status_code=409, detail=str(e))
     if not ok:
         raise HTTPException(status_code=404, detail=f"agente no encontrado: id={agent_id}")
     return None
@@ -123,12 +132,124 @@ async def execute_agent(agent_id: int, payload: AgentExecutionCreate):
     """Lanza una tarea sobre el agente. Devuelve el AgentExecution en
     estado 'pending' (la coroutine arrancara inmediatamente en background)."""
     try:
-        execution = agent_manager.create_execution(agent_id=agent_id, task=payload.task)
+        execution = agent_manager.create_execution(
+            agent_id=agent_id, task=payload.task, model=payload.model)
         return _execution_to_response(execution)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"error lanzando tarea: {type(e).__name__}: {e}")
+
+
+class AttachResult(BaseModel):
+    """Lo que devuelve subir un adjunto: dónde quedó, para que el chat pueda
+    nombrarlo en el mensaje y el agente leerlo con `document`/`filesystem`."""
+    path: str
+    name: str
+    size: int
+
+
+@router.post("/{agent_id}/attach", response_model=AttachResult, status_code=201)
+async def attach_file(agent_id: int, file: UploadFile = File(...)):
+    """[2026-08-02] Adjuntar un archivo o imagen desde el chat del agente.
+
+    DECISIÓN DEL USUARIO: el archivo se COPIA a la carpeta del proyecto (en
+    `_adjuntos/`), no se lee y se tira. Así el agente puede volver a
+    consultarlo en misiones futuras y no hay que inventar permisos nuevos: cae
+    dentro de `repo_path`, que es donde ya puede trabajar.
+
+    CUALQUIER formato: no se filtra por extensión (petición explícita — "solo
+    añadir archivos o fotos"). Lo que sí se acota es el TAMAÑO."""
+    import shutil
+    from pathlib import Path
+
+    agent = agent_manager.get_agent(agent_id)
+    if not agent:
+        raise HTTPException(status_code=404, detail=f"agente no encontrado: id={agent_id}")
+    if not agent.project_id:
+        raise HTTPException(status_code=400, detail="este agente no pertenece a ningún proyecto")
+
+    db = SessionLocal()
+    try:
+        from app.db.database import Project
+
+        project = db.get(Project, agent.project_id)
+        repo = (project.repo_path or "").strip() if project else ""
+    finally:
+        db.close()
+    if not repo:
+        raise HTTPException(
+            status_code=400,
+            detail="el proyecto no tiene carpeta asignada: elígela primero (📁 en el proyecto)")
+
+    destino_dir = Path(repo).expanduser() / "_adjuntos"
+    try:
+        destino_dir.mkdir(parents=True, exist_ok=True)
+    except OSError as e:
+        raise HTTPException(status_code=400, detail=f"no se pudo crear {destino_dir}: {e}")
+
+    # Nombre saneado: solo el nombre base, nunca una ruta que se escape.
+    nombre = Path(file.filename or "adjunto").name or "adjunto"
+    destino = destino_dir / nombre
+    i = 1
+    while destino.exists():                      # no pisar un adjunto anterior
+        destino = destino_dir / f"{Path(nombre).stem}_{i}{Path(nombre).suffix}"
+        i += 1
+
+    escritos = 0
+    try:
+        with destino.open("wb") as out:
+            while True:
+                trozo = await file.read(1024 * 1024)
+                if not trozo:
+                    break
+                escritos += len(trozo)
+                if escritos > MAX_ATTACH_BYTES:
+                    out.close()
+                    destino.unlink(missing_ok=True)
+                    raise HTTPException(
+                        status_code=413,
+                        detail=f"archivo demasiado grande (máx. {MAX_ATTACH_BYTES // (1024*1024)} MB)")
+                out.write(trozo)
+    except HTTPException:
+        raise
+    except Exception as e:
+        destino.unlink(missing_ok=True)
+        raise HTTPException(status_code=500, detail=f"no se pudo guardar: {type(e).__name__}: {e}")
+
+    return AttachResult(path=str(destino), name=destino.name, size=escritos)
+
+
+class GrantFolder(BaseModel):
+    path: str
+
+
+@router.post("/{agent_id}/folders", response_model=AgentResponse)
+def grant_folder(agent_id: int, payload: GrantFolder):
+    """[2026-08-02] Dar a ESTE agente acceso a una carpeta CONCRETA, además de
+    la del proyecto (botón de carpeta del chat). Se acumulan en
+    `Agent.extra_paths` y `Authority._check_path_scope` las trata como raíces
+    válidas — nunca sustituyen a la del proyecto, la amplían."""
+    import os
+
+    agent = agent_manager.get_agent(agent_id)
+    if not agent:
+        raise HTTPException(status_code=404, detail=f"agente no encontrado: id={agent_id}")
+    ruta = (payload.path or "").strip()
+    if not ruta:
+        raise HTTPException(status_code=400, detail="falta la carpeta")
+    ruta = os.path.abspath(os.path.expanduser(ruta))
+    if not os.path.isdir(ruta):
+        raise HTTPException(status_code=400, detail=f"no es una carpeta existente: {ruta}")
+
+    actuales = list(agent.extra_paths or [])
+    if ruta not in actuales:
+        actuales.append(ruta)
+    try:
+        actualizado = agent_manager.update_agent(agent_id, extra_paths=actuales)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return _agent_to_response(actualizado)
 
 
 @router.get("/{agent_id}/executions", response_model=List[AgentExecutionResponse])

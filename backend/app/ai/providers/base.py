@@ -52,6 +52,47 @@ def normalize_history(messages: Optional[List[Dict[str, Any]]]) -> List[Dict[str
     return out
 
 
+# ---------------------------------------------------------------------------
+# Imagenes (B·WEB-2, doc 32) — el canal multimodal
+# ---------------------------------------------------------------------------
+# EL CONTRATO: `images` son imagenes en base64 SIN el prefijo `data:`, en el
+# orden en que el modelo debe verlas. Van SIEMPRE con el turno actual (el de
+# `prompt`) — que es el caso de uso real: "mira ESTA captura y dime donde esta
+# el boton". Adjuntar imagenes a turnos pasados es innecesario y multiplicaria
+# el coste de cada llamada.
+#
+# Solo lo implementan los proveedores REALMENTE multimodales (ver
+# `mel/catalog.py::supports_vision`). Los demas ni siquiera reciben el
+# parametro: el MEL no les envia peticiones de vision, y si por lo que fuera
+# llegara una, el registry lanza en vez de degradar en silencio — un modelo que
+# no ve la imagen respondería igual, inventandose lo que "ve".
+IMAGE_MIME_DEFAULT = "image/png"
+
+
+def normalize_images(images: Optional[List[str]]) -> List[str]:
+    """Sanea la lista de imagenes ANTES de que la vea ningun proveedor.
+
+    Acepta tanto base64 puro como un data-URI completo
+    (`data:image/png;base64,iVBOR...`) y devuelve SIEMPRE base64 puro — asi
+    cada proveedor lo envuelve en su formato sin tener que adivinar. Descarta
+    entradas vacias o que no sean texto. Nunca lanza."""
+    if not images:
+        return []
+    out: List[str] = []
+    for img in images:
+        if not isinstance(img, str):
+            continue
+        dato = img.strip()
+        if not dato:
+            continue
+        if dato.startswith("data:"):
+            _, _, dato = dato.partition(",")
+            dato = dato.strip()
+        if dato:
+            out.append(dato)
+    return out
+
+
 class BaseAIProvider(ABC):
     """Base class for all AI providers."""
 
@@ -120,6 +161,14 @@ class BaseAIProvider(ABC):
         va en `prompt` y el system en `system_prompt` (ver `normalize_history`).
         Opcional en toda la jerarquia: un proveedor que lo ignore sigue siendo
         valido y se comporta como siempre.
+
+        `images` [B·WEB-2]: NO va en esta firma a proposito. Solo lo aceptan los
+        proveedores REALMENTE multimodales (Gemini, Anthropic, los compatibles
+        con OpenAI y Ollama con un modelo VL), cada uno anadiendolo a su propia
+        `generate`. Ponerlo aqui obligaria a los que no ven a aceptarlo y
+        ignorarlo en silencio — y una imagen ignorada en silencio es justo lo
+        que produce una respuesta inventada. Que el resto lance `TypeError` es
+        el comportamiento QUERIDO: el registry lo convierte en un fallo claro.
 
         Returns:
             Dict with keys: 'response' (str), 'model' (str), 'tokens' (int, optional)

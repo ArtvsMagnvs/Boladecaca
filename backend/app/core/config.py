@@ -8,10 +8,12 @@ load_dotenv()
 class Settings:
     # App settings
     APP_NAME = "Aithera"
-    # V1.0 R7 (cierre del bloque ORQUESTRATOR, doc 23) - bump sincronizado con
-    # main.py y frontend/package.json. Tag v0.9.5. El cierre de V1.0 COMPLETO
-    # (tras el MVP-beta) sera v1.0.0.
-    VERSION = "0.9.5"
+    # V1.0 CERRADO (2026-08-02): el usuario decide cerrar la fase sin
+    # instalador/MVP-beta -- sin beta testers todavia, se prefiere seguir
+    # desarrollando. Bump sincronizado con main.py y frontend/package.json.
+    # Tag v1.0.0. El instalador/onboarding queda como trabajo POST-1.0, no
+    # como condicion para el bump (decision de version del usuario).
+    VERSION = "1.0.0"
     DEBUG = os.getenv("DEBUG", "false").lower() == "true"
 
     # API settings
@@ -68,15 +70,26 @@ class Settings:
     # Concurrencia de olas del executor (T3/V1.2). En V1.0 la ola es de tamaño 1
     # (secuencial); el semáforo entra en V1.2 con las olas paralelas.
     TIE_MAX_PARALLEL = int(os.getenv("TIE_MAX_PARALLEL", "3"))
-    # V1.0 (R1, doc 23): vueltas máximas del bucle de tool-use por nodo
-    # (elegir→ejecutar→observar). 5 basta para encadenar varias herramientas sin
-    # que un modelo que se atasca queme tokens indefinidamente.
-    TIE_TOOL_MAX_ITERS = int(os.getenv("TIE_TOOL_MAX_ITERS", "5"))
-    # [S2, B-1] Presupuesto AMPLIADO para nodos con herramientas de ESCRITURA
-    # (filesystem/shell/git/…): crear un proyecto con varios archivos no cabe en
-    # 5 vueltas — era parte del techo estructural del fallo B. La selección la
-    # hace el runtime según las tools del nodo (ver runtime.py::_iters_for).
-    TIE_TOOL_MAX_ITERS_WRITE = int(os.getenv("TIE_TOOL_MAX_ITERS_WRITE", "12"))
+    # [Sesión A, 2026-08-04] EL PRESUPUESTO DEL BUCLE PASA DE FIJO A BASADO EN
+    # PROGRESO. El techo fijo (5/12 vueltas, TIE_TOOL_MAX_ITERS[_WRITE] — hoy
+    # retirados) trataba igual a una misión que AVANZA (leyó el documento,
+    # buscó, va a escribir — el caso real de Cordyceps necesitaba ~30 pasos
+    # legítimos) que a una que gira en vacío. Subir el número habría sido un
+    # parche: la tarea grande de mañana necesitaría 60. El criterio correcto es
+    # el de Claude Code: el límite es "¿sigo progresando?", no "¿cuántos pasos
+    # llevo?". Dos números lo gobiernan:
+    #
+    # TECHO DURO de seguridad por nodo: la única función legítima del número
+    # total es cortar un bucle desbocado, no acotar el trabajo legítimo. Un
+    # nodo que da 60 vueltas CON progreso real es una tarea grande, no un bug.
+    TIE_TOOL_HARD_CEILING = int(os.getenv("TIE_TOOL_HARD_CEILING", "60"))
+    # LÍMITE DE ATASCO: vueltas CONSECUTIVAS sin ninguna herramienta ejecutada
+    # con éxito (JSON inválido, answer rechazado, tool denegada/fallida, permiso
+    # no concedido…) tras las que el bucle se rinde con la causa real. Es EL
+    # corte efectivo — y corta ANTES que el techo viejo cuando algo va mal (4
+    # vueltas estériles, no 12). El detector de fallo IDÉNTICO de S9c sigue
+    # cortando incluso antes (3 repeticiones exactas).
+    TIE_TOOL_STALL_LIMIT = int(os.getenv("TIE_TOOL_STALL_LIMIT", "4"))
     # Timeout por llamada a herramienta dentro del bucle (segundos). El
     # ToolManager lo acota además a su propio máximo duro.
     TIE_TOOL_TIMEOUT_S = int(os.getenv("TIE_TOOL_TIMEOUT_S", "60"))

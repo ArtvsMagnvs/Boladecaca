@@ -98,6 +98,7 @@ class FilesystemTool(BaseTool):
                 "file_exists": self._file_exists,
                 "list_dir": self._list_dir,
                 "write_file": self._write_file,
+                "append_file": self._append_file,
                 "create_dir": self._create_dir,
                 "delete_file": self._delete_file,
             }.get(action)
@@ -106,7 +107,7 @@ class FilesystemTool(BaseTool):
                 return {
                     "success": False,
                     "result": None,
-                    "error": f"Accion desconocida: {action}. Disponibles: read_file, file_exists, list_dir, write_file, create_dir, delete_file",
+                    "error": f"Accion desconocida: {action}. Disponibles: read_file, file_exists, list_dir, write_file, append_file, create_dir, delete_file",
                 }
 
             return await handler(params)
@@ -143,7 +144,19 @@ class FilesystemTool(BaseTool):
             },
             {
                 "id": "write_file",
-                "description": "Escribe texto en un archivo (lo crea si no existe).",
+                "description": ("Escribe texto en un archivo (lo crea si no existe; SOBRESCRIBE "
+                                "si ya existía). Para un documento LARGO no intentes mandarlo "
+                                "entero: escribe la primera parte aquí y añade el resto con "
+                                "'append_file' — tu respuesta tiene un límite de tamaño y un "
+                                "documento largo se cortaría a medias."),
+                "requires_confirmation": True,
+                "params": {"path": "string", "content": "string"},
+            },
+            {
+                "id": "append_file",
+                "description": ("AÑADE texto al final de un archivo (lo crea si no existe). ES LA "
+                                "FORMA DE ESCRIBIR DOCUMENTOS LARGOS: write_file la primera parte "
+                                "y append_file el resto, parte a parte, hasta terminarlo."),
                 "requires_confirmation": True,
                 "params": {"path": "string", "content": "string"},
             },
@@ -259,6 +272,39 @@ class FilesystemTool(BaseTool):
 
         size = await asyncio.to_thread(_do_write)
         return {"success": True, "result": {"path": str(path), "size": size}, "error": None}
+
+    async def _append_file(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """[2026-08-04] AÑADIR al final — la salida que faltaba para escribir un
+        documento LARGO.
+
+        LA CAUSA RAÍZ QUE CIERRA: el modelo emite su llamada a herramienta dentro
+        de UN objeto JSON, y su respuesta tiene un techo de tokens (2048 en
+        MiniMax, 4096 en la mayoría). Un plan de 40.000 caracteres son ~12.000
+        tokens: la respuesta se corta a mitad del string JSON, el JSON queda
+        inválido, y en el reintento pasa EXACTAMENTE lo mismo porque el techo no
+        cambia. No era mala suerte — era imposible por construcción, y explica
+        por qué los documentos cortos sí se escribían y los largos jamás.
+
+        Con `append_file` el documento se escribe por partes, cada una dentro
+        del techo. Devuelve el tamaño acumulado para que el modelo vea el avance."""
+        path_str = params.get("path")
+        content = params.get("content", "")
+        if not path_str:
+            return {"success": False, "result": None, "error": "falta parametro: path"}
+        path = _resolve_user_path(path_str)
+        if not _is_path_allowed(path):
+            return {"success": False, "result": None, "error": f"path fuera de zonas permitidas: {path}"}
+
+        def _do_append():
+            path.parent.mkdir(parents=True, exist_ok=True)
+            with open(path, "a", encoding="utf-8") as f:
+                f.write(content)
+            return path.stat().st_size
+
+        size = await asyncio.to_thread(_do_append)
+        return {"success": True,
+                "result": {"path": str(path), "appended": len(content), "size": size},
+                "error": None}
 
     async def _create_dir(self, params: Dict[str, Any]) -> Dict[str, Any]:
         path_str = params.get("path")

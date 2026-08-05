@@ -8,7 +8,7 @@
 import json
 import httpx
 from typing import Dict, Any, List, Optional, AsyncIterator
-from .base import BaseAIProvider, normalize_history
+from .base import BaseAIProvider, IMAGE_MIME_DEFAULT, normalize_history, normalize_images
 
 
 class OpenAICompatibleProvider(BaseAIProvider):
@@ -47,25 +47,42 @@ class OpenAICompatibleProvider(BaseAIProvider):
         return headers
 
     def _build_messages(self, prompt: str, system_prompt: Optional[str],
-                        history: Optional[List[Dict[str, Any]]] = None):
+                        history: Optional[List[Dict[str, Any]]] = None,
+                        images: Optional[List[str]] = None):
         """[R6.5a] system -> historial -> turno actual, que es exactamente el
         orden que espera el formato de OpenAI. Este metodo es el UNICO punto de
         cambio para los 8 proveedores que heredan de esta clase (OpenAI,
         MiniMax, DeepSeek, OpenRouter, Grok, Kimi, GLM, Qwen).
 
-        Sin historial el resultado es identico byte a byte al de antes."""
+        Sin historial el resultado es identico byte a byte al de antes.
+
+        [B·WEB-2] Con imagenes, el `content` del turno actual pasa de string a
+        lista de partes (`image_url` con data-URI + `text`), que es el formato
+        multimodal de OpenAI que replican los compatibles. Sin imagenes se
+        conserva el string de siempre — cero regresion para los 8."""
         messages = []
         if system_prompt:
             messages.append({"role": "system", "content": system_prompt})
         messages.extend(normalize_history(history))
-        messages.append({"role": "user", "content": prompt})
+        imgs = normalize_images(images)
+        if imgs:
+            partes: List[Dict[str, Any]] = [
+                {"type": "image_url",
+                 "image_url": {"url": f"data:{IMAGE_MIME_DEFAULT};base64,{img}"}}
+                for img in imgs
+            ]
+            partes.append({"type": "text", "text": prompt})
+            messages.append({"role": "user", "content": partes})
+        else:
+            messages.append({"role": "user", "content": prompt})
         return messages
 
     async def generate(self, prompt: str, system_prompt: Optional[str] = None,
-                       messages: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
+                       messages: Optional[List[Dict[str, Any]]] = None,
+                       images: Optional[List[str]] = None) -> Dict[str, Any]:
         payload = {
             "model": self.model,
-            "messages": self._build_messages(prompt, system_prompt, messages),
+            "messages": self._build_messages(prompt, system_prompt, messages, images),
             self.max_tokens_param: self.max_tokens_value,
         }
         try:

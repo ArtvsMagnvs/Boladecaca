@@ -12,7 +12,7 @@
 import type { Agent, AgentExecution } from "@/lib/api";
 import { useT } from "@/store/useI18n";
 
-export type ChipSize = "icon" | "compact" | "full";
+export type ChipSize = "icon" | "compact" | "full" | "name";
 
 const SKILLS_PREVIEW = 3;
 
@@ -39,10 +39,17 @@ interface Props {
   // popup de detalle de solo lectura (AgentDetailPopup) se retiro porque
   // duplicaba lo que ya muestra la pantalla completa, sin poder editar nada.
   onOpen: () => void;
+  // [2026-08-02, size="name"] Clic en la FILA (no en "Abrir") cambia el chat
+  // lateral de la tarjeta a la conversación de ESTE agente — analogo a
+  // cambiar de sesion. Solo se usa/hace falta en size="name".
+  onSelect?: () => void;
+  // [2026-08-02, size="name"] Si esta es la conversacion mostrada ahora mismo
+  // en el chat lateral, se resalta la fila para que quede claro cual esta activa.
+  selected?: boolean;
 }
 
 export function AgentChip({
-  agent, size, lastExecutionFailed, executions, isDragging, onOpen,
+  agent, size, lastExecutionFailed, executions, isDragging, onOpen, onSelect, selected,
 }: Props) {
   const t = useT();
   const ringClass = agent.is_active
@@ -81,6 +88,39 @@ export function AgentChip({
       >
         {icon}
       </button>
+    );
+  }
+
+  // [2026-08-02] "name": pensado para la lista lateral cuando el chat del
+  // proyecto se va a columna — solo el nombre (nada de icono/skills/estado,
+  // pedido explicito: "que muestre solamente el nombre de los agentes") mas
+  // un boton "Abrir" propio para la ventana-tarjeta (el click viejo). El
+  // resto de la fila cambia el chat lateral a la conversacion de este agente.
+  if (size === "name") {
+    return (
+      <div
+        onClick={onSelect}
+        className={`flex items-center gap-2 rounded-lg px-2.5 py-1.5 cursor-pointer border transition-all ${
+          selected
+            ? "bg-accent/15 border-accent/40"
+            : "border-transparent hover:border-accent/20 hover:bg-base-800/60"
+        } ${isDragging ? "opacity-50" : ""}`}
+      >
+        <span className="text-xs text-ink truncate flex-1 min-w-0">{agent.name}</span>
+        {isWorking && (
+          <span className="h-1.5 w-1.5 rounded-full bg-signal-ok animate-pulse shrink-0" aria-hidden />
+        )}
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            onOpen();
+          }}
+          className="text-[10px] text-accent hover:text-accent-soft shrink-0 px-1"
+          title={agent.name}
+        >
+          {t("workspace.agentChip.open")}
+        </button>
+      </div>
     );
   }
 

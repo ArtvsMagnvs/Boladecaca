@@ -207,29 +207,50 @@ def _handoff_from_deps(node: TaskNode, graph: TaskGraph) -> str:
 _SKILLS_CONTEXT_CHARS = 2000
 
 
-def _persona_block(graph: TaskGraph) -> str:
-    """[PU2, doc 35] Si la misión viene de un agente con skills asignadas
-    (`Authority.skills`, ver `authority.py`), las resuelve contra el catálogo
-    y arma un bloque breve de "quién ejecuta esto" — antes de PU2 las skills
-    vivían en BD y no llegaban a NINGÚN sitio; un agente creado "con skills de
-    marketing" ejecutaba exactamente igual que uno sin ninguna. Best-effort: si
-    el catálogo no resuelve algo, se omite esa skill, nunca rompe el nodo."""
-    skills = (graph.authority or {}).get("skills")
-    if not skills:
-        return ""
-    try:
-        from app.agents import skills_catalog
+_AGENT_PROMPT_CONTEXT_CHARS = 2000
 
-        entries = skills_catalog.descriptions_for(list(skills))
-    except Exception:
-        entries = []
-    if not entries:
-        return ""
-    lines = [f"- {e['name']}: {e.get('description', '')}" for e in entries]
-    block = "Actúas como un agente con estas especialidades:\n" + "\n".join(lines)
-    if len(block) > _SKILLS_CONTEXT_CHARS:
-        block = block[:_SKILLS_CONTEXT_CHARS] + "\n[…]"
-    return block
+
+def _persona_block(graph: TaskGraph) -> str:
+    """[PU2, doc 35 + 2026-08-02] Si la misión viene de un agente con skills
+    asignadas (`Authority.skills`) y/o un prompt de comportamiento
+    (`Authority.agent_prompt`, ver `authority.py`), arma un bloque breve de
+    "quién ejecuta esto y cómo debe comportarse" — antes de PU2 las skills
+    vivían en BD y no llegaban a NINGÚN sitio; un agente creado "con skills de
+    marketing" ejecutaba exactamente igual que uno sin ninguna. El prompt de
+    comportamiento es la misma idea aplicada a instrucciones libres del
+    usuario (p.ej. lo único que el orquestador puede editar de sí mismo).
+    Best-effort: si el catálogo no resuelve algo, se omite esa skill, nunca
+    rompe el nodo."""
+    authority = graph.authority or {}
+    skills = authority.get("skills")
+    agent_prompt = authority.get("agent_prompt")
+
+    partes: list[str] = []
+
+    if skills:
+        try:
+            from app.agents import skills_catalog
+
+            entries = skills_catalog.descriptions_for(list(skills))
+        except Exception:
+            entries = []
+        if entries:
+            lines = [f"- {e['name']}: {e.get('description', '')}" for e in entries]
+            block = "Actúas como un agente con estas especialidades:\n" + "\n".join(lines)
+            if len(block) > _SKILLS_CONTEXT_CHARS:
+                block = block[:_SKILLS_CONTEXT_CHARS] + "\n[…]"
+            partes.append(block)
+
+    if isinstance(agent_prompt, str) and agent_prompt.strip():
+        prompt = agent_prompt.strip()
+        if len(prompt) > _AGENT_PROMPT_CONTEXT_CHARS:
+            prompt = prompt[:_AGENT_PROMPT_CONTEXT_CHARS] + "\n[…]"
+        partes.append(
+            "Instrucciones de comportamiento definidas por el usuario para este "
+            f"agente:\n{prompt}"
+        )
+
+    return "\n\n".join(partes)
 
 
 async def _execute_node(node: TaskNode, graph: TaskGraph, mission: Mission, trace_id: str) -> None:

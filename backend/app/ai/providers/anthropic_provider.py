@@ -2,7 +2,7 @@
 import json
 import httpx
 from typing import Dict, Any, List, Optional, AsyncIterator
-from .base import BaseAIProvider, normalize_history
+from .base import BaseAIProvider, IMAGE_MIME_DEFAULT, normalize_history, normalize_images
 
 
 class AnthropicProvider(BaseAIProvider):
@@ -20,14 +20,30 @@ class AnthropicProvider(BaseAIProvider):
         return "anthropic"
 
     def _build_payload(self, prompt: str, system_prompt: Optional[str], stream: bool,
-                       history: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
+                       history: Optional[List[Dict[str, Any]]] = None,
+                       images: Optional[List[str]] = None) -> Dict[str, Any]:
         """[R6.5a] Anthropic tiene su propio formato: el system va en su PROPIO
         campo de nivel superior, nunca dentro de `messages` (a diferencia de
-        OpenAI). El historial si va en el array, antes del turno actual."""
+        OpenAI). El historial si va en el array, antes del turno actual.
+
+        [B·WEB-2] Con imagenes, el `content` del turno actual deja de ser un
+        string y pasa a ser una LISTA de bloques: los de tipo "image"
+        (source base64) primero y el "text" al final — el orden que la propia
+        doc de Anthropic recomienda cuando la pregunta va sobre la imagen.
+        Sin imagenes se conserva el string de siempre, byte a byte."""
+        imgs = normalize_images(images)
+        if imgs:
+            contenido: Any = [
+                {"type": "image",
+                 "source": {"type": "base64", "media_type": IMAGE_MIME_DEFAULT, "data": img}}
+                for img in imgs
+            ] + [{"type": "text", "text": prompt}]
+        else:
+            contenido = prompt
         payload = {
             "model": self.model,
             "max_tokens": 4096,
-            "messages": normalize_history(history) + [{"role": "user", "content": prompt}],
+            "messages": normalize_history(history) + [{"role": "user", "content": contenido}],
             "stream": stream
         }
         if system_prompt:
@@ -35,7 +51,8 @@ class AnthropicProvider(BaseAIProvider):
         return payload
 
     async def generate(self, prompt: str, system_prompt: Optional[str] = None,
-                       messages: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
+                       messages: Optional[List[Dict[str, Any]]] = None,
+                       images: Optional[List[str]] = None) -> Dict[str, Any]:
         """Generate response using Anthropic Claude."""
         headers = {
             "x-api-key": self.api_key,
@@ -43,7 +60,8 @@ class AnthropicProvider(BaseAIProvider):
             "Content-Type": "application/json"
         }
 
-        payload = self._build_payload(prompt, system_prompt, stream=False, history=messages)
+        payload = self._build_payload(prompt, system_prompt, stream=False, history=messages,
+                                      images=images)
 
         try:
             client = self._get_client()  # V0.9 A2a: cliente persistente por proveedor

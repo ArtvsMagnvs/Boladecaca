@@ -115,7 +115,14 @@ export default function Missions() {
         const pending = await api.getApprovals();
         setToolGate(
           pending.find(
-            (a) => a.action_type === "tie_tool_permission" && a.mission_id === currentDetail!.mission_id
+            (a) =>
+              // [Sesión B, doc 40 §B5] `tie_tool_grant` (el gate de CONCESIÓN
+              // de una herramienta que faltaba, S11) se quedó fuera cuando se
+              // escribió esto en S7·S8 — se abre igual en pleno vuelo, bloquea
+              // igual la misión y no caduca (PU3), pero aquí no salía y había
+              // que ir al Chat a resolverlo.
+              (a.action_type === "tie_tool_permission" || a.action_type === "tie_tool_grant") &&
+              a.mission_id === currentDetail!.mission_id
           ) ?? null
         );
       } else {

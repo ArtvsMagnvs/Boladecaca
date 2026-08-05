@@ -86,21 +86,51 @@ class Authority:
       (`graph.authority` → `AgentTask.authority`, T3/T4a) — reusar el canal
       que ya existe es más simple que inventar uno paralelo para lo mismo.
       Nunca participa en `check()` ni en `is_unrestricted`: una misión con
-      SOLO skills (sin tools/proyecto/carpeta) sigue sin restricción."""
+      SOLO skills (sin tools/proyecto/carpeta) sigue sin restricción.
+    - `agent_prompt` [2026-08-02, petición del usuario]: el prompt de
+      comportamiento libre que el usuario escribe en la ficha del agente (o,
+      para el orquestador, lo ÚNICO que puede editar de sí mismo). Mismo
+      criterio que `skills`: descriptivo, no de seguridad — viaja por aquí
+      porque `Authority` ya es el canal que llega a cada nodo, y se combina
+      con el bloque de skills en `executor._persona_block`."""
 
     project_id: Optional[int] = None
     repo_path: Optional[str] = None
     allowed_tools: Optional[list[str]] = field(default=None)
     skills: Optional[list[str]] = field(default=None)
+    agent_prompt: Optional[str] = field(default=None)
+    # [2026-08-02] Carpetas EXTRA concedidas a mano por el usuario (botón de
+    # carpeta del chat). Amplían `repo_path`, nunca lo sustituyen: una ruta vale
+    # si cae dentro de CUALQUIERA de las raíces permitidas.
+    extra_paths: Optional[list[str]] = field(default=None)
+    # [2026-08-02] 'manual' | 'auto'. Decisión del usuario POR AGENTE sobre si
+    # las acciones sensibles se preguntan o se conceden solas. NO es una
+    # frontera (no participa en `check`): es una política de aprobación, y la
+    # lee `toolloop._ask_permission` — mismo lugar donde ya se consulta el
+    # perfil global de A3b.
+    autonomy: Optional[str] = None
 
     @property
     def is_unrestricted(self) -> bool:
         return self.project_id is None and self.repo_path is None and self.allowed_tools is None
 
+    @property
+    def auto_approves(self) -> bool:
+        """¿Este agente concede las acciones sensibles sin preguntar?"""
+        return (self.autonomy or "manual").strip().lower() == "auto"
+
+    def roots(self) -> list[str]:
+        """Todas las carpetas donde este encargo puede trabajar."""
+        out = [p for p in ([self.repo_path] + list(self.extra_paths or [])) if p]
+        return out
+
     def to_dict(self) -> dict:
         return {"project_id": self.project_id, "repo_path": self.repo_path,
                 "allowed_tools": list(self.allowed_tools) if self.allowed_tools is not None else None,
-                "skills": list(self.skills) if self.skills is not None else None}
+                "skills": list(self.skills) if self.skills is not None else None,
+                "extra_paths": list(self.extra_paths) if self.extra_paths is not None else None,
+                "autonomy": self.autonomy,
+                "agent_prompt": self.agent_prompt}
 
     @classmethod
     def from_dict(cls, d: Optional[dict]) -> "Authority":
@@ -108,11 +138,16 @@ class Authority:
             return cls()
         tools = d.get("allowed_tools")
         skills = d.get("skills")
+        extra = d.get("extra_paths")
+        agent_prompt = d.get("agent_prompt")
         return cls(
             project_id=d.get("project_id"),
             repo_path=d.get("repo_path"),
             allowed_tools=[str(t) for t in tools] if isinstance(tools, list) else None,
             skills=[str(s) for s in skills] if isinstance(skills, list) else None,
+            extra_paths=[str(p) for p in extra] if isinstance(extra, list) else None,
+            autonomy=d.get("autonomy"),
+            agent_prompt=str(agent_prompt) if isinstance(agent_prompt, str) else None,
         )
 
     # ------------------------------------------------------------------
@@ -200,11 +235,14 @@ class Authority:
         return None
 
     def _check_path_scope(self, tool_id: str, params: dict) -> Optional[str]:
-        """Las tools de archivos quedan dentro de la carpeta del proyecto."""
+        """Las tools de archivos quedan dentro de las carpetas permitidas: la
+        del proyecto y las EXTRA que el usuario haya concedido a mano."""
         keys = _PATH_PARAMS.get(tool_id)
         if not keys:
             return None
-        raiz = os.path.abspath(os.path.expanduser(self.repo_path))
+        raices = [os.path.abspath(os.path.expanduser(p)) for p in self.roots()]
+        if not raices:
+            return None
         for key in keys:
             value = params.get(key)
             if not value or not isinstance(value, str):
@@ -212,14 +250,20 @@ class Authority:
             destino = os.path.abspath(os.path.expanduser(value))
             # `commonpath` sobre rutas ya normalizadas cierra el `..`: no basta
             # con `startswith`, que dejaría pasar "/repo-otro" como hijo de "/repo".
-            try:
-                dentro = os.path.commonpath([raiz, destino]) == raiz
-            except ValueError:      # unidades distintas en Windows (C: vs D:)
-                dentro = False
-            if not dentro:
-                return (f"la ruta '{value}' está fuera de la carpeta de este proyecto "
-                        f"({self.repo_path}). No puedes salir de ahí.")
+            if not any(_dentro_de(raiz, destino) for raiz in raices):
+                permitidas = ", ".join(self.roots())
+                return (f"la ruta '{value}' está fuera de las carpetas de este encargo "
+                        f"({permitidas}). No puedes salir de ahí.")
         return None
+
+
+def _dentro_de(raiz: str, destino: str) -> bool:
+    """¿`destino` cae dentro de `raiz`? `commonpath` sobre rutas ya
+    normalizadas, que es lo que cierra el `..`."""
+    try:
+        return os.path.commonpath([raiz, destino]) == raiz
+    except ValueError:      # unidades distintas en Windows (C: vs D:)
+        return False
 
 
 def _same_project(a: Any, b: Any) -> bool:
@@ -288,19 +332,34 @@ def orchestrator_of(project_id: int) -> Optional[dict]:
         return None
 
 
-# [hotfix 2026-08-02] Herramientas con las que nace un orquestador creado
-# automáticamente. Deliberadamente MÍNIMAS, porque el usuario acotó el encargo:
-# "que SOLO pueda dar órdenes a los agentes de ese proyecto y trabajar sobre la
-# carpeta del proyecto".
-#   · dar órdenes a sus agentes → NO hace falta listarla: `aithera` es una tool
-#     INTERNA y `Authority.check` la deja pasar siempre (no es una capacidad
-#     concedida, es de la casa), pero SÍ queda sujeta a `_check_project_scope`,
-#     que es justo lo que impide que toque agentes de otro proyecto.
-#   · trabajar sobre la carpeta → `filesystem` + `document`, ambas en
-#     `_PATH_PARAMS`, así que `_check_path_scope` las encierra en `repo_path`.
-# El usuario puede ampliarlas luego desde la ficha del agente como en cualquier
-# otro; esto es solo el punto de partida seguro.
-ORCHESTRATOR_DEFAULT_TOOLS = ["filesystem", "document"]
+def orchestrator_tools() -> list[str]:
+    """TODAS las herramientas registradas: con las que trabaja el orquestador de
+    un proyecto.
+
+    [2026-08-02, decisión EXPLÍCITA del usuario] Antes eran solo
+    `["filesystem", "document"]`. El encargo ahora es "el orquestador tiene
+    siempre todas las tools asignadas y que no se le puedan quitar", incluidas
+    `shell`/`powershell`. Se le expuso el matiz de seguridad y lo confirmó:
+
+      · Las que reciben una RUTA (`filesystem`, `document`, `download`, `git`,
+        y la descarga de `browser`) SÍ quedan encerradas en `repo_path` por
+        `_check_path_scope` — ver `_PATH_PARAMS`.
+      · `shell`/`powershell` NO. Ejecutan comandos, y un comando puede navegar
+        a cualquier sitio con rutas absolutas: la frontera de carpeta no las
+        alcanza. Queda dicho aquí para que nadie lo descubra por sorpresa.
+      · `aithera` (interna) le da mando sobre SUS agentes y nada más, por
+        `_check_project_scope`.
+
+    Se calcula en tiempo de ejecución, no es una lista fija: una tool nueva
+    entra sola, que es lo que "todas" significa de verdad."""
+    try:
+        from app.tools import tool_manager
+
+        return sorted({t["tool_id"] for t in tool_manager.list_tools()}
+                      | _internal_tool_ids())
+    except Exception:
+        # Nunca dejar al orquestador sin nada por un fallo del registro.
+        return ["filesystem", "document"]
 
 
 def ensure_orchestrator(project_id: int) -> Optional[dict]:
@@ -323,6 +382,26 @@ def ensure_orchestrator(project_id: int) -> Optional[dict]:
     verificable aunque el modelo ignore cualquier instrucción de texto."""
     existing = orchestrator_of(project_id)
     if existing:
+        # [2026-08-02] RE-SINCRONIZA sus tools. Un orquestador creado antes de
+        # esta decisión tiene solo `filesystem`/`document`, y los orquestadores
+        # ya no son configurables por el usuario (no se les pueden quitar
+        # tools): la lista correcta es SIEMPRE todas las registradas. Sin esto,
+        # los proyectos existentes se quedarían con el orquestador mutilado
+        # para siempre — el mismo tipo de deuda invisible que ya mordió con las
+        # migraciones "nunca aplicadas".
+        completas = orchestrator_tools()
+        if set(existing.get("allowed_tools") or []) != set(completas):
+            try:
+                from app.agents.agent_manager import agent_manager
+
+                agent_manager.update_agent(existing["id"], allowed_tools=completas)
+                existing["allowed_tools"] = completas
+            except Exception as e:      # noqa: BLE001 — nunca romper por esto
+                import logging
+
+                logging.getLogger("aithera").warning(
+                    f"[authority] no se pudieron re-sincronizar las tools del "
+                    f"orquestador {existing['id']}: {e!r}")
         return existing
 
     try:
@@ -346,7 +425,7 @@ def ensure_orchestrator(project_id: int) -> Optional[dict]:
                 "proyecto y trabaja sobre su carpeta. Creado automáticamente al "
                 "abrir el chat del proyecto."
             ),
-            allowed_tools=list(ORCHESTRATOR_DEFAULT_TOOLS),
+            allowed_tools=orchestrator_tools(),
             project_id=project_id,
             icon="🧠",
             role="orchestrator",

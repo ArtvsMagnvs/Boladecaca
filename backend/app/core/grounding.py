@@ -308,6 +308,81 @@ def presents_unverifiable_evidence(text: str) -> bool:
     return False
 
 
+# ---------------------------------------------------------------------------
+# [Sesión B, doc 40 §B2] Entregables AFIRMADOS en una respuesta
+# ---------------------------------------------------------------------------
+# EL FALLO QUE CIERRA (2026-08-04, reportado por el usuario): la respuesta final
+# de una misión dijo "He escrito CORDYCEPS_PLAN_2026.md con el plan completo" y
+# el archivo NO EXISTÍA. Ni S2·S6 ni NEW-7 lo cazan: el primero mira verbos de
+# acción genéricos en el CAMINO CORTO (aquí hay nodos DONE reales detrás, así
+# que la afirmación "se sostiene"), y el segundo mira evidencia presentada
+# (listados, código, recuentos) — un "he escrito X.md" no presenta ninguna.
+#
+# Este detector NO decide nada por sí solo: solo dice QUÉ archivos afirma el
+# texto haber creado. Quien verifica que existen es el responder, contra las
+# escrituras REALES registradas por el toolloop (§B1) y contra el disco.
+#
+# CONSERVADOR (mismo criterio que el resto del módulo): exige verbo de creación
+# EN PASADO + un nombre de archivo con extensión conocida en una ventana corta.
+# Un futuro ("voy a crear plan.md"), una pregunta ("¿lo guardo en notas.md?") o
+# una lectura ("el archivo GDD.docx dice…") NO cuentan como afirmación.
+_WRITE_VERB = (
+    r"(?:"
+    r"he (?:creado|escrito|guardado|generado|redactado)"
+    r"|(?:ya )?(?:queda|esta|dejo|dejado) (?:guardado|escrito|creado|generado)"
+    r"|(?:creado|escrito|guardado|generado|redactado) (?:el |la |un |una )?"
+    r"(?:archivo|documento|fichero|informe|plan)?\s*(?:en|como)?"
+    r"|lo (?:he )?(?:guardado|escrito|dejado) en"
+    r"|i (?:have )?(?:created|wrote|written|saved|generated)"
+    r"|saved (?:it )?(?:to|as|in)"
+    r"|written to"
+    r")"
+)
+
+# Ventana entre el verbo y el nombre del archivo. Corta a propósito: cuanto más
+# larga, más fácil es enganchar un nombre que aparece por otro motivo.
+_WRITE_WINDOW = 90
+
+_CLAIMED_FILE = re.compile(
+    _WRITE_VERB + r"[^\n]{0,%d}?([\w][\w./\\-]*(?:%s))\b" % (
+        _WRITE_WINDOW,
+        "|".join(re.escape(e) for e in _EVIDENCE_EXTENSIONS),
+    ),
+    re.IGNORECASE,
+)
+
+
+def _strip_code_fences(text: str) -> str:
+    """Quita el contenido de los bloques ``` — un ejemplo de código que
+    contiene `open("salida.md", "w")` NO es una afirmación de haber escrito
+    nada. Se sustituye por espacio para no pegar frases que estaban separadas."""
+    partes = text.split("```")
+    # Índices pares = fuera de fence; impares = dentro. Un fence sin cerrar deja
+    # su cola dentro (más conservador: menos falsos positivos).
+    return " ".join(p for i, p in enumerate(partes) if i % 2 == 0)
+
+
+def claimed_written_files(text: str) -> list[str]:
+    """Los nombres de archivo que el texto AFIRMA haber creado/escrito/guardado.
+
+    Devuelve los nombres BASE en minúsculas, sin ruta y sin duplicados — es lo
+    que se puede comparar de forma fiable contra lo que el toolloop registró
+    (las rutas pueden diferir en forma: relativa vs absoluta, `/` vs `\\`).
+
+    Lista vacía = el texto no afirma ningún entregable, que es el caso de la
+    inmensa mayoría de respuestas: el coste de este chequeo es ~un regex."""
+    if not text or not text.strip():
+        return []
+    limpio = _strip_code_fences(text)
+    nombres: list[str] = []
+    for m in _CLAIMED_FILE.finditer(limpio):
+        ruta = m.group(1)
+        base = re.split(r"[/\\]", ruta)[-1].lower().strip(".,;:)")
+        if base and base not in nombres:
+            nombres.append(base)
+    return nombres
+
+
 def honesty_note() -> str:
     """La coletilla honesta para el camino corto (i18n). Función y no
     constante: el idioma se resuelve en cada llamada, como el resto de `_t`."""

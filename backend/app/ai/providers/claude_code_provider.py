@@ -156,8 +156,16 @@ class ClaudeCodeProvider(BaseAIProvider):
         )
 
     async def generate(self, prompt: str, system_prompt: Optional[str] = None,
-                       messages: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
-        return await self._run(self._with_history(prompt, messages), system_prompt)
+                       messages: Optional[List[Dict[str, Any]]] = None,
+                       workdir: Optional[str] = None) -> Dict[str, Any]:
+        """[2026-08-04] `workdir`: la carpeta del proyecto sobre la que Claude
+        Code tiene que trabajar. Es LA pieza que convierte a este proveedor en
+        un agente de proyecto de verdad — el CLI lee ese repositorio, su
+        CLAUDE.md y sus ficheros, y actúa ahí con SUS herramientas. La cabecera
+        de este archivo ya lo anticipaba desde el primer día; lo que faltaba era
+        que alguien se lo pasara."""
+        return await self._run(self._with_history(prompt, messages), system_prompt,
+                               cwd=workdir)
 
     async def generate_stream(self, prompt: str, system_prompt: Optional[str] = None,
                               messages: Optional[List[Dict[str, Any]]] = None) -> AsyncIterator[str]:

@@ -32,7 +32,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, type Agent, type AgentExecution, type ToolInfo } from "@/lib/api";
 import { ErrorBanner, fieldLabel, fieldInput, btnPrimary, btnGhost } from "./Modal";
-import { useModeloIAOptions } from "./useModeloIAOptions";
 import { SkillPickerPopup } from "./SkillPickerPopup";
 import { HelpButton, windowShortcuts } from "./HelpPanel";
 import { useDragResize, MIN_CARD_W, MIN_CARD_H, type CardLayout, type Rect } from "./useWindowCard";
@@ -41,9 +40,18 @@ import { usePendingQuestions } from "@/hooks/usePendingQuestions";
 // Alias 'tr' (no 't'): este archivo usa 't' como variable de tool en
 // '.map((t) => …)' — evita sombrear/confundir.
 import { useT } from "@/store/useI18n";
+import { useConfirm } from "@/components/ConfirmDialog";
+import { ChatComposer } from "./ChatComposer";
 
 const EMOJI_CHOICES = ["🤖", "🧠", "⚙️", "🔧", "📊", "🔍", "✉️", "📅", "🗂️", "⚡"];
 const POLL_MS = 1800;
+
+// [2026-08-02] Chat lateral: mismos números que `ProjectCard`, para que las dos
+// tarjetas se comporten igual (el usuario los pidió juntos).
+const SIDE_CHAT_MIN_RATIO = 0.6;    // a partir de este % del lienzo, chat al lado
+const SIDE_CHAT_WIDTH_RATIO = 0.7;  // 70% del lado derecho
+const SIDE_CHAT_MIN_PX = 240;
+const SIDE_CHAT_MAX_PX = 1040;
 
 const STATUS_KEY: Record<string, string> = {
   pending: "agents.status.pending", running: "agents.status.running", completed: "agents.status.completed",
@@ -87,20 +95,27 @@ export function AgentWindowCard({
 }: Props) {
   const tr = useT();
   const [liveH, setLiveH] = useState<number | null>(null);
-  const handleCommit = useCallback((patch: Partial<CardLayout>) => { setLiveH(null); onCommit(patch); }, [onCommit]);
+  // [2026-08-02] También el ANCHO en vivo: el chat lateral aparece/desaparece
+  // según el ancho, así que tiene que reorganizarse MIENTRAS se arrastra el
+  // asa, no solo al soltar (mismo criterio que ya se aplicó al alto).
+  const [liveW, setLiveW] = useState<number | null>(null);
+  const handleCommit = useCallback((patch: Partial<CardLayout>) => {
+    setLiveH(null); setLiveW(null); onCommit(patch);
+  }, [onCommit]);
   const { nodeRef, headerHandlers, resizeHandlers } = useDragResize({
     layout, bounds, onCommit: handleCommit, onInteractStart,
-    onLiveResize: useCallback((r: Rect) => setLiveH(r.h), []),
+    onLiveResize: useCallback((r: Rect) => { setLiveH(r.h); setLiveW(r.w); }, []),
   });
 
   const [agent, setAgent] = useState<Agent | null>(null);
   const [executions, setExecutions] = useState<AgentExecution[]>([]);
   const [taskInput, setTaskInput] = useState("");
+  // [2026-08-02] Proveedor/modelo elegido para el PRÓXIMO mensaje.
+  const [chatModel, setChatModel] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
   const [iconPickerOpen, setIconPickerOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
   const pollRef = useRef<number | null>(null);
-  const modeloOptions = useModeloIAOptions();
   // [2026-08-02] Preguntas del asistente que esperan respuesta (ver
   // `usePendingQuestions`): también se pueden responder desde aquí.
   const { questions, refresh: refreshQuestions } = usePendingQuestions();
@@ -110,7 +125,12 @@ export function AgentWindowCard({
   const [editError, setEditError] = useState<string | null>(null);
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
-  const [agentType, setAgentType] = useState("generic");
+  // [2026-08-02, petición del usuario] El "Modelo IA" (agent_type) desaparece
+  // de aquí: la elección de proveedor/modelo vive SOLO en el selector del
+  // chat (ChatComposer), por mensaje. En su lugar, un prompt de comportamiento
+  // libre — lo único editable del ORQUESTADOR (ver `orchestratorEditForm`
+  // abajo), y disponible también para cualquier agente normal.
+  const [systemPrompt, setSystemPrompt] = useState("");
   const [maxExecutionTime, setMaxExecutionTime] = useState(300);
   const [skills, setSkills] = useState<string[]>([]);
   const [skillPickerOpen, setSkillPickerOpen] = useState(false);
@@ -125,7 +145,7 @@ export function AgentWindowCard({
     if (!agent) return;
     setName(agent.name);
     setDescription(agent.description ?? "");
-    setAgentType(agent.agent_type || "generic");
+    setSystemPrompt(agent.system_prompt ?? "");
     setMaxExecutionTime(agent.max_execution_time ?? 300);
     setSkills(agent.skills ?? []);
     setAllowedTools(agent.allowed_tools ?? []);
@@ -179,6 +199,36 @@ export function AgentWindowCard({
     onAgentChanged();
   };
 
+  // [2026-08-02, petición del usuario] BORRAR el agente desde su propia ficha:
+  // hasta ahora no había ninguna forma de eliminarlo. Vive en el modo "editar"
+  // (nunca en la vista de lectura) para que no se pueda pulsar sin querer, y
+  // pide confirmación. El ORQUESTADOR no lo tiene: el backend lo rechaza con
+  // 409 y aquí ni se ofrece — todo proyecto tiene el suyo.
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [confirm, confirmDialog] = useConfirm();
+
+  const removeAgent = async () => {
+    if (!agent) return;
+    const ok = await confirm({
+      title: tr("workspace.agentCard.deleteConfirm", { name: agent.name }),
+      message: tr("workspace.agentCard.deleteWarning"),
+      confirmLabel: tr("common.delete"),
+      danger: true,
+    });
+    if (!ok) return;
+    setDeleting(true);
+    setDeleteError(null);
+    try {
+      await api.deleteAgent(agent.id);
+      onGone();
+    } catch (e) {
+      setDeleteError(e instanceof Error ? e.message : tr("workspace.agentCard.saveFailed"));
+    } finally {
+      setDeleting(false);
+    }
+  };
+
   const saveEdit = async () => {
     if (!name.trim()) return;
     setEditSaving(true);
@@ -187,11 +237,28 @@ export function AgentWindowCard({
       await updateAgent({
         name: name.trim(),
         description: description || null,
-        agent_type: agentType,
         max_execution_time: maxExecutionTime,
         skills,
         allowed_tools: allowedTools,
+        system_prompt: systemPrompt,
       });
+      setEditing(false);
+    } catch (e) {
+      setEditError(e instanceof Error ? e.message : tr("workspace.agentCard.saveFailed"));
+    } finally {
+      setEditSaving(false);
+    }
+  };
+
+  // [2026-08-02, petición del usuario] El ORQUESTADOR se puede editar, pero
+  // SOLO su prompt de comportamiento — nada de nombre/skills/tools/timeout
+  // (esos los fija `ensure_orchestrator`, no el usuario). Guarda por su
+  // cuenta: el resto de `saveEdit` no aplica aquí.
+  const saveOrchestratorPrompt = async () => {
+    setEditSaving(true);
+    setEditError(null);
+    try {
+      await updateAgent({ system_prompt: systemPrompt });
       setEditing(false);
     } catch (e) {
       setEditError(e instanceof Error ? e.message : tr("workspace.agentCard.saveFailed"));
@@ -205,7 +272,7 @@ export function AgentWindowCard({
     if (!task) return;
     setSending(true);
     try {
-      await api.executeAgent(agentId, task);
+      await api.executeAgent(agentId, task, undefined, chatModel);
       setTaskInput("");
       await loadExecutions();
     } catch {
@@ -224,12 +291,51 @@ export function AgentWindowCard({
 
   // Contenido adaptativo por alto disponible (mismo patron que ProjectCard).
   const availableH = layout.expanded ? Infinity : (liveH ?? layout.h) - 56;
+  // [2026-08-02] Chat lateral cuando la tarjeta es ANCHA. Los mismos umbrales
+  // que `ProjectCard`: a partir del 60% del ancho del lienzo, el chat pasa a
+  // una columna propia con el 70% del lado derecho (acotada, para que ni
+  // desaparezca ni se coma la ficha del agente).
+  const anchoDisponible = layout.expanded ? (bounds.width || 0) : (liveW ?? layout.w);
+  const anchaParaChatLateral =
+    layout.expanded || anchoDisponible > (bounds.width || 1) * SIDE_CHAT_MIN_RATIO;
+  // [2026-08-02, fix] Aquí se colaba un `* 0.5` de más — dejaba el chat al
+  // ~35% en vez del 70% pedido. `ProjectCard` no lo tenía: mismo número, sin
+  // el factor extra.
+  const anchoChatLateral = Math.round(
+    Math.min(Math.max(anchoDisponible * SIDE_CHAT_WIDTH_RATIO, SIDE_CHAT_MIN_PX), SIDE_CHAT_MAX_PX),
+  );
   const showInfo = layout.expanded || availableH > 140;
   const showChat = layout.expanded || availableH > 320;
 
   const agentSkills = agent?.skills ?? [];
   const agentTools = agent?.allowed_tools ?? [];
-  const modeloLabel = agent ? (modeloOptions.find((o) => o.value === agent.agent_type)?.label || agent.agent_type) : "";
+
+  // [2026-08-02, petición del usuario] El ORQUESTADOR solo se edita en su
+  // prompt de comportamiento — nada más. Vive aparte del `editForm` normal
+  // para que no tenga que "esconder" el resto de campos con condicionales.
+  const orchestratorEditForm = (
+    <>
+      <ErrorBanner message={editError} />
+      <div>
+        <label className={fieldLabel}>{tr("workspace.agentCard.orchestratorPrompt")}</label>
+        <p className="text-[10.5px] text-ink-faint mb-1.5">{tr("workspace.agentCard.orchestratorPromptHint")}</p>
+        <textarea
+          value={systemPrompt}
+          onChange={(e) => setSystemPrompt(e.target.value)}
+          rows={8}
+          className={`${fieldInput} resize-none`}
+          placeholder={tr("workspace.agentCard.orchestratorPromptPlaceholder")}
+          autoFocus
+        />
+      </div>
+      <div className="flex gap-2 pt-1">
+        <button onClick={() => setEditing(false)} className={`${btnGhost} flex-1`}>{tr("common.cancel")}</button>
+        <button onClick={saveOrchestratorPrompt} disabled={editSaving} className={`${btnPrimary} flex-1`}>
+          {editSaving ? tr("agents.saving") : tr("common.save")}
+        </button>
+      </div>
+    </>
+  );
 
   const editForm = (
     <>
@@ -243,10 +349,14 @@ export function AgentWindowCard({
         <textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={2} className={`${fieldInput} resize-none`} placeholder={tr("agents.descPlaceholder")} />
       </div>
       <div>
-        <label className={fieldLabel}>{tr("workspace.agentCard.model")}</label>
-        <select value={agentType} onChange={(e) => setAgentType(e.target.value)} className={fieldInput}>
-          {modeloOptions.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-        </select>
+        <label className={fieldLabel}>{tr("workspace.agentCard.orchestratorPrompt")}</label>
+        <textarea
+          value={systemPrompt}
+          onChange={(e) => setSystemPrompt(e.target.value)}
+          rows={3}
+          className={`${fieldInput} resize-none`}
+          placeholder={tr("workspace.agentCard.orchestratorPromptPlaceholder")}
+        />
       </div>
       <div>
         <div className="flex items-center justify-between mb-1.5">
@@ -266,11 +376,16 @@ export function AgentWindowCard({
       </div>
       <div>
         <label className={fieldLabel}>{tr("agents.field.tools")}</label>
-        <div className="flex flex-col gap-1 max-h-32 overflow-y-auto">
+        {/* [2026-08-02, petición del usuario] REJILLA, no una lista vertical:
+            con 15 herramientas la columna obligaba a hacer scroll para ver la
+            mitad. Dos columnas cuando la tarjeta es estrecha y tres cuando hay
+            sitio (`@container` no hace falta: el breakpoint de Tailwind sobre
+            el ancho de ventana basta para la diferencia que importa aquí). */}
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-3 gap-y-1 max-h-32 overflow-y-auto">
           {tools.map((t) => (
-            <label key={t.tool_id} className="flex items-center gap-2 text-xs text-ink-dim">
-              <input type="checkbox" checked={allowedTools.includes(t.tool_id)} onChange={() => toggleTool(t.tool_id)} className="accent-accent h-3.5 w-3.5" />
-              {t.name}
+            <label key={t.tool_id} className="flex items-center gap-1.5 text-[11px] text-ink-dim min-w-0" title={t.name}>
+              <input type="checkbox" checked={allowedTools.includes(t.tool_id)} onChange={() => toggleTool(t.tool_id)} className="accent-accent h-3.5 w-3.5 shrink-0" />
+              <span className="truncate">{t.name}</span>
             </label>
           ))}
           {tools.length === 0 && <p className="text-[11px] text-ink-faint">{tr("workspace.agentCard.loadingCatalog")}</p>}
@@ -291,6 +406,24 @@ export function AgentWindowCard({
           {editSaving ? tr("agents.saving") : tr("common.save")}
         </button>
       </div>
+      {agent?.role !== "orchestrator" && (
+        <div className="pt-2 mt-1 border-t border-signal-error/25">
+          <button
+            onClick={removeAgent}
+            disabled={deleting}
+            className="w-full text-[11px] px-2 py-1.5 rounded-lg border border-signal-error/40 text-signal-error hover:bg-signal-error/10 disabled:opacity-50"
+          >
+            {deleting ? tr("agents.saving") : tr("workspace.agentCard.delete")}
+          </button>
+          {/* [2026-08-02] El motivo, AQUÍ. El `ErrorBanner` está arriba del
+              formulario y en una tarjeta pequeña queda fuera de vista: un
+              borrado que fallaba (p.ej. por un 500 del backend) se veía como
+              "no pasa nada", que es justo lo que reportó el usuario. */}
+          {deleteError && (
+            <p className="mt-1.5 text-[10px] text-signal-error break-words">{deleteError}</p>
+          )}
+        </div>
+      )}
     </>
   );
 
@@ -319,6 +452,8 @@ export function AgentWindowCard({
       </div>
     </>
   );
+
+  const activeEditForm = agent?.role === "orchestrator" ? orchestratorEditForm : editForm;
 
   const chatPanel = (
     <div className="flex-1 min-w-0 min-h-0 flex flex-col">
@@ -375,17 +510,20 @@ export function AgentWindowCard({
           ))}
         </div>
       )}
-      <div className="px-4 py-3 border-t border-base-700/60 flex gap-2 shrink-0">
-        <input
+      {/* [2026-08-02, peticiones 6 y 7] Misma barra que el chat del orquestador:
+          adjuntar, carpetas, política de aprobación, proveedor/modelo por
+          mensaje y micrófono. Un solo componente, dos sitios. */}
+      <div className="px-4 py-3 border-t border-base-700/60 shrink-0">
+        <ChatComposer
+          agent={agent}
           value={taskInput}
-          onChange={(e) => setTaskInput(e.target.value)}
-          onKeyDown={(e) => { if (e.key === "Enter" && !sending) sendTask(); }}
-          className={fieldInput}
-          placeholder={tr("workspace.agentCard.taskPlaceholder")}
+          onChange={setTaskInput}
+          onSend={() => void sendTask()}
+          sending={sending}
+          model={chatModel}
+          onModelChange={setChatModel}
+          onAgentChanged={() => { void loadAgent(); onAgentChanged(); }}
         />
-        <button onClick={sendTask} disabled={!taskInput.trim() || sending} className={btnPrimary}>
-          {sending ? "…" : tr("chat.send")}
-        </button>
       </div>
     </div>
   );
@@ -397,6 +535,7 @@ export function AgentWindowCard({
       style={{ ...rectStyle, zIndex: layout.zIndex }}
       onPointerDownCapture={onInteractStart}
     >
+      {confirmDialog}
       {/* Header — asa de arrastre (solo si no esta expandida), igual que ProjectCard */}
       <div
         {...(layout.expanded ? {} : headerHandlers)}
@@ -435,7 +574,9 @@ export function AgentWindowCard({
         )}
         <div className="min-w-0 flex-1">
           <h2 className="text-sm font-semibold text-ink truncate">{agent?.name ?? tr("common.loading")}</h2>
-          {agent && <p className="text-[11px] text-ink-faint truncate">{modeloLabel}</p>}
+          {agent?.role === "orchestrator" && (
+            <p className="text-[11px] text-accent truncate">{tr("workspace.orchestrator.title")}</p>
+          )}
         </div>
         <span onClick={(e) => e.stopPropagation()} onPointerDown={(e) => e.stopPropagation()}>
           <HelpButton open={helpOpen} onToggle={() => setHelpOpen((v) => !v)} extra={windowShortcuts(layout.expanded, tr)} />
@@ -462,20 +603,35 @@ export function AgentWindowCard({
       {/* Cuerpo */}
       {!agent ? (
         <div className="flex-1 flex items-center justify-center text-ink-faint text-sm">{tr("workspace.agentCard.loadingAgent")}</div>
-      ) : layout.expanded ? (
-        // Expandida: dos columnas lado a lado (info | chat), como el W2d original.
+      ) : editing ? (
+        // [2026-08-02, corrección] EDITANDO: solo el formulario, sin chat.
+        // "Dentro de la tarjeta de editar de los agentes, también hay un
+        // chat. Ahí no tiene que haber chat, es solo edición de tools,
+        // skills, etc." — a todo el ancho disponible, tanto en tarjeta
+        // ancha como estrecha (antes el chat seguía ocupando su columna/
+        // franja incluso en modo edición).
+        <div className="flex-1 min-h-0 overflow-y-auto p-4 flex flex-col gap-4">
+          {activeEditForm}
+        </div>
+      ) : anchaParaChatLateral ? (
+        // [2026-08-02, petición del usuario] ANCHA: el chat se lleva el 70% del
+        // lado derecho y la info del agente se queda con el 30% de la
+        // izquierda. Mismo criterio (y mismos números) que la tarjeta de
+        // proyecto, para que las dos se comporten igual.
         <div className="flex-1 min-h-0 flex">
-          <div className="w-72 shrink-0 border-r border-base-700/60 overflow-y-auto p-4 flex flex-col gap-4">
-            {editing ? editForm : readInfo}
+          <div className="min-w-0 flex-1 border-r border-base-700/60 overflow-y-auto p-4 flex flex-col gap-4">
+            {readInfo}
           </div>
-          {chatPanel}
+          <div className="shrink-0 min-h-0 flex flex-col p-3" style={{ width: anchoChatLateral }}>
+            {chatPanel}
+          </div>
         </div>
       ) : (
         // No expandida: una sola columna apilada, revelada por alto disponible.
         <div className="flex-1 min-h-0 overflow-y-auto flex flex-col">
           {showInfo && (
             <div className="p-4 flex flex-col gap-4 border-b border-base-700/40">
-              {editing ? editForm : readInfo}
+              {readInfo}
             </div>
           )}
           {showChat && chatPanel}

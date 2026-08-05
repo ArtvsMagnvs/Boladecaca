@@ -92,6 +92,7 @@ class AitheraTool(BaseTool):
             "create_agent": self._create_agent,
             "update_agent": self._update_agent,
             "delete_agent": self._delete_agent,
+            "search_skills": self._search_skills,
             "assign_tools": self._assign_tools,
             "list_agents": self._list_agents,
             "run_agent_task": self._run_agent_task,
@@ -151,13 +152,36 @@ class AitheraTool(BaseTool):
             {"id": "create_agent",
              "description": ("Crea un agente nuevo DENTRO de un proyecto. Dale de una vez todo lo "
                              "que necesite (allowed_tools y skills): así no hacen falta llamadas "
-                             "extra después."),
+                             "extra después. Las skills NO se inventan: búscalas antes con "
+                             "'search_skills' y pasa sus nombres EXACTOS."),
              "requires_confirmation": True,
              "params": {"name": "string (único en todo el sistema)",
                         "project_id": "int OBLIGATORIO — el proyecto al que pertenece",
                         "agent_type": "string opcional (default generic)",
-                        "description": "string opcional", "allowed_tools": "lista de tool_id opcional",
-                        "skills": "lista de strings opcional"}},
+                        "description": "string opcional — para QUÉ es el agente, en 1-3 frases. "
+                                       "NO metas aquí las especialidades: eso son las skills.",
+                        "allowed_tools": "lista de tool_id opcional",
+                        "skills": "lista de nombres EXACTOS del catálogo (ver 'search_skills')"}},
+            # [2026-08-02] EL CATÁLOGO DE SKILLS SE PUEDE CONSULTAR. Sin esto,
+            # `create_agent` pedía "skills: lista de strings" sin decir CUÁLES
+            # existen — 254 nombres exactos que el modelo no podía adivinar ni
+            # caben en el prompt. Resultado real reportado: el orquestador
+            # creaba el agente SIN skills y volcaba todo el diseño en la
+            # descripción. Ahora hay dónde mirar antes de asignar.
+            {"id": "search_skills",
+             "description": ("Busca skills REALES del catálogo por tema, categoría o palabra "
+                             "(p.ej. 'unity', 'videojuegos', 'marketing'). Devuelve los NOMBRES "
+                             "EXACTOS que hay que pasar a create_agent/update_agent. Úsala SIEMPRE "
+                             "antes de asignar skills: los nombres inventados se rechazan. "
+                             "IMPORTANTE: pasa UNA palabra clave por llamada, no una frase larga "
+                             "('unity', no 'unity UI frontend developer') — así encuentras más. "
+                             "El catálogo es LIMITADO (254 skills, 17 categorías): no siempre hay "
+                             "una skill perfecta para cada encargo. En cuanto tengas 2-4 candidatas "
+                             "razonablemente relacionadas, ÚSALAS y sigue con create_agent — no "
+                             "seguir buscando variantes de la misma idea más de 2-3 veces."),
+             "requires_confirmation": False,
+             "params": {"query": "string — UNA palabra o tema, no una frase larga",
+                        "limit": "int opcional (default 12)"}},
             {"id": "assign_tools", "description": "Cambia las tools permitidas de un agente existente.",
              "requires_confirmation": True,
              "params": {"agent_id": "int", "allowed_tools": "lista de tool_id"}},
@@ -453,6 +477,60 @@ class AitheraTool(BaseTool):
             "id": agent.id, "name": agent.name, "project_id": agent.project_id,
         }, "error": None}
 
+    async def _search_skills(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """[2026-08-02] Buscar en el catálogo REAL de skills antes de asignarlas.
+
+        LA CAUSA RAÍZ QUE CIERRA (reportada por el usuario): el orquestador de un
+        proyecto creaba agentes SIN skills y volcaba todo el diseño en la
+        descripción. No era terquedad del modelo: el catálogo tiene 254 nombres
+        exactos, no caben en el prompt, y `create_agent` solo decía "skills:
+        lista de strings". Nadie puede elegir de una lista que no ve. La
+        validación (PU2) rechazaba los inventados con candidatos, pero eso llega
+        DESPUÉS del fallo; esto lo evita antes.
+
+        Reusa `_match_category`/`_keyword_candidates`/`suggest` de
+        `skills_catalog` — la misma maquinaria que ya alimenta las sugerencias
+        del error, aquí como consulta de primera clase."""
+        from app.agents import skills_catalog
+
+        query = str(params.get("query") or "").strip()
+        if not query:
+            return {"success": False, "result": None, "error": "falta parámetros: query",
+                    "missing": ["query"]}
+        try:
+            limit = max(1, min(int(params.get("limit") or 12), 40))
+        except (TypeError, ValueError):
+            limit = 12
+
+        # 1) ¿Es una categoría entera? ("marketing", "engineering"…)
+        cat = skills_catalog._match_category(query)
+        encontradas = skills_catalog.skills_in_category(cat, limit=limit) if cat else []
+        origen = f"categoría '{cat.get('label') or cat.get('key')}'" if cat else None
+        # 2) Si no, palabra clave en nombre o descripción.
+        if not encontradas:
+            encontradas = skills_catalog._keyword_candidates(query, limit=limit)
+            origen = f"coincidencias con '{query}'" if encontradas else None
+        # 3) Ni eso: el nombre más parecido, para orientar.
+        if not encontradas:
+            parecidos = skills_catalog.suggest(query, limit=5)
+            return {"success": True, "result": {
+                "query": query, "skills": [], "categories": [
+                    c.get("label") or c.get("key") for c in skills_catalog.list_categories()],
+                "hint": (f"Ninguna skill casa con '{query}'. Nombres parecidos: "
+                         f"{', '.join(parecidos)}." if parecidos else
+                         f"Ninguna skill casa con '{query}'. Prueba con una de las categorías."),
+            }, "error": None}
+
+        return {"success": True, "result": {
+            "query": query,
+            "found_in": origen,
+            "skills": [{"name": s.get("name"), "description": (s.get("description") or "")[:160]}
+                       for s in encontradas],
+            "hint": ("Pasa los 'name' TAL CUAL a create_agent/update_agent en el campo 'skills'. "
+                     "Si alguna de éstas encaja razonablemente, úsala ya — no sigas buscando la "
+                     "coincidencia perfecta, el catálogo no siempre la tiene."),
+        }, "error": None}
+
     async def _assign_tools(self, params: Dict[str, Any]) -> Dict[str, Any]:
         from app.agents.agent_manager import agent_manager
 
@@ -518,7 +596,10 @@ class AitheraTool(BaseTool):
         missing = _missing(params, ["agent_id"])
         if missing:
             return {"success": False, "result": None, "error": "faltan parámetros", "missing": missing}
-        ok = agent_manager.delete_agent(int(params["agent_id"]))
+        try:
+            ok = agent_manager.delete_agent(int(params["agent_id"]))
+        except ValueError as e:      # el orquestador de un proyecto no se borra
+            return {"success": False, "result": None, "error": str(e)}
         if not ok:
             return {"success": False, "result": None, "error": f"agente {params['agent_id']} no existe"}
         return {"success": True, "result": {"deleted": int(params["agent_id"])}, "error": None}

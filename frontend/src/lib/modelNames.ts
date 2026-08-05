@@ -54,3 +54,13 @@ export function shortRef(key: string): string {
   }
   return model ? `${p} · ${model}` : p;
 }
+
+/** Solo el nombre del MODELO, ya acortado ("M3-highspeed", "Opus 4.8",
+ *  "qwen3:8b"). Para selectores donde el proveedor ya lo dice el `<optgroup>`
+ *  y repetir la marca en cada opción produce "MiniMax, MiniMax, MiniMax…". */
+export function shortModel(provider: string, model: string): string {
+  let m = model;
+  const strip = MODEL_PREFIX_STRIP[provider];
+  if (strip) m = m.replace(strip, "");
+  return MODEL_SHORT[m] ?? m ?? provider;
+}

@@ -129,25 +129,110 @@ def skills_in_category(category: dict, limit: int = 8) -> list[dict]:
     return out[:limit]
 
 
+_STOPWORDS = {
+    # ES + EN, palabras que aportan cero como "tema de búsqueda" — sin esto,
+    # tokenizar "el desarrollo para el que servirá" metería "el"/"para" como
+    # si fueran temas reales.
+    "de", "del", "el", "la", "los", "las", "y", "en", "con", "para", "por",
+    "un", "una", "unos", "unas", "que", "es", "su", "sus", "al", "lo",
+    "the", "and", "for", "with", "of", "a", "to", "an", "in", "on",
+}
+
+
+def _tokenize(term: str) -> list[str]:
+    """Palabras "de contenido" de una frase de búsqueda: minúsculas, sin
+    acentos, sin stopwords, longitud >= 2 (deja pasar "c#"/"ui" pero no
+    ruido de una letra). `#` se conserva a propósito (token útil: "c#")."""
+    import re
+
+    q = _normalize(term)
+    crudos = re.findall(r"[a-z0-9#]+", q)
+    return [t for t in crudos if len(t) >= 2 and t not in _STOPWORDS]
+
+
+def _words(text: str) -> set[str]:
+    """El texto partido en palabras sueltas (mismo tokenizador que
+    `_tokenize`, sin filtrar stopwords — aquí importa el texto tal cual del
+    catálogo, no una consulta del usuario). Usado para exigir palabra
+    COMPLETA en los tokens cortos de `_keyword_candidates`."""
+    import re
+
+    return set(re.findall(r"[a-z0-9#]+", _normalize(text)))
+
+
 def _keyword_candidates(term: str, limit: int = 8) -> list[dict]:
     """[PU2-ext] Búsqueda de un término suelto que NO es ninguna categoría
     (p. ej. "research": no es una de las 17 categorías, pero SÍ aparece en el
     nombre de 3 skills de categorías distintas — UX Researcher, Investment
     Researcher, Trend Researcher). Substring acento-insensible sobre nombre Y
     descripción; prioriza coincidencias de NOMBRE (más relevante) sobre las
-    de solo-descripción."""
+    de solo-descripción.
+
+    [2026-08-02, fix] La FRASE ENTERA como un solo substring solo sirve para
+    búsquedas de una o dos palabras muy pegadas al catálogo ("game
+    development", "research"). Un encargo real pide varias cosas a la vez
+    ("desarrollo de frontend en Unity, C# y GDDs") y el modelo, razonablemente,
+    prueba consultas de varias palabras ("unity UI", "C# csharp scripting",
+    "UI frontend Canvas") — NINGUNA de esas frases aparece nunca completa en
+    ningún nombre/descripción, así que el substring de frase entera siempre
+    daba cero, aunque palabras SUELTAS de la consulta ("unity", "frontend")
+    sí tuvieran skills reales. Reportado en vivo: 12 consultas distintas, la
+    mitad con resultados reales, y aun así la misión se quedó sin agente —
+    la otra mitad (las multi-palabra) devolvía vacío por este motivo exacto,
+    alargando la búsqueda sin necesidad.
+
+    Ahora, si la frase completa no encuentra nada, se cae a un segundo
+    intento por TOKENS: cualquier skill que contenga AL MENOS una palabra de
+    contenido de la consulta cuenta, ordenada por cuántas palabras coinciden
+    (más coincidencias primero) y luego por si el acierto está en el NOMBRE.
+    Sigue sin inventar nada — son coincidencias reales del catálogo, solo que
+    encontradas palabra a palabra en vez de frase completa."""
     q = _normalize(term)
-    if len(q) < 3:
+    if len(q) >= 3:
+        name_hits, desc_hits = [], []
+        for s in list_skills():
+            name = _normalize(s.get("name", ""))
+            if q in name:
+                name_hits.append(s)
+                continue
+            if q in _normalize(s.get("description", "")):
+                desc_hits.append(s)
+        frase = (name_hits + desc_hits)[:limit]
+        if frase:
+            return frase
+
+    tokens = _tokenize(term)
+    if not tokens:
         return []
-    name_hits, desc_hits = [], []
+    puntuadas: list[tuple[int, bool, dict]] = []
     for s in list_skills():
-        name = _normalize(s.get("name", ""))
-        if q in name:
-            name_hits.append(s)
-            continue
-        if q in _normalize(s.get("description", "")):
-            desc_hits.append(s)
-    return (name_hits + desc_hits)[:limit]
+        name_words = _words(s.get("name", ""))
+        desc_words = _words(s.get("description", ""))
+        aciertos = 0
+        en_nombre = False
+        for t in tokens:
+            # Los tokens CORTOS ("ui", "c#", "ai") exigen palabra COMPLETA:
+            # como substring libre, "ui" aparece dentro de docenas de
+            # palabras normales ("build", "quick", "require"...) y convierte
+            # cualquier búsqueda de 2-3 letras en ruido puro (probado en vivo:
+            # "unity UI" devolvía "Reddit Community Builder" antes de este
+            # ajuste). Los tokens largos SÍ pueden ser substring de una
+            # palabra (permite variantes como "script"→"scripting").
+            if len(t) <= 3:
+                hit_name = t in name_words
+                hit_desc = t in desc_words
+            else:
+                hit_name = t in name_words or any(t in w for w in name_words)
+                hit_desc = t in desc_words or any(t in w for w in desc_words)
+            if hit_name:
+                aciertos += 1
+                en_nombre = True
+            elif hit_desc:
+                aciertos += 1
+        if aciertos:
+            puntuadas.append((aciertos, en_nombre, s))
+    puntuadas.sort(key=lambda x: (-x[0], not x[1], x[2].get("name", "")))
+    return [s for _aciertos, _en_nombre, s in puntuadas[:limit]]
 
 
 def validate_skills(names: list[str]) -> list[str]:

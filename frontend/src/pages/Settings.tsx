@@ -881,10 +881,15 @@ const MEL_POLICY_META_KEYS: Record<string, { labelKey: string; hintKey: string }
 const MEL_CAP_LABEL_KEYS: Record<string, string> = {
   chat: "settings.mel.cap.chat", classify: "settings.mel.cap.classify", extract: "settings.mel.cap.extract", summarize: "settings.mel.cap.summarize",
   draft: "settings.mel.cap.draft", reason: "settings.mel.cap.reason", code: "settings.mel.cap.code", analyze: "settings.mel.cap.analyze",
+  vision: "settings.mel.cap.vision",
 };
-// Orden y whitelist de capacidades activas (las reservadas research/vision/
-// agentic existen en el backend pero no se muestran — no aportan al usuario aún).
-const MEL_CAPS_ORDER = ["chat", "classify", "extract", "summarize", "draft", "reason", "code", "analyze"];
+// Orden y whitelist de capacidades activas. `research` y `agentic` siguen sin
+// mostrarse a propósito: son internas (el auto-catálogo y el bucle de tools las
+// piden solas, el usuario no elige modelo para ellas).
+// [B·WEB-2, 2026-08-05] `vision` SÍ se muestra: desde que existe `find_and_click`
+// es una capacidad que el usuario usa de verdad, y necesita poder ver qué modelo
+// la atiende — o enterarse de que no tiene ninguno.
+const MEL_CAPS_ORDER = ["chat", "classify", "extract", "summarize", "draft", "reason", "code", "analyze", "vision"];
 const MEL_POLICY_ORDER = ["economy", "quality", "speed", "balanced", "offline", "custom"];
 const MEL_EDITABLE = new Set(["economy", "quality", "speed", "balanced", "custom"]);
 
@@ -1423,8 +1428,19 @@ function IntelligenceSettings() {
                           })}
                         </div>
                       ) : (
-                        <span className="text-ink-faint truncate ml-2 text-right">
-                          {chain.length === 0 && tr("settings.mel.noModel")}
+                        <span className={`text-ink-faint ml-2 text-right ${
+                          // El aviso de visión sin modelo es una frase entera: se
+                          // deja envolver (sin `truncate`) o quedaría en "…".
+                          chain.length === 0 && cap === "vision" ? "" : "truncate"
+                        }`}>
+                          {/* [B·WEB-2] Con visión, "sin modelo" no es informativo:
+                              lo que el usuario necesita saber es QUÉ hacer. */}
+                          {chain.length === 0 && cap === "vision" && (
+                            <span className="text-signal-warn">
+                              {tr("settings.mel.visionNoModel")}
+                            </span>
+                          )}
+                          {chain.length === 0 && cap !== "vision" && tr("settings.mel.noModel")}
                           {chain.map((k, i) => (
                             <span key={`${k}-${i}`} className={i > 0 ? "opacity-60" : undefined}>
                               {i > 0 && " → "}

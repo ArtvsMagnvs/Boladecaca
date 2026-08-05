@@ -30,6 +30,28 @@ from app.db.models import Agent, AgentExecution
 # V0.4 (Fase 2 AgentManager + ToolSystem): usamos ToolManager.
 # V0.5 anade whitelist por agente + log de auditoria.
 from app.tools import tool_manager
+# [2026-08-04] Solo la API pública del MEL (doc 16): `app.agents` nunca importa
+# internos del MEL ni `ai_manager`. Sirve para decidir si el modelo elegido es
+# un agente CLI autosuficiente, al que se le delega la tarea entera.
+from app.mel import is_cli_agent_model as mel_is_cli_agent
+
+
+def _tool_ids_existentes() -> set:
+    """Las tools que EXISTEN de verdad, internas incluidas.
+
+    [2026-08-02] La validación de `allowed_tools` miraba solo
+    `tool_manager.list_tools()`, que excluye las internas — así que asignar
+    `aithera` (interna) reventaba con "tool desconocida" aunque exista. Salió
+    al dar TODAS las herramientas al orquestador. Lo que esta comprobación
+    tiene que impedir es una tool INVENTADA, no una que existe.
+
+    Que sea asignable por CÓDIGO no la hace visible en la UI: el catálogo que
+    pinta el frontend sigue viniendo de `GET /api/tools/`, sin internas."""
+    ids = {t["tool_id"] for t in tool_manager.list_tools()}
+    try:
+        return ids | tool_manager.internal_tool_ids()
+    except Exception:
+        return ids
 
 
 def _project_repo_path(project_id: int) -> Optional[str]:
@@ -107,7 +129,7 @@ class AgentManager:
         persistir. Cubre a la vez el endpoint HTTP y `aithera_tool.
         create_agent`: los dos llaman aquí."""
         if allowed_tools:
-            available = {t["tool_id"] for t in tool_manager.list_tools()}
+            available = _tool_ids_existentes()
             unknown = set(allowed_tools) - available
             if unknown:
                 raise ValueError(
@@ -172,7 +194,23 @@ class AgentManager:
                 tools = kwargs["allowed_tools"]
                 if not isinstance(tools, list):
                     raise ValueError("allowed_tools debe ser una lista")
-                available = {t["tool_id"] for t in tool_manager.list_tools()}
+                # [2026-08-02] Al ORQUESTADOR no se le quitan herramientas
+                # (petición explícita del usuario). Se deja pasar la escritura
+                # que le pone TODAS —es la que usa `ensure_orchestrator` para
+                # re-sincronizar— y se rechaza cualquier recorte.
+                if agent.role == "orchestrator":
+                    # Por el barrel, no por el interno: `app.tie.authority` es
+                    # privado del TIE (doc 16, lo vigila test_module_boundaries).
+                    from app.tie import orchestrator_tools
+
+                    completas = set(orchestrator_tools())
+                    if not completas.issubset(set(tools)):
+                        raise ValueError(
+                            f"'{agent.name}' es el orquestador de su proyecto: siempre tiene todas "
+                            f"las herramientas y no se le pueden quitar. Su alcance lo limita la "
+                            f"carpeta del proyecto, no la lista de tools."
+                        )
+                available = _tool_ids_existentes()
                 unknown = set(tools) - available
                 if unknown:
                     raise ValueError(
@@ -203,12 +241,22 @@ class AgentManager:
             db.close()
 
     def delete_agent(self, agent_id: int) -> bool:
-        """Elimina un agente. Si tiene ejecuciones en curso, las cancela."""
+        """Elimina un agente. Si tiene ejecuciones en curso, las cancela.
+
+        [2026-08-02] EL ORQUESTADOR DE UN PROYECTO NO SE BORRA (petición
+        explícita del usuario: "todo proyecto tiene su orquestador"). Se lanza
+        `ValueError` en vez de devolver False para que la diferencia entre "no
+        existe" y "no se puede" llegue clara al endpoint, al chat y a la UI."""
         db = SessionLocal()
         try:
             agent = db.query(Agent).filter(Agent.id == agent_id).first()
             if not agent:
                 return False
+            if agent.role == "orchestrator":
+                raise ValueError(
+                    f"'{agent.name}' es el orquestador de su proyecto y no se puede eliminar: "
+                    f"todo proyecto tiene el suyo. Si ya no lo quieres activo, desactívalo."
+                )
             # Cancelar ejecuciones en curso.
             for ex in db.query(AgentExecution).filter(
                 AgentExecution.agent_id == agent_id,
@@ -306,7 +354,8 @@ class AgentManager:
         finally:
             db.close()
 
-    def create_execution(self, agent_id: int, task: str) -> AgentExecution:
+    def create_execution(self, agent_id: int, task: str,
+                         model: Optional[str] = None) -> AgentExecution:
         """Crea un AgentExecution en estado 'pending' y lo lanza como
         asyncio.Task. Devuelve el registro persistido (status='pending'
         en este punto; pasara a 'running' cuando el task empiece)."""
@@ -322,6 +371,7 @@ class AgentManager:
                 agent_id=agent_id,
                 task_description=task,
                 status="pending",
+                model=model or None,
                 created_at=datetime.utcnow(),
             )
             db.add(execution)
@@ -381,6 +431,19 @@ class AgentManager:
                 # arrastrar objetos ORM a otro contexto.
                 agent_project_id = agent.project_id
                 agent_skills = list(agent.skills) if agent.skills else None
+                # [2026-08-02] Carpetas extra concedidas a mano + politica de
+                # aprobacion de ESTE agente (el selector del chat).
+                agent_extra_paths = list(agent.extra_paths) if agent.extra_paths else None
+                agent_autonomy = agent.autonomy or "manual"
+                # El modelo que el usuario eligio para ESTE mensaje viaja en la
+                # propia ejecucion (columna `model`), no en el agente: es una
+                # decision por interaccion, no una configuracion.
+                model = getattr(execution, "model", None) or None
+                # [2026-08-02] El prompt de comportamiento del agente (lo unico
+                # editable del ORQUESTADOR, y opcional para cualquier otro
+                # agente) — viajaba en BD desde hacia tiempo pero nadie lo leia
+                # al ejecutar.
+                agent_prompt = agent.system_prompt or None
                 task_text = execution.task_description or ""
 
                 # [hotfix 2026-08-02] SOLTAR LA SESIÓN ANTES DE LA MISIÓN.
@@ -421,6 +484,10 @@ class AgentManager:
                         allowed_tools=allowed_tools,
                         project_id=agent_project_id,
                         skills=agent_skills,
+                        extra_paths=agent_extra_paths,
+                        autonomy=agent_autonomy,
+                        model=model,
+                        agent_prompt=agent_prompt,
                     )
                 finally:
                     drenador.cancel()
@@ -534,7 +601,11 @@ class AgentManager:
 
     async def _delegate_to_tie(self, *, task: str, allowed_tools: List[str],
                                project_id: Optional[int],
-                               skills: Optional[List[str]] = None):
+                               skills: Optional[List[str]] = None,
+                               extra_paths: Optional[List[str]] = None,
+                               autonomy: Optional[str] = None,
+                               model: Optional[str] = None,
+                               agent_prompt: Optional[str] = None):
         """Convierte la tarea del agente en una mision del TIE, acotada a lo que
         ese agente puede hacer.
 
@@ -546,10 +617,34 @@ class AgentManager:
         `skills` [PU2, doc 35]: las especialidades del agente (ya validadas
         contra el catalogo al crear/editar el agente). Antes de PU2 se
         guardaban en BD y morian ahi — este parametro es lo que las hace
-        llegar de verdad al contexto de ejecucion (ver `executor._execute_node`)."""
+        llegar de verdad al contexto de ejecucion (ver `executor._execute_node`).
+
+        `agent_prompt` [2026-08-02]: el prompt de comportamiento libre del
+        agente (`Agent.system_prompt`) — mismo canal y mismo destino que
+        `skills`. Antes este campo existia en el schema/BD pero no lo leia
+        NADIE al ejecutar; ahora llega al mismo bloque de contexto."""
         import app.tie as tie
 
         repo_path = _project_repo_path(project_id) if project_id else None
+
+        # [2026-08-04, corrección de diseño del usuario] AGENTE CLI = SE LE
+        # DELEGA LA TAREA ENTERA, no se le mete en el bucle de tools.
+        #
+        # Claude Code y Codex YA SON agentes: leen y escriben ficheros, ejecutan
+        # comandos y buscan en el repo con SUS propias herramientas. Meterlos en
+        # el bucle de Aithera era envolver un agente dentro de otro — de ahí
+        # salían las respuestas del tipo "soy Claude Code, no tengo acceso a...":
+        # se les pedía usar herramientas ajenas teniendo las suyas.
+        #
+        # Aquí se les da la tarea y la CARPETA DEL PROYECTO, y su salida vuelve
+        # tal cual al chat del agente. Que se presenten como "Claude" da igual;
+        # lo que importa es que el trabajo quede hecho donde toca.
+        if mel_is_cli_agent(model):
+            return await self._delegate_to_cli_agent(
+                task=task, model=model, repo_path=repo_path,
+                skills=skills, agent_prompt=agent_prompt,
+            )
+
         return await tie.submit_mission(
             task,
             source="agent",
@@ -557,7 +652,73 @@ class AgentManager:
             allowed_tools=list(allowed_tools),
             repo_path=repo_path,
             skills=skills,
+            # [2026-08-02] Carpetas extra concedidas a mano, politica de
+            # aprobacion de ESTE agente, y el modelo que el usuario eligio en
+            # el selector del chat para ESTE mensaje.
+            extra_paths=extra_paths,
+            autonomy=autonomy,
+            model=model,
+            agent_prompt=agent_prompt,
         )
+
+    async def _delegate_to_cli_agent(self, *, task: str, model: str,
+                                     repo_path: Optional[str],
+                                     skills: Optional[List[str]] = None,
+                                     agent_prompt: Optional[str] = None):
+        """[2026-08-04] Delega la tarea COMPLETA a un agente CLI (Claude Code,
+        Codex) trabajando en la carpeta del proyecto.
+
+        No hay planner, ni grafo, ni bucle de tools de Aithera: ese es justo el
+        punto. El CLI recibe el encargo y lo resuelve con SUS herramientas en
+        `repo_path`; su salida vuelve tal cual al chat del agente.
+
+        La capacidad que se pide es CODE (no AGENTIC): AGENTIC significa "usa el
+        bucle de herramientas de Aithera", que es exactamente lo que aquí NO se
+        quiere — y por eso el veto de AGENTIC para estos proveedores sigue
+        siendo correcto y se mantiene intacto.
+
+        Devuelve un objeto con la misma forma mínima que una misión
+        (`state`/`outcome`/`id`) para que `_run_execution` no tenga que
+        distinguir de dónde vino el resultado."""
+        from dataclasses import dataclass
+
+        import app.mel as mel
+
+        @dataclass
+        class _CliRun:
+            id: str
+            state: str
+            outcome: str
+
+        # El encargo lleva delante quién es y dónde trabaja. Sin la carpeta, el
+        # CLI trabajaría donde corra el backend — eso sí sería un fallo grave,
+        # así que se dice explícitamente cuando no la hay.
+        partes: List[str] = []
+        if agent_prompt:
+            partes.append(agent_prompt.strip())
+        if skills:
+            partes.append("Tus especialidades: " + ", ".join(skills) + ".")
+        if repo_path:
+            partes.append(f"Trabajas dentro de la carpeta del proyecto: {repo_path}. "
+                          "Usa tus propias herramientas para leerla y modificarla.")
+        else:
+            partes.append("Este proyecto no tiene carpeta asignada, así que NO "
+                          "modifiques ficheros: responde solo con lo que se te pide.")
+        system_prompt = "\n\n".join(partes) or None
+
+        res = await mel.complete(mel.ExecutionRequest(
+            capability=mel.Capability.CODE,
+            prompt=task,
+            system_prompt=system_prompt,
+            model_override=model,
+            workdir=repo_path,
+        ))
+
+        texto = (res.text or "").strip()
+        if not res.ok or not texto:
+            return _CliRun(id="", state="failed",
+                           outcome=res.error or "el agente CLI no devolvió respuesta")
+        return _CliRun(id="", state="done", outcome=texto)
 
     @staticmethod
     def _tool_calls_of(mission) -> List[Dict[str, Any]]:
