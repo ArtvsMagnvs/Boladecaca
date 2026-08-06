@@ -1791,7 +1791,105 @@ export const api = {
     ),
   deleteMission: (traceId: string) =>
     request<{ trace_id: string; deleted: boolean }>(`/tie/missions/${traceId}`, { method: "DELETE" }),
+
+  // --- Learner: lo que Aithera ha aprendido (V1.1 L4) ---
+  getLearnerProposals: () => request<LearnerProposals>("/learner/proposals"),
+  approveLearning: (id: string, note = "") =>
+    request<{ ok: boolean; state: string }>(`/learner/proposals/${id}/approve`, {
+      method: "POST",
+      body: JSON.stringify({ note }),
+    }),
+  rejectLearning: (id: string, note = "") =>
+    request<{ ok: boolean }>(`/learner/proposals/${id}/reject`, {
+      method: "POST",
+      body: JSON.stringify({ note }),
+    }),
+  undoLearning: (id: string) =>
+    request<{ ok: boolean }>(`/learner/proposals/${id}/undo`, { method: "POST" }),
+  getLearnerHealth: () => request<LearnerHealth>("/learner/health"),
+  getLearnerHistory: () => request<LearnerHistory>("/learner/history"),
+  runLearnerAnalysis: () =>
+    request<{ ok: boolean; new_proposals: number; skills_rescored: number }>(
+      "/learner/analyze",
+      { method: "POST" },
+    ),
 };
+
+/** [V1.1 L4] Una propuesta del Learner, ya en lenguaje llano desde el backend. */
+export interface LearnerProposal {
+  id: string;
+  kind: string;
+  kind_label: string;
+  title: string;
+  summary: string;
+  state: string;
+  risk: string;
+  risk_label: string;
+  evidence_count: number;
+  mission_ids: string[];
+  created_at: string | null;
+  project_id: number | null;
+  /** false = no hay nada que aplicar (config_fix): se ofrece "Ir a Ajustes". */
+  applicable: boolean;
+  settings_tab: string | null;
+  steps: string[];
+  tools: string[];
+  decision_note?: string | null;
+  decided_at?: string | null;
+}
+
+export interface LearnerProposals {
+  proposals: LearnerProposal[];
+  waiting_for_you: number;
+}
+
+export interface LearnerBlame {
+  blame: string;
+  label: string;
+  explanation: string;
+  count: number;
+}
+
+export interface LearnerHealth {
+  total_failures: number;
+  by_blame: LearnerBlame[];
+  items: Array<{
+    kind: string;
+    blame: string;
+    component: string;
+    count: number;
+    last_seen: string | null;
+    sample_mission_ids: string[];
+    last_detail: string | null;
+  }>;
+  models: Array<{
+    provider: string;
+    model: string;
+    missions: number;
+    missions_ok: number;
+    missions_excused: number;
+    mission_success_rate: number;
+  }>;
+  tools: Array<{ tool: string; calls: number; fails: number; error_rate: number }>;
+  report: { headline?: string; findings?: Array<{ title: string; why: string }> };
+}
+
+export interface LearnerSkill {
+  id: string;
+  name: string;
+  status: string;
+  created_by: string;
+  taught_by_user: boolean;
+  quality_score: number;
+  error_rate: number;
+  use_count: number;
+  created_at: string | null;
+}
+
+export interface LearnerHistory {
+  skills: LearnerSkill[];
+  decided: LearnerProposal[];
+}
 
 export interface VoiceInfo {
   id: string;

@@ -11,7 +11,7 @@
 > (sistema visual) · **14** TIE/Cognitive Runtime · **15** Learning System ·
 > **16** Principios Modulares · **17** Event Bus/Observabilidad · **18** WPMS/Workspace · **19** MEL/Model Execution Layer ·
 > **21** plan de sesiones del TIE (T1-T5, CERRADO) · **22** plan de sesiones del MEL (E1-E2b)
-> · **27** plan V1.0→V1.6 (dependencias + sesiones + modelos + tests — MANDA sobre las secciones 6-10).
+> · **27** plan V1.0→V1.5 (dependencias + sesiones + modelos + tests — MANDA sobre las secciones 6-10).
 >
 > **La estrella polar**: V1.0 es un **MVP bien hecho — completamente autónomo y
 > distribuible a usuarios BETA** — alcanzable en semanas, no meses. Todo lo que no
@@ -26,24 +26,45 @@
 — sesión por sesión, con alcance cerrado, modelo/esfuerzo asignado, tests
 obligatorios y criterio de cierre para cada una.
 
-**Regla, para que no haya confusión en ninguna sesión futura**: desde el cierre
-de V1.0 (MVP-beta) en adelante — es decir, **V1.1, V1.2, V1.3, V1.4, V1.5 y
-V1.6** — el trabajo de desarrollo sigue LITERALMENTE los pasos del doc 27
-(secciones 4 a 10 de ese documento), no una reinterpretación de las secciones
-6-10 de este doc 03. Si alguna vez este doc 03 y el doc 27 parecen decir cosas
-distintas para V1.0+, **gana el doc 27** (ya lo decía la cabecera de este
-documento con "MANDA sobre las secciones 6-10"; esta sección lo deja explícito
-y fácil de encontrar). Las secciones 6-10 de este doc 03 son un RESUMEN de
-doc 27 para tener la vista de conjunto — el detalle real (qué construir sesión
+**Regla, para que no haya confusión en ninguna sesión futura**: desde V1.1 en
+adelante — es decir, **V1.1, V1.2, V1.3, V1.4, V1.4.5 y V1.5** — el trabajo de
+desarrollo sigue LITERALMENTE los pasos del doc 27, no una reinterpretación de
+las secciones 6-10 de este doc 03. Si alguna vez este doc 03 y el doc 27 parecen
+decir cosas distintas para V1.0+, **gana el doc 27** (ya lo decía la cabecera de
+este documento con "MANDA sobre las secciones 6-10"; esta sección lo deja
+explícito y fácil de encontrar). Las secciones 6-10 de este doc 03 son un RESUMEN
+de doc 27 para tener la vista de conjunto — el detalle real (qué construir sesión
 a sesión) vive solo en doc 27.
 
-Para el propio cierre de V1.0 (MVP-beta, sección 5 de abajo): el plan ejecutable
-son las 4 sesiones **B1-B4** de doc 27 §4 (Verificación total, Instalador+
-auto-start, Onboarding wizard, Beta kit+release) — la mención más abajo a
-"Sprints O1-O5" es la numeración ANTIGUA de antes de que TIE/MEL/Tools/
-Orchestrator se ejecutaran con sus propios nombres (T1-T5, E1-E2b, R1-R7); se
-mantiene aquí solo como historial de diseño, pero el plan que se sigue de
-verdad para lo que falta de V1.0 es **B1-B4 de doc 27 §4**.
+> ### ⚠️ REORDENACIÓN 2026-08-05 (decisión del usuario)
+>
+> **El MVP-beta (instalador + onboarding + verificación total, B1-B4) se APLAZA
+> a V1.5.** Razón literal del usuario: *«sé que en teoría toca cerrar fase 1.0
+> con el instalador, pero dado que no tengo usuarios beta para testear todavía,
+> voy a continuar desarrollando y cerraremos el installer más adelante»*.
+> Empaquetar sin nadie a quien entregar es trabajo que caduca: cada fase
+> posterior añade dependencias, pantallas de onboarding y permisos que obligarían
+> a rehacerlo. El tag `v1.0.0` ya está puesto (2026-08-02, CLAUDE.md §29).
+>
+> **Todo el AVCS maduro (MVP1 y MVP2) se traslada a V2.0+** (doc 27 §10): mejora
+> una capacidad ENTREGADA (Génesis, en uso diario desde V0.82/83 y pulido hasta
+> PU5g), frente a Learner/MCP/Hermes/red que son capacidades ausentes. El pulido
+> puntual del AVCS sigue permitido; lo aparcado es el salto de arquitectura visual.
+>
+> **V1.6 desaparece como fase**: sus 4 sesiones AVCS van a V2.0+ y la 5.ª (O5,
+> Project Memory Capa 2 + contratos GSN/CIE) sube a V1.5. **Nace V1.4.5**
+> (multi-instancia de runtimes), que era la 2.ª mitad de la vieja A5 y no era
+> AVCS sino concurrencia de backend dependiente de Hermes.
+>
+> **Ninguna sesión se ha borrado ni recortado** — todas conservan alcance,
+> modelo y tests; solo cambian de sitio. Tramo activo: 36 → **23-24 sesiones**
+> + 10 aparcadas en V2.0+. **Siguiente fase: V1.1 (Learner operativo), doc 27 §5.**
+
+Las 4 sesiones **B1-B4** (Verificación total, Instalador+auto-start, Onboarding
+wizard, Beta kit+release) conservan su texto íntegro en doc 27 §4b y se ejecutan
+en **V1.5** (doc 27 §9) — la mención más abajo a "Sprints O1-O5" es la numeración
+ANTIGUA de antes de que TIE/MEL/Tools/Orchestrator se ejecutaran con sus propios
+nombres (T1-T5, E1-E2b, R1-R7); se mantiene aquí solo como historial de diseño.
 
 ---
 
@@ -115,12 +136,12 @@ arquitectura congelado en `avcs/ARCHITECTURE.md`):
    tarde) con selector en Ajustes → HUB Visual, alimentado además por el
    scanner de hardware (CLAUDE.md §23).
 
-**Deuda real que SÍ queda de esta fase** (no confundir con MVP1 de V1.5):
+**Deuda real que SÍ queda de esta fase** (no confundir con MVP1, hoy en V2.0+):
 `PROFESSIONAL_VOICES` sigue hardcodeado en `elevenlabs_voice.py` (doc 12 A6,
 sin tocar). El sprint perf-front (`React.lazy`/`Suspense` por ruta) **sí se
 hizo**, pero en O3 (doc 26, 2026-07-20) — sesión distinta, no este bloque.
 
-**Lo que NO se construyó aquí y sigue siendo MVP1 (V1.5, doc 13 §20)**: los
+**Lo que NO se construyó aquí y sigue siendo MVP1 (V2.0+ desde 2026-08-05, doc 13 §20)**: los
 otros 4 ritmos (Comprensión/Acción/Error/Recuperación hoy son copias de los
 pesos de Reposo en `constants.ts`, no diseño propio), los campos de fuerza
 maduros (raíces/ramas/mandalas — `fRoot/fBranch/fMandala/fChannel` siguen
@@ -232,10 +253,17 @@ Arquitectura de 4 capas (Triggers/Conditions/Actions/Learner) con MVP funcional:
 > R1 se cerró además el hueco más grave del TIE (Δ2): NUNCA había ejecutado una
 > tool — decía haber hecho cosas que se inventaba.
 >
-> **Queda UN bloque para `1.0.0`: el MVP-beta** (instalador NSIS, auto-start del
-> backend, onboarding). Todo lo demás de V1.0 está cerrado.
+> ✅ **V1.0 CERRADA — 2026-08-02, tag `v1.0.0`** (CLAUDE.md §29), y después
+> siguieron los bloques de fiabilidad (doc 40 A·B·C) y navegación web (doc 32
+> B·WEB-1/2, C·WEB-3/4), cerrados el 2026-08-05.
 >
-> **[Δ 2026-07-22, CRÍTICO pre-1.0 — orden del usuario] Fiabilidad de memoria
+> **[2026-08-05] El MVP-beta** (instalador NSIS, auto-start del backend,
+> onboarding) **YA NO es el bloque que falta para `1.0.0`: se aplaza a V1.5**
+> por decisión del usuario — sin beta testers no entrega valor y caduca con cada
+> fase posterior. El tag `v1.0.0` se puso igualmente por el volumen de bloques
+> cerrados. Ver §0a y doc 27 §9.
+>
+> **[Δ 2026-07-22, CRÍTICO — orden del usuario] Fiabilidad de memoria
 > (guardar→recuperable).** El task-bench de modelos (mel_benchmarks.tasks,
 > scripts/model_task_bench.py) destapó que `memory_save` es el escenario menos
 > fiable del sistema: los modelos ejecutan la memory tool CORRECTAMENTE (save +
@@ -302,28 +330,38 @@ roadmap, 4.5-5 sesiones en vez de 2-3.
 > es la numeración de diseño ANTERIOR a que TIE/MEL/Tools/Orchestrator se
 > ejecutaran de verdad con sus propios nombres de sprint (T1-T5 para el TIE,
 > E1-E2b para el MEL, R1-R7 para el Orquestrator — todos ✅ CERRADOS, ver nota
-> al inicio de esta sección). Se conserva como historial, pero **lo único que
-> falta de V1.0 y el plan real a seguir son las 4 sesiones B1-B4 de doc 27
-> §4** (Verificación total · Instalador+auto-start · Onboarding wizard · Beta
-> kit+release) — ver regla de la sección 0a.
+> al inicio de esta sección). Se conserva como historial. Las 4 sesiones B1-B4
+> (Verificación total · Instalador+auto-start · Onboarding wizard · Beta
+> kit+release) **se ejecutan en V1.5** desde la reordenación del 2026-08-05 —
+> ver regla de la sección 0a.
 
-Tag `v1.0.0-beta` → `v1.0.0` al cerrar B1-B4 (doc 27 §4).
+Tag `v1.0.0` puesto el 2026-08-02 (CLAUDE.md §29). El empaquetado llega en
+`v1.5.0` (doc 27 §9).
 
-## 6. V1.1 — **Learner operativo** (plan de sesiones: doc 27 §5)
+## 6. V1.1 — **Learner operativo** (plan de sesiones: doc 27 §5) ⬅ **FASE ACTIVA**
 
 **[Δ 2026-07-20, reordenación por dependencias — doc 27 §1]**: el Learner SUBE a
 V1.1 (es el nodo con más dependientes: MEL Learning, AutomationLearner, Skill
 Evolution, reflexión, y la LSL que Hermes necesita) y Hermes BAJA a V1.3. "TIE
 v3" queda DISUELTO: reflexión continua → Learner (aquí), routing predictivo →
-MEL Learning (V1.2), multi-runtime → V1.5.
+MEL Learning (V1.2), multi-runtime → V1.4.5 (fase propia desde 2026-08-05).
+
+**[2026-08-05] Es la fase que se empieza AHORA**, tras aplazar el MVP-beta a
+V1.5. Arranca con todo lo que necesita ya en producción y acumulando datos
+reales desde hace meses: eventos `mission.*` (V1.0 T4a), `automation_learner`
+stub con interfaz congelada (V0.9 A4), `mem_automation`/`mem_error` (A4),
+Decision API con `history()` (A4), `skill_store` + `LocalSkill` con linaje
+(V0.85 M1) y telemetría de misiones punta a punta (doc 31). El Learner no nace
+en blanco.
 
 **[Corrección 2026-07-22]**: esta fase YA NO incluye AVCS Génesis. Se
 descubrió (auditoría de commits) que Génesis se construyó en V0.82/83
 (§2 — 2026-07-10 a 07-12), no que estuviera pendiente. La pista frontend
 paralela AV1-AV2 que aquí se planeaba se retira por completo; V1.1 queda
 100% backend (Learner). Completar los 4 ritmos que faltan
-(Comprensión/Acción/Error/Recuperación) sigue siendo MVP1 (V1.5, doc 13 §20)
-— confirmado con el usuario que no urge, puede esperar a esa fase.
+(Comprensión/Acción/Error/Recuperación) sigue siendo MVP1 (V2.0+ desde la
+reordenación del 2026-08-05, doc 13 §20) — confirmado con el usuario que no
+urge, puede esperar a esa fase.
 
 - **Backend (L1-L4)**: LSL completa (tabla `skills`+`skill_events` con linaje) +
   escalera de confianza + Mission Learning (`mission.completed` → model_stats,
@@ -389,36 +427,69 @@ decididos por el usuario para post-1.0):
 
 7 sesiones (Fable ×2: W1 red, S1 sandboxing). Tag `v1.4.0`.
 
-## 9. V1.5 — **AVCS MVP1 "Lenguaje completo"** + Hub avanzado + multi-instancia (13 §20, 27 §9)
+## 8c. V1.4.5 — Multi-instancia de runtimes (27 §8b)
 
-La actualización mayor del Hub (importante, no definitiva): los **7 ritmos
+Varias instancias de runtime vivas a la vez, por perfil (research/coding/calendar,
+o una por proyecto), compartiendo el MOS y con aislamiento de estado entre ellas.
+**[2026-08-05]** Sale a fase propia: estaba pegada a la sesión A5 del AVCS por
+convivencia, no por dependencia — es concurrencia de backend y depende de Hermes
+(V1.3), no de partículas. Si H0 salió NO-GO, se reduce a varias instancias del
+runtime nativo y el contrato queda listo para el día que entre un segundo runtime.
+(1-2 sesiones, Fable.)
+
+## 9. V1.5 — Cierre del organismo local + **MVP-beta** (27 §9)
+
+**[Reordenación 2026-08-05]** Fase de CIERRE del tramo, fusión de dos cosas:
+
+- **O5 — Project Memory Capa 2** (permisos por proyecto, doc 08 Capa 2) +
+  **revisión de contratos GSN/CIE** (PortableSkill, PrivacyFilter, aislamiento
+  RFC-001, GuardianRuntime) → handoff documentado a V2.0. Va primera: si obliga a
+  tocar el núcleo, mejor antes de empaquetarlo.
+- **B1-B4 — el MVP-beta que estaba al principio del plan**: verificación total y
+  deudas de cierre (incluida la carrera `state=done`/`outcome` del tracer y la
+  suite completa en Windows, adelantables a cualquier hueco), instalador NSIS +
+  auto-start, onboarding wizard, y beta kit + release. Se empaqueta aquí porque
+  aquí el producto ya no va a cambiar de forma — hacerlo antes obligaba a
+  rehacerlo tras cada fase (Hermes, Docker, MCP, PIN de red, pantallas nuevas).
+
+**Cierre V1.5 = Aithera como organismo completo local, empaquetado y
+distribuible.** Bump a `1.5.0` + tag. (5 sesiones.)
+
+## 10. V2.0+ — AVCS maduro + la capa de red
+
+**AVCS MVP1 "Lenguaje completo"** (5 sesiones, 13 §20, 27 §10): los **7 ritmos
 biológicos completos** sobre campos de fuerza componibles; raíces y ramas maduras;
 patrones de Comprensión (mandalas/redes n-fold); factor de sincronía (el Error
 como pérdida de cooperación, nunca "rojo"); AudioReactor completo (bandas);
 PerformanceManager íntegro (escalera de degradación + invariantes de identidad);
 **rediseño general de la UI** alrededor de la presencia y salto de animaciones →
-comportamiento. (5-7 sesiones.)
+comportamiento.
 
-También en esta era: **TIE v3** (doc 14 §5 — reflexión mid-mission del Learner,
-routing predictivo, misiones recurrentes con memoria de misión previa,
-priorización entre misiones concurrentes); Knowledge Evolution con grafo de
-entidades (doc 15 §7); Hermes Desktop deja de usarse; multi-instancia de runtimes
-por perfil (research/coding/calendar) compartiendo el MOS; panel de memoria/skills
-rico en el Hub.
-
-**AVCS MVP2 "Organismo" (V1.6+/era V2.0)**: UI viva (paneles que se FORMAN de
+**AVCS MVP2 "Organismo"** (4 sesiones): UI viva (paneles que se FORMAN de
 partículas y se disuelven), vida procedural en momentos especiales (luciérnagas,
 semillas, mariposas — jamás constantes), memoria visual (el Hub madura con las
 horas de uso; crecimiento imperceptible, nunca desbloqueos), preparación WebGPU.
-(6-8 sesiones.) La detección de hardware del instalador (13 §19) se integra con
-el onboarding del MVP beta: el PerformanceManager ya lee su tier de Settings —
-cero refactor.
+La detección de hardware (13 §19) ya está integrada con Ajustes → Sistema desde
+2026-07-21: el PerformanceManager lee su tier de ahí — cero refactor pendiente.
 
-## 10. V2.0+ — La capa de red (opcional por diseño)
+> **[2026-08-05] Por qué el AVCS maduro está aquí y no en V1.5**: Génesis está
+> entregado y en uso diario desde V0.82/83, y se ha seguido puliendo hasta PU5g
+> (partículas por tier con luminosidad medida, anillos que giran y laten con la
+> voz, bloom, el apagón arreglado). Lo que queda MEJORA una capacidad que ya
+> existe, frente a Learner/MCP/Hermes/red que son capacidades ausentes. **El AVCS
+> no se congela**: el pulido puntual sigue siendo bienvenido; lo aparcado es el
+> salto de arquitectura visual, no los retoques.
 
-GSN (red de skills, 08 RFC-004) + CIE (inteligencia colectiva, RFC-005) + Guardians
-(RFC-003), con aislamiento estructural de la Private Memory (RFC-001) y PrivacyFilter
-tipado. Sincronización LSL↔GSN siempre con confirmación explícita (09 §3).
+**También en esta era**: **TIE v3** (doc 14 §5 — reflexión mid-mission del
+Learner, routing predictivo, misiones recurrentes con memoria de misión previa,
+priorización entre misiones concurrentes); Knowledge Evolution con grafo de
+entidades (doc 15 §7); panel de memoria/skills rico en el Hub.
+
+**La capa de red (opcional por diseño)**: GSN (red de skills, 08 RFC-004) + CIE
+(inteligencia colectiva, RFC-005) + Guardians (RFC-003), con aislamiento
+estructural de la Private Memory (RFC-001) y PrivacyFilter tipado. Sincronización
+LSL↔GSN siempre con confirmación explícita (09 §3). Plan de sesiones propio al
+llegar, sobre los contratos revisados en O5 (V1.5).
 
 ## 11. Mapa de evolución del MOS
 
@@ -437,7 +508,7 @@ tipado. Sincronización LSL↔GSN siempre con confirmación explícita (09 §3).
 
 ## 11b. Mapa de evolución del Cognitive Runtime (TIE + Learner — detalle en 14 §5 y 15 §9)
 
-| Componente | V0.85 | V0.9 | V1.0 | V1.1 | V1.2 | V1.5 |
+| Componente | V0.85 | V0.9 | V1.0 | V1.1 | V1.2 | V1.5+ |
 |---|---|---|---|---|---|---|
 | Contratos TIE (Mission/TaskGraph/TaskNode) | diseño | diseño | ✅ código | ✅ | ✅ | ✅ |
 | Eventos (`app/core/events.py`) | ✅ nace (M2) | ✅ AE consume | ✅ `mission.*` | ✅ | ✅ | ✅ |
@@ -456,20 +527,21 @@ tipado. Sincronización LSL↔GSN siempre con confirmación explícita (09 §3).
 | V0.85 ✅ | MOS Skeleton (cerrada, tag `v0.8.5`) | 5-6 | memoria viva: ingesta, briefing, contexto con fuentes |
 | V0.87 | **WPMS** (Workspace) | 2-3 | proyectos/milestones/tareas vara-Linear, progreso automático, enganche MOS/TIE |
 | V0.9 | Automation + Gates | 4-5 | briefing matinal automático, reglas, aprobaciones |
-| V1.0 | **TIE v1** (Orchestrator) + **MVP BETA** | 5-6 | **instalable y autónomo para beta testers**; planes como grafo, camino corto, kill-switch |
-| V1.0 cierre | **MVP-beta** (instalador+onboarding+verificación) | 4 | doble clic y funciona; tag `v1.0.0` (doc 27 §4) |
-| V1.1 | **Learner operativo** | 4 | Aithera aprende (LSL, Mission Learning, panel con undo) — AVCS Génesis ya entregado en V0.82/83, no se repite |
+| V1.0 ✅ | **TIE v1** (Orchestrator) + MEL + Tools + auditoría + pulido | — | tag `v1.0.0` (2026-08-02); planes como grafo, camino corto, kill-switch, navegación web agentic |
+| ~~V1.0 cierre~~ | ~~MVP-beta~~ → **movido a V1.5** (2026-08-05) | — | sin beta testers no entrega valor y caduca con cada fase; ver §0a |
+| **V1.1** ⬅ | **Learner operativo** | 4 | Aithera aprende (LSL, Mission Learning, panel con undo) — AVCS Génesis ya entregado en V0.82/83, no se repite |
 | V1.2 | MCP + **TIE v2** + MEL Learning + Skill Evolution | 6 | interop total; olas+replan+presupuestos; el MEL aprende; evals |
 | V1.3 | Hermes Runtime (H0 GO/NO-GO → H1-H4) | 5 | runtime que crece, con memoria/tools/LLM 100% de Aithera |
-| V1.4 | Web+PWA+PIN + voz data-driven | 4 | Aithera desde el navegador/móvil; voz fluida medida |
-| V1.5 | **AVCS MVP1** + Hub avanzado + multi-instancia | 5 | completa los 4 ritmos que faltan (3 ya reales desde V0.82/83) + campos maduros, UI rediseñada (TIE v3 disuelto: ver doc 27 §1) |
-| V1.6 | **AVCS MVP2** + Project Memory C2 + puerta GSN/CIE | 5 | el Hub como organismo; contratos de red revisados |
-| V2.0+ | Red (GSN/CIE/Guardians) | — | inteligencia colectiva opcional |
+| V1.4 | Web+PWA+PIN + 2 canales + sandboxing + voz + memoria legible | 7 | Aithera desde el navegador/móvil; voz fluida medida; ejecución aislada |
+| V1.4.5 | Multi-instancia de runtimes | 1-2 | varios runtimes vivos por perfil, con estado aislado |
+| V1.5 | Project Memory C2 + puerta GSN/CIE + **MVP-beta (instalador)** | 5 | el organismo local cerrado Y empaquetado; doble clic y funciona; tag `v1.5.0` |
+| V2.0+ | **AVCS MVP1 + MVP2** · Red (GSN/CIE/Guardians) | 9 + ? | el Hub como organismo; inteligencia colectiva opcional |
 
-**Total hasta V1.0 beta: ~16-20 sesiones** (mayormente ya ejecutadas — ver §5).
-**Total V1.0 cierre → V1.6: 33 sesiones** (recuento exacto y detallado por
-sesión en doc 27 §2 — la cifra de esta tabla es orientativa/histórica, doc 27
-manda, ver §0a). Regla de siempre: si una fase crece, se parte en dos
+**Total hasta V1.0: ejecutado** (tag `v1.0.0`, 2026-08-02 — ver §5 y CLAUDE.md §29).
+**Total V1.1 → V1.5: 23-24 sesiones** + 10 aparcadas en V2.0+ (recuento exacto y
+detallado por sesión en doc 27 §2 — la cifra de esta tabla es
+orientativa/histórica, doc 27 manda, ver §0a). Regla de siempre: si una fase
+crece, se parte en dos
 (principio 7); si algo amenaza la fecha de V1.0, se recorta alcance de la
 fase, nunca se aplaza V1.0.
 

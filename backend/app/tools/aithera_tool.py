@@ -109,6 +109,8 @@ class AitheraTool(BaseTool):
             "toggle_rule": self._toggle_rule,
             # Email
             "create_auto_reply_rule": self._create_auto_reply_rule,
+            # Aprendizaje
+            "learn_skill": self._learn_skill,
             # Configuración de la app (idioma, modelo del chat)
             "set_language": self._set_language,
             "set_chat_model": self._set_chat_model,
@@ -182,6 +184,19 @@ class AitheraTool(BaseTool):
              "requires_confirmation": False,
              "params": {"query": "string — UNA palabra o tema, no una frase larga",
                         "limit": "int opcional (default 12)"}},
+            # ---- Aprendizaje (V1.1 L3) ----
+            {"id": "learn_skill",
+             "description": ("El usuario dice «aprende esto» / «apúntate cómo se hace» y te "
+                             "da unas notas, unos pasos o el contenido de un documento que "
+                             "acabas de leer. Guarda ese procedimiento como BORRADOR para "
+                             "poder reutilizarlo. NO se activa solo: queda esperando su visto "
+                             "bueno. Pásale el texto COMPLETO de las notas en `notes` — si "
+                             "hay que leer un archivo o una web antes, léelo primero con la "
+                             "herramienta que toque y pasa aquí lo leído."),
+             "requires_confirmation": False,
+             "params": {"notes": "string — las notas o pasos, en texto",
+                        "name": "string opcional — cómo llamarlo",
+                        "source": "string opcional — de dónde salió (archivo, URL, conversación)"}},
             {"id": "assign_tools", "description": "Cambia las tools permitidas de un agente existente.",
              "requires_confirmation": True,
              "params": {"agent_id": "int", "allowed_tools": "lista de tool_id"}},
@@ -476,6 +491,28 @@ class AitheraTool(BaseTool):
         return {"success": True, "result": {
             "id": agent.id, "name": agent.name, "project_id": agent.project_id,
         }, "error": None}
+
+    async def _learn_skill(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """[V1.1 L3] «Aprende esto» — la vía por la que el USUARIO enseña.
+
+        Adaptador puro, como el resto de este archivo: toda la lógica (redactar
+        el procedimiento y meterlo en cuarentena) vive en `app/learner/
+        authoring.py`. Aquí solo se traducen los parámetros y el resultado.
+
+        El `project_id` NO lo pone el modelo: lo inyecta el toolloop desde la
+        frontera de autoridad cuando la misión es de un proyecto (mismo
+        mecanismo que `create_agent`), así que una skill aprendida dentro de un
+        proyecto nace acotada a él sin que nadie tenga que acordarse."""
+        from app.learner import learn_this   # API pública, nunca el interno
+
+        res = await learn_this(
+            str(params.get("notes") or ""),
+            name=str(params.get("name") or ""),
+            source=str(params.get("source") or ""),
+            project_id=params.get("project_id"),
+        )
+        return {"success": res.ok, "result": res.to_dict(),
+                "error": None if res.ok else res.message}
 
     async def _search_skills(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """[2026-08-02] Buscar en el catálogo REAL de skills antes de asignarlas.

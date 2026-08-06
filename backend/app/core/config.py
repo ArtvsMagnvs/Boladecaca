@@ -8,12 +8,10 @@ load_dotenv()
 class Settings:
     # App settings
     APP_NAME = "Aithera"
-    # V1.0 CERRADO (2026-08-02): el usuario decide cerrar la fase sin
-    # instalador/MVP-beta -- sin beta testers todavia, se prefiere seguir
-    # desarrollando. Bump sincronizado con main.py y frontend/package.json.
-    # Tag v1.0.0. El instalador/onboarding queda como trabajo POST-1.0, no
-    # como condicion para el bump (decision de version del usuario).
-    VERSION = "1.0.0"
+    # V1.1 CERRADO (2026-08-06): Learner operativo (LSL + Mission Learning +
+    # atribucion de fallos + LLL/analisis nocturno + panel "Aithera aprende").
+    # Bump sincronizado con main.py y frontend/package.json. Tag v1.1.0.
+    VERSION = "1.1.0"
     DEBUG = os.getenv("DEBUG", "false").lower() == "true"
 
     # API settings
@@ -49,6 +47,13 @@ class Settings:
     # (done/failed/cancelled) más viejas que esto — nunca toca una misión viva.
     # 0 desactiva la limpieza automática (el botón "×" manual sigue funcionando).
     TIE_MISSION_RETENTION_DAYS = int(os.getenv("TIE_MISSION_RETENTION_DAYS", "30"))
+    # [V1.1 L2] Plazo DURO de la reflexión post-misión del Learner (segundos).
+    # Corre en background y ya respondimos al usuario, así que puede permitirse
+    # más que el camino caliente — pero no puede quedarse colgada: si el modelo
+    # no contesta a tiempo, la misión se queda con sus contadores (que son
+    # deterministas y ya están guardados) y no se aprende de ella. Reflexionar
+    # nunca puede costar más que trabajar (doc 15 §10, "coste silencioso").
+    LEARNER_REFLECTION_BUDGET_S = float(os.getenv("LEARNER_REFLECTION_BUDGET_S", "20"))
     # V1.0 (TIE v1, T2): Model Router mínimo. Hints de modelo barato/potente. Si
     # vacíos, el router cae al modelo del proveedor activo del AIManager. Cuando
     # exista el MEL (E1, plan aparte), estos settings los gestionan sus políticas

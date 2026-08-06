@@ -227,8 +227,49 @@ V1.2 los sprints de potenciación). Coherente con "nada amenaza la fecha de V1.0
 | **Proliferación de skills** (miles de skills-basura) | real en sistemas tipo Hermes | merge/dedup del Learner + umbral de evidencia para VALIDATED + deprecate por desuso |
 | **El Learner como god-module** | riesgo de diseño | solo propone; fronteras del doc 16 §4.2 (no importa gateway/ai directo; escribe únicamente por APIs MOS/Skill) |
 
+## 11. Ampliación 2026-08-06 — errores con dueño, éxitos que compiten (→ doc 27)
+
+Decisión del usuario, con L1-L2 ya ejecutadas. Cuatro capacidades nuevas — el
+**diseño ejecutable completo vive en doc 27** (§5 L2b, §6 ML3/SE1/PE1/PE2);
+aquí solo el mapa conceptual para que este doc siga siendo la fuente de diseño:
+
+1. **Taxonomía y atribución de fallos** (V1.1 L2b): `FailureKind` determinista
+   en `app/core/failures.py` clasificado EN el punto del fallo (nunca un LLM
+   adivinando la culpa — sería violar §3.3); eje de `blame` (external/config/
+   model/tool/aithera/none/unknown); tabla `failure_stats`; **stats justas** —
+   una misión caída por conexión/config queda `excused` y sale del denominador
+   de `model_stats` (§4). Extiende la fila "¿Qué errores aparecieron?" del
+   checklist §4 con el "de quién".
+2. **Informe de Salud del Sistema** (V1.2 ML3): análisis mensual con los
+   modelos más fiables (ANALYZE + policy quality) sobre fallos atribuidos +
+   caminos + histórico de propuestas → hallazgos de dónde cojea el SISTEMA,
+   cada uno con misiones-evidencia. Persistidos como `system_improvement` SIN
+   applier (inaplicables por construcción — refuerza §8 "jamás solo"); el
+   panel los exporta como informe markdown para una sesión de desarrollo.
+3. **Torneo de variantes** (V1.2 SE1): cuando la evidencia de un mismo trabajo
+   contiene ≥2 caminos de éxito DISTINTOS (o una skill con patrón de fallo),
+   se generan variantes (una por camino observado + máx 1 refinada), se
+   ejecutan en un banco read-only/sandbox sobre las misiones-evidencia, y SOLO
+   la ganadora verificada (criterios objetivos primero; juez LLM ≠ ejecutor
+   solo para desempate) llega a la bandeja. Refina §6.1-Improve: con una sola
+   forma observada, el camino directo de siempre.
+4. **Erosión de caminos + exploración** (V1.2 PE1/PE2): `work_types` +
+   `path_stats` (sobre el `path` que la telemetría ya graba) → hints de camino
+   (riesgo medio, escalera §3) que solo ajustan `requires_planning` con rastro
+   en la traza; y shadow runs OFF-por-defecto — sombra en paralelo SOLO en
+   misiones 100% lectura, `Authority.shadow` bloquea toda huella, el usuario
+   recibe SIEMPRE el output del camino fiable. La metáfora rectora: el agua
+   que erosiona la montaña hasta formar el cauce óptimo, sin dejar de probar.
+
+Actualización de la tabla §9: `Taxonomía/atribución de fallos` → V1.1 ✅ en
+adelante; `Informe de Salud (system_improvement)`, `Torneo de variantes`,
+`Erosión de caminos + shadow runs` → V1.2 ✅ en adelante. Todo desemboca en el
+panel (V1.1 L4: Propuestas/Salud/Historial; V1.2: +Caminos/+Informe).
+
 ---
 *Diseño 2026-07-12 (Fable 5). Extiende 09 (LSL/LLL); consume traces del TIE (14),
 Decision/Error/Automation Memory (07/08/11). El AutomationLearner del doc 11 A.1
 ES este módulo. Nada de este doc altera contratos del MOS más allá de los 4 deltas
 listados en 14 §4.1.*
+*Ampliación 2026-08-06 (Fable 5, decisión del usuario): §11 — detalle ejecutable
+en doc 27.*

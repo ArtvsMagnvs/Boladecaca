@@ -49,7 +49,12 @@ _MAX_OBSERVATION_CHARS = 4000
 
 # Acciones de `aithera` que CREAN algo que pertenece a un proyecto. Si la misión
 # tiene proyecto, el bucle se lo inyecta para que nazca dentro de él.
-_AITHERA_PROJECT_SCOPED_CREATE = {"create_agent", "create_milestone", "create_task"}
+# [L3] `learn_skill` entra aquí por el mismo motivo que los demás: un
+# procedimiento aprendido DENTRO de un proyecto es de ese proyecto, y esperar a
+# que el modelo se acuerde de pasar el `project_id` sería confiar la frontera a
+# su memoria.
+_AITHERA_PROJECT_SCOPED_CREATE = {"create_agent", "create_milestone", "create_task",
+                                  "learn_skill"}
 
 # [S9c] Repetición estéril: al 2.º fallo idéntico se avisa al modelo, al 3.º se
 # abandona esa vía. Dos escalones a propósito — un reintento tras un fallo
@@ -628,9 +633,14 @@ def _record_denial(tool_id, action, reason: str) -> None:
     whitelist o fuera de alcance). Best-effort, jamás rompe el bucle."""
     try:
         import app.telemetry as _telemetry
+        from app.core.failures import FailureKind, annotate
 
+        # [L2b] Pedir una tool que no existe o que no le corresponde es un
+        # fallo de RAZONAMIENTO del modelo — no de la tool (que ni corrió) ni
+        # del permiso (que nadie llegó a denegar).
         _telemetry.record("tool_call", name=f"{tool_id}.{action}", ok=False,
-                          detail={"denied": True, "reason": str(reason)[:200]})
+                          detail=annotate({"denied": True, "reason": str(reason)[:200]},
+                                          FailureKind.MODEL_REASONING))
     except Exception:
         pass
 
@@ -638,11 +648,19 @@ def _record_denial(tool_id, action, reason: str) -> None:
 def _record_loop_event(name: str, detail: Optional[dict] = None) -> None:
     """[#209] Telemetría de un giro del bucle que NO es una tool: respuesta no
     parseable, answer rechazado por falta de fundamento, permiso no concedido.
-    Stage propio ("toolloop") para no contaminar las estadísticas de tools."""
+    Stage propio ("toolloop") para no contaminar las estadísticas de tools.
+
+    [L2b, doc 27 §5] Este es EL funnel de los eventos del bucle, así que la
+    atribución se pone aquí una sola vez: cada nombre de evento ya describe con
+    precisión qué pasó (`invalid_json`, `stalled`, `preflight_not_ready`…) y
+    `kind_from_loop_event` solo dice de quién es. Un evento nuevo sin entrada
+    en ese mapa cae en UNKNOWN — visible en el panel, nunca atribuido a dedo."""
     try:
         import app.telemetry as _telemetry
+        from app.core.failures import annotate, kind_from_loop_event
 
-        _telemetry.record("toolloop", name=name, ok=False, detail=detail)
+        _telemetry.record("toolloop", name=name, ok=False,
+                          detail=annotate(detail, kind_from_loop_event(name)))
     except Exception:
         pass
 
@@ -1174,11 +1192,25 @@ async def run(
         try:
             import app.telemetry as _telemetry
 
+            _detalle = ({"error": str(result.get("error"))[:200]}
+                        if result.get("error") else None)
+            # [L2b, doc 27 §5] Una tool que corrió y falló NO siempre es culpa
+            # de la tool: un `getaddrinfo failed` dentro de `search` es la red,
+            # y un `TypeError` es un bug nuestro. Se clasifica por el texto REAL
+            # del error, con origen "tool" como último recurso.
+            if not result.get("success"):
+                from app.core.failures import annotate, classify_failure
+
+                _detalle = annotate(
+                    _detalle,
+                    classify_failure("tool", str(result.get("error") or ""),
+                                     {"tool": tool_id, "action": action}),
+                    tool=tool_id)
             _telemetry.record(
                 "tool_call", name=f"{tool_id}.{action}",
                 duration_ms=int((time.monotonic() - _tool_t0) * 1000),
                 ok=bool(result.get("success")),
-                detail={"error": str(result.get("error"))[:200]} if result.get("error") else None,
+                detail=_detalle,
             )
         except Exception:
             pass

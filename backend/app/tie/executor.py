@@ -684,16 +684,27 @@ def _transitive_dependents(graph: TaskGraph, node_id: str) -> list[str]:
 
 def _remember_error(node: TaskNode, mission: Mission) -> None:
     """Deja el fallo en `mem_error` — materia prima del LLL (doc 09 §2.2 análisis
-    2). Best-effort y NO bloqueante: el nodo ya quedó auditado en el grafo."""
+    2). Best-effort y NO bloqueante: el nodo ya quedó auditado en el grafo.
+
+    [L2b] Lleva ADEMÁS su atribución en la metadata: el análisis 2 de L3 busca
+    patrones POR TIPO de fallo, y "3 timeouts de red" y "3 rendiciones del
+    modelo" son dos patrones con dos salidas distintas. Sin el kind guardado
+    aquí, ese análisis tendría que re-clasificar a posteriori sobre un texto ya
+    resumido — con menos información de la que había en el momento."""
     async def _store() -> None:
         try:
+            from app.core.failures import FailureKind, blame_of, classify_failure
             from app.memory import MemoryType, memory_router
 
+            _val = getattr(node, "validation", None) or {}
+            _kind = (FailureKind.MODEL_REASONING if _val.get("method") == "grounding"
+                     else classify_failure("model", str(node.error or ""), {"node": node.id}))
             await memory_router.store(
                 content=f'Nodo "{node.goal}" falló en la misión "{mission.goal}": {node.error}'[:2000],
                 memory_type=MemoryType.ERROR,
                 source="tie",
-                metadata={"mission_id": mission.id, "node_id": node.id, "goal": node.goal[:200]},
+                metadata={"mission_id": mission.id, "node_id": node.id, "goal": node.goal[:200],
+                          "failure_kind": _kind.value, "blame": blame_of(_kind)},
             )
         except Exception as e:
             logger.error(f"[executor] no se pudo escribir mem_error (no crítico): {e!r}")
@@ -719,10 +730,28 @@ def _transition(node: TaskNode, state: NodeState, graph: TaskGraph, trace_id: st
         try:
             import app.telemetry as _telemetry
 
+            _detalle = {"state": state.value, "runtime": node.runtime,
+                        "tools": list(node.tools or [])}
+            # [L2b, doc 27 §5] Atribución del nodo que acaba mal. El caso que
+            # más importa es el de NEW-4: `validation.method == "grounding"`
+            # significa que el nodo se RINDIÓ en su propia prosa — eso es
+            # razonamiento del modelo, no una tool rota ni una red caída, y sin
+            # esta distinción el análisis de patrones (L3) lo mezclaría todo.
+            if state in (NodeState.FAILED, NodeState.CANCELLED):
+                from app.core.failures import FailureKind, annotate, classify_failure
+
+                _val = getattr(node, "validation", None) or {}
+                if state == NodeState.CANCELLED:
+                    _kind = FailureKind.USER_CANCELLED
+                elif _val.get("method") == "grounding":
+                    _kind = FailureKind.MODEL_REASONING
+                else:
+                    _kind = classify_failure(
+                        "model", str(node.error or _val.get("notes") or ""),
+                        {"node": node.id})
+                _detalle = annotate(_detalle, _kind)
             _telemetry.record("node_end", name=node.id, trace_id=trace_id,
-                              ok=(state == NodeState.DONE),
-                              detail={"state": state.value, "runtime": node.runtime,
-                                      "tools": list(node.tools or [])})
+                              ok=(state == NodeState.DONE), detail=_detalle)
         except Exception:
             pass
 

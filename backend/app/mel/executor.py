@@ -402,6 +402,13 @@ def _record_async(req: ExecutionRequest, ref: Optional[ModelRef], *, ok: bool,
             detail["error"] = error[:300]
         if tried and len(tried) > 1:
             detail["tried"] = tried
+        # [L2b, doc 27 §5] Atribución: la razón que `fallback.classify_failure`
+        # ya calculó (transient/auth/quota/…) se TRADUCE a FailureKind. Solo en
+        # los fallos: una llamada que fue bien no tiene dueño que buscar.
+        if not ok:
+            from app.core.failures import annotate, kind_from_mel_reason
+
+            detail = annotate(detail, kind_from_mel_reason(fallback_reason))
         _telemetry.record(
             "llm_call", name=req.capability.value,
             provider=ref.provider if ref else None,

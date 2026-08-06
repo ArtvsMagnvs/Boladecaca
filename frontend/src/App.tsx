@@ -30,6 +30,7 @@ const EmailAssistant = lazy(() => import("@/pages/EmailAssistant"));
 const Automation = lazy(() => import("@/pages/Automation"));
 // V1.0 (TIE v1, T4b): misiones — plan, pasos, aprobación y kill-switch.
 const Missions = lazy(() => import("@/pages/Missions"));
+const Learning = lazy(() => import("@/pages/Learning"));
 
 // Placeholder mientras carga un chunk de página (imperceptible en local, pero
 // evita un parpadeo en blanco). Discreto, en el lenguaje visual de la app.
@@ -61,6 +62,8 @@ export default function App() {
           <Route path="/agents" element={<Suspense fallback={<RouteFallback />}><Agents /></Suspense>} />
           <Route path="/automation" element={<Suspense fallback={<RouteFallback />}><Automation /></Suspense>} />
           <Route path="/missions" element={<Suspense fallback={<RouteFallback />}><Missions /></Suspense>} />
+          {/* [V1.1 L4] Lo que Aithera ha aprendido: página propia, no una pestaña de Ajustes. */}
+          <Route path="/learning" element={<Suspense fallback={<RouteFallback />}><Learning /></Suspense>} />
           {/* [2026-07-21] El Centro de Voz se fusionó en Configuración → Voz
               (petición del usuario: nada de config dispersa). El enlace viejo
               redirige, mismo patrón que /projects y /tasks. */}

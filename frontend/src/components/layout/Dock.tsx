@@ -29,6 +29,7 @@ import {
   IconCalendar,
   IconEmail,
   IconHome,
+  IconLearning,
   IconMissionControl,
   IconSettings,
   IconWorkspace,
@@ -53,6 +54,8 @@ export function Dock() {
   const [pendingApprovals, setPendingApprovals] = useState(0);
   const [urgentEmails, setUrgentEmails] = useState(0);
   const [workspaceAlerts, setWorkspaceAlerts] = useState(0);
+  // [V1.1 L4] Lo que el Learner tiene esperando una decisión.
+  const [pendingLearning, setPendingLearning] = useState(0);
 
   usePolling(() => {
     refreshBackendStatus();
@@ -71,6 +74,10 @@ export function Dock() {
         setWorkspaceAlerts((b.workspace?.upcoming_deadlines.length ?? 0) + (b.workspace?.blocked.length ?? 0)),
       )
       .catch(() => setWorkspaceAlerts(0));
+    api
+      .getLearnerProposals()
+      .then((r) => setPendingLearning(r.waiting_for_you))
+      .catch(() => setPendingLearning(0));
   }, 30000);
 
   const go = (to: string) => () => navigate(to);
@@ -100,6 +107,14 @@ export function Dock() {
           active={at("/missions")}
           badge={pendingApprovals}
           badgeTone="error"
+        />
+        <DockButton
+          icon={<IconLearning />}
+          label={t("nav.learning")}
+          onClick={go("/learning")}
+          active={at("/learning")}
+          badge={pendingLearning}
+          badgeTone="warn"
         />
         <DockButton
           icon={<IconWorkspace />}

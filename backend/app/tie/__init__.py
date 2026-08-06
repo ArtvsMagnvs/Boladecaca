@@ -71,6 +71,12 @@ def register_handlers() -> None:
 # `classify` promovido al top-level por comodidad (lo usan el pipeline y quien
 # quiera "entender" un mensaje sin ejecutarlo — p.ej. el AE al decidir delegar).
 classify = intents.classify
+# [V1.1 L2] Extractor de JSON de una respuesta de modelo (tolera bloques
+# markdown y dos objetos seguidos). Es una utilidad PURA de texto, sin estado,
+# que el TIE lleva puliendo desde T1 a base de respuestas reales; se expone en
+# el barrel para que el Learner la reuse en vez de mantener una segunda copia
+# que divergiría (el patrón LOG-1 que ya ha mordido tres veces).
+extract_json = intents._extract_json
 # [A·VOZ-6] El pre-clasificador determinista (0 LLM) también se expone: el
 # Orquestador lo usa para NO mostrar "analizando" ni pagar el round-trip del
 # clasificador en la charla obvia (una charla no debe parecer una misión).
@@ -127,6 +133,7 @@ __all__ = [
     "quick_memory_answer_async",
     "new_mission",
     "tracer",
+    "extract_json",
     # motor de ejecución del grafo (T3): run/cancel/resume_pending/register_gate_handlers
     "executor",
     # response builder (T4)

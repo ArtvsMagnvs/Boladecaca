@@ -17,6 +17,7 @@ MEMORY_DIR = APP_DIR / "memory"
 WORKSPACE_DIR = APP_DIR / "workspace"
 AUTOMATION_DIR = APP_DIR / "automation"
 TIE_DIR = APP_DIR / "tie"
+LEARNER_DIR = APP_DIR / "learner"
 
 # Internos que NADIE de fuera del propio modulo debe importar directamente.
 # Cada entrada: (prefijo de import prohibido, directorio propietario que SI puede).
@@ -61,6 +62,19 @@ FORBIDDEN_MODULES = (
     ("app.tie.toolloop", TIE_DIR),   # R1: el bucle es interno del TIE
     ("app.tie.webloop", TIE_DIR),    # C·WEB-3: el bucle de navegacion, tambien interno
     ("app.tie.webflows", TIE_DIR),   # C·WEB-4: los playbooks de flujo, dato del bucle
+    # V1.1 (Learner, L1): fronteras del Aithera Learning System. La regla
+    # constitucional del Learner (doc 15) tiene su mitad estructural aqui:
+    # nadie de fuera toca sus internos, y el Learner escribe solo por APIs
+    # publicas (la otra mitad la vigila test_product_learner.py).
+    ("app.learner.models", LEARNER_DIR),
+    ("app.learner.ladder", LEARNER_DIR),
+    ("app.learner.library", LEARNER_DIR),
+    ("app.learner.proposals", LEARNER_DIR),
+    ("app.learner.backfill", LEARNER_DIR),
+    ("app.learner.analysis", LEARNER_DIR),
+    ("app.learner.authoring", LEARNER_DIR),
+    ("app.learner.stats", LEARNER_DIR),
+    ("app.learner.mission_learning", LEARNER_DIR),
     ("app.tie.authority", TIE_DIR),  # R4: la frontera de autoridad es interna del TIE
     ("app.tie.graph", TIE_DIR),
     ("app.tie.enricher", TIE_DIR),

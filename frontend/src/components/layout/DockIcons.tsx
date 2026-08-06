@@ -96,6 +96,34 @@ export function IconWorkspace() {
 
 /** MISSION CONTROL — icono "Agentes" de la lámina: red poliédrica (geodésica)
  *  con nodos en los vértices, aristas cruzadas y núcleo conectado a todo. */
+/**
+ * [V1.1 L4] "Aithera aprende" — una semilla germinando.
+ *
+ * Mismo vocabulario que el resto de la lámina (línea fina, nodos como puntos
+ * llenos, composición orbital), pero con una idea propia: algo pequeño en el
+ * centro del que salen brotes, y cada brote termina en un nodo. Es lo que hace
+ * el Learner — de lo observado salen cosas que crecen y se pueden mirar.
+ */
+export function IconLearning() {
+  return (
+    <Svg>
+      {/* la semilla */}
+      <circle cx={12} cy={15.6} r={2.5} strokeWidth={1.0} />
+      <Dot cx={12} cy={15.6} r={0.9} />
+      {/* el suelo del que brota */}
+      <path d="M4.6 19.8 L19.4 19.8" strokeWidth={0.7} opacity={0.55} />
+      {/* tres brotes: el central alto, los laterales curvados */}
+      <path d="M12 13.1 L12 5.6" strokeWidth={0.9} />
+      <path d="M12 11.4 C9.4 10.2 8.0 8.6 7.6 6.6" strokeWidth={0.75} opacity={0.9} />
+      <path d="M12 11.4 C14.6 10.2 16.0 8.6 16.4 6.6" strokeWidth={0.75} opacity={0.9} />
+      {/* lo aprendido: el nodo alto con halo, los laterales simples */}
+      <Node cx={12} cy={5.6} halo={1.9} r={1.0} />
+      <Dot cx={7.6} cy={6.6} />
+      <Dot cx={16.4} cy={6.6} />
+    </Svg>
+  );
+}
+
 export function IconMissionControl() {
   // Hexágono de radio 8.4 (vértices arriba/abajo) + centro.
   // cos/sin precalculados para ángulos 90°,30°,-30°,-90°,-150°,150°.

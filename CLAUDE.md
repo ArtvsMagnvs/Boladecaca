@@ -35,8 +35,16 @@ genérica.
 
 ## 1. Estado actual del proyecto
 
-**Versión real**: `1.0.0` (consistente en `backend/app/main.py`,
-`backend/app/core/config.py` y `frontend/package.json`; tag de git `v1.0.0`).
+**Versión real**: `1.1.0` (consistente en `backend/app/main.py`,
+`backend/app/core/config.py` y `frontend/package.json`; tag de git `v1.1.0`).
+Bump 1.0.0 → 1.1.0 (2026-08-06) al **cerrar V1.1 — Learner operativo**
+(sesiones L1-L4, doc 27 §5): LSL completa con escalera de confianza (L1),
+Mission Learning — cada misión terminada produce contadores de
+modelo/tool y una propuesta de skill con evidencia acumulada (L2),
+atribución de fallos determinista con stats justas que no penalizan lo
+ajeno (L2b), LLL en batch nocturno + `/learn` para enseñar por chat (L3), y
+el panel **"Aithera aprende"** — Propuestas/Salud/Historial en lenguaje
+llano, con undo real (L4). Ver §30 para el detalle del cierre.
 Bump 0.9.5 → 1.0.0 (2026-08-02) al **cerrar V1.0 — decisión de versión del
 usuario**: se cierra la fase SIN el instalador/MVP-beta (doc 03 §5 O5), que
 había quedado como el último hito antes de `1.0.0` (ver §21/§26/§27) —
@@ -1727,13 +1735,38 @@ decide QUÉ MODELO. Sin bump (sigue `0.9.2`) — MEL v1 es un bloque de la senda
   local capaz (confianza "media" mueve el catálogo) — revisable si se quiere
   Economy más agresiva hacia cloud en generación abierta.
 
-### ⏳ V1.1 — Hermes Runtime + Learning System
-Docs: `PLAN_MAESTRO_2026/10` (Hermes/AgentRuntime) + `15` (Learning System) + `09`.
-- Hermes como `AgentRuntime` intercambiable POR DEBAJO del TIE (sprint H0 de
-  investigación GO/NO-GO primero; contingencia definida si NO-GO).
-- LSL completa + LLL completo + **Mission Learning** (reflexión post-misión) +
-  panel "lo que Aithera ha aprendido" con undo.
-- **Estado**: diseñado (docs 10/15), sin implementar.
+### 🔨 V1.1 — Learner operativo — **FASE ACTIVA desde 2026-08-05**
+Docs: `PLAN_MAESTRO_2026/15` (Learning System) + `09` (LSL/LLL) + plan de
+sesiones **doc 27 §5** (L1-L4, manda sobre todo lo demás).
+- LSL completa (tabla `skills`+`skill_events` con linaje, escalera de confianza)
+  + **Mission Learning** (reflexión post-misión que puebla `model_stats`) + LLL
+  análisis 2-5 + panel "Lo que Aithera ha aprendido" con **undo**.
+- Nace con datos reales acumulados a propósito: `mission.*` (T4a),
+  `mem_automation`/`mem_error` + Decision API `history()` (A4),
+  `skill_store`/`LocalSkill` con linaje (M1), telemetría de misiones (doc 31).
+- **Hermes BAJA a V1.3** (doc 27 §7): necesita la LSL de esta fase y aprovecha
+  que MCP (V1.2) ya exista.
+- **Estado**: diseñado, en curso. Orden: L1 (Fable) → L2 → L3 → L4.
+
+### ⏳ Reordenación del roadmap (2026-08-05, decisión del usuario)
+- **MVP-beta (instalador + onboarding + verificación, B1-B4) → V1.5**: sin beta
+  testers no entrega valor, y caduca — cada fase posterior añade dependencias,
+  pantallas de onboarding y permisos que obligarían a rehacerlo. El tag
+  `v1.0.0` ya está puesto (§29), así que la versión no espera a nadie.
+- **AVCS maduro (MVP1 A1-A5 + MVP2 O1-O4) → V2.0+**: mejora una capacidad ya
+  ENTREGADA (Génesis, en uso diario desde V0.82/83 y pulido hasta PU5g), frente
+  a Learner/MCP/Hermes/red que son capacidades ausentes. El pulido puntual del
+  AVCS sigue permitido; lo aparcado es el salto de arquitectura visual.
+- **V1.6 desaparece**: sus 4 sesiones AVCS van a V2.0+ y la 5.ª (O5, Project
+  Memory Capa 2 + contratos GSN/CIE) sube a V1.5, que pasa a ser la fase de
+  cierre. **Nace V1.4.5** (multi-instancia de runtimes), que era la 2.ª mitad de
+  la vieja A5 y no era AVCS sino concurrencia dependiente de Hermes.
+- Roadmap resultante: **V1.1** Learner → **V1.2** MCP+TIE v2+MEL Learning →
+  **V1.3** Hermes → **V1.4** Red+canales+sandboxing+voz → **V1.4.5**
+  multi-runtime → **V1.5** Project Memory C2 + GSN/CIE + instalador (`v1.5.0`)
+  → **V2.0+** AVCS maduro + red. Detalle: doc 27 §2; resumen: doc 03 §0a.
+- Ninguna sesión se ha borrado ni recortado: todas conservan alcance, modelo y
+  tests, solo cambian de sitio. Tramo activo 36 → 23-24 sesiones + 10 aparcadas.
 
 ### ⏳ Post-V1.0 — Cliente Web + PWA (aplazado)
 - Build de React servido por FastAPI en `/app` (mismo build que Electron, sin
@@ -5550,7 +5583,309 @@ más alcance que un commit normal).
 
 ---
 
-*Última actualización: 2026-08-05 — **C·WEB-4 ejecutada (doc 32, BLOQUE C) —
+## 30. CIERRE DE V1.1 — tag `v1.1.0` (2026-08-06)
+
+**Learner operativo** (docs 15/09/27 §5, sesiones L1-L4): Aithera pasa de
+solo actuar a también fijarse en lo que hace, con la garantía de doc 15
+§3.3 intacta en cada pieza — nada de esto se aplica solo sin que el usuario
+lo apruebe, y todo tiene undo real.
+
+- **L1 — LSL completa**: tabla `skills` (fuente de verdad; `mem_skill` es
+  espejo) + `skill_events` (linaje, cada transición guarda el snapshot
+  previo → undo real) + escalera de confianza determinista y fail-closed
+  (riesgo alto siempre HITL; medio con 3 ejecuciones OK o el usuario; bajo
+  con 5 contextos distintos sin contradicciones — "el LLM dijo que salió
+  bien" NUNCA basta).
+- **L2 — Mission Learning**: cada misión terminada produce contadores
+  deterministas (`model_stats`/`tool_stats`, 0 LLM), una reflexión breve en
+  la Decision API, y —si el mismo tipo de trabajo se repite 3 veces
+  distintas— una propuesta de skill con evidencia acumulada. Nunca una
+  skill por misión suelta (eso sería la fábrica de basura de doc 15 §10).
+- **L2b — atribución de fallos**: taxonomía determinista de por qué falló
+  algo (red/config/modelo/tool/Aithera/desconocido) clasificada en el punto
+  del fallo, nunca por un LLM adivinando. Tabla `failure_stats` con
+  **`missions_excused`** — un modelo que falla por un corte de red no baja
+  su nota, la culpa ajena no cuenta en contra.
+- **L3 — LLL en batch + `/learn`**: análisis nocturno (trabajos repetidos,
+  errores atribuidos accionables, comparación entre proyectos, calidad de
+  skills, informe semanal con autopsia por LLM) + el usuario puede enseñar
+  directamente por chat ("aprende esto: …"), que entra por la MISMA puerta
+  que lo observado — pedirlo no lo certifica, sigue naciendo en DRAFT.
+- **L4 — el panel "Aithera aprende"**: `/learning` (botón propio en el
+  Dock) — Propuestas / Salud / Historial, todo en lenguaje llano (nunca el
+  `kind` técnico), con evidencia plegada y enlace a Mission Control, y undo
+  real de un clic. Backend: 7 endpoints que solo EXPONEN lo que L1-L3 ya
+  calculaban, sin lógica nueva.
+
+**Dos bugs de producción reales, cazados por la simulación E2E completa**
+(no por los tests unitarios, que quedaban en verde): `mission_snapshot`
+devolvía siempre `nodes: []` por iterar las claves de un dict en vez de sus
+valores — desde que L2 se entregó, NINGUNA misión real había llegado a
+producir una skill candidata; y `record_failures` perdía cuentas con
+misiones concurrentes (dos fallos casi simultáneos leían el mismo contador
+y escribían el mismo +1). Los dos, en la raíz, no parcheados.
+
+**Bump 1.0.0 → 1.1.0**: `backend/app/core/config.py`, `backend/app/main.py`
+(×2), `frontend/package.json`, + los 4 `.bat`. Ese mismo día en Windows:
+`alembic upgrade head` (3 migraciones del Learner — L1/L2/L2b — aplicadas
+sin incidentes sobre el Postgres real), `vite build` real limpio, y
+verificación en vivo contra el backend y frontend que el usuario ya tenía
+corriendo: las 3 pestañas del panel (`Propuestas`/`Salud`/`Historial`)
+cargan datos reales de los 3 endpoints (`/api/learner/proposals`,
+`/health`, `/history`, los tres 200 OK), estado vacío honesto (todavía sin
+propuestas ni fallos reales acumulados) y cero errores de consola.
+
+**Pendiente**: crear el tag `git tag v1.1.0` tras el push (mismo criterio
+que el cierre de V1.0 — paso explícito, no automático).
+
+---
+
+*Última actualización: 2026-08-06 — **V1.1 L4 EJECUTADA (panel "Aithera
+aprende", doc 27 §5)**: lo aprendido por fin se ve. `endpoints/learner.py`
+NUEVO (7 endpoints que NO añaden lógica, la EXPONEN) + `pages/Learning.tsx`
+NUEVO + ruta `/learning` + botón propio en el Dock (`IconLearning`: una semilla
+germinando) con badge de lo que espera decisión. **La traducción a lenguaje
+llano se hace en el BACKEND**, no en la UI: el `kind` técnico no sale nunca
+(`skill_new` → "Procedimiento nuevo"), el riesgo se dice como se le dice a
+alguien ("riesgo alto — siempre te preguntaré") y cada culpa lleva su
+explicación ("Conexión o servicios de terceros — no es culpa de Aithera ni de
+los modelos"). Traducir ahí y no en el frontend hace que el panel, el briefing
+y cualquier canal futuro cuenten lo mismo con las mismas palabras. **Pestañas
+como DATO**: Propuestas/Salud/Historial hoy; añadir "Caminos" o "Informe" en
+V1.2 será una entrada más en el array. Propuestas con la evidencia PLEGADA (la
+primera lectura es una frase; el dato crudo a un clic) y cada misión enlazada a
+Mission Control — una propuesta que no se puede comprobar es una que hay que
+creerse. **La garantía de L1, reflejada y no reinventada**: el backend devuelve
+`applicable` (¿hay applier?) y la UI ofrece "Aceptar" o "Ir a Ajustes" según
+eso, así que un kind futuro sin applier hará lo correcto solo. **Aceptar es UN
+gesto para el usuario y tres peldaños por dentro** — la escalera no se relaja
+por comodidad de la UI, se esconde; y ni aceptada nace activa (DRAFT). 13 tests
+nuevos contra la app REAL vía TestClient (que es además la prueba de que el
+router está cableado), **194 passed** de regresión, `tsc --noEmit` limpio, 38
+claves i18n ×4 idiomas (1334, paridad verificada). **Pendiente en Windows**:
+`vite build` real (el del sandbox no termina en el límite, patrón ya conocido)
+y un vistazo a la página — aceptar una propuesta, deshacerla, y ver Salud con
+datos reales.*
+
+*Anterior: 2026-08-06 — **E2E DEL LEARNER COMPLETO (L1+L2+L2b+L3)
+— petición del usuario: simulación real, nada de tests aislados**.
+`tests/test_learner_e2e.py` NUEVO (12): se simula una semana de trabajo y se
+recorre la cadena entera sin atajos — misión real → traza real (`tracer`) →
+telemetría por los HOOKS DE PRODUCCIÓN (la atribución la produce el código de
+verdad, no el test) → evento real del bus → handler REAL del Learner →
+contadores/atribución/reflexión/candidata → escalera de L1 → análisis nocturno
+de L3 → informe → el usuario acepta → se aplica → se arrepiente → se deshace.
+**UN SOLO DOBLE: la frontera del LLM.** **DOS BUGS DE PRODUCCIÓN que ningún
+unitario podía ver**: (1) **`mission_snapshot` devolvía SIEMPRE `nodes: []`** —
+`TaskGraph.nodes` es un dict y se iteraba a secas, recorriendo las CLAVES; el
+`AttributeError` lo tragaba el `except` de al lado. Como `_accumulate_candidate`
+saca de ahí las herramientas y corta si no hay ninguna, **NINGUNA misión real
+llegó nunca a producir una skill candidata** desde que L2 se entregó: media
+sesión era código muerto y estaba en verde (los unitarios construían el
+snapshot a mano en vez de pasar por el accesor). (2) **`record_failures` perdía
+cuentas con misiones concurrentes** — read-modify-write en Python: dos misiones
+que fallan por lo mismo casi a la vez leían el mismo valor y escribían el mismo
++1; y un contador corto es el que decide si el usuario llega a VER la propuesta
+de arreglo. Corregido con incremento atómico en SQL + agregación previa. Y un
+tercero en la frontera L2b↔preflight: el motivo viaja bajo `{"tools": {...}}` y
+`failures_in` solo miraba `error`/`reason`/`notes`, así que la propuesta de
+configuración salía **sin destino ni nombre de herramienta**. Hardening del
+propio E2E con causas reales: esperar al EFECTO y nunca a un reloj, drenar las
+tareas en vuelo del bus antes de limpiar, y repetir de una en una (al hacerlo
+de golpe aflora una carrera benigna —dos propuestas para el mismo trabajo— que
+el análisis nocturno reconcilia y no merece complicar producción). Regresión:
+**415 passed** en dos lotes; 4 pasadas seguidas del E2E sin parpadeo con el
+orden aleatorio activado. Siguiente: **L4 — panel + cierre de fase**.*
+
+*Anterior: 2026-08-06 — **V1.1 L3 EJECUTADA (el LLL en batch +
+«aprende esto», doc 27 §5)**: el Learner deja de mirar solo el momento.
+`app/learner/analysis.py` NUEVO — L2 mira UNA misión al terminar y solo ve lo
+obvio; esto mira SEMANAS de golpe, de madrugada, y ve lo que ninguna misión
+suelta enseña. Los cinco análisis de doc 09 §2.2: **(1)** trabajos repetidos →
+candidata en cuarentena, sin duplicar lo que L2 ya propuso (le suma evidencia)
+y **sin pasos inventados** (unos pasos que nadie ha visto funcionar son la
+fábrica de basura de doc 15 §10); **(2)** errores sobre `failure_stats` YA
+ATRIBUIDA (L2b), no sobre `mem_error` crudo — lo accionable se propone, lo
+demás va al informe; **(3)** inter-proyecto (y para que tuviera datos,
+`mission_snapshot` y la evidencia de L2 ganan el `project_id`: un dato que no
+se guarda cuando se tiene no se recupera después); **(4)** calidad de skills
+determinista; **(5)** informe semanal + la **autopsia**, la ÚNICA llamada al
+LLM del archivo, con el modelo más fiable, 1 vez por semana — un hallazgo sin
+evidencia enlazada se descarta, y sin fallos que analizar no se llama a nadie.
+**`/learn`** (`app/learner/authoring.py` + acción `aithera.learn_skill`): el
+usuario enseña y entra por la MISMA puerta que lo observado (DRAFT, misma
+escalera, mismo panel) — que lo pida él no lo hace verdad: pide el TEMA, no
+certifica el RESULTADO. Se hizo como acción de tool y no como intercepción del
+chat para no acoplar el TIE al Learner. Job nocturno a las 04:45, el último;
+el informe se decide por fecha del último, no por día de la semana. **Contrato
+de producto nº 1 EN VERDE**: el xfail estricto de L1 reventó al implementarse
+y obligó a retirar la marca, como estaba escrito. **HALLAZGO DE DISEÑO real,
+cazado por su test**: el peso por recencia de `quality_score` se CANCELABA en
+la proporción (con un solo evento el ratio vale 1.0 a cualquier edad), así que
+una skill de hace seis meses puntuaba igual que la de hoy — el decaimiento
+estaba escrito, documentado y no hacía nada; corregido con un factor de
+frescura sobre el último éxito. **Y un fallo en mis propios tests**, destapado
+por la mutación: el de «si el modelo no lo ve claro no se guarda» mandaba
+`confident:false` con la lista de pasos vacía, así que lo rechazaba el OTRO
+guard y desactivar la bandera pasaba con 33 tests en verde. 33 tests nuevos, 4
+mutaciones confirmadas y restauradas byte a byte, **387 passed** de regresión;
+la frontera modular cazó de paso un import de interno en `aithera_tool`.
+**Pendiente en Windows**: decirle «aprende esto: …» por chat y ver el borrador;
+forzar `run_nightly_analysis()` tras unas misiones y mirar el informe en
+`Config` (`learner.weekly_report`). Siguiente: **L4 — panel + cierre de fase**.*
+
+*Anterior: 2026-08-06 — **V1.1 L2b EJECUTADA (atribución de
+fallos, doc 27 §5)**: un fallo ya tiene DUEÑO. `app/core/failures.py` NUEVO —
+13 `FailureKind` congelados clasificados de forma DETERMINISTA en el punto del
+fallo (0 LLM: el código que lo ve ya sabe qué pasó; pedirle a un modelo que
+adivine la culpa sería el bucle de autoevaluación que doc 15 §3.3 prohíbe) +
+eje `blame` (external/config/model/tool/aithera/none/**unknown**, este último
+visible a propósito). 6 enganches ADITIVOS sobre eventos que ya existían
+(MEL/toolloop/denegaciones/planner/nodo/mem_error): solo añaden
+`failure_kind`/`blame` al `detail`. Tabla `failure_stats` (kind × componente,
+con ring de 10 misiones de ejemplo) + migración 27.ª `c0d1e2f3a4b5`.
+**Stats JUSTAS** — `missions_excused`/`fails_external` sacan del denominador lo
+ajeno: un modelo con 7 misiones buenas y 3 caídas por falta de red está al
+100%, no al 70% (contrato de producto nº 5 de la fase, EN VERDE). Primera
+consecuencia accionable: propuestas `config_fix` (0 LLM, a las ≥3
+repeticiones, con deep-link a la pestaña de Ajustes) **sin applier — configurar
+es del usuario, y la garantía de L1 lo hace imposible por construcción**.
+**Tres desviaciones al alza sobre el diseño**: `provider_auth` pasa a culpa
+"config" (un 401 lo arregla el usuario; con "external" el panel lo habría
+enterrado y nunca habría propuesto nada) y `config_gaps` filtra por CULPA, no
+por kind · el orden de clasificación pone LO NUESTRO primero (un traceback
+propio con la palabra "connection" es `system_bug`, no red — si no, quedaría
+excusado para siempre) · `user_question` deja de contar como avería.
+**DOS BUGS REALES cazados por los tests, invisibles leyendo el código**:
+`record_failures` creaba una fila por repetición en vez de incrementar
+(`SessionLocal` va con `autoflush=False`, así que la fila recién añadida no era
+visible para el query siguiente) — todas atascadas en `count=1`, umbral nunca
+alcanzado y **`config_fix` muerta en silencio**; y `fails_external` se contaba
+por tool y no por `tool.action`, así que dos acciones de la misma tool se
+sumaban los fallos ajenos. Más un fallo de mi propia corrección, cazado por su
+test: al evitar que una tool INVENTADA creara filas `tool:<alucinación>`, la
+primera versión también borraba el nombre de la tool en los `config_missing`
+—justo lo que hace accionable el aviso—; la regla quedó en una sola, **si la
+culpa es del modelo el componente jamás es una tool**. 49 tests nuevos, 4
+mutaciones confirmadas y restauradas byte a byte, **440 passed** de regresión
+en 3 lotes, arranque intacto (import diferido). **Pendiente en Windows**:
+`alembic upgrade head` (TRES migraciones del Learner) + provocar un fallo de
+red y otro de configuración ×3 para ver `failure_stats` separándolos,
+`missions_excused` subiendo y la propuesta `config_fix` apareciendo. Siguiente:
+**L3 — LLL análisis 2-5 + /learn** (Opus).*
+
+*Anterior: 2026-08-06 — **AMPLIACIÓN DEL SISTEMA DE APRENDIZAJE
+(diseño, sin código — docs 27 §5/§6 + 15 §11)**: dos ideas rectoras del usuario
+incorporadas al plan con especificación ejecutable completa. **(1) "Un error
+vale tanto como un éxito — si se sabe de quién es"** → nace **L2b** en V1.1
+(entre L2 y L3, Opus alto): taxonomía `FailureKind` DETERMINISTA en
+`app/core/failures.py` clasificada en el punto del fallo (nunca un LLM
+adivinando la culpa — anti-contaminación doc 15 §3.3), 6 enganches sobre
+eventos que ya existen, tabla `failure_stats`, y **stats justas** — una misión
+caída por conexión/config queda `excused` y NO baja el `mission_success_rate`
+del modelo (contrato de producto nº 5 de la fase); primera consecuencia
+accionable: propuestas `config_fix` deterministas (0 LLM) con deep-link a
+Ajustes. **(2) "Los éxitos enseñan CÓMO — y caminos distintos compiten"** → 4
+sesiones nuevas al final de V1.2 (orden C1→C2→T1→T2→ML1→ML2→ML3→SE1→PE1→PE2):
+**ML3** Informe de Salud del Sistema (análisis mensual con los modelos más
+fiables → hallazgos de dónde cojea Aithera con misiones-evidencia; kind
+`system_improvement` SIN applier — inaplicable por construcción, se EXPORTA
+como informe markdown para una sesión de desarrollo: la versión honesta de
+"self-improving"); **SE1** Torneo de variantes (≥2 caminos de éxito distintos →
+variantes extraídas de la evidencia real compiten en un banco read-only/sandbox
+sobre las misiones-evidencia; SOLO la ganadora verificada llega a la bandeja,
+juez ≠ ejecutor, incumbente que gana = sin propuesta); **PE1** Erosión de
+caminos (tablas `work_types`+`path_stats` sobre el `path` que la telemetría ya
+graba desde S3; hints de camino con riesgo medio que solo ajustan
+`requires_planning` con rastro — la metáfora del agua del usuario); **PE2**
+Exploración en paralelo (shadow runs OFF por defecto, SOLO misiones 100%
+lectura, `Authority.shadow=True` bloquea toda huella, el usuario recibe SIEMPRE
+el output del camino fiable — contrato: "una exploración jamás cambia el output
+del usuario"). Todo desemboca en el panel de **L4** (rediseñado: página
+`/learning` con entrada propia en el Dock, pestañas-como-dato
+Propuestas/Salud/Historial en V1.1, +Caminos/+Informe en V1.2, lenguaje llano,
+evidencia enlazada a Mission Control). L3 ajustada para consumir fallos YA
+atribuidos sin solaparse con ML2/ML3. Tramo activo 23-24 → **28-29 sesiones**
+(V1.1: 4→5, V1.2: 6→10); 4 decisiones de diseño registradas en doc 27 §11.
+Siguiente sesión de código: **L2b** (Opus, alto).*
+
+*Anterior: 2026-08-05 — **V1.1 L2 EJECUTADA (Mission Learning, doc
+27 §5)**: cada misión terminada produce tres cosas concretas — contadores
+(`model_stats`/`tool_stats`, deterministas, 0 LLM, también en la charla),
+reflexión de 2-4 líneas en la Decision API enlazada por `mission_id`, y un
+candidato a skill. **La decisión que lo hace útil y no teatro**: NO crea una
+skill por misión (eso es la fábrica de basura de doc 15 §10) — crea una
+propuesta por tipo de trabajo y le suma evidencia cada vez que se repite; la
+escalera de L1 la sube a `candidate` a las 3 misiones DISTINTAS, sin gastar un
+LLM extra ni una pasada de clustering, y heredando la protección contra rachas
+(el `context_key` es el mission_id). **`model_stats` mide lo que ninguna métrica
+de transporte puede**: no "¿respondió el modelo?" sino "¿sirvió la misión?" —
+`mel_executions` ya tenía el 200 OK y la latencia; un modelo puede devolver 200
+OK y una respuesta inútil. Coste bajo control: 0 LLM en el camino corto
+(reflexionar sobre "¿qué hora es?" es reflection theater), 1 llamada ANALYZE con
+política economy en el resto, plazo duro de 20 s, ring anti-duplicado; de una
+misión fallida se reflexiona pero no se propone convertirla en procedimiento.
+`tracer.mission_snapshot()` NUEVO — el TIE expone una lectura pura para que el
+Learner no conozca su esquema; en consecuencia el contrato de producto nº 4 se
+AFINÓ (no se debilitó): `app.tie` pasa de veto en bloque a regla propia — solo
+el barrel, solo `tracer`/`extract_json`, con test que revienta si alguien
+importa `submit_mission`. **Hallazgo real destapado por su propio test**: la
+primera versión de la firma de trabajo era un hash sha1 de "las 6 palabras más
+largas" — dos redacciones naturales del mismo encargo daban hashes distintos
+porque una cortesía larga desplazaba a una palabra de contenido; sustituido por
+comparación de conjuntos (Jaccard ≥ 0.5 + mismas tools). Migración 27.ª
+`b9c0d1e2f3a4`. 29 tests nuevos, 4 mutaciones confirmadas y restauradas,
+regresión 91+101+106 passed sin roturas, arranque intacto (2,2 s). **Pendiente
+en Windows**: `alembic upgrade head` (DOS migraciones: L1 y L2) + reiniciar +
+lanzar 3 misiones reales y mirar `model_stats`/`tool_stats` y las reflexiones en
+`decisions`. Siguiente: **L3 — LLL análisis 2-5 + /learn** (Opus).*
+
+*Anterior: 2026-08-05 — **V1.1 L1 EJECUTADA (Learner: contratos +
+LSL completa, doc 27 §5)** — la primera sesión de la fase activa. Módulo
+`app/learner/` NUEVO: tabla `skills` (fuente de verdad SQL; `mem_skill` queda
+como espejo semántico best-effort, mismo reparto que `decisions`/`mem_decision`)
++ `skill_events` (el "git log" de cada skill: cada transición guarda el snapshot
+previo → undo real que además deja su propio evento `reverted`) +
+`learner_proposals` (la cuarentena general para el aprendizaje no-skill) +
+`ladder.py` (la escalera de confianza de doc 15 §3 como funciones PURAS y
+fail-closed: riesgo alto siempre HITL, medio 3 ejecuciones OK o el usuario,
+bajo 5 contextos distintos y cero contradicciones; una racha en la misma misión
+cuenta como UN contexto; "el LLM dijo que salió bien" se rechaza en la puerta) +
+`SkillLibrary(ISkillStore)` + `ProposalService` con appliers registrables (L1
+registra `skill_new`: consolidar crea la skill EN DRAFT; su undo la depreca,
+jamás borra) + backfill mecánico del stub de V0.85 en el lifespan + firmas
+congeladas del análisis (L2/L3). Migración 26.ª `a8b9c0d1e2f3` con test de
+invariante ORM↔migración (la lección de las 4 veces, institucionalizada — y el
+invariante del snapshot cazó su primera discrepancia al escribirse). Los 4
+product-contracts de la fase en `test_product_learner.py`: nº 1 EN ROJO (xfail
+estricto — L2/L3 lo harán reventar y retirar la marca), nº 2/3/4 EN VERDE (el
+4 con doble mitad: imports estáticos + diff de conteos de TODAS las tablas
+alrededor de un apply real). 41 tests nuevos + 6 entradas en
+`test_module_boundaries`; 4 mutaciones confirmadas y restauradas byte a byte;
+regresión 112 passed/1 xfailed, cero rotos. **Incidente de proceso, anotado
+con transparencia**: un `git stash` para aislar un test se colgó por timeout y
+dejó los archivos trackeados en versión vieja con los cambios en `stash@{0}`;
+recuperado con `git stash pop` (verificado archivo a archivo) — la regla "jamás
+git en el sandbox" ya existía y ahora incluye stash explícitamente. **Pendiente
+en Windows**: `cd backend && alembic upgrade head` (verás `f7a8b9c0d1e2 ->
+a8b9c0d1e2f3`) + reiniciar backend + confirmar sin aviso de
+`check_schema_drift`. Siguiente: **L2 — Mission Learning** (Opus).*
+
+*Anterior: 2026-08-05 — **REORDENACIÓN DEL ROADMAP (decisión del
+usuario)**: el MVP-beta (instalador + onboarding + verificación, B1-B4) se
+aplaza de la cabeza del plan a **V1.5** —sin beta testers no entrega valor y
+caduca con cada fase que añade dependencias/pantallas—, y **todo el AVCS maduro
+(MVP1 + MVP2) se traslada a V2.0+** —mejora una capacidad ya entregada, frente a
+Learner/MCP/Hermes/red que son capacidades ausentes—. V1.6 desaparece como fase
+(sus 4 sesiones AVCS a V2.0+, su O5 sube a V1.5) y nace **V1.4.5**
+(multi-instancia de runtimes, que estaba pegada a la sesión A5 del AVCS por
+convivencia y es concurrencia de backend dependiente de Hermes). Ninguna sesión
+se ha borrado ni recortado: todas conservan alcance, modelo y tests, solo cambian
+de sitio (tramo activo 36 → 23-24 + 10 aparcadas). Actualizados doc 27 (plan
+ejecutable, ahora V1.0→V1.5), doc 03 (roadmap) y §5 de este archivo. **Fase
+activa: V1.1 — Learner operativo, sesión L1** (doc 27 §5).*
+
+*Anterior: 2026-08-05 — **C·WEB-4 ejecutada (doc 32, BLOQUE C) —
 CIERRA EL BLOQUE C Y EL DOC 32 ENTERO**: los cinco casos reales sobre el bucle
 agentic (compra, cita previa, descarga, buscar dónde se genera una API key,
 research en foro). `app/tie/webflows.py` NUEVO: un playbook es DATO, no una rama

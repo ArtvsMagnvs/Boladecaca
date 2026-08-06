@@ -21,6 +21,7 @@ from app.api.endpoints import automation
 # registra ademas el modelo OrchestratorTrace antes del create_all del lifespan.
 from app.api.endpoints import tie as tie_endpoints
 # [2026-07-21, doc 31] Observabilidad de Misiones (timeline + reporte agregado).
+from app.api.endpoints import learner as learner_endpoints
 from app.api.endpoints import telemetry as telemetry_endpoints
 # V1.0 (R2, Orquestador): runs de orquestacion (un mensaje con varios encargos ->
 # varias misiones). El import registra ademas app.orchestrator.models
@@ -390,6 +391,49 @@ async def lifespan(app: FastAPI):
         # sigue funcionando. Degradacion graciosa (regla 11-B).
         log_error("startup", e, "No se pudo activar el TIE (el chat sigue con el handler legacy)")
 
+    # [V1.1 L1] Learner: backfill mecanico mem_skill -> tabla `skills` (la
+    # migracion de datos que alembic no puede hacer porque ChromaDB no es suyo).
+    # Idempotente y best-effort: en background, jamas bloquea el arranque. El
+    # import del modulo ademas registra sus modelos en Base (create_all /
+    # check_schema_drift los ven) — mismo patron que app.tools arriba.
+    try:
+        from app.learner import backfill_from_mem_skill
+        from app.learner import register_handlers as learner_register_handlers
+
+        # [L2] Mission Learning: se suscribe a mission.completed/failed. Va
+        # DESPUES del TIE a proposito — quien emite esos eventos es el tracer,
+        # y suscribirse antes de que el TIE exista no aportaria nada.
+        learner_register_handlers()
+
+        async def _learner_backfill():
+            try:
+                n = await backfill_from_mem_skill()
+                if n:
+                    log_info("startup", f"Learner: {n} skill(s) migradas de mem_skill a SQL")
+            except Exception as e:
+                log_error("startup", e, "Backfill del Learner fallo (no critico)")
+
+        asyncio.create_task(_learner_backfill())
+
+        # [L3] El LLL en batch: 04:45 local, DESPUÉS de todos los jobs del MOS
+        # (03:30-04:40) y de la limpieza del TIE. Va el último a propósito —
+        # analiza lo que los demás acaban de dejar ordenado, y a esa hora el
+        # usuario duerme. El informe semanal se decide dentro (por fecha del
+        # último, no por día de la semana: si la app estuvo apagada el lunes,
+        # el informe sale igual el primer día que se encienda).
+        try:
+            from app.automation import scheduler_service as _sched
+            from app.learner import run_nightly_analysis
+
+            _sched.add_cron_job(run_nightly_analysis, hour=4, minute=45,
+                                id="learner_nightly_analysis")
+        except Exception as e:
+            log_error("startup", e, "Analisis nocturno del Learner no programado")
+
+        log_info("startup", "Learner activo (Mission Learning + analisis nocturno)")
+    except Exception as e:
+        log_error("startup", e, "Learner no disponible (el resto del sistema sigue igual)")
+
     yield
 
     # Shutdown: parada limpia de los canales del Gateway (polling de Telegram).
@@ -439,9 +483,9 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="Aithera API",
     description="Sistema Operativo de IA - Backend API",
-    # V1.0 CERRADO (2026-08-02, decision del usuario) - bump sincronizado con
-    # root(), core/config.py y frontend/package.json. Tag v1.0.0.
-    version="1.0.0",
+    # V1.1 CERRADO (2026-08-06, Learner operativo) - bump sincronizado con
+    # root(), core/config.py y frontend/package.json. Tag v1.1.0.
+    version="1.1.0",
     lifespan=lifespan
 )
 
@@ -504,15 +548,17 @@ app.include_router(orchestrator_endpoints.router, prefix="/api")
 app.include_router(mel_endpoints.router, prefix="/api")
 # [2026-07-21, doc 31]: telemetría de misiones (timeline + reportes).
 app.include_router(telemetry_endpoints.router, prefix="/api")
+# [V1.1 L4]: la cara visible del Learner — propuestas, salud e historial.
+app.include_router(learner_endpoints.router, prefix="/api")
 
 
 @app.get("/")
 def root():
-    """V1.0 CERRADO (bump sincronizado con FastAPI app.version y
-    core/config.py). Tag v1.0.0."""
+    """V1.1 CERRADO (bump sincronizado con FastAPI app.version y
+    core/config.py). Tag v1.1.0."""
     return {
         "name": "Aithera",
-        "version": "1.0.0",
+        "version": "1.1.0",
         "status": "running"
     }
 

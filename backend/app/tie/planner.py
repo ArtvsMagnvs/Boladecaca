@@ -36,6 +36,27 @@ logger = get_system_logger("tie.planner")
 _MAX_REASONABLE_NODES = 8
 
 
+def _record_planning_failure(name: str, reason: str = "") -> None:
+    """[L2b, doc 27 §5] Cuando el planner no entrega un grafo utilizable —ni
+    siquiera tras su reintento— eso es un fallo de PLANIFICACIÓN, y la
+    planificación es Aithera, no el modelo ni una tool. Se registra aquí y no
+    en el caller porque este es el único sitio que distingue "rechazo honesto"
+    (el objetivo excede las capacidades reales: correcto y deseable, pero sigue
+    siendo una limitación que el análisis debe ver) de "grafo inválido tras dos
+    intentos" (el prompt o el modelo no dan la talla para planificar).
+
+    Best-effort total: la telemetría jamás frena el pipeline."""
+    try:
+        import app.telemetry as _telemetry
+        from app.core.failures import FailureKind, annotate
+
+        _telemetry.record("planning", name=name, ok=False,
+                          detail=annotate({"reason": str(reason)[:200]},
+                                          FailureKind.PLANNING))
+    except Exception:
+        pass
+
+
 @dataclass
 class PlanRejection:
     """[S2, B-1] El planner declara HONESTAMENTE que el objetivo excede las
@@ -313,8 +334,10 @@ async def plan(
 
     if isinstance(g, PlanRejection):
         logger.info(f"[planner] rechazo honesto (2.ª pasada): {g.reason[:150]}")
+        _record_planning_failure("rejected", g.reason)
         return g
     if g is None:
+        _record_planning_failure("invalid_graph", reason)
         logger.info(f"[planner] plan no válido tras reintento — se degradará a camino corto. Motivo: {reason}")
         _progress.emit(_t("act.plan_none"))
         return None

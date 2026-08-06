@@ -177,6 +177,139 @@ def load_graph(trace_id: str) -> Optional[TaskGraph]:
         db.close()
 
 
+def mission_snapshot(any_id: str) -> Optional[dict]:
+    """[V1.1 L2] Lo que el LEARNER necesita saber de una misión terminada, en
+    una sola lectura y SIN que tenga que conocer el esquema de esta tabla.
+
+    Por qué existe este accesor en vez de que el Learner consulte
+    `orchestrator_traces` por su cuenta: el Learner es un OBSERVADOR (doc 15).
+    Que lea directamente el SQL del TIE lo acoplaría a un esquema ajeno —
+    cualquier columna que cambiara aquí rompería el aprendizaje en silencio.
+    Con este accesor, el TIE controla su superficie de lectura y el contrato es
+    explícito. Es SOLO lectura: no muta nada, no planifica, no ejecuta.
+
+    Devuelve datos ya destilados (nada de objetos vivos): el goal real que pidió
+    el usuario, el camino que tomó, y por nodo lo que de verdad importa para
+    aprender — si salió bien, qué tools llamó y con qué error falló."""
+    trace_id = resolve_trace_id(any_id)
+    if not trace_id:
+        return None
+    db = SessionLocal()
+    try:
+        row = db.get(OrchestratorTrace, trace_id)
+        if row is None:
+            return None
+        intent = dict(row.intent or {})
+        nodos: list[dict] = []
+        if row.plan:
+            try:
+                # `TaskGraph.nodes` es un DICT {id: TaskNode}: iterarlo a secas
+                # recorre las CLAVES (strings). Sin `.values()` esto lanzaba
+                # `AttributeError` en el primer `n.id`, lo tragaba el `except` de
+                # abajo y el snapshot salía SIEMPRE con `nodes: []` — dejando sin
+                # herramientas al aprendizaje de L2, que por eso no proponía
+                # jamás una skill a partir de una misión real. Lo encontró el
+                # test de punta a punta; los unitarios no podían, porque
+                # construían el snapshot a mano en vez de pasar por aquí.
+                for n in TaskGraph.from_dict(row.plan).nodes.values():
+                    nodos.append({
+                        "id": n.id,
+                        "goal": n.goal,
+                        "state": n.state.value if hasattr(n.state, "value") else str(n.state),
+                        "tools": list(n.tools or []),
+                        "tool_calls": [
+                            {"tool": c.get("tool"), "action": c.get("action"),
+                             "ok": c.get("ok")}
+                            for c in (n.tool_calls or []) if isinstance(c, dict)
+                        ],
+                        "error": n.error,
+                    })
+            except Exception as e:      # un plan corrupto no impide aprender del resto
+                logger.info(f"[tracer] mission_snapshot: plan ilegible ({e!r})")
+        return {
+            "trace_id": row.id,
+            "mission_id": row.mission_id,
+            "channel": row.channel,
+            "state": row.state,
+            # `raw_text` es el texto ORIGINAL del usuario (C-1, doc 25): lo que
+            # de verdad pidió, no el goal reescrito por el clasificador.
+            "goal": (intent.get("raw_text") or intent.get("goal") or "").strip(),
+            "intent_type": intent.get("type"),
+            "requires_tools": list(intent.get("requires_tools") or []),
+            "outcome": row.outcome or "",
+            "nodes": nodos,
+            # [L3] El proyecto de la misión, si venía acotada por autoridad (R4).
+            # Lo consume el análisis inter-proyecto del Learner.
+            "project_id": (row.plan.get("authority") or {}).get("project_id")
+            if isinstance(row.plan, dict) and isinstance(row.plan.get("authority"), dict)
+            else None,
+            "created_at": row.created_at.isoformat() if row.created_at else None,
+        }
+    except Exception as e:
+        logger.error(f"[tracer] mission_snapshot({any_id}) falló: {type(e).__name__}: {e}")
+        return None
+    finally:
+        db.close()
+
+
+def recent_missions(days: int = 30, limit: int = 200,
+                    state: Optional[str] = "done") -> list[dict]:
+    """[V1.1 L3] Las misiones recientes, destiladas — la materia prima del
+    análisis en BATCH del Learner (LLL análisis 1 y 3, doc 09 §2.2).
+
+    Hermana de `mission_snapshot`, y por el mismo motivo: el Learner no debe
+    conocer el esquema de `orchestrator_traces`. La diferencia es el volumen —
+    analizar 30 días misión a misión serían cientos de consultas; esto lo
+    resuelve en UNA y destila en Python.
+
+    Solo lo que el análisis necesita: el goal REAL, las tools que de verdad se
+    ejecutaron con éxito (el procedimiento observado, no el planeado) y el
+    proyecto al que pertenecía la misión. `state=None` trae todas."""
+    desde = datetime.utcnow() - timedelta(days=max(days, 1))
+    db = SessionLocal()
+    try:
+        q = db.query(OrchestratorTrace).filter(OrchestratorTrace.created_at >= desde)
+        if state:
+            q = q.filter(OrchestratorTrace.state == state)
+        filas = q.order_by(OrchestratorTrace.created_at.desc()).limit(limit).all()
+    except Exception as e:
+        logger.error(f"[tracer] recent_missions falló: {type(e).__name__}: {e}")
+        return []
+    finally:
+        db.close()
+
+    out: list[dict] = []
+    for row in filas:
+        intent = dict(row.intent or {})
+        plan = row.plan if isinstance(row.plan, dict) else {}
+        tools: set = set()
+        nodos = 0
+        for n in (plan.get("nodes") or {}).values() if isinstance(plan.get("nodes"), dict) \
+                else (plan.get("nodes") or []):
+            if not isinstance(n, dict):
+                continue
+            nodos += 1
+            for c in (n.get("tool_calls") or []):
+                if isinstance(c, dict) and c.get("ok") and c.get("tool"):
+                    tools.add(str(c["tool"]))
+        out.append({
+            "trace_id": row.id,
+            "mission_id": row.mission_id,
+            "state": row.state,
+            "goal": (intent.get("raw_text") or intent.get("goal") or "").strip(),
+            "tools": sorted(tools),
+            "nodes": nodos,
+            # La frontera de autoridad viaja dentro del plan persistido (R4). Si
+            # la misión no venía de un agente/proyecto, es None — y entonces el
+            # análisis inter-proyecto simplemente no tiene nada que decir de
+            # ella, que es la respuesta honesta.
+            "project_id": (plan.get("authority") or {}).get("project_id")
+            if isinstance(plan.get("authority"), dict) else None,
+            "created_at": row.created_at.isoformat() if row.created_at else None,
+        })
+    return out
+
+
 def trace_id_for_mission(mission_id: str) -> Optional[str]:
     """La traza de una misión. [R4] Lo necesita `agent_manager` para recuperar el
     rastro de herramientas de la misión que acaba de delegar: `submit_mission`
