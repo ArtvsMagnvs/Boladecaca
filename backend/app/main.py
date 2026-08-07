@@ -515,9 +515,9 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="Aithera API",
     description="Sistema Operativo de IA - Backend API",
-    # V1.1 CERRADO (2026-08-06, Learner operativo) - bump sincronizado con
-    # root(), core/config.py y frontend/package.json. Tag v1.1.0.
-    version="1.1.0",
+    # V1.1 CERRADO (2026-08-07, El Learner Cognitivo — LC1-LC3, doc 41) - bump
+    # sincronizado con root(), core/config.py y frontend/package.json. Tag v1.1.1.
+    version="1.1.1",
     lifespan=lifespan
 )
 
@@ -587,10 +587,10 @@ app.include_router(learner_endpoints.router, prefix="/api")
 @app.get("/")
 def root():
     """V1.1 CERRADO (bump sincronizado con FastAPI app.version y
-    core/config.py). Tag v1.1.0."""
+    core/config.py). Tag v1.1.1."""
     return {
         "name": "Aithera",
-        "version": "1.1.0",
+        "version": "1.1.1",
         "status": "running"
     }
 

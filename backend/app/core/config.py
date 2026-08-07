@@ -10,8 +10,8 @@ class Settings:
     APP_NAME = "Aithera"
     # V1.1 CERRADO (2026-08-06): Learner operativo (LSL + Mission Learning +
     # atribucion de fallos + LLL/analisis nocturno + panel "Aithera aprende").
-    # Bump sincronizado con main.py y frontend/package.json. Tag v1.1.0.
-    VERSION = "1.1.0"
+    # Bump sincronizado con main.py y frontend/package.json. Tag v1.1.1.
+    VERSION = "1.1.1"
     DEBUG = os.getenv("DEBUG", "false").lower() == "true"
 
     # API settings

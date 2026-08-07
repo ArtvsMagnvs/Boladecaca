@@ -5684,10 +5684,14 @@ que el cierre de V1.0 — paso explícito, no automático).
 > (texto contra texto, agnóstico de dominio), petición directa del usuario.
 > Re-juzgar enlaza el veredicto anterior (`superseded_by`) en vez de
 > borrarlo. Detalle completo en doc 41 §8 y en la nota de cierre al final de
-> este archivo. **El tag `v1.1.0` YA estaba creado y empujado desde una
-> sesión anterior a la lectura de este doc** (que exige esperar a LC3) — con
-> LC3 ahora sí cerrada, queda pendiente decidir con el usuario si ese tag se
-> mueve al commit de cierre de LC3.
+> este archivo. **Resolución del tag**: el tag `v1.1.0` ya estaba creado y
+> empujado desde una sesión anterior a la lectura de este doc (que exige
+> esperar a LC3), apuntando al Learner MECÁNICO — moverlo habría exigido un
+> force-push destructivo sobre un tag ya publicado. Decisión del usuario:
+> `v1.1.0` se deja donde está (histórico, el Learner mecánico) y el cierre
+> real del Learner Cognitivo se etiqueta **`v1.1.1`** — bump en las 7
+> ubicaciones sincronizadas (`config.py`, `main.py` ×2, `package.json`, los
+> 4 `.bat`).
 
 ---
 
@@ -5744,8 +5748,10 @@ Aprendizaje, y la tarjeta de calibración en Salud tras algún re-juicio.
 **Nota de versión, dicho con transparencia**: el tag `v1.1.0` ya se había
 creado y empujado en un paso anterior de esta misma sesión, ANTES de leer el
 doc 41 (que dice explícitamente que el tag debía esperar a que LC3 estuviera
-cerrada) — con LC3 ahora genuinamente terminada, hace falta decidir con el
-usuario si ese tag se mueve al commit de cierre de LC3 o se deja donde está.*
+cerrada), apuntando al Learner MECÁNICO. Preguntado el usuario: mover un tag
+ya publicado es destructivo (force-push), así que `v1.1.0` se queda donde
+está (histórico) y el cierre real del Learner Cognitivo se etiqueta
+**`v1.1.1`** — bump 1.1.0→1.1.1 en las 7 ubicaciones sincronizadas.*
 
 *Anterior: 2026-08-07 — **V1.1 LC2 EJECUTADA — EL APRENDIZAJE DE
 VERDAD (doc 41)**: el Learner deja de ser una tabla de procesos. **Se aprende
