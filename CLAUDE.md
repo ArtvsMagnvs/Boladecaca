@@ -5695,7 +5695,72 @@ que el cierre de V1.0 — paso explícito, no automático).
 
 ---
 
-*Última actualización: 2026-08-07 — **V1.1 LC3 EJECUTADA — LA CARA Y LA
+*Última actualización: 2026-08-08 — **CAMPAÑA 03 — TEST E2E EN VIVO DEL
+LEARNER + FIX: EL JUEZ YA NO TIENE PLAZO** (`test-lab/campanya-03-learner-e2e-vivo/INFORME.md`).
+Petición directa del usuario: probar el Learner de punta a punta usando
+Aithera de verdad (chat real → TIE → Orquestador → MEL → herramientas →
+Juez → consolidación), no piezas sueltas con LLM simulado. Contra el
+backend real del usuario (Postgres, Ollama, MiniMax — nada mockeado).
+**Lo primero que se encontró**: el Learner estaba bloqueado en producción —
+las 2 migraciones de LC1 (`mission_verdicts`, `orchestrator_traces.
+session_id/origin`) nunca se habían aplicado al Postgres real pese a estar
+documentadas como "pendiente en Windows" desde que se escribieron.
+Aplicadas (aditivas, verificado limpio). **La bandeja ya tenía 10
+propuestas del Learner MECÁNICO viejo**, incluida literalmente la del caso
+Melendi que da origen a doc 41 — juzgar 3 de sus 8 misiones históricas a
+mano mostró el límite real de juzgar el pasado: sin `session_id` (la
+migración es de hoy), el "después" no existe para esas misiones, y el juez
+—honesto con lo que tenía— dio un `served` que probablemente está mal; con
+las dos que sí admitían el fallo en su propio texto, acertó. Consecuencia:
+esa propuesta no se auto-purga (una sola evidencia "real", aunque sea la
+equivocada, basta para que `_contaminada()` no la retire — el diseño
+"nunca acusar de más" funcionando, con un efecto secundario real). **Misión
+fresca de verdad, exitosa, con "después" real disponible → veredicto
+correcto**, con evidencia citada de verdad
+(`mission_state:done+outcome_text+repeated_request+user_followup`) y una
+lección sensata — el diseño de LC1-LC3 funcionando exactamente como se
+prometió cuando los datos están completos. Dos bugs reales AJENOS al
+Learner, que el Learner dejó visibles: una petición de acción clara a veces
+no se enruta a una misión y el modelo fabrica que la cumplió (parcialmente
+atajado por la nota de honestidad, pero no de raíz); y una confusión de
+ruta entre proyectos reales distintos del usuario (Aithera↔Cordyceps) en un
+tool call. **Hallazgo operativo que motivó el fix**: de 7 llamadas reales al
+juez local (`ollama:deepseek-r1:14b`), 3 agotaron el plazo de 120s del MEL
+y quedaron sin veredicto — incluida la consolidación forzada a mano (180s
+exactos, `new_proposals:0`) y el lote de charla (180s, 0 turnos). **Fix,
+petición directa del usuario tras leer el informe**: "es un proceso en
+segundo plano, da igual si tarda 2 minutos o 2 horas" — quitado el plazo de
+120s (`MEL_REQUEST_DEADLINE_S`) para las capacidades `LEARN` y `ANALYZE` en
+`mel/executor.py::_try_one` (`ANALYZE` es usada EXCLUSIVAMENTE por el
+Learner en todo el proyecto — comparación de skills, autopsia semanal,
+reflexión por misión —, verificado por grep antes de tocarlo; el camino
+interactivo CHAT/CLASSIFY/etc. conserva su plazo intacto). Retirado también
+el envoltorio `LEARNER_JUDGE_BUDGET_S` (180s) redundante y más corto que
+todo el plazo que el MEL ya deja correr en sus hasta 3 saltos de fallback,
+en `judge.py::_ask`, `consolidation.py::_pregunta`,
+`comparison.py::_ask_judge` **y `comparison.py::_generate_candidate`**
+(capacidad ANALYZE igual que el resto de este archivo — se decidió tratarlo
+como parte del mismo trabajo de fondo del Learner, no solo "literalmente el
+juez") — la propia constante, ya sin usos en ningún archivo, se retiró de
+`config.py` junto con el `import asyncio` que quedó huérfano en
+`comparison.py`. `mission_learning.py::_reflect` es la única excepción
+deliberada: conserva su propio `LEARNER_REFLECTION_BUDGET_S`=20s, un
+presupuesto barato y rápido a propósito, no lo que se pidió tocar. 1 test
+nuevo (`test_learn_y_analyze_ignoran_el_plazo_interactivo`,
+`test_audit_s4_hotpath.py`) que fija el contrato: LEARN/ANALYZE ignoran el
+plazo, CHAT lo sigue respetando exactamente igual que antes — mutación
+confirmada y restaurada byte a byte. Regresión: **171 tests en verde** en
+el subconjunto tocado (S4/LC1/LC2/LC3/panel/analysis/boundaries/
+mel_contracts/mel_decision). **Verificación en vivo, CONFIRMADA**:
+re-juzgada contra el Postgres real la misma misión histórica que antes
+agotaba el plazo dos veces seguidas a los 120s en seco
+(`95599eb681d547ceb5294894c11fafec`, "el navegador no pudo hacer click
+automáticamente") — esta vez el juez respondió en **146,3s**, por encima
+del viejo techo, sin ningún corte: `verdict=partial, confidence=0.8`, con
+sus razones citando la evidencia real. El fix funciona tal como se pidió:
+2 minutos o el tiempo que haga falta, sin límite artificial.*
+
+*Anterior: 2026-08-07 — **V1.1 LC3 EJECUTADA — LA CARA Y LA
 CALIBRACIÓN (doc 41) — CIERRA EL PLAN LC1-LC3, V1.1 EL LEARNER COGNITIVO
 QUEDA CERRADA DE VERDAD.** Dos cosas, más allá del plan original: la petición
 directa del usuario de que una "mejora de skill" nunca llegue a la bandeja

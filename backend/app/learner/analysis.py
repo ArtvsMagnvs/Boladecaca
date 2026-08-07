@@ -419,14 +419,16 @@ async def _autopsia(items: list[dict]) -> list[dict]:
               "misiones": (it.get("sample_mission_ids") or [])[:3],
               "ultimo_mensaje": (it.get("last_detail") or "")[:200]}
              for it in items[:12]]
+    # [2026-08-08] Sin plazo propio: es el informe semanal, trabajo de fondo
+    # puro — y pedía deliberadamente el modelo de más calidad
+    # (`policy_override="quality"`), así que un plazo corto era
+    # contraproducente con su propio objetivo.
     try:
-        res = await asyncio.wait_for(
-            mel.complete(mel.ExecutionRequest(
-                capability=mel.Capability.ANALYZE,
-                prompt="<datos>\n" + json.dumps(datos, ensure_ascii=False) + "\n</datos>",
-                system_prompt=_AUTOPSIA,
-                policy_override="quality")),
-            timeout=120.0)
+        res = await mel.complete(mel.ExecutionRequest(
+            capability=mel.Capability.ANALYZE,
+            prompt="<datos>\n" + json.dumps(datos, ensure_ascii=False) + "\n</datos>",
+            system_prompt=_AUTOPSIA,
+            policy_override="quality"))
     except Exception as e:
         logger.info(f"[lll-5] autopsia no disponible ({e!r}) — informe sin hallazgos")
         return []

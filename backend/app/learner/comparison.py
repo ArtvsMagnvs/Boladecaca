@@ -27,12 +27,9 @@
 # la prueba la lleva la propuesta nueva, no la que ya existe.
 from __future__ import annotations
 
-import asyncio
 import json
 import logging
 from typing import Optional
-
-from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -93,10 +90,10 @@ async def _generate_candidate(skill_text: str, task: str,
         system_prompt=_SYSTEM_CANDIDATE.format(skill_text=skill_text[:2000]),
         exclude=tuple(exclude),
     )
+    # [2026-08-08] Sin plazo propio — es una llamada del trabajo nocturno de
+    # comparación de skills, no algo que el usuario esté esperando.
     try:
-        res = await asyncio.wait_for(
-            mel.complete(peticion),
-            timeout=float(getattr(settings, "LEARNER_JUDGE_BUDGET_S", 180.0)))
+        res = await mel.complete(peticion)
     except Exception as e:
         logger.info(f"[learner/comparison] candidato falló ({e!r})")
         return "", None
@@ -194,10 +191,11 @@ async def _ask_judge(skill_name: str, muestras: list[dict],
         system_prompt=_SYSTEM_COMPARE,
         exclude=exclude,
     )
+    # [2026-08-08] Sin plazo propio (capacidad LEARN, trabajo de fondo — ver
+    # judge.py). El `except` genérico sigue siendo la red de seguridad ante
+    # un fallo real.
     try:
-        res = await asyncio.wait_for(
-            mel.complete(peticion),
-            timeout=float(getattr(settings, "LEARNER_JUDGE_BUDGET_S", 180.0)))
+        res = await mel.complete(peticion)
     except Exception as e:
         logger.info(f"[learner/comparison] el juez de la comparación falló ({e!r})")
         return None, None

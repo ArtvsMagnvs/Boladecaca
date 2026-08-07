@@ -210,7 +210,20 @@ async def _try_one(req: ExecutionRequest, ref: ModelRef) -> tuple[Optional[dict]
     vacía (doc 19 §8.1)."""
     from app.core.config import settings
 
-    deadline = settings.MEL_REQUEST_DEADLINE_S
+    # [2026-08-08] LEARN (el juez/consolidación) y ANALYZE (usadas SOLO por
+    # el Learner en todo el proyecto: comparación de skills, autopsia
+    # semanal, reflexión por misión) corren siempre en segundo plano — nadie
+    # espera su respuesta en pantalla — así que el plazo de la petición
+    # interactiva no les aplica: da igual que un modelo local tarde 2
+    # minutos o 2 horas, mientras no bloquee nada. Un llamador que SÍ quiera
+    # un plazo corto (p.ej. `_reflect()`, deliberadamente barato) sigue
+    # controlándolo con su propio `asyncio.wait_for` por fuera — quitar el
+    # límite aquí no le cambia el comportamiento, solo dejar de imponer uno
+    # SEGUNDO y más corto por debajo. Petición directa del usuario tras
+    # verificar en vivo que el razonador local agotaba el plazo de 120s
+    # aprox. la mitad de las veces bajo carga real (campaña 03).
+    deadline = (0 if req.capability in (Capability.LEARN, Capability.ANALYZE)
+               else settings.MEL_REQUEST_DEADLINE_S)
     for attempt in (1, 2):
         try:
             # [R6.5a] `messages` SOLO se pasa cuando de verdad hay historial.

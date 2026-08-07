@@ -149,13 +149,13 @@ async def _ask(prompt: str, system: str, *, exclude: tuple = ()) -> tuple[Option
         system_prompt=system,
         exclude=tuple(exclude),
     )
+    # [2026-08-08] Sin plazo propio: el juez es trabajo de fondo (la cola ya
+    # lo desacopla del camino caliente, doc 41 §3.4) y el MEL en sí mismo no
+    # aplica deadline a la capacidad LEARN — que un modelo local tarde 2
+    # minutos o 2 horas no bloquea nada. Solo queda el `except` genérico como
+    # red de seguridad ante un fallo real (no un simple "tardó").
     try:
-        res = await asyncio.wait_for(
-            mel.complete(peticion),
-            timeout=float(getattr(settings, "LEARNER_JUDGE_BUDGET_S", 180.0)))
-    except asyncio.TimeoutError:
-        logger.info("[learner/judge] el juez agotó su plazo — la misión queda sin juzgar")
-        return None, None
+        res = await mel.complete(peticion)
     except Exception as e:
         logger.info(f"[learner/judge] el juez falló ({e!r}) — la misión queda sin juzgar")
         return None, None

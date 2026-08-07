@@ -60,11 +60,13 @@ class Settings:
     # a ciegas justo en lo que más importa. Se adelanta solo si llega el
     # siguiente mensaje del usuario, y la cola drena en background.
     LEARNER_JUDGE_DELAY_MIN = float(os.getenv("LEARNER_JUDGE_DELAY_MIN", "10"))
-    # Plazo duro de la llamada al juez. Más generoso que la reflexión de L2
-    # porque el modelo típico es un razonador LOCAL (deepseek-r1 y compañía):
-    # lento, gratis y sin prisa — todo esto corre de madrugada o en segundo
-    # plano, nunca en el camino del usuario.
-    LEARNER_JUDGE_BUDGET_S = float(os.getenv("LEARNER_JUDGE_BUDGET_S", "180"))
+    # [2026-08-08] Sin plazo propio a propósito — ni aquí ni en el MEL
+    # (executor.py excluye LEARN/ANALYZE del deadline interactivo). El juez y
+    # la consolidación corren de madrugada o en segundo plano, nunca en el
+    # camino del usuario: que un razonador LOCAL tarde 2 minutos o 2 horas no
+    # bloquea nada. Petición directa del usuario, verificado en vivo que el
+    # plazo de 120s cortaba el juicio aprox. la mitad de las veces bajo carga
+    # real (campaña 03, test-lab).
     # Cuántas misiones REALES sin juzgar recupera la pasada nocturna (catch-up +
     # backfill del histórico). Techo, no objetivo: con la app encendida la cola
     # ya las va juzgando y aquí no queda casi nada.

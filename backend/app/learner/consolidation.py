@@ -36,7 +36,6 @@ import json
 import logging
 from typing import Any, Optional
 
-from app.core.config import settings
 from app.learner import ladder
 from app.learner.proposals import proposal_service
 
@@ -278,13 +277,11 @@ async def _pregunta(entrada: dict) -> Optional[dict]:
                              default=str)[:16000]),
         system_prompt=_SYSTEM,
     )
+    # [2026-08-08] Sin plazo propio: la consolidación es el trabajo nocturno
+    # por excelencia — que tarde 2 minutos o 2 horas no bloquea nada, y el
+    # MEL ya no aplica deadline a la capacidad LEARN.
     try:
-        res = await asyncio.wait_for(
-            mel.complete(peticion),
-            timeout=float(getattr(settings, "LEARNER_JUDGE_BUDGET_S", 180.0)))
-    except asyncio.TimeoutError:
-        logger.info("[learner/consolidación] agotó su plazo — esta noche no se aprende")
-        return None
+        res = await mel.complete(peticion)
     except Exception as e:
         logger.info(f"[learner/consolidación] falló ({e!r}) — esta noche no se aprende")
         return None

@@ -113,6 +113,41 @@ async def test_deadline_cero_desactiva_el_plazo(monkeypatch):
 
 
 @pytest.mark.anyio
+async def test_learn_y_analyze_ignoran_el_plazo_interactivo(monkeypatch):
+    """[2026-08-08, petición directa del usuario] El juez/consolidación
+    (LEARN) y sus llamadas auxiliares (ANALYZE — comparación de skills,
+    autopsia semanal, reflexión por misión: ninguna otra capacidad las usa
+    en el proyecto) corren siempre en segundo plano — nadie las espera en
+    pantalla. `MEL_REQUEST_DEADLINE_S` sigue protegiendo el camino
+    interactivo (CHAT) exactamente igual que antes."""
+    from app.core.config import settings
+    from app.mel import executor
+
+    monkeypatch.setattr(settings, "MEL_REQUEST_DEADLINE_S", 1)
+
+    async def _tarda_mas_del_plazo_interactivo(ref, prompt, system_prompt=None, **kw):
+        await asyncio.sleep(2)           # por encima del plazo de 1s, por debajo de 5s
+        return {"response": "tarde pero completo"}
+    monkeypatch.setattr(executor.registry, "execute", _tarda_mas_del_plazo_interactivo)
+
+    ref = ModelRef(provider="local", model="razonador")
+
+    for cap in (Capability.LEARN, Capability.ANALYZE):
+        payload, err, reason = await executor._try_one(
+            ExecutionRequest(capability=cap, prompt="x"), ref)
+        assert reason == "ok", f"{cap}: se cortó por plazo ({err!r})"
+        assert payload["text"] == "tarde pero completo"
+
+    # El camino interactivo, en cambio, SIGUE respetando el plazo de 1s.
+    t0 = asyncio.get_event_loop().time()
+    payload, err, reason = await executor._try_one(
+        ExecutionRequest(capability=Capability.CHAT, prompt="x"), ref)
+    dt = asyncio.get_event_loop().time() - t0
+    assert payload is None and reason == "timeout"
+    assert dt < 5, f"CHAT dejó de tener plazo: tardó {dt:.1f}s"
+
+
+@pytest.mark.anyio
 async def test_stream_sin_primer_chunk_a_tiempo_se_corta_con_error_honesto(monkeypatch):
     """El plazo del PRIMER chunk. Los siguientes no llevan plazo a propósito
     (cortar a mitad de una respuesta que ya avanza sería peor)."""
