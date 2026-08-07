@@ -18,11 +18,16 @@ def new_mission(
     project_id: Optional[int] = None,
     run_id: Optional[str] = None,
     parent_id: Optional[str] = None,
+    session_id: Optional[str] = None,
 ) -> Mission:
     """Crea una misión nueva (en V1.0 no se persiste en tabla propia — su rastro
     vive en `orchestrator_traces` vía el tracer). `source` gobierna los
     presupuestos futuros (automation < user, doc 14 §3.5) y de dónde vino, para
-    que AE/WPMS deleguen sin acoplarse."""
+    que AE/WPMS deleguen sin acoplarse.
+
+    `session_id` [LC1]: la conversación del chat de la que nace la misión, para
+    que el juez del Learner pueda leer después lo que dijo el usuario (doc 41
+    §3.2). Es un dato de OBSERVACIÓN: nada del TIE lo usa para decidir."""
     return Mission(
         id=Mission.new_id(),
         goal=goal,
@@ -31,4 +36,5 @@ def new_mission(
         project_id=project_id,
         run_id=run_id,
         parent_id=parent_id,
+        session_id=session_id,
     )

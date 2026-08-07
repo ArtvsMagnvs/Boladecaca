@@ -5638,9 +5638,217 @@ propuestas ni fallos reales acumulados) y cero errores de consola.
 **Pendiente**: crear el tag `git tag v1.1.0` tras el push (mismo criterio
 que el cierre de V1.0 — paso explícito, no automático).
 
+> **⚠ CORRECCIÓN 2026-08-07 — LA FASE SE REABRE; EL TAG ESPERA (doc 41).**
+> El primer contacto del panel con el corpus REAL destapó que el Learner
+> aprendía mecánicamente: proponía como procedimientos fijos encargos
+> repetidos porque FALLABAN ("pon la canción de Melendi" ×8), saludos, y
+> misiones de las campañas de test. Post-mortem (doc 41 §0): `state="done"`
+> usado como éxito, evidencia de escalera autogenerada, y la sobre-aplicación
+> del §3.3 de doc 15 ("ningún LLM juzga nada" cuando la regla real es "el
+> ejecutor no se autoevalúa"). Rediseño: **el Learner Cognitivo** — capacidad
+> `LEARN` nueva en el MEL ("Aprendizaje" en Inteligencia, modelo
+> seleccionable), un JUEZ IA que dictamina si cada misión SIRVIÓ (con señales
+> duras + el "después" del usuario como insumo, jamás como regla),
+> consolidación nocturna IA que decide qué merece ser skill, y purga del
+> corpus de pruebas. Sesiones LC1 (Opus extra) → LC2 (Opus extra) → LC3
+> (Sonnet alto); el tag `v1.1.0` se crea al cerrar LC3. Todo lo de este §30
+> sigue siendo cierto como infraestructura; lo que cambia es EL CRITERIO de
+> aprendizaje.
+>
+> **✅ LC1 CERRADA (2026-08-07)** — el juez existe y está enchufado al bus:
+> capacidad `LEARN` con su fila en Ajustes → Inteligencia, tabla
+> `mission_verdicts`, `orchestrator_traces += session_id/origin`, el
+> empaquetador de señales duras (incluido EL DESPUÉS) y el juicio con grounding
+> y anti-sesgo. `app.learner.served(mission_id)` sustituye a `state == "done"`
+> como única fuente de "esto sirvió", y es fail-closed. Detalle completo en
+> doc 41 §8 y en la nota de cierre al final de este archivo. **Pendiente en
+> Windows**: `alembic upgrade head` (dos migraciones nuevas: `1c1a5eb9d70f` y
+> `2f7b3c9a41de`).
+>
+> **✅ LC2 CERRADA (2026-08-07)** — el aprendizaje ya no lo decide un umbral.
+> Escalera v2 (`judged_success` empuja, `judged_failure` frena, `execution_ok`
+> se conserva sin promocionar nada), consolidación nocturna con IA que aprende
+> de las DOS caras —de lo que sirvió y de lo que falló—, grounding de los pasos,
+> retirada de los dos decisores mecánicos, saneado del corpus contaminado y
+> contrato nº 1 re-especificado con el caso Melendi como test negativo. Detalle
+> en doc 41 §8. Siguiente: **LC3** (la cara y la calibración), y con ella el tag
+> `v1.1.0`.
+>
+> **✅ LC3 CERRADA (2026-08-07) — LC1-LC3 COMPLETO, V1.1 EL LEARNER COGNITIVO
+> QUEDA CERRADA DE VERDAD.** La cara: chip de veredicto por misión en Mission
+> Control + tarjeta de detalle con razones/sesgo/re-juicio, sección de
+> calibración en Salud, y en Aprendizaje una skill nueva muestra su
+> descripción siempre visible y una mejora su comparación completa a un
+> clic. Más allá del plan original: `app/learner/comparison.py` — ninguna
+> "mejora de skill" se propone sin compararse antes con la versión actual
+> (texto contra texto, agnóstico de dominio), petición directa del usuario.
+> Re-juzgar enlaza el veredicto anterior (`superseded_by`) en vez de
+> borrarlo. Detalle completo en doc 41 §8 y en la nota de cierre al final de
+> este archivo. **El tag `v1.1.0` YA estaba creado y empujado desde una
+> sesión anterior a la lectura de este doc** (que exige esperar a LC3) — con
+> LC3 ahora sí cerrada, queda pendiente decidir con el usuario si ese tag se
+> mueve al commit de cierre de LC3.
+
 ---
 
-*Última actualización: 2026-08-06 — **V1.1 L4 EJECUTADA (panel "Aithera
+*Última actualización: 2026-08-07 — **V1.1 LC3 EJECUTADA — LA CARA Y LA
+CALIBRACIÓN (doc 41) — CIERRA EL PLAN LC1-LC3, V1.1 EL LEARNER COGNITIVO
+QUEDA CERRADA DE VERDAD.** Dos cosas, más allá del plan original: la petición
+directa del usuario de que una "mejora de skill" nunca llegue a la bandeja
+solo porque la IA lo sugiera, y un panel rico e interactivo en vez de una
+lista plana. **`app/learner/comparison.py` (NUEVO) — la prueba de mejora
+efectiva, domino-agnóstica**: genera con capacidad ANALYZE la respuesta que
+daría un agente guiado por la versión ACTUAL de una skill y por la PROPUESTA
+ante las mismas tareas reales, y un juez independiente (capacidad LEARN,
+excluyendo —anti-sesgo— a quien generó los candidatos) compara texto contra
+texto. Nunca ejecuta nada, así que sirve igual para frontend, backend o
+marketing sin inventar un arnés de tests por dominio. `consolidation.
+_mejorar_skill` la usa ANTES de crear la propuesta: sin mejora real
+demostrada, no se propone ("incumbente que gana = sin propuesta", el criterio
+de SE1 adelantado aquí en su forma segura); sin poder comparar (sin tareas de
+ejemplo), se propone igual pero marcada `verified=False` — honesto, nunca a
+ciegas. **Re-juzgar enlaza, nunca borra**: `judge._save()` gana el enlace
+`superseded_by` que el esquema tenía desde LC1 pero nadie escribía; nuevas
+`verdict_history()` y `calibration_summary()` (veredictos totales, % sin juez
+alternativo, re-juicios y cuántos cambiaron de opinión) — la materia prima de
+la sección de calibración, nunca una nota inventada. Nuevo applier de
+`skill_improve` (reusa `SkillLibrary.improve()`, undo con snapshot propio) y 3
+endpoints de veredicto (`GET .../verdicts?mission_ids=`, `GET .../verdicts/
+{id}`, `POST .../verdicts/{id}/rejudge` — funciona igual como "juzgar ahora"
+si la misión nunca se juzgó). **El panel, rico de verdad**: `Missions.tsx`
+gana el chip de veredicto por misión (backend-traducido, mismo patrón que
+`kind_label` del resto del Learner) + tarjeta de detalle con confianza, aviso
+de sesgo, razones a un clic, y el botón Re-juzgar/Juzgar ahora; `Learning.tsx`
+muestra la descripción de una skill nueva SIEMPRE visible (nunca se puede
+decidir "Aceptar" solo con el título) y, para una mejora, hoy/cambio
+propuesto siempre visibles + insignia "mejora comprobada"/"sin verificar" +
+la comparación COMPLETA a un clic (antes/después por tarea, veredicto por
+tarea); la pestaña Salud gana una tarjeta de calibración que se calla si no
+hay ningún veredicto todavía. i18n ×4 (+28 claves, 1364, paridad verificada).
+29 tests nuevos (`test_lc3_ui.py`) + 3 mutaciones confirmadas y restauradas
+byte a byte, 109 passed de regresión (LC1+LC2+LC3+panel+contratos+
+boundaries), `tsc --noEmit` limpio y `vite build` completo (869 módulos).
+**Hallazgo honesto de la corrida completa de suite, AJENO a LC3**: 18 fallos
+preexistentes sin relación con estos cambios —`test_action_intent.py`,
+`test_mel_research.py`, el ya documentado `test_quick_memory.py::
+test_forget_ambiguo_lista_sin_borrar` (§29), y `test_learner_mission.py`
+—tests de la era L2 MECÁNICA, previos a LC1/LC2, que afirman el contrato
+VIEJO que este mismo rediseño retiró a propósito (`test_lc2_consolidacion.
+py::TestLoMecanicoYaNoDecide` prueba justo lo contrario y está en verde);
+nadie los retiró al cerrar LC2. Documentados, no tocados: fuera del alcance
+de esta sesión. **Pendiente en Windows**: `alembic upgrade head` si quedara
+alguna migración de LC1 sin aplicar, reiniciar backend y frontend, y en vivo
+— confirmar el chip de veredicto y Re-juzgar en Mission Control, la
+descripción de una skill nueva y la comparación con un clic de una mejora en
+Aprendizaje, y la tarjeta de calibración en Salud tras algún re-juicio.
+**Nota de versión, dicho con transparencia**: el tag `v1.1.0` ya se había
+creado y empujado en un paso anterior de esta misma sesión, ANTES de leer el
+doc 41 (que dice explícitamente que el tag debía esperar a que LC3 estuviera
+cerrada) — con LC3 ahora genuinamente terminada, hace falta decidir con el
+usuario si ese tag se mueve al commit de cierre de LC3 o se deja donde está.*
+
+*Anterior: 2026-08-07 — **V1.1 LC2 EJECUTADA — EL APRENDIZAJE DE
+VERDAD (doc 41)**: el Learner deja de ser una tabla de procesos. **Se aprende
+igual del acierto que del error** (petición explícita del usuario, y la mitad
+que faltaba): de lo que SIRVIÓ sale el procedimiento; de lo que FALLÓ, el porqué
+y —si es accionable— el arreglo. La **escalera** cambia de criterio:
+`judged_success` (veredicto de un juez independiente sobre trabajo real) es lo
+único que empuja hacia arriba, `judged_failure` cuenta como CONTRADICCIÓN, y
+`execution_ok` —"la máquina terminó"— se conserva para poder mirarlo pero deja
+de promocionar nada. Nace **`consolidation.py`**: una vez por noche un modelo
+LEARN ve los veredictos con sus lecciones (los buenos y los malos), las
+propuestas abiertas, **los rechazos del usuario con su motivo** y el catálogo de
+skills, y DECIDE qué merece ser procedimiento, qué mejora uno existente, qué
+propuestas son la misma cosa, cuál retirar porque la evidencia la desmiente y
+qué carencia de configuración hay detrás de una racha de fallos. Lo mecánico
+solo TRAMITA por la escalera; el usuario sigue decidiendo. **Grounding de los
+pasos**: si el modelo se los inventa, la propuesta se degrada a observación sin
+pasos — y el **contrato de producto nº 4 cazó** el primer intento de leer el
+catálogo del ToolManager desde el Learner (que observa, no ejecuta), así que la
+comparación pasó a hacerse contra el repertorio realmente OBSERVADO, que además
+es mejor grounding. Se RETIRAN los dos decisores mecánicos (la acumulación por
+misión de L2 y el análisis 1 de L3: contar repeticiones de `state="done"` era el
+camino por el que ocho intentos fallidos acabaron propuestos como procedimiento).
+**`cleanup.py`** sanea lo ya aprendido: las evidencias viejas se re-etiquetan
+`legacy_unjudged` sin borrarse y las propuestas que solo se sostienen en corpus
+de pruebas o misiones fallidas se cierran CON MOTIVO — basta una misión real
+para que una sobreviva. `model_stats` pasa a medir "sirvió" corrigiéndose cuando
+el juez discrepa. **El contrato de producto nº 1 se RE-ESPECIFICA**: estaba en
+verde sobre un criterio equivocado; ahora exige tres misiones JUZGADAS como
+éxito, y su negativo —**el caso Melendi**— queda inmortalizado como test. 24
+tests nuevos + E2E reescrito a la cadena real (misiones → veredictos →
+consolidación → escalera), 5 mutaciones confirmadas y restauradas, 328 tests de
+regresión en verde. **Pendiente en Windows**: `alembic upgrade head` (las dos
+migraciones de LC1) y, tras arrancar, mirar el panel — el saneado habrá cerrado
+con motivo lo nacido del corpus contaminado. Siguiente: **LC3** (la cara: chips
+de veredicto, re-juicio a mano, calibración) y el tag `v1.1.0`.*
+
+*Anterior: 2026-08-07 — **V1.1 LC1 EJECUTADA — EL JUEZ (doc 41)**:
+el aprendizaje deja de usar `state="done"` como señal de éxito. Nace la
+capacidad **`LEARN`** en el MEL (fila "Aprendizaje" en Ajustes → Inteligencia,
+modelo seleccionable, apta para razonadores locales tipo deepseek-r1 y vetada
+para los agentes CLI), con el mismo criterio de aptitud en la UI y en la
+ejecución — invariante calcado del de visión, porque el fallo que evita es el
+mismo: ofrecer un modelo que luego se rechaza por dentro sin explicar por qué.
+La tabla **`mission_verdicts`** guarda el dictamen de un JUEZ que NO ejecutó la
+misión, y `orchestrator_traces` gana `session_id` y `origin` — las dos cosas
+que no se pueden deducir después. `signals.py` empaqueta las señales duras que
+ya registraban las sesiones anteriores (entregables de la Sesión B, rendición
+de NEW-4, atascos de la Sesión A, atribución de L2b, limitaciones de S11) más
+**el DESPUÉS**: qué dijo el usuario tras la respuesta y si volvió a pedir lo
+mismo — la señal que explica el caso Melendi (ocho peticiones seguidas no son
+una costumbre, son ocho intentos porque ninguno funcionó) y que nadie miraba.
+`corpus.py` etiqueta el origen al CREAR la misión, con `mission_lab` marcando
+su batería como pruebas y liberando la marca en un `finally`: no se aprende del
+propio banco de pruebas. El juez trae **grounding** (un `served` sin evidencia
+citable baja a `unclear`; un `failed` jamás sube — lo mecánico solo quita
+confianza) y **anti-sesgo** (excluye a los modelos que ejecutaron; si no hay
+alternativa juzga igual pero marcado). `served()` es fail-closed: sin veredicto,
+no consta que sirviera. 28 tests nuevos, 6 mutaciones confirmadas y restauradas,
+regresión por lotes sin roturas, `tsc` limpio. **Hallazgo de la propia sesión**:
+los dos ids de migración que elegí primero ya estaban cogidos — eso no rompe una
+tabla, rompe el grafo entero de Alembic y NINGUNA migración se aplica; corregido
+con ids únicos y dos tests que exigen un solo head y una cadena que no deje a
+nadie fuera. **Pendiente en Windows**: `alembic upgrade head` (dos migraciones
+nuevas) + ver la fila "Aprendizaje" en Inteligencia. Siguiente: **LC2**.*
+
+*Anterior: 2026-08-07 — **EL LEARNER COGNITIVO (diseño, doc 41
+NUEVO — V1.1 REABIERTA, el tag `v1.1.0` espera a LC3)**. El primer contacto
+del panel con el corpus real del usuario destapó el fallo de fondo: el Learner
+proponía convertir en procedimiento fijo encargos repetidos porque FALLABAN
+("pon la canción de Melendi" ×8 — ocho intentos porque no funcionaba), saludos
+("HOLA" ×4) y misiones de las campañas de test. **Post-mortem (doc 41 §0),
+tres causas**: `state="done"` usado como señal de éxito cuando solo significa
+"terminó sin colgarse" (incluye rechazos honestos y rendiciones); la evidencia
+de la escalera era AUTOGENERADA (`execution_ok` = la máquina diciendo
+"terminé"; el guardián comprobaba la forma, no el origen — violábamos nuestro
+propio §3.3 sin alarma); y la sobre-aplicación de ese §3.3, que convirtió "el
+ejecutor no se autoevalúa" en "ningún LLM juzga nada" y produjo una tabla de
+procesos con nombre de Learner. **Decisión del usuario, literal**: todos los
+juicios y propuestas los hace una IA; lo mecánico extrae y protege.
+**El rediseño (doc 41)**: capacidad `LEARN` nueva en el MEL — fila
+"Aprendizaje" en Inteligencia, modelo seleccionable, default el mejor razonador
+LOCAL (coste 0 en fondo) pero sin limitarse a locales; un **JUEZ** que dictamina
+si cada misión SIRVIÓ leyendo las señales duras (entregables B, rendición
+NEW-4, PlanRejection, atasco A, atribución L2b, limitaciones S11) y **el
+DESPUÉS** (los siguientes mensajes del usuario y las re-peticiones — como
+INSUMO que el juez entiende, jamás como umbral mecánico de minutos); lecciones
+por misión en la misma llamada; **consolidación nocturna IA** que decide qué
+merece ser skill (con pasos extraídos de transcripts REALES, grounded), qué
+mejora una existente, qué se agrupa y qué se retira — Jaccard degradado a
+pre-agrupador. **Anti-contaminación v2 (doc 15 §12)**: juez ≠ ejecutor, todo
+juicio cita evidencia o degrada a `unclear`, lo mecánico solo DEGRADA (nunca
+promueve), el usuario sigue siendo la única puerta. Higiene del corpus
+(`origin` user/test/campaign/e2e + `AITHERA_TEST_CORPUS=1` + purga en bloque de
+la bandeja + re-juicio de las últimas 100 misiones reales). El contrato nº 1
+estaba EN VERDE sobre un criterio equivocado y se re-especifica ("tres veces
+JUZGADAS como éxito"). V1.2 pasa a consumir `mission_verdicts` en vez de
+`state="done"` (SE1/PE1/PE2/ML1). **Sesiones: LC1 El Juez (Opus, EXTRA) → LC2
+El aprendizaje de verdad (Opus, EXTRA) → LC3 La cara y la calibración (Sonnet,
+ALTO)** — tramo activo 28-29 → 31-32 sesiones. Sin código en esta sesión
+(diseño Fable): docs 41/27/15/CLAUDE.md.*
+
+*Anterior: 2026-08-06 — **V1.1 L4 EJECUTADA (panel "Aithera
 aprende", doc 27 §5)**: lo aprendido por fin se ve. `endpoints/learner.py`
 NUEVO (7 endpoints que NO añaden lógica, la EXPONEN) + `pages/Learning.tsx`
 NUEVO + ruta `/learning` + botón propio en el Dock (`IconLearning`: una semilla

@@ -106,7 +106,7 @@ empaqueta un producto que ya no va a cambiar de forma.
 | Fase | Nombre | Sesiones | Por qué aquí |
 |---|---|---|---|
 | ~~**V1.0 cierre**~~ | ~~MVP-beta (instalador + onboarding + verificación total)~~ → **APLAZADA a V1.5** (§9) | — | **[2026-08-05]** sin beta testers no entrega valor, y caduca con cada fase que añade dependencias/pantallas. El tag `v1.0.0` ya está puesto |
-| **V1.1** ⬅ **SIGUIENTE** | Learner operativo | 5 | máximo fan-out de dependencias (AVCS Génesis YA entregado en V0.82/83 — corrección 2026-07-22, ver §1.3). **[2026-08-06]** +1 sesión (L2b, taxonomía de fallos): la atribución tiene que empezar a grabarse YA — datos acumulados sin atribuir valen la mitad |
+| **V1.1** ⬅ **ACTIVA (reabierta)** | Learner operativo | 8 | máximo fan-out de dependencias (AVCS Génesis YA entregado en V0.82/83 — corrección 2026-07-22, ver §1.3). **[2026-08-06]** +1 sesión (L2b, taxonomía de fallos). **[2026-08-07]** +3 sesiones (LC1-LC3, el Learner Cognitivo, doc 41): el corpus real destapó aprendizaje mecánico — la IA entra en TODOS los juicios y el tag espera |
 | **V1.2** | MCP interop + TIE v2 + MEL Learning + Skill Evolution/AutomationLearner + **aprendizaje profundo (Informe de Salud · Torneo de variantes · Erosión de caminos · Exploración en paralelo)** | 10 | consume model_stats (V1.1); MCP prepara a Hermes. **[2026-08-06]** +4 sesiones (ML3/SE1/PE1/PE2, ampliación del usuario): necesitan la infraestructura de esta fase (evals de T2, olas paralelas de T1, taxonomía de L2b) — antes no pueden existir |
 | **V1.3** | Hermes Runtime (H0 GO/NO-GO → H1-H4) | 5 | necesita LSL (V1.1) y aprovecha MCP (V1.2) |
 | **V1.4** | Red (Web+PWA+PIN) + 2 canales (Discord/WhatsApp) + sandboxing Docker + voz data-driven + UX/memoria legible | 7 | independiente; mejor con el núcleo agéntico ya estable. +3 sesiones de la comparativa competitiva (doc 32 Anexo) |
@@ -114,14 +114,16 @@ empaqueta un producto que ya no va a cambiar de forma.
 | **V1.5** | Project Memory Capa 2 + puerta a GSN/CIE + **cierre MVP con instalador** | 5 | cierra el organismo local Y lo empaqueta cuando ya no va a cambiar de forma; revisa contratos de red para V2.0 |
 | **V2.0+** | AVCS MVP1 + MVP2 · GSN + CIE | 10 + ? | **[2026-08-05]** el AVCS maduro mejora una capacidad ENTREGADA (Génesis); la red es otro organismo. Ver §10 |
 
-Total del tramo activo (V1.1 → V1.5): **28-29 sesiones**. Histórico del recuento:
+Total del tramo activo (V1.1 → V1.5): **31-32 sesiones**. Histórico del recuento:
 35 → 33 (2026-07-22, AVCS Génesis ya construido: se retiran AV1-AV2 de V1.1) →
 36 (2026-07-24, +3 en V1.4 desde la comparativa competitiva: W3 canales, S1
 sandboxing, U1 ampliada con memoria legible) → 23-24 activas + 10 aparcadas en
 V2.0+ (2026-08-05: MVP-beta aplaza de la cabeza a V1.5, AVCS MVP1/MVP2 sale
-del tramo) → **28-29 activas** (2026-08-06: +5 de la ampliación del sistema de
-aprendizaje — L2b en V1.1, ML3/SE1/PE1/PE2 en V1.2 — diseño en §5/§6). Reparto
-de modelos del tramo activo: Fable 5 ×8 (crítico), Opus 4.8 ×19, Sonnet ×2. Regla de asignación: **Fable = contratos nuevos, concurrencia,
+del tramo) → 28-29 activas (2026-08-06: +5 de la ampliación del sistema de
+aprendizaje — L2b en V1.1, ML3/SE1/PE1/PE2 en V1.2 — diseño en §5/§6) →
+**31-32 activas** (2026-08-07: +3, el Learner Cognitivo LC1-LC3 en V1.1 tras
+el post-mortem del corpus real — doc 41). Reparto de modelos del tramo activo:
+Fable 5 ×8 (crítico), Opus 4.8 ×21, Sonnet ×3. Regla de asignación: **Fable = contratos nuevos, concurrencia,
 seguridad, GPU delicado** (equivocarse ahí cuesta el doble de arreglar — aquí no
 hay economía); **Opus = features sobre patrones ya establecidos**; **Sonnet =
 mecánico/UI simple/docs**.
@@ -220,7 +222,25 @@ listan en su sección de abajo — no se improvisan.
 
 ---
 
-## 5. V1.1 — Learner operativo (5 sesiones) → tag `v1.1.0` · ⬅ **FASE ACTIVA**
+## 5. V1.1 — Learner operativo (8 sesiones) → tag `v1.1.0` · ⬅ **FASE ACTIVA — REABIERTA (2026-08-07)**
+
+> **[REAPERTURA 2026-08-07 — el Learner Cognitivo, doc 41]** El primer contacto
+> del panel con el corpus REAL del usuario destapó que el Learner aprendía
+> MECÁNICAMENTE: proponía convertir en procedimiento fijo encargos repetidos
+> porque FALLABAN ("pon la canción de Melendi" ×8), saludos ("HOLA" ×4) y
+> misiones de las campañas de test. Tres causas raíz (post-mortem completo en
+> doc 41 §0): `state="done"` usado como éxito cuando solo significa "terminó
+> sin colgarse"; evidencia de escalera AUTOGENERADA (`execution_ok` es la
+> máquina diciendo "terminé", no una señal externa); y la sobre-aplicación del
+> §3.3 de doc 15 que convirtió "el ejecutor no se autoevalúa" en "ningún LLM
+> juzga nada". **Decisión del usuario**: todos los JUICIOS del Learner
+> (veredicto de cada misión, lecciones, qué merece ser skill, propuestas de
+> mejora) los hace una IA — capacidad nueva `LEARN` ("Aprendizaje" en
+> Inteligencia, modelo seleccionable, default el mejor razonador local); lo
+> mecánico queda para extraer y proteger. La fase gana las sesiones LC1-LC3 y
+> **el tag `v1.1.0` espera a LC3** — no se etiqueta "Learner operativo" un
+> learner que aprende mal. El contrato de producto nº 1 estaba mal
+> especificado (en verde sobre un criterio equivocado) y se re-especifica.
 
 > **[Ampliación 2026-08-06, decisión del usuario]** Dos ideas rectoras se suman
 > al diseño del Learner (detalle y reparto por versión en la nota bajo L2b):
@@ -885,6 +905,60 @@ secciones de PU4b.
 - Cierre de fase: los **5** product-contracts (4 de L1 + el de L2b) verdes +
   evals: 2 misiones canónicas nuevas sobre aprendizaje + suite Windows.
 
+### LC1 — El Juez · **Opus, esfuerzo EXTRA** *(NUEVA 2026-08-07, doc 41 §8)*
+- Capability `LEARN` completa en el MEL (enum append-only + catálogo con
+  marcadores de razonadores + `is_capable` como punto único + test de
+  invariante UI↔ejecución, calco del de visión) + fila **"Aprendizaje"** en
+  Ajustes → Inteligencia (recordar: `MEL_CAPS_ORDER` es whitelist) + i18n ×4.
+- Tabla `mission_verdicts` (migración encadenada) + empaquetador de señales
+  duras (entregables de Sesión B, rendición NEW-4, PlanRejection, atasco,
+  atribución L2b, limitaciones S11, y **el DESPUÉS**: los siguientes mensajes
+  del usuario vía `session_id` + re-peticiones del mismo trabajo — como
+  INSUMO del juez, jamás como regla mecánica) + etiquetado de origen
+  (`AITHERA_TEST_CORPUS=1` en mission_lab/campañas/E2E).
+- El juez: cola con debounce (`LEARNER_JUDGE_DELAY_MIN`, default 10) + juicio
+  por misión + lote nocturno para la charla + catch-up + **grounding del juez**
+  (un `served` sin señales citadas se degrada a `unclear`; lo mecánico solo
+  degrada, nunca promueve) + anti-sesgo (la cadena LEARN salta a los modelos
+  que ejecutaron; si no queda otro, `judge_bias=true` visible) + backfill de
+  las últimas 100 misiones reales.
+- Tests clave: **el caso Melendi** (repeticiones con aftermath correctivo → el
+  juez NO da `served`), `served` sin señales → `unclear` (mutación obligada),
+  juez ≠ ejecutor, origen `test` excluido del aprendizaje, backfill idempotente.
+- Detalle ejecutable completo: doc 41 §2-§3, §6.
+
+### LC2 — El aprendizaje de verdad · **Opus, esfuerzo EXTRA** *(NUEVA 2026-08-07, doc 41 §8)*
+- Lección por misión en la MISMA llamada del juez (`{type, content,
+  related_skill_id}`, con el catálogo de skills en el prompt para detectar
+  mejoras vs duplicados) + **consolidación nocturna IA**: la IA decide
+  `create_skill` (pasos extraídos de transcripts REALES — post-chequeo de
+  grounding: tools de los pasos ⊆ tools observadas, mutación obligada),
+  `improve_skill` (diff + evidencia), `merge/drop` de candidatas, `config_fix`
+  contextual y `finding`; lo mecánico tramita en la cuarentena sin saltarse la
+  escalera. La calibración entra al prompt: los rechazos del usuario con sus
+  motivos.
+- **Evidencia v2** en la escalera: `judged_success` (veredicto independiente
+  con señales, origin=user) VALE; `execution_ok` a secas DEJA de valer
+  (migración `legacy_unjudged`). Purga en bloque de la bandeja contaminada
+  (`rejected`, nota "corpus de pruebas (purga LC2)"). Retirada de la
+  acumulación mecánica de L2 y del análisis 1 de L3 (Jaccard → pre-agrupador
+  cuya salida la IA confirma o corrige).
+- **Contrato nº 1 re-especificado**: "tres misiones del mismo trabajo, JUZGADAS
+  como éxito, en contextos distintos" + test negativo del caso Melendi (tres
+  `failed` → cero candidatas). E2E del Learner actualizado con el juez en la
+  cadena. `model_stats.mission_ok` derivado del veredicto.
+- Detalle ejecutable completo: doc 41 §4-§5, §7.
+
+### LC3 — La cara y la calibración · **Sonnet, esfuerzo ALTO** *(NUEVA 2026-08-07, doc 41 §8)*
+- Veredictos visibles: chip "¿sirvió?" por misión en Mission Control y en
+  Aprendizaje (razones del juez a un clic) + botón "Re-juzgar" (la
+  discrepancia del usuario queda registrada y alimenta la calibración) +
+  sección de calibración en Salud (% aceptado/rechazado de lo propuesto por el
+  juez, veredictos con `judge_bias`) + selector "Aprendizaje" pulido + i18n ×4.
+- **Cierre de fase REAL**: 5 contratos de producto en verde con el nº 1 nuevo,
+  E2E verde ×4 pasadas, suite Windows — y AHORA sí, **tag `v1.1.0`**.
+- Detalle ejecutable completo: doc 41 §7-§8.
+
 *(AV1 "el motor" y AV2 "ritmos + producto" — retirados: ya entregados en
 V0.82/83, ver nota de corrección arriba. Contenido histórico recuperable en
 el git log de este doc si hiciera falta consultar el alcance original.)*
@@ -903,6 +977,13 @@ el git log de este doc si hiciera falta consultar el alcance original.)*
 > PE1 → PE2. C1 (primera sesión) añade a sus product-contracts EN ROJO los dos
 > de la ampliación: *"una exploración jamás cambia el output del usuario"* y
 > *"una variante solo llega a la bandeja tras ganar en el banco"*.
+>
+> **[2026-08-07, doc 41 §7]** Con el Learner Cognitivo (LC1-LC3, V1.1), TODO lo
+> de esta fase que hoy dice `state="done"` pasa a consumir `mission_verdicts`:
+> ML1 (model_stats ya derivará de veredictos), SE1 (las misiones-evidencia del
+> torneo son las JUZGADAS como éxito), PE1/PE2 (`path_stats` mide "sirvió", no
+> "terminó"). ML3 usa la capacidad LEARN. No se reescriben las fichas: es un
+> cambio de fuente de datos, anotado aquí para que cada sesión lo aplique.
 
 > **[Comparativa competitiva 2026-07-24, doc 32 Anexo]** MCP (cliente+servidor)
 > ya estaba planeado aquí — la comparativa con OpenJarvis/OpenClaw/Hermes lo
@@ -1395,6 +1476,9 @@ revisados en O5 (V1.5).
 | **¿Torneo de variantes para TODA skill?** (2026-08-06) | **No — solo con ≥2 caminos observados o incumbente con patrón de fallo** (SE1) | un torneo universal frenaría la escalera y multiplicaría el coste sin ganancia: sin nada que comparar, comparar es teatro |
 | **¿Puede Aithera aplicar mejoras a su propio sistema?** (2026-08-06) | **Jamás** — `system_improvement` no tiene applier (imposible por construcción); el panel exporta un informe para una sesión de desarrollo (ML3) | la versión honesta de "self-improving": detectar y documentar es de Aithera; cambiar código es de una sesión con tests/mutación/regresión |
 | **¿Shadow runs con escrituras?** (2026-08-06) | **No — solo misiones 100% de lectura, OFF por defecto, doble capa** (whitelist del plan + `Authority.shadow`) (PE2) | una sombra que envía un email es un email enviado dos veces; el coste extra se enseña ANTES de activarlo |
+| **¿El Learner puede ser mecánico en sus juicios?** (2026-08-07) | **No — la IA (capacidad LEARN) hace TODOS los juicios y propuestas; lo mecánico extrae y protege** (doc 41 §1) | el corpus real demostró que los umbrales no entienden: proponían como hábito lo que era un usuario peleándose con algo roto. Decisión literal del usuario |
+| **¿Un LLM juzgando viola la anti-contaminación?** (2026-08-07) | **No, con las 4 reglas de doc 41 §5**: juez ≠ ejecutor, cita evidencia o degrada, lo mecánico solo degrada, el usuario es la única puerta | la prohibición real del doc 15 §3.3 siempre fue la AUTOevaluación; sobre-aplicarla fue la causa raíz nº 3 del post-mortem |
+| **¿Se tagea v1.1.0 con L4 cerrada?** (2026-08-07) | **No — el tag espera a LC3** | no se etiqueta "Learner operativo" un learner que aprende mal; reabrir la fase es lo honesto |
 
 ---
 *Plan 2026-07-20 (Fable 5, rol CTO+comité). Fuentes: CLAUDE.md (estado real),

@@ -54,15 +54,18 @@ def test_la_no_aptitud_medida_se_reporta_como_medida(monkeypatch):
     no como decisión de catálogo — son cosas distintas y se explican distinto.
 
     [B·WEB-2, 2026-08-05] `llama3` es CIEGO, así que desde la activación de la
-    capacidad de visión también arrastra `vision` en `unfit_catalog`. La
-    aserción pasa de "el catálogo no dice nada" a "el catálogo dice SOLO lo de
-    la visión": lo que este test fija es la SEPARACIÓN de las dos fuentes, y
-    eso sigue intacto."""
+    capacidad de visión también arrastra `vision` en `unfit_catalog`.
+    [LC1, 2026-08-07] Y desde la capacidad de APRENDIZAJE arrastra también
+    `learn`: un modelo pequeño no sirve de juez, y eso es dato de catálogo igual
+    que la ceguera. Lo que este test fija no es la lista concreta —crecerá cada
+    vez que se active una capacidad que dependa del modelo— sino la SEPARACIÓN
+    de las dos fuentes: lo que decide el catálogo y lo que se MIDIÓ fallando."""
     _fake_registry(monkeypatch, [ModelRef(provider="ollama", model="llama3", is_local=True)])
     monkeypatch.setattr(_bench, "measured_unfit", lambda ref: {"agentic"})
     m = mel.list_models()[0]
     assert m["unfit_measured"] == ["agentic"]
-    assert m["unfit_catalog"] == ["vision"]     # ciego: no ve, y es dato de catálogo
+    # Ciego y pequeño: ni ve imágenes ni sirve para juzgar. Las dos por catálogo.
+    assert m["unfit_catalog"] == ["learn", "vision"]
     assert "agentic" in m["unfit"]
 
 

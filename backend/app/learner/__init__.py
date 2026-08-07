@@ -22,9 +22,16 @@
 #          `config_fix` deterministas. La taxonomía en sí vive en
 #          `app/core/failures.py`: la escriben MEL/toolloop/executor/planner, y
 #          ninguno de ellos puede importar internos del Learner (doc 16).
+# V1.1 LC1: EL JUEZ (doc 41). El aprendizaje deja de usar `state="done"` como
+#          señal de éxito — que solo significa "la maquinaria terminó" — y pasa
+#          a un veredicto dictado por un modelo (capacidad LEARN) que NO ejecutó
+#          la misión, con señales duras y con lo que el usuario hizo DESPUÉS.
+#          `judge.served(mission_id)` es la única fuente de "sirvió" y es
+#          fail-closed: sin veredicto, no consta que sirviera.
 from app.learner.models import (
     FailureStat,
     LearnerProposal,
+    MissionVerdict,
     ModelStat,
     Skill,
     SkillEvent,
@@ -53,6 +60,25 @@ from app.learner.mission_learning import (
     similarity,
 )
 from app.learner.authoring import learn_this
+from app.learner import signals
+from app.learner.cleanup import mark_legacy_evidence, purge_test_corpus, run_cleanup
+from app.learner.consolidation import check_steps_grounded, consolidate
+from app.learner.judge import (
+    FAILED,
+    PARTIAL,
+    SERVED,
+    UNCLEAR,
+    calibration_summary,
+    judge_chat_batch,
+    judge_mission,
+    register_handlers as register_judge,
+    run_nightly_judging,
+    served,
+    unjudged,
+    verdict_history,
+    verdict_of,
+)
+from app.learner.comparison import compare_skill_change
 from app.learner.analysis import (
     analyze_cross_project,
     analyze_error_patterns,
@@ -67,6 +93,19 @@ from app.learner.analysis import (
 __all__ = [
     # modelos (solo para create_all/migraciones/tests — el CRUD va por servicios)
     "Skill", "SkillEvent", "LearnerProposal", "ModelStat", "ToolStat", "FailureStat",
+    "MissionVerdict",
+    # el JUEZ (LC1) — la única fuente de "esto le sirvió al usuario"
+    "judge_mission", "verdict_of", "served", "unjudged", "run_nightly_judging",
+    "judge_chat_batch", "register_judge", "signals",
+    "SERVED", "PARTIAL", "FAILED", "UNCLEAR",
+    # LC3 — re-juicio con historial visible + calibración del juez
+    "verdict_history", "calibration_summary",
+    # la CONSOLIDACIÓN (LC2) — quien decide qué se aprende, con IA
+    "consolidate", "check_steps_grounded",
+    # LC3 — la prueba de mejora efectiva antes de proponer una skill mejorada
+    "compare_skill_change",
+    # saneado del aprendizaje viejo (LC2)
+    "run_cleanup", "mark_legacy_evidence", "purge_test_corpus",
     # la escalera (funciones puras: también son la doc ejecutable de la política)
     "ladder",
     # LSL

@@ -120,7 +120,11 @@ def list_models() -> list[dict]:
     selectores de la personalización. `key` es el `provider:model` que usan las
     cadenas de política (petición del usuario, 2026-07-18)."""
     from app.ai.catalog import get_provider_info
-    from app.mel.catalog import supports_vision as _supports_vision, unfit_for
+    from app.mel.catalog import (
+        supports_learn as _supports_learn,
+        supports_vision as _supports_vision,
+        unfit_for,
+    )
     from app.mel import benchmark as _benchmark
     out = []
     for ref in _registry.list_available():
@@ -157,6 +161,15 @@ def list_models() -> list[dict]:
         # la ejecución tienen que compartir el MISMO criterio de aptitud.
         if not _supports_vision(ref.provider, ref.model):
             catalog_unfit.add(Capability.VISION.value)
+        # [LC1, 2026-08-07] Y el APRENDIZAJE, por el mismo motivo y con el mismo
+        # riesgo: se decide por (proveedor, modelo) —un llama3 pequeño no sirve
+        # de juez, un deepseek-r1 sí—, así que `unfit_for()` tampoco puede
+        # saberlo. Sin esta línea, Inteligencia ofrecería modelos que
+        # `set_primary` rechazaría por dentro: la UI y la ejecución tienen que
+        # compartir el MISMO criterio de aptitud (el invariante que lo vigila
+        # vive en tests/test_lc1_juez.py).
+        if not _supports_learn(ref.provider, ref.model):
+            catalog_unfit.add(Capability.LEARN.value)
         measured_unfit = set(_benchmark.measured_unfit(ref))
         out.append({"key": ref.key, "provider": ref.provider, "model": ref.model,
                     "is_local": ref.is_local, "label": label, "model_label": model_label,

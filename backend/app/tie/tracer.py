@@ -25,6 +25,16 @@ def record_start(mission: Mission, *, channel: Optional[str] = None) -> str:
     """Abre una traza para una misión. Devuelve el trace_id (uuid). El trace_id
     y el mission_id son distintos: una misión puede (V1.2) tener varias trazas."""
     trace_id = uuid.uuid4().hex
+    # [V1.1 LC1, doc 41 §6] El origen se decide AQUÍ, en el único punto por el
+    # que pasan todas las misiones, y se guarda con la traza: la marca de prueba
+    # la pone el entorno que lanza el trabajo, y de madrugada —cuando el juez
+    # mira— ese entorno ya no existe. Nunca rompe: sin marca, `user`.
+    try:
+        from app.core import corpus
+
+        origen = corpus.current_origin(mission.source)
+    except Exception:
+        origen = "user"
     db = SessionLocal()
     try:
         db.add(OrchestratorTrace(
@@ -32,6 +42,11 @@ def record_start(mission: Mission, *, channel: Optional[str] = None) -> str:
             mission_id=mission.id,
             channel=channel or mission.channel,
             state="running",
+            # [LC1] Enlace con la conversación (para "el después") y de dónde
+            # viene la misión. Los dos son datos de OBSERVACIÓN: el TIE no los
+            # lee para decidir nada.
+            session_id=mission.session_id,
+            origin=origen,
             # [R2] Jerarquía: a qué orquestación pertenece y de qué misión nació.
             # El TIE no los usa para nada — los guarda para que la UI y el
             # Learner puedan reconstruir el árbol de un mensaje multi-objetivo.
@@ -219,9 +234,24 @@ def mission_snapshot(any_id: str) -> Optional[dict]:
                         "tools": list(n.tools or []),
                         "tool_calls": [
                             {"tool": c.get("tool"), "action": c.get("action"),
-                             "ok": c.get("ok")}
+                             "ok": c.get("ok"),
+                             # [LC1] La ruta del entregable, cuando la acción
+                             # escribió algo (Sesión B). Es la prueba dura de
+                             # "si dije que lo escribí, lo escribí": sin ella el
+                             # juez solo tendría la palabra del propio modelo.
+                             "target": c.get("target")}
                             for c in (n.tool_calls or []) if isinstance(c, dict)
                         ],
+                        # [LC1] Lo que el nodo PRODUJO y lo que declaró no poder
+                        # hacer (S11). Recortado: el juez necesita reconocer una
+                        # rendición o un aviso de incompletitud, no releer el
+                        # documento entero.
+                        "output": (str(n.result.get("output") or "")[:1200]
+                                   if isinstance(n.result, dict) else ""),
+                        "limitations": (
+                            [str(x)[:200] for x in (n.result.get("limitations") or [])]
+                            if isinstance(n.result, dict) else []
+                        ),
                         "error": n.error,
                     })
             except Exception as e:      # un plan corrupto no impide aprender del resto
@@ -243,6 +273,11 @@ def mission_snapshot(any_id: str) -> Optional[dict]:
             "project_id": (row.plan.get("authority") or {}).get("project_id")
             if isinstance(row.plan, dict) and isinstance(row.plan.get("authority"), dict)
             else None,
+            # [LC1] Lo que el juez necesita para situar la misión: de dónde vino
+            # (¿trabajo real o corpus de pruebas?) y en qué conversación, para
+            # poder leer lo que el usuario dijo después.
+            "origin": getattr(row, "origin", None) or "user",
+            "session_id": getattr(row, "session_id", None),
             "created_at": row.created_at.isoformat() if row.created_at else None,
         }
     except Exception as e:
@@ -305,6 +340,10 @@ def recent_missions(days: int = 30, limit: int = 200,
             # ella, que es la respuesta honesta.
             "project_id": (plan.get("authority") or {}).get("project_id")
             if isinstance(plan.get("authority"), dict) else None,
+            # [LC1] De dónde vino, para que el Learner pueda descartar el corpus
+            # de pruebas sin conocer el esquema de esta tabla.
+            "origin": getattr(row, "origin", None) or "user",
+            "session_id": getattr(row, "session_id", None),
             "created_at": row.created_at.isoformat() if row.created_at else None,
         })
     return out

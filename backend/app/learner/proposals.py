@@ -383,3 +383,38 @@ async def _undo_skill_new(payload: dict, snapshot: Optional[dict]) -> None:
 
 
 register_applier("skill_new", _apply_skill_new, _undo_skill_new)
+
+
+# ---------------------------------------------------------------------------
+# Applier de LC3: `skill_improve` — reusa `SkillLibrary.improve()` (L1), que ya
+# guarda su propio snapshot interno en `SkillEvent` para `undo_last()`; aquí se
+# guarda ADEMÁS la descripción previa en el snapshot de la propuesta, porque el
+# undo de una PROPUESTA no puede depender de que nadie haya tocado la skill
+# entremedias por otra vía — el snapshot propio es la fuente fiable.
+# ---------------------------------------------------------------------------
+async def _apply_skill_improve(payload: dict) -> Optional[dict]:
+    from app.learner.library import skill_library
+
+    skill_id = str(payload.get("skill_id") or "").strip()
+    cambio = str(payload.get("change") or "").strip()
+    if not skill_id or not cambio:
+        return None
+    anterior = await skill_library.get(skill_id)
+    if anterior is None:
+        return None
+    nueva_descripcion = f"{anterior.description}\n\n{cambio}".strip()
+    await skill_library.improve(skill_id, {"description": nueva_descripcion},
+                                actor="learner")
+    return {"skill_id": skill_id, "previous_description": anterior.description}
+
+
+async def _undo_skill_improve(payload: dict, snapshot: Optional[dict]) -> None:
+    from app.learner.library import skill_library
+
+    skill_id = (snapshot or {}).get("skill_id") or payload.get("skill_id")
+    previa = (snapshot or {}).get("previous_description")
+    if skill_id and previa is not None:
+        await skill_library.improve(skill_id, {"description": previa}, actor="user")
+
+
+register_applier("skill_improve", _apply_skill_improve, _undo_skill_improve)

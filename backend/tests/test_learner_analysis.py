@@ -104,223 +104,26 @@ class TestRepetidas:
         ])
         assert await analyze_repeated_missions() == []
 
-    async def test_no_duplica_lo_que_L2_ya_propuso(self, monkeypatch):
-        """El análisis en batch y la acumulación por misión miran los mismos
-        datos. Si crearan propuestas por separado, el usuario vería la misma
-        cosa dos veces en la bandeja."""
-        pid = await proposal_service.create(
-            kind="skill_new", risk="medium", state="observed",
-            title="ya existente",
-            payload={"description": "prepárame el resumen semanal del proyecto Aithera",
-                     "tools": ["document"], "name": "resumen"})
+    async def test_el_analisis_1_ya_no_decide_nada(self, monkeypatch):
+        """[V1.1 LC2, doc 41 §7] Contaba misiones con `state="done"` y, a las
+        tres parecidas, dejaba una propuesta en la bandeja. Ese es el camino por
+        el que ocho intentos FALLIDOS del mismo encargo acabaron propuestos como
+        procedimiento (doc 41 §0).
+
+        Se conserva la firma —el barrel la exporta— pero no crea nada: quién
+        merece ser skill lo decide `consolidation.consolidate()` con los
+        veredictos del juez delante. La agrupación por parecido sobrevive
+        degradada a pre-agrupador, y su test sigue arriba (`_agrupa_por_trabajo`)
+        porque agrupar es lo que hace bien."""
         monkeypatch.setattr("app.learner.analysis._misiones_recientes", lambda d: [
-            _mision(f"m{i}", "quiero el resumen semanal del proyecto Aithera")
-            for i in range(3)])
+            _mision(f"m{i}", "prepárame el resumen semanal del proyecto Aithera")
+            for i in range(5)])
 
-        ids = await analyze_repeated_missions()
-        assert ids == [pid], "refuerza la que había, no crea otra"
-        con_kind = await proposal_service.pending(kind="skill_new")
-        assert len(con_kind) == 1
-        assert len(con_kind[0]["evidence"]) == 3
-
-    async def test_la_candidata_no_se_inventa_los_pasos(self, monkeypatch):
-        """Nace SIN pasos a propósito: unos pasos redactados por un LLM que
-        nadie ha visto funcionar son justo la fábrica de skills-basura que doc
-        15 §10 teme. Los escribe el usuario al aceptarla, o ML2 (V1.2)."""
-        monkeypatch.setattr("app.learner.analysis._misiones_recientes", lambda d: [
-            _mision(f"m{i}", "prepárame el informe mensual de gastos") for i in range(3)])
-        ids = await analyze_repeated_missions()
-        prop = await proposal_service.get(ids[0])
-        assert prop["payload"]["definition"]["steps"] == []
-        assert prop["payload"]["tools"] == ["document"]
-
-    async def test_una_pasada_vacia_no_rompe_ni_propone(self, monkeypatch):
-        monkeypatch.setattr("app.learner.analysis._misiones_recientes", lambda d: [])
         assert await analyze_repeated_missions() == []
-
-    async def test_si_el_tie_falla_el_analisis_no_lanza(self, monkeypatch):
-        def _explota(_d):
-            raise RuntimeError("BD caída")
-        monkeypatch.setattr("app.learner.analysis._misiones_recientes", _explota)
-        assert await analyze_repeated_missions() == []
+        assert await proposal_service.pending(kind="skill_new") == [], (
+            "contar repeticiones ya no llena la bandeja del usuario")
 
 
-# ===========================================================================
-# 2 · Análisis 3 — el mismo trabajo en varios proyectos
-# ===========================================================================
-class TestInterProyecto:
-    async def _con_proyectos(self, proyectos: list):
-        pid = await proposal_service.create(
-            kind="skill_new", risk="medium", state="observed",
-            title="informe", payload={"name": "informe", "description": "informe",
-                                      "tools": []}, project_id=proyectos[0])
-        for i, proy in enumerate(proyectos):
-            await proposal_service.add_evidence(pid, {
-                "kind": "execution_ok", "context_key": f"m{i}",
-                "payload": {"goal": "informe", "project_id": proy}})
-        return pid
-
-    async def test_un_trabajo_visto_en_dos_proyectos_deja_de_ser_de_uno(self):
-        pid = await self._con_proyectos([7, 9])
-        assert await analyze_cross_project() == [pid]
-        prop = await proposal_service.get(pid)
-        assert prop["payload"]["cross_project"] is True
-        assert prop["payload"]["projects"] == [7, 9]
-        assert prop["project_id"] is None
-
-    async def test_un_solo_proyecto_no_se_toca(self):
-        pid = await self._con_proyectos([7, 7])
-        assert await analyze_cross_project() == []
-        assert (await proposal_service.get(pid))["project_id"] == 7
-
-    async def test_sin_proyecto_el_analisis_calla(self):
-        """Las misiones del chat general no traen proyecto. La respuesta
-        honesta ahí es no decir nada, no inventarse un alcance."""
-        await self._con_proyectos([None, None])
-        assert await analyze_cross_project() == []
-
-    async def test_no_se_reescribe_una_propuesta_ya_decidida(self):
-        pid = await self._con_proyectos([7, 9])
-        await proposal_service.reject(pid, note="no me interesa")
-        with pytest.raises(ValueError):
-            await proposal_service.update_payload(pid, {"x": 1})
-
-
-# ===========================================================================
-# 3 · Análisis 4 — calidad de las skills
-# ===========================================================================
-class TestCalidad:
-    def test_sin_historial_no_hay_nota(self):
-        assert _puntua([], datetime.utcnow()) == (0.0, 0.0)
-
-    def test_lo_reciente_pesa_mas_que_lo_viejo(self):
-        """Una skill que funcionó hace medio año y nada desde entonces no vale
-        lo mismo que una que funciona hoy: el mundo cambia y una skill puede
-        quedarse obsoleta sin fallar nunca.
-
-        ESTE TEST ENCONTRÓ UN FALLO DE DISEÑO real: la primera versión ponderaba
-        por recencia dentro de una PROPORCIÓN, y con un único evento el peso se
-        cancela consigo mismo (ratio 1.0 a cualquier edad). El decaimiento
-        estaba escrito y no hacía nada."""
-        ahora = datetime.utcnow()
-        reciente, _ = _puntua([_Ev("executed_ok", dias=0, context_key="a")], ahora)
-        viejo, _ = _puntua([_Ev("executed_ok", dias=180, context_key="a")], ahora)
-        assert reciente > viejo
-        assert viejo < reciente / 2, "medio año sin usarse tiene que notarse"
-
-    def test_el_error_rate_es_la_proporcion_real(self):
-        _, err = _puntua([_Ev("executed_ok"), _Ev("executed_ok"),
-                          _Ev("executed_fail"), _Ev("executed_fail")],
-                         datetime.utcnow())
-        assert err == 0.5
-
-    def test_funcionar_en_sitios_distintos_puntua_mas(self):
-        ahora = datetime.utcnow()
-        variada, _ = _puntua([_Ev("executed_ok", context_key=f"c{i}") for i in range(5)], ahora)
-        monotona, _ = _puntua([_Ev("executed_ok", context_key="c0") for _ in range(5)], ahora)
-        assert variada > monotona
-
-    async def test_recalcula_sobre_skills_reales(self):
-        from app.memory import LocalSkill, SkillStatus
-
-        sk = LocalSkill(id=str(uuid.uuid4()), name="s", version="1.0.0",
-                        description="d", definition={}, input_schema={},
-                        output_schema={}, runtime_agnostic=True,
-                        created_by="learner", created_at=datetime.utcnow(),
-                        status=SkillStatus.DRAFT)
-        await skill_library.create(sk)
-        await skill_library.record_execution(sk.id, True, context_key="c1")
-        await skill_library.record_execution(sk.id, False, context_key="c2")
-
-        assert await recompute_skill_quality() >= 1
-        with SessionLocal() as s:
-            fila = s.get(Skill, sk.id)
-        assert 0.0 < fila.quality_score < 1.0
-        assert fila.error_rate == 0.5
-
-
-# ===========================================================================
-# 4 · Análisis 2 y 5 — hallazgos e informe semanal
-# ===========================================================================
-class TestInforme:
-    def _fallo(self, kind, blame, component, n=5):
-        from app.learner.stats import record_failures
-        record_failures("m-1", [{"kind": kind, "blame": blame, "component": component,
-                                 "model_key": None, "tool": None, "event_key": None,
-                                 "detail": "algo"}] * n)
-
-    def test_los_hallazgos_excluyen_lo_ya_accionable(self):
-        """Lo de configuración YA tiene su propuesta (L2b) y lo que no es un
-        fallo no es un hallazgo. Repetirlo aquí sería ruido."""
-        self._fallo("config_missing", "config", "tool:search")
-        self._fallo("permission_denied", "none", "tie:toolloop")
-        self._fallo("model_reasoning", "model", "model:x:y")
-        hallazgos = error_findings()
-        assert [h["kind"] for h in hallazgos] == ["model_reasoning"]
-
-    async def test_el_informe_sale_aunque_el_modelo_no_conteste(self, monkeypatch):
-        """La autopsia es la guinda; el informe es determinista. Si el modelo
-        de calidad no está, se entrega igual lo que sí se sabe."""
-        async def _no_hay(*a, **k):
-            raise RuntimeError("sin proveedor")
-        monkeypatch.setattr("app.mel.complete", _no_hay)
-        self._fallo("model_reasoning", "model", "model:x:y")
-
-        informe = await weekly_learning_report(force=True)
-        assert informe["findings"] == []
-        assert informe["headline"].startswith("Esta semana")
-        assert "counts" in informe and "failures_by_blame" in informe
-
-    async def test_sin_fallos_no_se_paga_una_llamada_de_calidad(self, monkeypatch):
-        """Pagar el modelo bueno para que diga "todo bien" es reflection
-        theater (doc 15 §10)."""
-        llamadas = []
-
-        async def _cuenta(*a, **k):
-            llamadas.append(1)
-            raise RuntimeError("no debería llamarse")
-        monkeypatch.setattr("app.mel.complete", _cuenta)
-
-        await weekly_learning_report(force=True)
-        assert llamadas == []
-
-    async def test_un_hallazgo_sin_evidencia_se_descarta(self, monkeypatch):
-        """Un diagnóstico que no se puede comprobar no es un diagnóstico
-        (misma disciplina que el grounding)."""
-        class _Res:
-            ok = True
-            text = ('{"findings": [{"title": "con pruebas", "why": "x", '
-                    '"evidence": ["m-1"]}, {"title": "sin pruebas", "why": "y"}]}')
-
-        async def _responde(*a, **k):
-            return _Res()
-        monkeypatch.setattr("app.mel.complete", _responde)
-        self._fallo("model_reasoning", "model", "model:x:y")
-
-        informe = await weekly_learning_report(force=True)
-        assert [h["title"] for h in informe["findings"]] == ["con pruebas"]
-
-    async def test_el_informe_se_guarda_y_no_se_repite_a_diario(self, monkeypatch):
-        async def _nada(*a, **k):
-            raise RuntimeError("sin modelo")
-        monkeypatch.setattr("app.mel.complete", _nada)
-
-        primero = await weekly_learning_report(force=True)
-        assert last_report()["generated_at"] == primero["generated_at"]
-        # Sin `force`, dentro de la misma semana devuelve el guardado.
-        segundo = await weekly_learning_report()
-        assert segundo["generated_at"] == primero["generated_at"]
-
-    def test_el_titular_es_determinista(self):
-        assert "nada nuevo" in _titular({}, {})
-        t = _titular({"skills_nuevas": 2, "propuestas_abiertas": 1},
-                     {"external": 3, "config": 1})
-        assert "2 procedimiento(s)" in t and "4 fallo(s)" in t
-
-
-# ===========================================================================
-# 5 · La pasada nocturna completa
-# ===========================================================================
 class TestPasadaNocturna:
     async def test_un_analisis_roto_no_cancela_los_demas(self, monkeypatch):
         """Son independientes: perder los cuatro porque uno falló sería tonto."""
@@ -335,7 +138,12 @@ class TestPasadaNocturna:
         monkeypatch.setattr("app.mel.complete", _sin_modelo)
 
         resumen = await run_nightly_analysis()
-        assert resumen["repeated"], "el análisis 1 sí corrió"
+        # [LC2] Sin modelo no hay consolidación (aprender exige a la IA), pero
+        # el resto de la pasada tiene que seguir su curso — que es lo que este
+        # test defiende: los pasos son independientes.
+        assert resumen["consolidation"] == {"created": [], "improved": [],
+                                            "merged": 0, "dropped": 0,
+                                            "config": [], "findings": []}
         assert resumen["cross_project"] == [], "el roto devuelve vacío, no rompe"
         assert "report" in resumen
 

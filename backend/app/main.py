@@ -405,6 +405,14 @@ async def lifespan(app: FastAPI):
         # y suscribirse antes de que el TIE exista no aportaria nada.
         learner_register_handlers()
 
+        # [LC1, doc 41] EL JUEZ escucha los mismos eventos, pero no aprende de
+        # ellos: encola la mision para dictaminar mas tarde si SIRVIO. El
+        # retardo es deliberado — hace falta que exista "el despues" (que dijo
+        # el usuario tras la respuesta), que es la senal mas informativa.
+        from app.learner import register_judge
+
+        register_judge()
+
         async def _learner_backfill():
             try:
                 n = await backfill_from_mem_skill()
@@ -415,6 +423,24 @@ async def lifespan(app: FastAPI):
 
         asyncio.create_task(_learner_backfill())
 
+        # [LC2, doc 41 §6] Saneado de lo aprendido con el criterio VIEJO: las
+        # evidencias "la maquina termino" se re-etiquetan como pendientes de
+        # juicio y las propuestas nacidas del corpus de pruebas se cierran con
+        # nota. Idempotente (marca en Config) y en background.
+        async def _learner_cleanup():
+            try:
+                from app.learner import run_cleanup
+
+                r = await run_cleanup()
+                if r.get("legacy_evidence") or r.get("purged"):
+                    log_info("startup",
+                             f"Learner saneado: {r['legacy_evidence']} propuesta(s) con "
+                             f"evidencia pendiente de juicio, {len(r['purged'])} retirada(s)")
+            except Exception as e:
+                log_error("startup", e, "Saneado del Learner fallo (no critico)")
+
+        asyncio.create_task(_learner_cleanup())
+
         # [L3] El LLL en batch: 04:45 local, DESPUÉS de todos los jobs del MOS
         # (03:30-04:40) y de la limpieza del TIE. Va el último a propósito —
         # analiza lo que los demás acaban de dejar ordenado, y a esa hora el
@@ -423,8 +449,14 @@ async def lifespan(app: FastAPI):
         # el informe sale igual el primer día que se encienda).
         try:
             from app.automation import scheduler_service as _sched
-            from app.learner import run_nightly_analysis
+            from app.learner import run_nightly_analysis, run_nightly_judging
 
+            # [LC1] El juez va ANTES que el analisis (y antes de la purga de
+            # telemetria de las 04:35, que es de donde saca las senales duras):
+            # consolidar sin veredictos seria volver a aprender de "termino sin
+            # colgarse", que es justo el fallo que cierra doc 41.
+            _sched.add_cron_job(run_nightly_judging, hour=4, minute=20,
+                                id="learner_nightly_judging")
             _sched.add_cron_job(run_nightly_analysis, hour=4, minute=45,
                                 id="learner_nightly_analysis")
         except Exception as e:

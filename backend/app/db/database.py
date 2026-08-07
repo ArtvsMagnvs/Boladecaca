@@ -693,6 +693,19 @@ class OrchestratorTrace(Base):
     # Referencias planas indexadas, SIN ForeignKey (mismo criterio del proyecto).
     run_id = Column(String(36), index=True)
     parent_trace_id = Column(String(36), index=True)
+    # V1.1 (LC1, doc 41): las dos columnas que el JUEZ del Learner necesita y que
+    # no se podían deducir después.
+    #  - `session_id`: la conversación del chat de la que nació la misión (el
+    #    `session_id` de R6.5b). Sin él no hay forma de leer "el DESPUÉS" — qué
+    #    dijo el usuario justo después —, que es la señal más informativa para
+    #    saber si una misión SIRVIÓ (doc 41 §3.2 señal 7). Nulo cuando la misión
+    #    no nace del chat (automatización, WPMS): ahí no hay después que leer.
+    #  - `origin`: si esto es trabajo REAL del usuario o corpus de PRUEBAS
+    #    (doc 41 §6). Se decide en el momento de crear la misión, porque la marca
+    #    de prueba es del entorno que la lanza y de madrugada ya no existe. El
+    #    Learner solo aprende de `user`.
+    session_id = Column(String(64), index=True)
+    origin = Column(String(16), index=True, default="user")
     created_at = Column(DateTime, default=datetime.utcnow, index=True)
     updated_at = Column(DateTime, default=datetime.utcnow)
 

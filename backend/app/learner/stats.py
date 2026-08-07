@@ -297,6 +297,51 @@ def aggregate_from_timeline(timeline: dict, *, mission_ok: bool,
     return escritos
 
 
+def apply_verdict(mission_id: str, *, served: bool, was_ok: bool) -> int:
+    """[V1.1 LC2, doc 41 §7] Corrige `missions_ok` cuando el juez discrepa.
+
+    POR QUÉ HACE FALTA UNA CORRECCIÓN Y NO UN CÁLCULO: los contadores se
+    escriben en cuanto la misión termina —deterministas, baratos, sin esperar a
+    nadie— y el veredicto llega minutos después, porque el juez espera a que
+    exista "el después" (doc 41 §3.4). Recalcular en el momento sería imposible;
+    ajustar cuando llega la verdad, no.
+
+    El ajuste es de UN campo y solo si el veredicto contradice lo que se contó:
+    la nota de un modelo pasa a medir "¿cuántas de sus misiones SIRVIERON?" en
+    vez de "¿cuántas terminaron?". `missions` (el denominador) no se toca: la
+    misión ocurrió igual.
+
+    Devuelve cuántas filas ajustó."""
+    if served == was_ok:
+        return 0                     # el juez confirma lo que ya se contó
+
+    from app.telemetry import mission_timeline
+
+    resumen = (mission_timeline(mission_id) or {}).get("summary") or {}
+    delta = 1 if served else -1
+    tocadas = 0
+    with SessionLocal() as s:
+        for key in (resumen.get("llm_by_model") or {}):
+            provider, model = split_model_key(str(key))
+            if model in ("?", ""):
+                continue
+            fila = (s.query(ModelStat)
+                    .filter(ModelStat.capability == "mission",
+                            ModelStat.provider == provider,
+                            ModelStat.model == model).first())
+            if fila is None:
+                continue
+            # Nunca por debajo de 0 ni por encima del total: un contador
+            # incoherente es peor que uno impreciso.
+            nuevo = int(fila.missions_ok or 0) + delta
+            fila.missions_ok = max(0, min(nuevo, int(fila.missions or 0)))
+            fila.updated_at = datetime.utcnow()
+            tocadas += 1
+        if tocadas:
+            s.commit()
+    return tocadas
+
+
 async def record_mission(mission_id: str, *, ok: bool) -> dict:
     """Agrega la misión `mission_id` (async: la BD va por to_thread).
 

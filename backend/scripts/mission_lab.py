@@ -165,10 +165,45 @@ def _compare_and_save_baseline(path: str, results: list[dict]) -> None:
     print(f"  (baseline actualizada en {p})")
 
 
+def _marca_corpus_de_pruebas(activa: bool) -> None:
+    """[V1.1 LC1, doc 41 §6] Avisa al backend de que lo que viene AHORA es una
+    prueba, no trabajo real del usuario.
+
+    Sin esto, el Learner acabaría proponiendo como procedimientos fijos las
+    misiones de esta misma batería — que es literalmente lo que pasó y lo que
+    abre el post-mortem del doc 41.
+
+    Va por la tabla `Config` y no por variable de entorno a propósito: este
+    script dirige el backend DESDE FUERA por HTTP, así que su entorno no llega
+    al proceso que crea las misiones. La marca se pone al empezar y se quita al
+    acabar, pase lo que pase."""
+    try:
+        sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+        from app.core import corpus
+        from app.db.database import Config, SessionLocal
+
+        with SessionLocal() as s:
+            fila = s.query(Config).filter(Config.key == corpus.CONFIG_FLAG).first()
+            if activa:
+                if fila is None:
+                    s.add(Config(key=corpus.CONFIG_FLAG, value="test"))
+                else:
+                    fila.value = "test"
+            elif fila is not None:
+                s.delete(fila)
+            s.commit()
+        corpus.reset_cache()
+        print("  (corpus de pruebas: " + ("MARCADO" if activa else "liberado") + ")")
+    except Exception as e:
+        print(f"  ⚠ no se pudo {'poner' if activa else 'quitar'} la marca de "
+              f"corpus de pruebas ({e!r}) — revísalo antes de fiarte del Learner")
+
+
 async def main(only: set[str] | None, baseline: str | None = None) -> None:
     Path(LAB).mkdir(parents=True, exist_ok=True)
     scenarios = [s for s in SCENARIOS if only is None or s[0] in only]
     print(f"═══ Aithera Mission Lab — {len(scenarios)} escenarios → {LAB} ═══")
+    _marca_corpus_de_pruebas(True)
     results = []
     async with httpx.AsyncClient() as client:
         # Salud primero: sin backend no hay lab.
@@ -224,4 +259,13 @@ if __name__ == "__main__":
         for tag, name, prompt in SCENARIOS:
             print(f"[{tag}] {name}: {prompt[:90]}…")
         sys.exit(0)
-    asyncio.run(main(set(args.only.split(",")) if args.only else None, baseline=args.baseline))
+    # El `finally` cubre los tres caminos por los que esto puede acabar: salida
+    # normal, `sys.exit(1)` por presupuesto y una excepción. La marca de corpus
+    # de pruebas NUNCA puede quedarse puesta: si se quedara, el trabajo real del
+    # usuario a partir de ese momento se archivaría como prueba y el Learner
+    # dejaría de aprender en silencio.
+    try:
+        asyncio.run(main(set(args.only.split(",")) if args.only else None,
+                         baseline=args.baseline))
+    finally:
+        _marca_corpus_de_pruebas(False)

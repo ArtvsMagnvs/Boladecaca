@@ -196,6 +196,60 @@ class FailureStat(Base):
     updated_at = Column(DateTime, nullable=False, default=datetime.utcnow)
 
 
+class MissionVerdict(Base):
+    """[V1.1 LC1, doc 41 §3] EL VEREDICTO: ¿esta misión le SIRVIÓ al usuario?
+
+    LA TABLA QUE FALTABA, y su ausencia es la causa raíz nº 1 del post-mortem
+    (doc 41 §0). Hasta hoy el aprendizaje usaba `orchestrator_traces.state` como
+    señal de éxito, y ese campo significa otra cosa: "la maquinaria terminó sin
+    colgarse". Incluye rechazos honestos del planner, rendiciones con texto y
+    "HOLA". Con ese criterio, el Learner acabó proponiendo como procedimientos
+    fijos ocho intentos FALLIDOS del mismo encargo.
+
+    Lo escribe un JUEZ (capacidad LEARN) que NO es el modelo que ejecutó la
+    misión, mirando las señales duras y lo que el usuario hizo DESPUÉS. Es la
+    única fuente de "sirvió" del sistema: a partir de LC2, la escalera de
+    confianza solo acepta evidencia respaldada por una fila de esta tabla.
+
+    `superseded_by` porque re-juzgar es legítimo (el usuario puede discrepar,
+    LC3): un veredicto nuevo no borra el viejo, lo sustituye dejando la
+    historia — mismo criterio que el linaje de las skills."""
+
+    __tablename__ = "mission_verdicts"
+
+    id = Column(String(64), primary_key=True)               # UUID
+    mission_id = Column(String(64), nullable=False, index=True)
+    trace_id = Column(String(64), nullable=True, index=True)
+
+    # De dónde salió la misión. `test`/`campaign`/`e2e` NO alimentan el
+    # aprendizaje: ningún sistema serio aprende de su propio banco de pruebas.
+    origin = Column(String(16), nullable=False, default="user", index=True)
+
+    # served | partial | failed | unclear  (taxonomía cerrada, append-only)
+    verdict = Column(String(16), nullable=False, index=True)
+    confidence = Column(Float, nullable=False, default=0.0)
+    reasons = Column(Text, nullable=False, default="")      # 2-4 frases del juez
+
+    # Qué señales CITÓ el juez para sostener su veredicto. Sin esto no se puede
+    # comprobar si se lo inventó — y un juicio incomprobable no es un juicio
+    # (misma disciplina que el grounding del responder).
+    evidence = Column(JSON, nullable=False, default=list)
+    # El paquete completo que se le dio, para poder auditar a posteriori con
+    # qué información juzgó (y re-juzgar con lo mismo si hiciera falta).
+    signals = Column(JSON, nullable=False, default=dict)
+
+    # {type, content, related_skill_id} — la lección, si la hay (LC2 la usa).
+    lesson = Column(JSON, nullable=True)
+
+    judge_model = Column(String(160), nullable=True)        # "provider:model"
+    # True si no había ningún juez apto DISTINTO de los modelos que ejecutaron.
+    # Se juzga igual, pero marcado: nunca en silencio.
+    judge_bias = Column(Boolean, nullable=False, default=False)
+
+    superseded_by = Column(String(64), nullable=True)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow, index=True)
+
+
 class LearnerProposal(Base):
     """La cuarentena (doc 15 §3) para el aprendizaje NO-skill: preferencias
     observadas, pins, propuestas de regla, operaciones de evolución de skills

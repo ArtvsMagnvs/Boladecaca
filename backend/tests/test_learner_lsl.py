@@ -58,7 +58,15 @@ def _skill(**kw) -> LocalSkill:
     return LocalSkill(**base)
 
 
-def _ev(kind="execution_ok", ctx=None):
+def _ev(kind="judged_success", ctx=None):
+    """[V1.1 LC2] El default pasa de `execution_ok` a `judged_success`.
+
+    No es un ajuste cosmético del test: es el cambio de criterio de doc 41.
+    `execution_ok` significaba "la máquina terminó sin colgarse" y con eso el
+    Learner llegó a proponer como procedimiento ocho intentos fallidos;
+    `judged_success` es el veredicto de un juez independiente sobre si la
+    misión SIRVIÓ. Lo que estos tests comprueban (rachas, umbrales, rutas de
+    riesgo) no cambia — cambia qué cuenta como evidencia."""
     return {"kind": kind, "context_key": ctx or str(uuid.uuid4()), "payload": {}}
 
 
@@ -70,7 +78,10 @@ class TestEscalera:
         """Anti-contaminación (doc 15 §3.3): 'el LLM dijo que salió bien' NO es
         evidencia — solo cuentan señales verificables desde fuera del modelo."""
         assert not ladder.is_valid_evidence({"kind": "llm_self_report", "context_key": "m1"})
-        assert not ladder.is_valid_evidence({"kind": "execution_ok"})          # sin contexto
+        assert not ladder.is_valid_evidence({"kind": "judged_success"})       # sin contexto
+        # [LC2] Y lo del criterio viejo se admite (es historia) pero no empuja:
+        assert ladder.is_valid_evidence(_ev(kind="execution_ok"))
+        assert not ladder.counts_for_promotion(_ev(kind="execution_ok"))
         assert not ladder.is_valid_evidence("no soy un dict")
         assert ladder.is_valid_evidence(_ev())
 

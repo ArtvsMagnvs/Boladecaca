@@ -94,6 +94,58 @@ class TestLaMigracionCubreElModelo:
 
 
 # ===========================================================================
+# 1b — El GRAFO de migraciones está sano (V1.1 LC1, 2026-08-07)
+# ===========================================================================
+class TestElGrafoDeMigraciones:
+    """Un incidente distinto del desfase modelo/BD, y de la misma familia:
+    Alembic identifica cada revisión por su ID, así que dos archivos con el
+    mismo id rompen el grafo entero ("Multiple revisions with id") y `upgrade
+    head` deja de funcionar — no una tabla, TODO.
+
+    Pasó de verdad al escribir LC1: se eligieron ids "bonitos" (`d1e2f3a4b5c6`,
+    `f1a2b3c4d5e6`) que ya estaban cogidos. Con 36 migraciones ese espacio de
+    nombres se agota, y a ojo no se ve. Estos dos tests lo ven."""
+
+    def _revisiones(self):
+        revs, downs = {}, {}
+        for p in _MIGRACIONES.glob("*.py"):
+            texto = p.read_text(encoding="utf-8")
+            r = re.search(r'^revision(?::\s*str)?\s*=\s*["\']([0-9a-zA-Z_]+)["\']',
+                          texto, re.M)
+            d = re.search(r'^down_revision[^=\n]*=\s*(["\']([0-9a-zA-Z_]+)["\']|None)',
+                          texto, re.M)
+            if not r:
+                continue
+            revs.setdefault(r.group(1), []).append(p.name)
+            downs[r.group(1)] = d.group(2) if (d and d.group(2)) else None
+        return revs, downs
+
+    def test_ningun_id_de_revision_esta_repetido(self):
+        revs, _ = self._revisiones()
+        repetidas = {k: v for k, v in revs.items() if len(v) > 1}
+        assert not repetidas, (
+            f"ids de revisión duplicados: {repetidas}. Alembic falla al arrancar "
+            "con 'Multiple revisions with id' y NINGUNA migración se aplica.")
+
+    def test_hay_exactamente_un_head_y_la_cadena_no_deja_a_nadie_fuera(self):
+        """Dos heads = una rama; una migración fuera de la cadena = nunca se
+        aplica. Las dos cosas se ven igual desde fuera: 'no pasó nada'."""
+        revs, downs = self._revisiones()
+        hijos = {v for v in downs.values() if v}
+        heads = [k for k in revs if k not in hijos]
+        assert len(heads) == 1, f"se esperaba UN head, hay {len(heads)}: {heads}"
+
+        h, cadena, vistos = heads[0], 0, set()
+        while h and h not in vistos:
+            vistos.add(h)
+            cadena += 1
+            h = downs.get(h)
+        assert cadena == len(revs), (
+            f"la cadena recorre {cadena} de {len(revs)} migraciones: hay alguna "
+            f"colgando fuera del camino desde el head.")
+
+
+# ===========================================================================
 # 2 — El arranque DETECTA el desfase (para que el síntoma sea legible)
 # ===========================================================================
 class TestDeteccionDeDesfase:

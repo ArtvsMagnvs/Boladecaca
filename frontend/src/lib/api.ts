@@ -1813,7 +1813,34 @@ export const api = {
       "/learner/analyze",
       { method: "POST" },
     ),
+
+  // --- Learner: veredictos y re-juicio (V1.1 LC3) ---
+  getMissionVerdicts: (missionIds: string[]) =>
+    request<{ verdicts: Record<string, MissionVerdict | null> }>(
+      `/learner/verdicts?mission_ids=${encodeURIComponent(missionIds.join(","))}`,
+    ),
+  getMissionVerdict: (missionId: string) =>
+    request<{ verdict: MissionVerdict | null; history: MissionVerdict[] }>(
+      `/learner/verdicts/${missionId}`,
+    ),
+  rejudgeMission: (missionId: string) =>
+    request<{ ok: boolean; verdict: MissionVerdict | null }>(
+      `/learner/verdicts/${missionId}/rejudge`,
+      { method: "POST" },
+    ),
 };
+
+/** [V1.1 LC3] La comparación real entre la versión actual de una skill y la
+ * propuesta — texto contra texto, la prueba de que hay mejora, no una promesa. */
+export interface SkillComparison {
+  improved: boolean;
+  confidence: number;
+  verdict: string;
+  per_task: Array<{ task?: string; better: "before" | "after" | "tie" | null; why: string }>;
+  samples: Array<{ task: string; before: string; after: string }>;
+  judge_model?: string | null;
+  candidate_models: string[];
+}
 
 /** [V1.1 L4] Una propuesta del Learner, ya en lenguaje llano desde el backend. */
 export interface LearnerProposal {
@@ -1836,6 +1863,16 @@ export interface LearnerProposal {
   tools: string[];
   decision_note?: string | null;
   decided_at?: string | null;
+  // [LC3] "skill_new": qué hace la skill y por qué se considera buena.
+  description?: string | null;
+  grounded?: boolean | null;
+  grounding_note?: string | null;
+  // [LC3] "skill_improve": la comparación es la prueba, no una promesa.
+  skill_id?: string | null;
+  change?: string | null;
+  current_description?: string | null;
+  verified?: boolean | null;
+  comparison?: SkillComparison | null;
 }
 
 export interface LearnerProposals {
@@ -1872,6 +1909,33 @@ export interface LearnerHealth {
   }>;
   tools: Array<{ tool: string; calls: number; fails: number; error_rate: number }>;
   report: { headline?: string; findings?: Array<{ title: string; why: string }> };
+  /** [LC3] Cómo de fiable ha sido el juez — nunca una nota inventada, solo lo
+   * que el propio historial de re-juicios y sesgo puede probar. */
+  calibration: {
+    total_verdicts: number;
+    biased_verdicts: number;
+    bias_rate: number;
+    rejudged: number;
+    rejudge_changed_verdict: number;
+    rejudge_confirmed: number;
+  };
+}
+
+/** [V1.1 LC3] El veredicto de una misión, en lenguaje llano. */
+export interface MissionVerdict {
+  id: string;
+  verdict: "served" | "partial" | "failed" | "unclear";
+  verdict_label: string;
+  verdict_explanation: string;
+  confidence: number;
+  reasons: string;
+  evidence: string[];
+  lesson: { type: string; content: string; related_skill_id?: string | null } | null;
+  origin: string;
+  judge_model: string | null;
+  judge_bias: boolean;
+  superseded_by: string | null;
+  created_at: string | null;
 }
 
 export interface LearnerSkill {

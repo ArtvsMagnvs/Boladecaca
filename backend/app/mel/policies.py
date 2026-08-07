@@ -15,7 +15,7 @@ from typing import Optional
 
 from app.core.logging_config import get_system_logger
 from app.mel.capabilities import is_smart
-from app.mel.catalog import cost_of, supports_vision, unfit_for
+from app.mel.catalog import cost_of, supports_learn, supports_vision, unfit_for
 # [E1b, doc 19 §5.4.3] el compilador usa el score EFECTIVO (catálogo curado
 # desplazado por el auto-catálogo investigado), no el catálogo puro — research.py
 # hace de wrapper de catalog.score_of() y no importa policies.py (sin ciclo).
@@ -83,6 +83,15 @@ def is_capable(r: ModelRef, cap: Capability) -> bool:
     # aparte precisamente porque este es el punto único: heredamos gratis las
     # tres capas (compilación, filtro retroactivo en ejecución, y la UI).
     if cap is Capability.VISION and not supports_vision(r.provider, r.model):
+        return False
+    # [LC1, doc 41 §2] Mismo fail-closed para el APRENDIZAJE, y por el mismo
+    # motivo estructural: aquí también hay un modo de fallo silencioso. Un
+    # modelo que no sabe juzgar con evidencia no "juzga peor" — dice que todo
+    # salió bien, que es exactamente el bucle de autocomplacencia que el
+    # rediseño existe para evitar. Va en el punto ÚNICO de aptitud para
+    # heredar gratis las tres capas (compilación, filtro retroactivo en
+    # ejecución y UI), como se hizo con la visión.
+    if cap is Capability.LEARN and not supports_learn(r.provider, r.model):
         return False
     from app.mel import benchmark
     return cap.value not in benchmark.measured_unfit(r)

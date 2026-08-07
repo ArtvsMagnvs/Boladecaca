@@ -15,7 +15,9 @@ from pydantic import BaseModel
 
 from app.core.logging_config import get_system_logger
 from app.learner import (
+    calibration_summary,
     failure_summary,
+    judge_mission,
     last_report,
     model_ranking,
     proposal_service,
@@ -23,6 +25,8 @@ from app.learner import (
     run_nightly_analysis,
     skill_library,
     tool_ranking,
+    verdict_history,
+    verdict_of,
 )
 
 logger = get_system_logger("api.learner")
@@ -31,6 +35,36 @@ router = APIRouter(prefix="/learner", tags=["learner"])
 
 class DecisionIn(BaseModel):
     note: str = ""
+
+
+# [LC3] Cómo se le dice a una persona cada veredicto — el `verdict` técnico
+# (served/partial/failed/unclear) no sale nunca a la UI tal cual.
+_VEREDICTOS = {
+    "served": ("Sirvió", "Le sirvió al usuario, y hay con qué sostenerlo."),
+    "partial": ("Sirvió en parte", "Algo útil salió, pero no todo lo pedido."),
+    "failed": ("No sirvió", "No consiguió lo que se pedía."),
+    "unclear": ("No está claro", "No hay suficiente para saberlo con certeza — "
+                                 "una respuesta legítima, no un fallo del juez."),
+}
+
+
+def _veredicto_out(v: dict) -> dict:
+    etiqueta, explicacion = _VEREDICTOS.get(v.get("verdict", ""), (v.get("verdict"), ""))
+    return {
+        "id": v.get("id"),
+        "verdict": v.get("verdict"),
+        "verdict_label": etiqueta,
+        "verdict_explanation": explicacion,
+        "confidence": v.get("confidence"),
+        "reasons": v.get("reasons"),
+        "evidence": v.get("evidence") or [],
+        "lesson": v.get("lesson"),
+        "origin": v.get("origin"),
+        "judge_model": v.get("judge_model"),
+        "judge_bias": bool(v.get("judge_bias")),
+        "superseded_by": v.get("superseded_by"),
+        "created_at": v.get("created_at"),
+    }
 
 
 # Cómo se llama cada tipo de propuesta cuando se lo cuentas a una persona. El
@@ -81,6 +115,20 @@ def _propuesta_out(p: dict) -> dict:
         "settings_tab": payload.get("settings_tab"),
         "steps": (payload.get("definition") or {}).get("steps") or [],
         "tools": payload.get("tools") or [],
+        # [LC3] "skill_new": qué hace la skill y por qué se considera buena —
+        # sin esto no hay forma de decidir "Aceptar" salvo creerse el título.
+        "description": payload.get("description"),
+        "grounded": payload.get("grounded"),
+        "grounding_note": payload.get("grounding_note"),
+        # [LC3] "skill_improve": la comparación es la prueba, no una promesa.
+        # `verified=None` (kind distinto de skill_improve) no significa nada;
+        # `verified=False` con `comparison=None` significa "no se pudo
+        # comprobar" — el usuario decide con eso delante, nunca a ciegas.
+        "skill_id": payload.get("skill_id"),
+        "change": payload.get("change"),
+        "current_description": payload.get("current_description"),
+        "verified": payload.get("verified") if kind == "skill_improve" else None,
+        "comparison": payload.get("comparison") if kind == "skill_improve" else None,
     }
 
 
@@ -178,7 +226,45 @@ async def health(min_count: int = Query(1, ge=1)) -> dict:
         "models": model_ranking(min_missions=2)[:6],
         "tools": [t for t in tool_ranking(min_calls=2) if t["error_rate"] > 0][:6],
         "report": last_report() or {},
+        # [LC3] Cómo de fiable ha sido el JUEZ — nunca una nota inventada,
+        # solo lo que el propio historial de re-juicios/sesgo puede probar.
+        "calibration": calibration_summary(),
     }
+
+
+@router.get("/verdicts")
+async def verdicts_bulk(mission_ids: str = Query(..., min_length=1)) -> dict:
+    """El veredicto vigente de varias misiones de una vez — para pintar el
+    chip de Mission Control sin una llamada por fila."""
+    ids = [m.strip() for m in mission_ids.split(",") if m.strip()][:200]
+    return {"verdicts": {mid: (_veredicto_out(v) if (v := verdict_of(mid)) else None)
+                         for mid in ids}}
+
+
+@router.get("/verdicts/{mission_id}")
+async def verdict_detail(mission_id: str) -> dict:
+    """El veredicto vigente de una misión, con las razones del juez, y su
+    historia completa si se re-juzgó alguna vez (nunca se borra, doc 41 §8)."""
+    hist = verdict_history(mission_id)
+    if not hist:
+        return {"verdict": None, "history": []}
+    vigente = next((h for h in reversed(hist) if not h.get("superseded_by")), hist[-1])
+    return {"verdict": _veredicto_out(vigente), "history": [_veredicto_out(h) for h in hist]}
+
+
+@router.post("/verdicts/{mission_id}/rejudge")
+async def rejudge(mission_id: str) -> dict:
+    """El usuario discrepa con el veredicto. Se vuelve a juzgar — el anterior
+    NUNCA se borra, se enlaza como sustituido (`superseded_by`), así que la
+    discrepancia queda registrada y alimenta la calibración (pestaña Salud)."""
+    vid = await judge_mission(mission_id, force=True)
+    if vid is None:
+        raise HTTPException(status_code=409,
+                            detail="No se ha podido re-juzgar esta misión ahora mismo "
+                                   "(el juez no respondió a tiempo). Prueba de nuevo.")
+    hist = verdict_history(mission_id)
+    vigente = next((h for h in reversed(hist) if not h.get("superseded_by")), None)
+    return {"ok": True, "verdict": _veredicto_out(vigente) if vigente else None}
 
 
 @router.get("/history")

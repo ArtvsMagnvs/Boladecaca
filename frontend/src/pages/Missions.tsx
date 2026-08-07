@@ -14,7 +14,15 @@ import { usePolling } from "@/hooks/usePolling";
 import { useConfirm } from "@/components/ConfirmDialog";
 import { useT } from "@/store/useI18n";
 
-import { api, type Approval, type Mission, type MissionDetail, type NodeState, type TaskNode } from "@/lib/api";
+import {
+  api,
+  type Approval,
+  type Mission,
+  type MissionDetail,
+  type MissionVerdict,
+  type NodeState,
+  type TaskNode,
+} from "@/lib/api";
 import { MiniMarkdown } from "@/lib/miniMarkdown";
 import { UserQuestionCard } from "@/components/UserQuestionCard";
 import { usePendingQuestions } from "@/hooks/usePendingQuestions";
@@ -45,6 +53,17 @@ const NODE_KEY: Record<NodeState, string> = {
   failed: "missions.node.failed",
   skipped: "missions.node.skipped",
   cancelled: "missions.node.cancelled",
+};
+
+// [V1.1 LC3] El chip de veredicto — "¿le sirvió?" en lenguaje llano. El
+// texto lo pone el backend (`verdict_label`, mismo patrón que el resto del
+// Learner: doc 41 lo traduce ahí, aquí solo se pinta); el tono es lo único
+// que decide este archivo.
+const VERDICT_STYLE: Record<string, string> = {
+  served: "bg-signal-ok/15 text-signal-ok border-signal-ok/30",
+  partial: "bg-signal-warn/15 text-signal-warn border-signal-warn/30",
+  failed: "bg-signal-error/15 text-signal-error border-signal-error/30",
+  unclear: "bg-base-700 text-ink-dim border-base-600",
 };
 
 const NODE_DOT: Record<NodeState, string> = {
@@ -81,6 +100,14 @@ export default function Missions() {
   // solo existía panel para resolverlo en el Chat. Se correlaciona con la
   // misión seleccionada por `mission_id` (S7·S8-2/3).
   const [toolGate, setToolGate] = useState<Approval | null>(null);
+  // [V1.1 LC3] El veredicto — chip por misión (lista) y el detalle completo
+  // (razones + historia) de la seleccionada, con re-juicio manual.
+  const [verdicts, setVerdicts] = useState<Record<string, MissionVerdict | null>>({});
+  const [verdictDetail, setVerdictDetail] = useState<{
+    verdict: MissionVerdict | null;
+    history: MissionVerdict[];
+  } | null>(null);
+  const [showVerdictReasons, setShowVerdictReasons] = useState(false);
   const selectedRef = useRef<string | null>(null);
   selectedRef.current = selected;
   // [2026-08-02] Preguntas al usuario de ESTA misión (a diferencia del Chat,
@@ -92,6 +119,15 @@ export default function Missions() {
     try {
       const list = await api.getMissions();
       setMissions(list);
+      // [LC3] El chip de la lista — una llamada en bloque, no una por fila.
+      if (list.length) {
+        api
+          .getMissionVerdicts(list.map((m) => m.mission_id))
+          .then((r) => setVerdicts(r.verdicts))
+          .catch(() => undefined);
+      } else {
+        setVerdicts({});
+      }
       const sel = selectedRef.current;
       let currentDetail: MissionDetail | null = null;
       if (sel) {
@@ -128,6 +164,19 @@ export default function Missions() {
       } else {
         setToolGate(null);
       }
+      // [LC3] El detalle del veredicto (razones + historia) — solo tiene
+      // sentido para una misión ya terminada; una en curso no puede tener
+      // veredicto todavía (`judge_mission` exige un trace en done/failed/
+      // cancelled). Se recarga en cada `load()` para que el re-juicio se
+      // refleje sin un fetch aparte.
+      if (currentDetail && !isLive(currentDetail.state)) {
+        api
+          .getMissionVerdict(currentDetail.mission_id)
+          .then(setVerdictDetail)
+          .catch(() => setVerdictDetail(null));
+      } else {
+        setVerdictDetail(null);
+      }
       setError(null);
     } catch (e) {
       setError(e instanceof Error ? e.message : t("missions.loadError"));
@@ -150,6 +199,8 @@ export default function Missions() {
     if (!selected) return;
     setExpandedNodes(new Set());
     setToolGate(null);
+    setVerdictDetail(null);
+    setShowVerdictReasons(false);
     api.getMission(selected).then(setDetail).catch(() => undefined);
   }, [selected]);
 
@@ -271,10 +322,25 @@ export default function Missions() {
                   </button>
                 )}
                 <div className="flex items-center justify-between gap-2 mb-1 pr-5">
-                  <span className={`text-[10px] px-2 py-0.5 rounded border ${STATE_STYLE[m.state] ?? ""}`}>
-                    {STATE_KEY[m.state] ? t(STATE_KEY[m.state]) : m.state}
-                  </span>
-                  <span className="text-[10px] text-ink-faint">
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    <span className={`text-[10px] px-2 py-0.5 rounded border shrink-0 ${STATE_STYLE[m.state] ?? ""}`}>
+                      {STATE_KEY[m.state] ? t(STATE_KEY[m.state]) : m.state}
+                    </span>
+                    {/* [LC3] El veredicto — "¿le sirvió?" a simple vista, sin
+                        tener que abrir la misión. `null` = todavía sin juzgar
+                        (normal en una recién terminada): no se dice nada. */}
+                    {verdicts[m.mission_id] && (
+                      <span
+                        title={verdicts[m.mission_id]!.reasons}
+                        className={`text-[10px] px-1.5 py-0.5 rounded border shrink-0 truncate ${
+                          VERDICT_STYLE[verdicts[m.mission_id]!.verdict] ?? ""
+                        }`}
+                      >
+                        {verdicts[m.mission_id]!.verdict_label}
+                      </span>
+                    )}
+                  </div>
+                  <span className="text-[10px] text-ink-faint shrink-0">
                     {m.node_count > 0 ? t("missions.steps", { n: m.node_count }) : t("missions.direct")}
                   </span>
                 </div>
@@ -324,6 +390,78 @@ export default function Missions() {
                   </p>
                 )}
               </div>
+
+              {/* [V1.1 LC3] El veredicto — solo tiene sentido para una misión
+                  ya terminada; una en curso todavía no puede tener uno. Re-
+                  juzgar es el mismo botón que juzgar por primera vez cuando
+                  el juez de fondo aún no ha llegado (nace con retardo a
+                  propósito, doc 41 §3.4). */}
+              {!isLive(detail.state) && (
+                <div className="glass-surface rounded-2xl p-5">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <h3 className="text-sm font-medium text-ink">{t("missions.verdict.title")}</h3>
+                      {verdictDetail?.verdict ? (
+                        <div className="flex flex-wrap items-center gap-2 mt-2">
+                          <span
+                            className={`text-xs px-2 py-1 rounded border ${
+                              VERDICT_STYLE[verdictDetail.verdict.verdict] ?? ""
+                            }`}
+                          >
+                            {verdictDetail.verdict.verdict_label}
+                          </span>
+                          <span className="text-[10px] text-ink-faint">
+                            {t("missions.verdict.confidence", {
+                              pct: Math.round(verdictDetail.verdict.confidence * 100),
+                            })}
+                          </span>
+                          {verdictDetail.verdict.judge_bias && (
+                            <span
+                              className="text-[10px] text-signal-warn"
+                              title={t("missions.verdict.biasHint")}
+                            >
+                              ⚠ {t("missions.verdict.biased")}
+                            </span>
+                          )}
+                        </div>
+                      ) : (
+                        <p className="text-xs text-ink-faint mt-2">{t("missions.verdict.none")}</p>
+                      )}
+                    </div>
+                    <button
+                      onClick={() => act(() => api.rejudgeMission(detail.mission_id))}
+                      disabled={busy}
+                      className="shrink-0 text-xs px-3 py-1.5 rounded-lg bg-base-700/60 text-ink-dim border border-base-600 hover:bg-base-700 disabled:opacity-50"
+                    >
+                      {verdictDetail?.verdict ? t("missions.verdict.rejudge") : t("missions.verdict.judgeNow")}
+                    </button>
+                  </div>
+
+                  {verdictDetail?.verdict && (
+                    <>
+                      <p className="text-xs text-ink-dim mt-3">
+                        {verdictDetail.verdict.verdict_explanation}
+                      </p>
+                      <button
+                        onClick={() => setShowVerdictReasons((v) => !v)}
+                        className="text-[10px] text-accent hover:underline mt-2"
+                      >
+                        {showVerdictReasons ? t("missions.verdict.hideReasons") : t("missions.verdict.showReasons")}
+                      </button>
+                      {showVerdictReasons && (
+                        <p className="text-[11px] text-ink-dim mt-2 bg-base-900/60 rounded-lg p-2.5 border border-base-700/50">
+                          {verdictDetail.verdict.reasons}
+                        </p>
+                      )}
+                      {verdictDetail.history.length > 1 && (
+                        <p className="text-[10px] text-ink-faint mt-2">
+                          {t("missions.verdict.rejudgedCount", { n: verdictDetail.history.length - 1 })}
+                        </p>
+                      )}
+                    </>
+                  )}
+                </div>
+              )}
 
               {/* Aprobación del plan — nada se ha ejecutado todavía */}
               {awaitingPlan && (

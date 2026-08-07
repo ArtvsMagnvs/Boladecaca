@@ -168,6 +168,22 @@ class SkillLibrary(ISkillStore):
                 return skills
         return await asyncio.to_thread(_work)
 
+    def list_compact(self, limit: int = 40) -> list[dict]:
+        """[LC2] El catálogo en tres campos, SÍNCRONO y barato — para meterlo en
+        un prompt: qué skills existen ya, con qué id y para qué sirven.
+
+        Existe aparte de `list()` a propósito: `list()` reconstruye
+        `LocalSkill` completos (definición, métricas, linaje) y es async; lo
+        que un prompt necesita es una lista corta que quepa. Se excluyen las
+        deprecadas — ofrecerle al juez skills retiradas solo puede llevarle a
+        proponer mejoras sobre algo que ya nadie usa."""
+        with SessionLocal() as s:
+            filas = (s.query(Skill)
+                     .filter(Skill.status != SkillStatus.DEPRECATED.value)
+                     .order_by(Skill.created_at.desc()).limit(limit).all())
+            return [{"id": r.id, "name": r.name,
+                     "description": (r.description or "")} for r in filas]
+
     async def search(self, query: str, top_k: int = 5) -> list[LocalSkill]:
         """Semántica sobre el espejo; las filas AUTORITATIVAS se releen de SQL
         (el espejo puede ir por detrás en status/metricas). Sin ChromaDB,

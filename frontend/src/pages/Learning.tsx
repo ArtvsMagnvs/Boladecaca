@@ -224,13 +224,131 @@ export default function Learning() {
                           {p.risk_label}
                         </span>
                       )}
+                      {/* [LC3] La comparación es la prueba de que hay mejora —
+                          se dice a la primera lectura si esa prueba existe o no,
+                          nunca escondido detrás de un clic. */}
+                      {p.kind === "skill_improve" && p.verified === true && (
+                        <span className="rounded-full border border-signal-ok/30 bg-signal-ok/10 px-2 py-0.5 text-[10px] text-signal-ok">
+                          {t("learning.improve.verified")}
+                        </span>
+                      )}
+                      {p.kind === "skill_improve" && p.verified === false && (
+                        <span className="rounded-full border border-signal-warn/30 bg-signal-warn/10 px-2 py-0.5 text-[10px] text-signal-warn">
+                          {t("learning.improve.unverified")}
+                        </span>
+                      )}
                     </div>
                     <h3 className="mt-1 truncate text-sm font-medium text-ink">
                       {p.title}
                     </h3>
                     <p className="mt-1 text-sm text-ink-dim">{p.summary}</p>
+
+                    {/* [LC3] "skill_new" — qué hace la skill, SIEMPRE visible:
+                        no se puede decidir "Aceptar" solo con el título. */}
+                    {p.kind === "skill_new" && p.description && (
+                      <p className="mt-2 rounded-lg bg-base-900/50 p-2.5 text-xs text-ink-dim">
+                        {p.description}
+                      </p>
+                    )}
+
+                    {/* [LC3] "skill_improve" — sobre qué base y qué cambia,
+                        SIEMPRE visible. La comparación en sí va a un clic. */}
+                    {p.kind === "skill_improve" && (
+                      <div className="mt-2 space-y-1 rounded-lg bg-base-900/50 p-2.5 text-xs text-ink-dim">
+                        {p.current_description && (
+                          <p>
+                            <span className="text-ink-faint">
+                              {t("learning.improve.today")}:{" "}
+                            </span>
+                            {p.current_description}
+                          </p>
+                        )}
+                        {p.change && (
+                          <p>
+                            <span className="text-ink-faint">
+                              {t("learning.improve.change")}:{" "}
+                            </span>
+                            {p.change}
+                          </p>
+                        )}
+                      </div>
+                    )}
                   </div>
                 </div>
+
+                {/* [LC3] La comparación completa, a UN CLIC: antes/después por
+                    tarea, veredicto por tarea, y la confianza del juez. */}
+                {p.kind === "skill_improve" && p.comparison && (
+                  <>
+                    <button
+                      onClick={() => toggle(`cmp-${p.id}`)}
+                      className="mt-3 text-xs text-accent hover:underline"
+                    >
+                      {t("learning.improve.seeComparison")}
+                      {open.has(`cmp-${p.id}`) ? " ▴" : " ▾"}
+                    </button>
+                    {open.has(`cmp-${p.id}`) && (
+                      <div className="mt-2 space-y-3 rounded-lg bg-base-900/60 p-3">
+                        <div className="flex items-center justify-between gap-3">
+                          <p
+                            className={`text-xs ${
+                              p.comparison.improved ? "text-signal-ok" : "text-signal-error"
+                            }`}
+                          >
+                            {p.comparison.verdict}
+                          </p>
+                          <span className="shrink-0 text-[10px] text-ink-faint">
+                            {t("learning.improve.confidence", {
+                              pct: String(Math.round(p.comparison.confidence * 100)),
+                            })}
+                          </span>
+                        </div>
+                        {p.comparison.samples.map((s, i) => {
+                          const veredictoTarea = p.comparison!.per_task[i];
+                          return (
+                            <div
+                              key={i}
+                              className="rounded-lg border border-base-700/50 p-2.5"
+                            >
+                              <p className="truncate text-[11px] font-medium text-ink-dim">
+                                {s.task}
+                              </p>
+                              <div className="mt-1.5 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                                <div className="rounded bg-base-950/40 p-2">
+                                  <p className="text-[10px] uppercase tracking-wide text-ink-faint">
+                                    {t("learning.improve.before")}
+                                  </p>
+                                  <p className="mt-0.5 whitespace-pre-wrap text-[11px] text-ink-dim">
+                                    {s.before}
+                                  </p>
+                                </div>
+                                <div className="rounded bg-base-950/40 p-2">
+                                  <p className="text-[10px] uppercase tracking-wide text-ink-faint">
+                                    {t("learning.improve.after")}
+                                  </p>
+                                  <p className="mt-0.5 whitespace-pre-wrap text-[11px] text-ink-dim">
+                                    {s.after}
+                                  </p>
+                                </div>
+                              </div>
+                              {veredictoTarea && (
+                                <p className="mt-1.5 text-[10px] text-ink-faint">
+                                  {t(`learning.improve.better.${veredictoTarea.better ?? "tie"}`)}
+                                  {veredictoTarea.why ? ` — ${veredictoTarea.why}` : ""}
+                                </p>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </>
+                )}
+                {p.kind === "skill_improve" && !p.comparison && p.verified === false && (
+                  <p className="mt-2 text-[11px] text-ink-faint">
+                    {t("learning.improve.noComparison")}
+                  </p>
+                )}
 
                 {/* La evidencia, plegada: la primera lectura es una frase. */}
                 {p.evidence_count > 0 && (
@@ -302,6 +420,59 @@ export default function Learning() {
         {/* ── Salud ────────────────────────────────────────────────── */}
         {tab === "health" && health && (
           <div className="mt-4 space-y-3">
+            {/* [LC3] Cómo de fiable ha sido el JUEZ — nunca una nota inventada,
+                solo lo que el propio historial de re-juicios y sesgo prueba.
+                Sin ningún veredicto todavía no hay nada que calibrar: se
+                calla, no rellena con ceros que no significan nada. */}
+            {health.calibration && health.calibration.total_verdicts > 0 && (
+              <div className="glass-surface rounded-2xl p-4">
+                <h3 className="text-sm font-medium text-ink">
+                  {t("learning.health.calibration")}
+                </h3>
+                <p className="mt-0.5 text-xs text-ink-dim">
+                  {t("learning.health.calibrationHint")}
+                </p>
+                <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
+                  <div>
+                    <p className="text-lg text-ink">
+                      {health.calibration.total_verdicts}
+                    </p>
+                    <p className="text-[10px] text-ink-faint">
+                      {t("learning.health.calibrationTotal")}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-lg text-ink">
+                      {Math.round(health.calibration.bias_rate * 100)}%
+                    </p>
+                    <p className="text-[10px] text-ink-faint">
+                      {t("learning.health.calibrationBiased")}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-lg text-ink">{health.calibration.rejudged}</p>
+                    <p className="text-[10px] text-ink-faint">
+                      {t("learning.health.calibrationRejudged")}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-lg text-ink">
+                      {health.calibration.rejudged > 0
+                        ? `${Math.round(
+                            (health.calibration.rejudge_changed_verdict /
+                              health.calibration.rejudged) *
+                              100,
+                          )}%`
+                        : "—"}
+                    </p>
+                    <p className="text-[10px] text-ink-faint">
+                      {t("learning.health.calibrationChanged")}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {health.total_failures === 0 ? (
               <Empty text={t("learning.empty.health")} />
             ) : (

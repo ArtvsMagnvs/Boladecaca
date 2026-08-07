@@ -297,7 +297,10 @@ async def handle_stream(text: str, *, channel: str = "web", intent: Optional[Int
     yield ("status", _t("status.analyzing"))
     prefetched = await _prefetch_context(text)
 
-    mission = new_mission(goal=intent.goal or text, source="user", channel=channel)
+    # [LC1] `session_id` viaja con la misión: es lo que después permite al juez
+    # del Learner leer qué dijo el usuario tras la respuesta (doc 41 §3.2).
+    mission = new_mission(goal=intent.goal or text, source="user", channel=channel,
+                          session_id=session_id)
     trace_id = tracer.record_start(mission, channel=channel)
     mission.trace_id = trace_id     # [fix mismatch, doc 31] mission.id != trace_id
     tracer.record_intent(trace_id, intent)
@@ -597,6 +600,7 @@ async def submit_mission(
     autonomy: Optional[str] = None,
     model: Optional[str] = None,
     agent_prompt: Optional[str] = None,
+    session_id: Optional[str] = None,
 ) -> Mission:
     """Entrada PROGRAMÁTICA (AE `AgentTaskAction`, WPMS, Orquestador) — ya sabe
     que es una misión, así que NO hay camino corto: siempre planifica y ejecuta.
@@ -620,7 +624,7 @@ async def submit_mission(
     `agent_prompt` [2026-08-02]: el prompt de comportamiento libre del agente
     (`Agent.system_prompt`), mismo criterio y mismo canal que `skills`."""
     mission = new_mission(goal=goal, source=source, channel=channel, project_id=project_id,
-                          run_id=run_id, parent_id=parent_id)
+                          run_id=run_id, parent_id=parent_id, session_id=session_id)
     # [S2, C-1] `intent` opcional (mismo patrón que handle_stream): quien ya
     # clasificó no paga una segunda llamada NI una segunda reescritura. Si se
     # clasifica aquí, `classify` estampa raw_text=goal, así que el planner

@@ -23,6 +23,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import uuid
 from datetime import datetime
 
@@ -38,7 +39,8 @@ from app.learner import (
     run_nightly_analysis,
     skill_library,
 )
-from app.learner.models import FailureStat, LearnerProposal, ModelStat, Skill, SkillEvent, ToolStat
+from app.learner.models import (FailureStat, LearnerProposal, MissionVerdict, ModelStat,
+                                Skill, SkillEvent, ToolStat)
 from app.learner.stats import failure_summary, model_ranking
 from app.telemetry.models import MissionEvent
 from app.tie import tracer
@@ -84,7 +86,8 @@ async def _mundo_limpio(anyio_backend):
     def _borra():
         with SessionLocal() as s:
             for modelo in (SkillEvent, Skill, LearnerProposal, ModelStat,
-                           ToolStat, FailureStat, MissionEvent, OrchestratorTrace):
+                           ToolStat, FailureStat, MissionVerdict, MissionEvent,
+                           OrchestratorTrace):
                 s.query(modelo).delete()
             s.query(Config).filter(Config.key.like("learner.%")).delete()
             s.commit()
@@ -212,60 +215,117 @@ async def _propuestas(kind=None):
     return await proposal_service.pending(kind=kind)
 
 
-async def _repite(goal: str, veces: int = 3, **kw):
-    """El mismo encargo, `veces` días distintos — esperando a que el Learner
-    digiera cada uno antes del siguiente.
+async def _repite(goal: str, veces: int = 3, **kw) -> list:
+    """El mismo encargo, `veces` días distintos. Devuelve las misiones.
 
-    NO es cosmética: el Learner corre en tareas de fondo, y si dos misiones del
-    mismo trabajo terminan a la vez, las dos leen la bandeja antes de que
-    ninguna haya escrito y cada una crea su propuesta. En producción eso es
-    benigno y raro (el análisis nocturno de L3 las reconcilia con `same_work`,
-    y dos personas no piden lo mismo el mismo milisegundo), pero simular un
-    usuario que pregunta tres veces de golpe no sería simular un usuario."""
+    [V1.1 LC2] Ya NO espera a que aparezca una propuesta: desde el rediseño,
+    terminar una misión no abre nada en la bandeja. Repetir un encargo produce
+    misiones; que eso se convierta en algo aprendido depende del JUEZ y de la
+    consolidación — ver `_aprende_de`."""
+    misiones = []
     for i in range(veces):
-        await _mision(goal, **kw)
-        await _espera(lambda n=i + 1: _evidencias("skill_new", n),
-                      que=f"digerir la repetición {i + 1}")
+        misiones.append(await _mision(goal, **kw))
+        await _espera(lambda n=i + 1: _trazas_cerradas(n),
+                      que=f"cerrar la traza {i + 1}")
+    return misiones
+
+
+async def _juzga(misiones: list, monkeypatch, *, verdict: str = "served") -> None:
+    """El juez de LC1, por su camino REAL, sobre misiones REALES.
+
+    Un solo doble: la frontera del LLM. El grounding, la selección del juez y
+    la persistencia son los de producción."""
+    from app.learner import judge
+
+    _responde(monkeypatch, json.dumps({
+        "verdict": verdict, "confidence": 0.9,
+        "reasons": "prueba de punta a punta",
+        "evidence": ["outcome_text"],
+        "lesson": {"type": "none", "content": ""}}))
+    for m in misiones:
+        await judge.judge_mission(m.id, force=True)
+
+
+async def _aprende_de(misiones: list, monkeypatch, *, nombre: str,
+                      pasos: list | None = None, tools: list | None = None) -> str:
+    """La cadena NUEVA de punta a punta: misiones reales → veredictos reales →
+    consolidación real → candidata en la bandeja.
+
+    Es el reemplazo honesto del atajo viejo (`_repite` esperaba a que una
+    propuesta apareciera sola porque la misión había TERMINADO). Ahora hace
+    falta que las misiones hayan SERVIDO — que es justo el punto de doc 41."""
+    from app.learner import consolidate
+
+    await _juzga(misiones, monkeypatch)
+    _responde(monkeypatch, json.dumps({"decisions": [{
+        "action": "create_skill", "name": nombre,
+        "description": nombre.lower(),
+        "steps": pasos if pasos is not None else [],
+        "tools": tools if tools is not None else ["document"],
+        "mission_ids": [m.id for m in misiones],
+        "why": "se ha hecho bien varias veces"}]}))
+    r = await consolidate()
+    assert r["created"], "la consolidación no creó la candidata esperada"
+    return r["created"][0]
 
 
 # ===========================================================================
 # 1 · La semana normal: el usuario repite un encargo y Aithera se da cuenta
 # ===========================================================================
 class TestAprendeDeLoQueSeRepite:
-    async def test_tres_veces_el_mismo_encargo_produce_una_candidata(self, monkeypatch):
-        """LA HISTORIA COMPLETA de por qué existe el Learner. El usuario pide
-        el resumen semanal tres lunes seguidos, con otras palabras cada vez.
-        Nadie le dice nada a Aithera: al tercero, la propuesta está esperando.
+    async def test_tres_encargos_juzgados_utiles_producen_una_candidata(self, monkeypatch):
+        """LA HISTORIA COMPLETA de por qué existe el Learner, con el criterio
+        de LC2: el usuario pide el resumen semanal tres lunes seguidos, las
+        tres veces SIRVE, y al tercero la propuesta está esperando.
 
-        Encadena L2 (reflexión + acumulación) con L1 (la escalera) sobre
-        misiones, trazas, telemetría y bus REALES."""
+        La cadena entera y real: misión → traza → telemetría → bus → contadores
+        (L2) → veredicto del juez (LC1) → consolidación (LC2) → escalera (L1).
+        Único doble: la frontera del LLM."""
         _responde(monkeypatch,
                   '{"reflection": "Se preparó el resumen leyendo el proyecto.", '
                   '"repeatable": true, "skill_name": "Resumen semanal", '
                   '"skill_steps": ["reunir lo hecho", "redactar", "guardar"]}')
 
-        await _mision("prepárame el resumen semanal del proyecto Aithera")
-        await _espera(lambda: _existe_propuesta("skill_new"),
-                      que="crear la primera observación")
-        assert (await _la_candidata())["state"] == "observed", (
-            "una vez no es un patrón")
+        misiones = await _repite("prepárame el resumen semanal del proyecto Aithera")
+        assert await _propuestas("skill_new") == [], (
+            "terminar tres misiones ya NO abre nada: hace falta que hayan servido")
 
-        await _mision("quiero el resumen semanal para el proyecto Aithera")
-        await _espera(lambda: _evidencias("skill_new", 2), que="sumar la 2.ª")
-        assert (await _la_candidata())["state"] == "observed"
-
-        await _mision("hazme el resumen semanal del proyecto Aithera")
-        await _espera(lambda: _evidencias("skill_new", 3), que="sumar la 3.ª")
-
-        cand = await _la_candidata()
+        pid = await _aprende_de(misiones, monkeypatch, nombre="Resumen semanal",
+                                pasos=["reunir lo hecho", "redactar"],
+                                tools=["document"])
+        cand = await proposal_service.get(pid)
         assert cand["state"] == "candidate", (
-            f"a las {ladder.MIN_REP} veces sube sola la escalera")
+            f"a las {ladder.MIN_REP} misiones juzgadas útiles sube sola la escalera")
         assert cand["risk"] == "medium"
+        assert {e["kind"] for e in cand["evidence"]} == {"judged_success"}
 
         # ...y lo determinista también quedó: los contadores.
+        #
+        # Se ESPERA al efecto: desde LC2, `_repite` solo espera a que las trazas
+        # se cierren (que es lo que el usuario ve), y el Learner agrega en una
+        # task de fondo. Dar por hecho que ya terminó sería medir un reloj en
+        # vez de un resultado.
+        await _espera(lambda: _contadas(3), que="agregar las 3 misiones")
         fila = model_ranking()[0]
         assert fila["missions"] == 3 and fila["missions_ok"] == 3
         assert fila["mission_success_rate"] == 1.0
+
+    async def test_tres_encargos_juzgados_FALLIDOS_no_producen_nada(self, monkeypatch):
+        """El caso Melendi, de punta a punta. Ocho peticiones seguidas porque
+        ninguna funcionaba se leían como una costumbre; ahora la cadena entera
+        se niega a convertirlas en un procedimiento."""
+        from app.learner import consolidate
+
+        _responde(monkeypatch, '{"reflection": "r", "repeatable": true, '
+                               '"skill_name": "Poner música", "skill_steps": ["a"]}')
+        misiones = await _repite("pon la canción de melendi", ok=False)
+        await _juzga(misiones, monkeypatch, verdict="failed")
+
+        # La IA ve los fallos y decide, correctamente, no proponer nada.
+        _responde(monkeypatch, '{"decisions": []}')
+        r = await consolidate()
+        assert r["created"] == []
+        assert await _propuestas("skill_new") == []
 
     async def test_la_reflexion_queda_enlazada_a_su_mision(self, monkeypatch):
         """El diario de trabajo: se puede volver a una misión y leer qué se
@@ -368,24 +428,30 @@ class TestAtribuyeLosFallos:
 # 3 · La madrugada: el análisis en batch
 # ===========================================================================
 class TestLaPasadaNocturna:
-    async def test_ve_lo_que_ninguna_mision_suelta_pudo_ver(self, monkeypatch):
-        """El caso que justifica que L3 exista: tres misiones que el momento
-        NO capturó (el modelo dijo `repeatable=false` cada vez, que es lo que
-        pasa cuando falla el clasificador). De madrugada, contando, el patrón
-        salta igual."""
+    async def test_la_madrugada_decide_con_veredictos_no_contando(self, monkeypatch):
+        """[LC2] Lo que justifica que la pasada nocturna exista, con el criterio
+        nuevo: tres misiones que el momento NO capturó siguen sin producir nada
+        por sí solas — pero de madrugada, con los veredictos delante, la
+        consolidación las convierte en una candidata."""
         _responde(monkeypatch, '{"reflection": "r", "repeatable": false, '
                                '"skill_name": "", "skill_steps": []}')
-        for _ in range(3):
-            await _mision("prepárame el informe mensual de gastos")
-        await _espera(lambda: _misiones_en_traza(3), que="cerrar las 3 trazas")
+        misiones = await _repite("prepárame el informe mensual de gastos")
         assert await _propuestas("skill_new") == [], "el momento no lo vio"
 
+        await _juzga(misiones, monkeypatch)
+        _responde(monkeypatch, json.dumps({"decisions": [{
+            "action": "create_skill", "name": "Informe mensual de gastos",
+            "description": "informe mensual", "steps": [],
+            "tools": ["document"],
+            "mission_ids": [m.id for m in misiones],
+            "why": "tres veces el mismo trabajo, y las tres sirvieron"}]}))
+
         resumen = await run_nightly_analysis()
-        assert resumen["repeated"], "la madrugada sí"
+        assert resumen["consolidation"]["created"], "la madrugada sí lo vio"
         cand = await _la_candidata()
         assert cand["state"] == "candidate"
         assert cand["payload"]["definition"]["steps"] == [], (
-            "no se inventa los pasos: eso lo escribe el usuario al aceptarla")
+            "sin pasos observados no se inventan: eso lo escribe el usuario")
 
     async def test_el_informe_semanal_resume_lo_ocurrido(self, monkeypatch):
         """Sin modelo disponible (el doble por defecto): el informe sale igual
@@ -426,9 +492,12 @@ class TestElUsuarioManda:
                   '{"reflection": "r", "repeatable": true, '
                   '"skill_name": "Cerrar el mes", '
                   '"skill_steps": ["exportar", "cuadrar", "archivar"]}')
-        await _repite("cierra el mes contable")
+        misiones = await _repite("cierra el mes contable")
+        pid = await _aprende_de(misiones, monkeypatch, nombre="Cerrar el mes",
+                                pasos=["exportar", "cuadrar", "archivar"],
+                                tools=["document"])
 
-        prop = await _la_candidata()
+        prop = await proposal_service.get(pid)
         assert prop["state"] == "candidate"
 
         # Nada se aplica desde 'candidate': hay que subir el peldaño explícito.
@@ -462,7 +531,7 @@ class TestElUsuarioManda:
         _responde(monkeypatch, '{"reflection": "r", "repeatable": true, '
                                '"skill_name": "x", "skill_steps": ["a"]}')
         propias = {"skills", "skill_events", "learner_proposals", "model_stats",
-                   "tool_stats", "failure_stats",
+                   "tool_stats", "failure_stats", "mission_verdicts",
                    # lo que escribe el RASTRO de la simulación, no el Learner:
                    # las trazas y la telemetría las pone el TIE/MEL al trabajar,
                    # las decisiones son la API por la que el Learner SÍ puede
@@ -485,8 +554,9 @@ class TestElUsuarioManda:
                 return out
 
         antes = _censo()
-        await _repite("una tarea que se repite")
-        prop = await _la_candidata()
+        misiones = await _repite("una tarea que se repite")
+        pid = await _aprende_de(misiones, monkeypatch, nombre="Tarea repetida")
+        prop = await proposal_service.get(pid)
         await proposal_service.promote_to_proposed(prop["id"])
         await proposal_service.approve(prop["id"])
         await proposal_service.apply(prop["id"])
@@ -512,8 +582,9 @@ class TestElUsuarioEnsena:
 
         _responde(monkeypatch, '{"reflection": "r", "repeatable": true, '
                                '"skill_name": "Otra cosa", "skill_steps": ["a"]}')
-        await _repite("hazme otra cosa distinta")
-        prop = await _la_candidata()
+        misiones = await _repite("hazme otra cosa distinta")
+        pid = await _aprende_de(misiones, monkeypatch, nombre="Otra cosa")
+        prop = await proposal_service.get(pid)
         await proposal_service.promote_to_proposed(prop["id"])
         await proposal_service.approve(prop["id"])
         await proposal_service.apply(prop["id"])
@@ -523,7 +594,12 @@ class TestElUsuarioEnsena:
         assert all(s.status.value == "draft" for s in skills.values()), (
             "la misma puerta para las dos")
         assert skills["Cerrar el mes"].created_by == "user_taught"
-        assert skills["Otra cosa"].created_by == "local_learning_loop"
+        # [LC2] La provenance de lo OBSERVADO pasa de `local_learning_loop` (la
+        # acumulación mecánica, retirada) a `consolidation`: quien decidió que
+        # esto merecía ser una skill fue la consolidación nocturna, leyendo
+        # veredictos. Lo que el test defiende —que se sepa quién enseñó qué—
+        # sigue intacto; lo que cambia es que ahora dice la verdad.
+        assert skills["Otra cosa"].created_by == "consolidation"
 
     async def test_por_la_tool_real_que_usa_el_chat(self, monkeypatch):
         """El cableado de verdad: `aithera.learn_skill`, que es por donde llega
@@ -542,9 +618,75 @@ class TestElUsuarioEnsena:
         assert skill.status.value == "draft" and skill.created_by == "user_taught"
 
 
+# ===========================================================================
+# 6 · EL JUEZ EN LA CADENA REAL (V1.1 LC1, doc 41)
+# ===========================================================================
+class TestElJuezEntraEnLaCadena:
+    """La pieza nueva, probada por donde de verdad entra: el bus.
+
+    Hasta LC1 el Learner leía `state="done"` y lo tomaba por éxito. Aquí se
+    comprueba que el veredicto llega por la MISMA vía que todo lo demás (el
+    evento real `mission.completed` → el handler real del juez), y que
+    `served()` es fail-closed mientras no haya juicio."""
+
+    async def test_el_juez_esta_suscrito_de_verdad(self, monkeypatch):
+        """La comprobación anti-"correcto pero desconectado" (el modo de fallo
+        que ya ha aparecido cinco veces en este proyecto): no basta con que el
+        juez funcione — tiene que ESTAR ENCHUFADO al bus."""
+        from app.learner import judge, register_judge
+
+        register_judge()                     # idempotente, como en el lifespan
+        judge._cola.clear()
+
+        m = await _mision("prepara el informe del trimestre")
+        await _espera(_encolada, que="que el juez encole la misión terminada")
+        assert m.id in judge._cola
+
+    async def test_del_evento_al_veredicto_sin_atajos(self, monkeypatch):
+        """La cadena entera: misión real → traza real → evento real → cola del
+        juez → veredicto en la BD. El único doble sigue siendo el LLM."""
+        from app.learner import judge, register_judge, served
+
+        register_judge()
+        judge._cola.clear()
+        m = await _mision("busca las facturas del mes y hazme el resumen")
+
+        assert served(m.id) is False, "sin juicio no puede constar que sirvió"
+
+        _responde(monkeypatch, '{"verdict": "served", "confidence": 0.85, '
+                               '"reasons": "Terminó y el usuario no corrigió.", '
+                               '"evidence": ["outcome_text"], '
+                               '"lesson": {"type": "none", "content": ""}}')
+        await _espera(_encolada, que="encolar")
+        assert await judge.drain_now() >= 1
+        assert served(m.id) is True
+
+    async def test_el_juez_no_es_quien_falla_al_aprender(self, monkeypatch):
+        """Un juez caído no puede tumbar nada. Sin veredicto, el Learner
+        simplemente no cuenta con esa misión — que es la respuesta honesta."""
+        from app.learner import judge, register_judge, served
+
+        register_judge()
+        judge._cola.clear()
+        m = await _mision("algo que hacer")
+        # `_sin_llm` (la fixture) deja `mel.complete` lanzando: el juez falla.
+        await _espera(_encolada, que="encolar")
+        assert await judge.drain_now() == 0
+        assert served(m.id) is False
+        # Y lo determinista de L2 siguió su curso pese a todo.
+        await _espera(_hay_contadores, que="los contadores de siempre")
+
+
 # ---------------------------------------------------------------------------
 # helpers de espera (miran EFECTOS, no relojes)
 # ---------------------------------------------------------------------------
+async def _encolada() -> bool:
+    """El juez ha recibido la misión por el bus y la tiene esperando turno."""
+    from app.learner import judge
+
+    return judge.pending_count() >= 1
+
+
 async def _existe_propuesta(kind: str) -> bool:
     return bool(await proposal_service.pending(kind=kind))
 
@@ -566,6 +708,12 @@ async def _evidencias(kind: str, n: int) -> bool:
     return bool(cand) and len(cand["evidence"]) >= n
 
 
+async def _contadas(n: int) -> bool:
+    """Al menos `n` misiones ya agregadas en `model_stats`."""
+    filas = model_ranking()
+    return bool(filas) and int(filas[0]["missions"]) >= n
+
+
 async def _hay_contadores() -> bool:
     with SessionLocal() as s:
         return s.query(ModelStat).count() > 0
@@ -581,6 +729,15 @@ async def _fallos_contados(n: int) -> bool:
     with SessionLocal() as s:
         fila = s.query(FailureStat).filter(FailureStat.blame == "config").first()
     return bool(fila) and int(fila.count or 0) >= n
+
+
+async def _trazas_cerradas(n: int) -> bool:
+    """Trazas TERMINADAS, salgan bien o mal. `_misiones_en_traza` solo cuenta
+    las `done`, y desde LC2 hay tests que repiten un encargo que FALLA — con el
+    filtro de éxito, esa espera no se cumpliría nunca."""
+    with SessionLocal() as s:
+        return s.query(OrchestratorTrace).filter(
+            OrchestratorTrace.state.in_(("done", "failed", "cancelled"))).count() >= n
 
 
 async def _misiones_en_traza(n: int) -> bool:

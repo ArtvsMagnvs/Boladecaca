@@ -50,70 +50,32 @@ MAX_MISSIONS = 200          # techo de lectura de trazas por pasada
 
 
 # ---------------------------------------------------------------------------
-# Análisis 1 — tareas repetidas → skill candidata
+# Análisis 1 — RETIRADO como decisor (V1.1 LC2, doc 41 §7)
 # ---------------------------------------------------------------------------
+# Lo que hacía: agrupar las misiones con `state="done"` por parecido de texto y,
+# a las 3 parecidas, dejar una propuesta de skill en la bandeja.
+#
+# POR QUÉ SE RETIRA: `state="done"` significa "la maquinaria terminó sin
+# colgarse", no "al usuario le sirvió". Con ese criterio, ocho peticiones
+# seguidas de lo mismo —ocho porque ninguna funcionaba— se leían como una
+# costumbre y se proponían como procedimiento fijo (doc 41 §0). Contar
+# repeticiones no es entender.
+#
+# QUIÉN LO HACE AHORA: `consolidation.py`, con los VEREDICTOS del juez delante y
+# aprendiendo también de lo que falló. La agrupación por parecido (Jaccard) no
+# se tira: sobrevive DEGRADADA a pre-agrupador dentro de la consolidación —
+# sugiere qué mirar junto, ya no decide.
+#
+# `_agrupa_por_trabajo` se conserva aquí porque el análisis inter-proyecto
+# (LLL 3) lo sigue usando para lo que sí es: agrupar.
+
+
 async def analyze_repeated_missions(days: int = 30) -> list[str]:
-    """LLL análisis 1: agrupa las misiones recientes por TRABAJO y, donde haya
-    ≥`ladder.MIN_REP` misiones distintas haciendo lo mismo, deja una propuesta
-    `skill_new` en la cuarentena. Devuelve los ids creados o reforzados.
-
-    Por qué sigue haciendo falta si L2 ya acumula por misión: L2 depende de que
-    el modelo diga `repeatable=true` en el momento, y de que las herramientas
-    coincidan exactamente. Esta pasada ve el conjunto — atrapa lo que se repitió
-    antes de que el Learner existiera, lo que el modelo clasificó mal un día, y
-    lo que solo se nota contando.
-
-    NO duplica: si ya hay una propuesta abierta para ese mismo trabajo (la de
-    L2 o la de una pasada anterior), le SUMA la evidencia que falte. La
-    escalera de L1 hace el resto — nadie sube un peldaño desde aquí a mano."""
-    try:
-        misiones = await asyncio.to_thread(_misiones_recientes, days)
-    except Exception as e:
-        logger.error(f"[lll-1] no se pudieron leer las misiones: {e!r}")
-        return []
-    if not misiones:
-        return []
-
-    grupos = _agrupa_por_trabajo(misiones)
-    creadas: list[str] = []
-    abiertas = await proposal_service.pending(kind="skill_new")
-
-    for grupo in grupos[:MAX_BATCH]:
-        # Contextos DISTINTOS, no repeticiones: tres entregas de la misma
-        # misión son un solo contexto (la protección contra rachas de L1, doc
-        # 15 §3.3, aplicada también aquí).
-        contextos = {m["mission_id"] or m["trace_id"] for m in grupo}
-        if len(contextos) < ladder.MIN_REP:
-            continue
-
-        ejemplo = grupo[0]
-        previa = next(
-            (p for p in abiertas
-             if same_work(ejemplo["goal"], ejemplo["tools"],
-                          (p.get("payload") or {}).get("description") or "",
-                          (p.get("payload") or {}).get("tools") or [])),
-            None)
-        try:
-            pid = previa["id"] if previa else await _nueva_candidata(ejemplo, grupo)
-            ya = {(e or {}).get("context_key")
-                  for e in ((previa or {}).get("evidence") or [])}
-            for m in grupo:
-                clave = m["mission_id"] or m["trace_id"]
-                if clave in ya:
-                    continue
-                await proposal_service.add_evidence(pid, {
-                    "kind": "execution_ok",
-                    "context_key": clave,
-                    "payload": {"goal": (m["goal"] or "")[:200],
-                                "project_id": m.get("project_id")},
-                })
-            if pid not in creadas:
-                creadas.append(pid)
-        except Exception as e:      # una propuesta rota no tumba la pasada
-            logger.info(f"[lll-1] grupo descartado ({e!r})")
-    if creadas:
-        logger.info(f"[lll-1] {len(creadas)} trabajo(s) repetido(s) en la cuarentena")
-    return creadas
+    """[RETIRADA en LC2] Se conserva la firma porque el barrel la exporta y el
+    panel podría llamarla; no crea nada. La decisión vive en
+    `consolidation.consolidate()`."""
+    logger.info("[lll-1] retirada en LC2: decide la consolidación con veredictos")
+    return []
 
 
 def _misiones_recientes(days: int) -> list[dict]:
@@ -556,10 +518,19 @@ async def run_nightly_analysis() -> dict:
     afina (3), luego la calidad (4), y el informe al final para que cuente lo
     que acaba de pasar. Cada paso está aislado — que uno falle no cancela los
     demás, porque son independientes y perder los cuatro por uno sería tonto."""
-    resumen = {"repeated": [], "config": [], "cross_project": [],
+    resumen = {"consolidation": {}, "config": [], "cross_project": [],
                "quality": 0, "report": {}}
-    for clave, corutina in (("repeated", analyze_repeated_missions()),
-                            ("config", analyze_error_patterns()),
+    # [V1.1 LC2] Lo PRIMERO es la consolidación: es quien decide qué se aprende,
+    # leyendo los veredictos que el juez dejó a las 04:20. Sustituye al antiguo
+    # análisis 1, que decidía contando repeticiones de `state="done"`.
+    try:
+        from app.learner.consolidation import consolidate
+
+        resumen["consolidation"] = await consolidate()
+    except Exception as e:
+        logger.error(f"[lll] consolidación falló (se sigue): {e!r}")
+
+    for clave, corutina in (("config", analyze_error_patterns()),
                             ("cross_project", analyze_cross_project())):
         try:
             resumen[clave] = await corutina

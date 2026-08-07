@@ -32,6 +32,14 @@ class Capability(str, Enum):
     REASON = "reason"        # razonamiento profundo multi-paso, calidad ante todo
     CODE = "code"            # generación/edición de código
     ANALYZE = "analyze"      # análisis de datos/patrones, batch tolerante
+    # [V1.1 LC1, doc 41 §2] EL APRENDIZAJE. Juzgar si una misión SIRVIÓ, sacar
+    # la lección, decidir qué merece ser skill y redactar las propuestas. Es
+    # una capacidad propia y no `analyze` porque su perfil de exigencia es
+    # distinto: pide juicio con evidencia (razonamiento), tolera latencia alta
+    # (todo va en segundo plano) y le sienta bien un razonador LOCAL — coste 0
+    # y sin prisa. Que sea propia es además lo que permite al usuario elegir su
+    # modelo por separado en Ajustes → Inteligencia ("Aprendizaje").
+    LEARN = "learn"
     # — reservadas (doc 19 §3): existen en el enum, se activan en su versión —
     RESEARCH = "research"    # investigación larga (E1b la ACTIVA — auto-catálogo §5.4)
     VISION = "vision"        # multimodal (V1.5+)

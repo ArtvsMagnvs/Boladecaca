@@ -14,6 +14,8 @@
 # score aquí es un punto de partida razonable, nunca una verdad medida.
 from __future__ import annotations
 
+from typing import Optional
+
 from app.mel.contracts import Capability, ModelRef
 
 # Perfil por defecto cuando un modelo no tiene entrada específica (p.ej. modelos
@@ -34,11 +36,17 @@ _UNKNOWN_LOCAL_PROFILE = {
 
 
 def _scores(chat, classify, extract, summarize, draft, reason, code, analyze,
-            vision: int = 40) -> dict:
+            vision: int = 40, learn: Optional[int] = None) -> dict:
     """Helper legible: 8 números en el orden de la taxonomía activa. Las
     reservadas (research/agentic) heredan de reason como prior. `vision` es
     opcional (default 40 = "no es multimodal"): solo los modelos de visión
-    reales lo suben."""
+    reales lo suben.
+
+    [LC1] `learn` (juzgar, extraer la lección, proponer) hereda por defecto de
+    la media de `reason` y `analyze` — es exactamente esa mezcla: razonar sobre
+    evidencia y sacar conclusiones de un conjunto. Se pasa explícito solo donde
+    el prior se queda corto (los razonadores locales, que en esta tarea rinden
+    por encima de lo que su nota de chat sugiere)."""
     return {
         Capability.CHAT: chat,
         Capability.CLASSIFY: classify,
@@ -50,6 +58,7 @@ def _scores(chat, classify, extract, summarize, draft, reason, code, analyze,
         Capability.ANALYZE: analyze,
         Capability.RESEARCH: reason,     # research ≈ razonamiento largo (prior)
         Capability.VISION: vision,
+        Capability.LEARN: learn if learn is not None else (reason + analyze) // 2,
         # [Opt latencia 2026-07-20] AGENTIC = el bucle de tool-use, que se llama
         # UNA VEZ POR CADA ACCIÓN de una misión (abrir navegador, clic, escribir
         # archivo…). Antes heredaba de `reason` → cada acción disparaba el
@@ -102,11 +111,17 @@ CATALOG: dict[str, dict] = {
                 {"scores": _scores(62, 65, 72, 64, 60, 60, 90, 66),
                  "relative_cost": 0, "is_local": True},
             # — Razonamiento (DeepSeek R1): pico en reason/analyze —
-            "deepseek-r1:8b":  {"scores": _scores(58, 62, 64, 62, 56, 72, 62, 70),
+            # [LC1] `learn=` explícito y por encima del prior: juzgar si una
+            # misión sirvió es justo lo que mejor hacen estos modelos (leer
+            # evidencia y concluir despacio), y como el aprendizaje corre en
+            # segundo plano su lentitud no cuesta nada. Sin este empujón, la
+            # política Economy elegiría un local genérico más rápido y peor
+            # juez — que es exactamente lo contrario de lo que hace falta.
+            "deepseek-r1:8b":  {"scores": _scores(58, 62, 64, 62, 56, 72, 62, 70, learn=72),
                                 "relative_cost": 0, "is_local": True},
-            "deepseek-r1:14b": {"scores": _scores(62, 66, 68, 66, 60, 80, 68, 78),
+            "deepseek-r1:14b": {"scores": _scores(62, 66, 68, 66, 60, 80, 68, 78, learn=82),
                                 "relative_cost": 0, "is_local": True},
-            "deepseek-r1:32b": {"scores": _scores(68, 70, 72, 70, 66, 86, 74, 84),
+            "deepseek-r1:32b": {"scores": _scores(68, 70, 72, 70, 66, 86, 74, 84, learn=88),
                                 "relative_cost": 0, "is_local": True},
             # — Visión (Qwen-VL): los ÚNICOS con vision alta; buenos leyendo
             #   documentos/capturas (extract), medianos en el resto —
@@ -396,3 +411,39 @@ def supports_vision(provider: str, model: str = "") -> bool:
     if any(marca in low for marca in _VISION_MODEL_MARKERS):
         return True
     return provider in _VISION_PROVIDERS
+
+
+# [LC1, doc 41 §2] Quién sabe JUZGAR. La barra es más baja que en visión (no
+# hace falta una modalidad nueva, hace falta criterio), pero existe: un modelo
+# diminuto puesto a decidir si una misión sirvió responde que sí a casi todo, y
+# un juez complaciente es peor que ningún juez — llenaría la bandeja de basura
+# con sello de calidad, que es justo el problema que este bloque arregla.
+_LEARN_MIN_SCORE = 55
+
+# Marcadores de RAZONADORES locales: modelos pequeños en parámetros pero
+# entrenados para pensar antes de responder. Son los mejores jueces por euro
+# invertido (cero) y por eso se reconocen por nombre, igual que los de visión —
+# así un `ollama pull deepseek-r1:14b` funciona sin tocar código.
+_LEARN_MODEL_MARKERS = (
+    "deepseek-r1", "deepseek-v3", "qwq", "qwen3", "marco-o1", "o1", "o3",
+    "reason", "thinker",
+)
+
+
+def supports_learn(provider: str, model: str = "") -> bool:
+    """¿Este (proveedor, modelo) puede ejercer de JUEZ del aprendizaje?
+
+    Fail-closed con matiz: los agentes por CLI quedan fuera (arrancan un
+    proceso por llamada — inviable para un job que juzga decenas de misiones
+    por noche), los razonadores conocidos entran por nombre, y el resto pasa
+    solo si su nota curada de `learn` llega al mínimo. Un modelo local
+    desconocido hereda 45 y por tanto NO juzga: preferimos quedarnos sin juez
+    (visible al instante: no hay veredictos) que tener uno que diga que sí a
+    todo (invisible y corrosivo)."""
+    if is_cli_agent(provider):
+        return False
+    low = (model or "").lower()
+    if any(marca in low for marca in _LEARN_MODEL_MARKERS):
+        return True
+    return score_of(ModelRef(provider=provider, model=model),
+                    Capability.LEARN) >= _LEARN_MIN_SCORE

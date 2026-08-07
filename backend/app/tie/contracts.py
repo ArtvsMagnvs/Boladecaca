@@ -323,6 +323,14 @@ class Mission:
     # amplia ("crea 15 canales" → una sub-misión por canal). None = misión raíz.
     run_id: Optional[str] = None
     parent_id: Optional[str] = None
+    # [V1.1 LC1, doc 41 §3.2 señal 7] A qué CONVERSACIÓN del chat pertenece esta
+    # misión (el `session_id` de R6.5b). Campo append-only, y la pieza que hace
+    # posible "el DESPUÉS": para juzgar si una misión SIRVIÓ hay que poder mirar
+    # qué dijo el usuario justo después, y sin esto no hay forma de saber en qué
+    # pestaña de chat mirar (`chat_messages` es una tabla plana entre sesiones).
+    # `None` en misiones que no nacen del chat (automatización, WPMS) — ahí
+    # simplemente no hay "después" que leer.
+    session_id: Optional[str] = None
     # [2026-07-22, doc 31 fix] `mission.id` y el `trace_id` de su traza son
     # DISTINTOS por diseño (una misión podrá tener varias trazas en V1.2, ver
     # `tracer.record_start`). Todo lo que el usuario/UI puede consultar hoy

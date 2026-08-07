@@ -54,6 +54,24 @@ class Settings:
     # deterministas y ya están guardados) y no se aprende de ella. Reflexionar
     # nunca puede costar más que trabajar (doc 15 §10, "coste silencioso").
     LEARNER_REFLECTION_BUDGET_S = float(os.getenv("LEARNER_REFLECTION_BUDGET_S", "20"))
+    # [V1.1 LC1, doc 41 §3.4] EL JUEZ. Retardo antes de juzgar una misión: hace
+    # falta que EXISTA "el después" (qué dijo el usuario tras la respuesta), que
+    # es la señal más informativa de si sirvió. Juzgar al instante sería juzgar
+    # a ciegas justo en lo que más importa. Se adelanta solo si llega el
+    # siguiente mensaje del usuario, y la cola drena en background.
+    LEARNER_JUDGE_DELAY_MIN = float(os.getenv("LEARNER_JUDGE_DELAY_MIN", "10"))
+    # Plazo duro de la llamada al juez. Más generoso que la reflexión de L2
+    # porque el modelo típico es un razonador LOCAL (deepseek-r1 y compañía):
+    # lento, gratis y sin prisa — todo esto corre de madrugada o en segundo
+    # plano, nunca en el camino del usuario.
+    LEARNER_JUDGE_BUDGET_S = float(os.getenv("LEARNER_JUDGE_BUDGET_S", "180"))
+    # Cuántas misiones REALES sin juzgar recupera la pasada nocturna (catch-up +
+    # backfill del histórico). Techo, no objetivo: con la app encendida la cola
+    # ya las va juzgando y aquí no queda casi nada.
+    LEARNER_JUDGE_BACKFILL = int(os.getenv("LEARNER_JUDGE_BACKFILL", "100"))
+    # Turnos de charla por llamada agrupada del lote nocturno. Todo recibe
+    # veredicto; el coste se controla AGRUPANDO, no omitiendo (doc 41 §3.4).
+    LEARNER_CHAT_BATCH = int(os.getenv("LEARNER_CHAT_BATCH", "25"))
     # V1.0 (TIE v1, T2): Model Router mínimo. Hints de modelo barato/potente. Si
     # vacíos, el router cae al modelo del proveedor activo del AIManager. Cuando
     # exista el MEL (E1, plan aparte), estos settings los gestionan sus políticas

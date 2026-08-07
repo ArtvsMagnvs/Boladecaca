@@ -75,6 +75,17 @@ FORBIDDEN_MODULES = (
     ("app.learner.authoring", LEARNER_DIR),
     ("app.learner.stats", LEARNER_DIR),
     ("app.learner.mission_learning", LEARNER_DIR),
+    # [LC1] El juez y su empaquetador de señales: internos. Quien quiera saber
+    # si una misión sirvió pregunta `app.learner.served(...)`, no lee la tabla.
+    ("app.learner.judge", LEARNER_DIR),
+    ("app.learner.signals", LEARNER_DIR),
+    # [LC2] La consolidación y el saneado: internos. Quien quiera lanzarlos
+    # llama a `app.learner.consolidate()` / `run_cleanup()`.
+    ("app.learner.consolidation", LEARNER_DIR),
+    ("app.learner.cleanup", LEARNER_DIR),
+    # [LC3] La prueba de mejora efectiva: interna. Quien quiera comparar dos
+    # versiones de una skill llama a `app.learner.compare_skill_change(...)`.
+    ("app.learner.comparison", LEARNER_DIR),
     ("app.tie.authority", TIE_DIR),  # R4: la frontera de autoridad es interna del TIE
     ("app.tie.graph", TIE_DIR),
     ("app.tie.enricher", TIE_DIR),

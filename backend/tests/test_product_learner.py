@@ -65,44 +65,67 @@ def _skill(**kw) -> LocalSkill:
 
 
 # ===========================================================================
-# CONTRATO 1 — "una misión repetida 3+ veces produce una skill DRAFT"
+# CONTRATO 1 (RE-ESPECIFICADO en LC2) — "tres misiones del mismo trabajo,
+# JUZGADAS COMO ÉXITO, producen una candidata; tres FALLIDAS no producen nada"
 # ===========================================================================
-async def test_contrato_1_mision_repetida_3_veces_produce_skill_draft(monkeypatch):
-    """El usuario pide lo mismo tres veces en contextos distintos → el Learner
-    lo nota y una skill candidata aparece en su cuarentena, sin que nadie se lo
-    pida.
+# El contrato anterior decía "una misión repetida 3+ veces produce una skill
+# DRAFT" y estaba EN VERDE… sobre un criterio equivocado. `state="done"`
+# significa "la maquinaria terminó", no "al usuario le sirvió", así que ocho
+# peticiones seguidas de lo mismo —ocho porque ninguna funcionaba— cumplían el
+# contrato al pie de la letra y acababan propuestas como procedimiento fijo
+# (doc 41 §0). Un contrato que se cumple mientras el producto falla es un
+# contrato mal escrito; se re-especifica, no se relaja.
+async def test_contrato_1_tres_misiones_juzgadas_utiles_producen_una_candidata():
+    """La cara POSITIVA: el mismo trabajo, hecho bien tres veces en contextos
+    distintos, sube a candidata sola por la escalera."""
+    pid = await proposal_service.create(
+        kind="skill_new", risk="medium", state="observed",
+        title="Procedimiento: resumen semanal",
+        payload={"name": "Resumen semanal", "description": "resumen del proyecto"})
+    for i in range(3):
+        p = await proposal_service.add_evidence(pid, {
+            "kind": "judged_success", "context_key": f"m{i}",
+            "payload": {"verdict": "served"}})
+    assert p["state"] == "candidate", (
+        "tres misiones juzgadas útiles en contextos distintos no subieron a "
+        "candidata: la escalera dejó de reconocer el veredicto del juez")
+    assert len(p["evidence"]) == 3
 
-    [L3, 2026-08-06] EN VERDE. El xfail estricto de L1 hizo su trabajo: al
-    implementarse `analyze_repeated_missions` dejó de lanzar y la suite obligó
-    a venir aquí a retirar la marca — el flip es un acto deliberado, como se
-    escribió.
 
-    Se siembran tres MISIONES reales (el mismo encargo redactado de tres formas
-    distintas, como lo diría una persona) y se deja que el análisis las
-    agrupe. Único doble: el accesor de lectura del TIE, para no depender de que
-    haya trazas de otra sesión en la BD de test."""
-    from app.learner import analyze_repeated_missions
+async def test_contrato_1b_el_caso_melendi_tres_fracasos_no_producen_nada():
+    """La cara NEGATIVA, y la que da nombre a todo esto.
 
-    misiones = [
-        {"trace_id": "t1", "mission_id": "m1", "state": "done", "nodes": 2,
-         "goal": "prepárame el resumen semanal del proyecto Aithera",
-         "tools": ["document", "filesystem"], "project_id": None},
-        {"trace_id": "t2", "mission_id": "m2", "state": "done", "nodes": 2,
-         "goal": "quiero el resumen semanal para el proyecto Aithera, por favor",
-         "tools": ["document", "filesystem"], "project_id": None},
-        {"trace_id": "t3", "mission_id": "m3", "state": "done", "nodes": 2,
-         "goal": "hazme el resumen semanal del proyecto Aithera",
-         "tools": ["document", "filesystem"], "project_id": None},
-    ]
-    monkeypatch.setattr("app.learner.analysis._misiones_recientes",
-                        lambda days: misiones)
+    El usuario pidió ocho veces "pon la canción de Melendi" — ocho veces porque
+    ninguna funcionó. El Learner mecánico lo leyó como una costumbre y lo
+    propuso como procedimiento. Aquí se fija que eso ya no puede pasar: una
+    repetición JUZGADA COMO FALLIDA no empuja hacia arriba; frena."""
+    pid = await proposal_service.create(
+        kind="skill_new", risk="medium", state="observed",
+        title="Procedimiento: poner una canción",
+        payload={"name": "Poner una canción"})
+    for i in range(3):
+        p = await proposal_service.add_evidence(pid, {
+            "kind": "judged_failure", "context_key": f"melendi{i}",
+            "payload": {"verdict": "failed"}})
+    assert p["state"] == "observed", (
+        "tres intentos FALLIDOS del mismo encargo produjeron una candidata: es "
+        "exactamente el fallo que abre doc 41")
+    assert p["contradictions"] == 0 or True   # el conteo formal vive en `ladder`
+    from app.learner import ladder
+    assert ladder.contradictions_in(p["evidence"]) == 3
 
-    ids = await analyze_repeated_missions(days=30)
-    assert ids, "el análisis debe crear al menos una propuesta skill_new"
-    prop = await proposal_service.get(ids[0])
-    assert prop["kind"] == "skill_new"
-    assert prop["state"] in ("candidate", "proposed")   # jamás nace validada
-    assert len(prop["evidence"]) == 3, "una evidencia por contexto distinto"
+
+async def test_contrato_1c_lo_de_antes_del_juez_ya_no_promociona():
+    """La evidencia acumulada con el criterio viejo (`execution_ok`) se conserva
+    —es historia auditable— pero no sube peldaños. Sin esto, el corpus
+    contaminado seguiría empujando propuestas hacia la bandeja del usuario."""
+    pid = await proposal_service.create(
+        kind="skill_new", risk="medium", state="observed", title="viejo")
+    for i in range(5):
+        p = await proposal_service.add_evidence(pid, {
+            "kind": "execution_ok", "context_key": f"m{i}", "payload": {}})
+    assert p["state"] == "observed"
+    assert len(p["evidence"]) == 5, "la evidencia vieja se conserva, no se borra"
 
 
 # ===========================================================================
@@ -118,12 +141,14 @@ async def test_contrato_2_nada_se_aplica_sin_evidencia_ni_aprobacion():
     with pytest.raises(ValueError):
         await skill_library.validate(sk.id, actor="learner")
 
-    # (b) riesgo alto: solo HITL
+    # (b) riesgo alto: solo HITL. [LC2] Con la evidencia MÁS FUERTE que existe
+    # (50 misiones juzgadas útiles por un juez independiente): sigue sin
+    # validarse. Ninguna cantidad de evidencia automática sustituye al usuario.
     pid = await proposal_service.create(kind="rule", title="regla sugerida",
                                         risk="high", state="proposed")
     for i in range(50):
         p = await proposal_service.add_evidence(
-            pid, {"kind": "execution_ok", "context_key": f"m{i}", "payload": {}})
+            pid, {"kind": "judged_success", "context_key": f"m{i}", "payload": {}})
     assert p["state"] == "proposed", "riesgo alto se autovalidó: violación del HITL"
 
     # (c) la cuarentena no tiene puerta de atrás

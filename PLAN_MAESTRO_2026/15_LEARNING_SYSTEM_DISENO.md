@@ -273,3 +273,28 @@ ES este módulo. Nada de este doc altera contratos del MOS más allá de los 4 d
 listados en 14 §4.1.*
 *Ampliación 2026-08-06 (Fable 5, decisión del usuario): §11 — detalle ejecutable
 en doc 27.*
+
+## 12. Corrección 2026-08-07 — la regla del §3.3, ahora precisa (→ doc 41)
+
+El §3.3 tal como estaba escrito ("solo outcomes verificables o feedback humano
+cuentan como evidencia; el LLM evaluándose a sí mismo no") se SOBRE-APLICÓ en
+la implementación de V1.1 hasta significar "ningún LLM juzga nada" — y el
+resultado fue un Learner mecánico que, al tocar el corpus real, propuso como
+procedimientos fijos encargos que se repetían porque FALLABAN. Post-mortem
+completo en doc 41 §0.
+
+**La regla, corregida** (doc 41 §5, cuatro cláusulas exactas):
+1. El EJECUTOR jamás se califica a sí mismo — esa era y es la prohibición.
+2. Todo juicio de IA cita evidencia verificable o se degrada a `unclear`.
+3. Lo mecánico solo puede DEGRADAR confianza, nunca promoverla.
+4. El usuario sigue siendo la única puerta de activación (HITL intacto).
+
+Con esas cuatro, un JUEZ independiente (capacidad `LEARN`, "Aprendizaje" en
+Inteligencia, modelo seleccionable — otra llamada, otro modelo, con las señales
+duras y el "después" del usuario delante) es exactamente el control externo que
+este documento siempre quiso: los veredictos de misión, las lecciones, la
+consolidación en skills y TODAS las propuestas los hace una IA; lo mecánico
+queda para extraer datos y para las puertas de seguridad. La fila "¿Qué salió
+bien / mal?" del checklist §4 pasa a responderse con `mission_verdicts`, no con
+el estado de la máquina — `state="done"` significa "terminó", no "sirvió".
+Diseño ejecutable completo y sesiones LC1-LC3 en doc 41.

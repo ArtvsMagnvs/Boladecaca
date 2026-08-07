@@ -47,7 +47,7 @@ async def _propuesta(kind="skill_new", estado="candidate", **payload):
                             "definition": {"steps": ["a", "b"]}, "tools": ["document"]})
     for i in range(3):
         await proposal_service.add_evidence(pid, {
-            "kind": "execution_ok", "context_key": f"mision-{i}",
+            "kind": "judged_success", "context_key": f"mision-{i}",
             "payload": {"goal": "resumen"}})
     return pid
 
@@ -83,7 +83,7 @@ class TestBandeja:
             kind="skill_new", risk="medium", state="observed", title="apenas vista",
             payload={"name": "x", "description": "x", "tools": []})
         await proposal_service.add_evidence(pid, {
-            "kind": "execution_ok", "context_key": "m1", "payload": {}})
+            "kind": "judged_success", "context_key": "m1", "payload": {}})
         data = client.get("/api/learner/proposals").json()
         assert data["waiting_for_you"] == 0, "una vez no es un patrón: no molesta"
         assert data["proposals"][0]["state"] == "observed"

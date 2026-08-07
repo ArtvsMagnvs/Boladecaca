@@ -8,17 +8,19 @@
 #      LLM, SIEMPRE — también en la charla trivial.
 #   2. REFLEXIÓN   → una nota de 2-5 líneas en la Decision API, enlazada por
 #      `mission_id`. Solo en misiones NO triviales.
-#   3. CANDIDATO   → si el trabajo parece repetible, una propuesta `skill_new`
-#      en la cuarentena que ACUMULA EVIDENCIA: no nace skill, nace observación.
+#   3. ATRIBUCIÓN  → de quién fue cada fallo (L2b, `core/failures.py`) y, con
+#      ≥3 repeticiones de la misma carencia, una propuesta `config_fix`.
 #
-# LA IDEA QUE HACE ESTO ÚTIL Y NO TEATRO — el punto 3 no crea una skill por
-# misión (eso sería la fábrica de basura que doc 15 §10 teme, "proliferación de
-# skills"). Crea UNA propuesta por TIPO DE TRABAJO y le suma una evidencia cada
-# vez que ese mismo trabajo se repite. La escalera de L1 hace el resto sola: a las
-# MIN_REP=3 misiones DISTINTAS la propuesta sube a `candidate`. Es literalmente
-# "una misión repetida 3 veces produce un candidato a skill", implementado por
-# acumulación en vez de por una pasada de clustering — y sin gastar ni un LLM
-# extra en las repeticiones.
+# [V1.1 LC2, doc 41 §7] LO QUE YA NO HACE: acumular candidatas a skill. Hasta
+# LC1, si el modelo decía `repeatable=true` y la misión había TERMINADO, aquí se
+# abría o reforzaba una propuesta — y "terminó" incluye rechazos honestos,
+# rendiciones y saludos. Ese fue el camino por el que ocho intentos FALLIDOS del
+# mismo encargo acabaron propuestos como procedimiento fijo (doc 41 §0). Quién
+# merece ser skill lo decide ahora la consolidación nocturna
+# (`consolidation.py`), leyendo los VEREDICTOS del juez.
+#
+# Lo que queda aquí es EXTRACCIÓN, no juicio — que es exactamente el reparto de
+# doc 41 §1: lo mecánico extrae y protege; la IA entiende y propone.
 #
 # PRESUPUESTO (doc 15 §4 + §10 "coste silencioso"): ≤1 llamada LLM barata por
 # misión (capability ANALYZE, política economy → Ollama primero), plazo duro de
@@ -313,10 +315,19 @@ async def _learn(mission_id: str, *, ok: bool) -> Optional[str]:
     if reflexion:
         await _store_reflection(snap, reflexion, ok=ok)
 
-    # (3) Candidato a skill — acumulando evidencia, no creando una skill.
-    if not data or not bool(data.get("repeatable")):
-        return None
-    return await _accumulate_candidate(snap, data, ok=ok)
+    # (3) [V1.1 LC2, doc 41 §7] La acumulación MECÁNICA de candidatas se RETIRA.
+    #
+    # Hasta aquí, esta línea llamaba a `_accumulate_candidate`: si el modelo
+    # decía `repeatable=true` y la misión había terminado, se abría (o se
+    # reforzaba) una propuesta de skill. Ese es exactamente el camino por el que
+    # ocho intentos FALLIDOS del mismo encargo acabaron propuestos como
+    # procedimiento fijo — "terminó" no es "sirvió" (doc 41 §0).
+    #
+    # Quien decide ahora es la consolidación nocturna (`consolidation.py`), que
+    # mira los VEREDICTOS del juez, ve el conjunto y también aprende de lo que
+    # falló. Lo determinista de esta función —contadores, atribución de fallos y
+    # la reflexión en la Decision API— se queda: es extracción, no juicio.
+    return None
 
 
 async def _store_reflection(snap: dict, reflexion: str, *, ok: bool) -> None:
@@ -336,74 +347,6 @@ async def _store_reflection(snap: dict, reflexion: str, *, ok: bool) -> None:
         )
     except Exception as e:
         logger.info(f"[learner] no se pudo guardar la reflexión (no crítico): {e!r}")
-
-
-async def _accumulate_candidate(snap: dict, data: dict, *, ok: bool) -> Optional[str]:
-    """Una propuesta por FIRMA de trabajo; cada repetición suma una evidencia.
-
-    La evidencia lleva `context_key = mission_id`, así que tres éxitos en la
-    MISMA misión contarían como uno (`ladder.distinct_contexts`) — la
-    protección contra rachas de L1 aplica aquí sin hacer nada."""
-    if not ok:
-        # De una misión fallida se aprende (la reflexión ya se guardó), pero no
-        # se propone convertirla en procedimiento: sería enseñar a fallar.
-        return None
-
-    tools = sorted({c.get("tool") for n in (snap.get("nodes") or [])
-                    for c in (n.get("tool_calls") or [])
-                    if c.get("tool") and c.get("ok")})
-    if not tools:
-        # Sin ninguna herramienta ejecutada con éxito no hay procedimiento que
-        # capturar — solo texto. (Mismo criterio de grounding que A-1.)
-        return None
-
-    objetivo = snap.get("goal") or ""
-    nombre = str(data.get("skill_name") or "").strip() or objetivo[:60]
-    pasos = [str(p).strip() for p in (data.get("skill_steps") or []) if str(p).strip()]
-
-    existentes = await proposal_service.pending(kind="skill_new")
-    previa = next(
-        (p for p in existentes
-         if same_work(objetivo, tools,
-                      (p.get("payload") or {}).get("description") or "",
-                      (p.get("payload") or {}).get("tools") or [])),
-        None)
-
-    # [L3] El PROYECTO viaja en la evidencia. Sin él, el análisis inter-proyecto
-    # (LLL 3) no tiene con qué distinguir "esto solo sirve aquí" de "esto sirve
-    # en todas partes" — y un dato que no se guarda cuando se tiene no se
-    # recupera después.
-    evidencia = {"kind": "execution_ok",
-                 "context_key": snap.get("mission_id") or snap.get("trace_id") or "?",
-                 "payload": {"goal": objetivo[:200],
-                             "project_id": snap.get("project_id")}}
-
-    if previa is None:
-        pid = await proposal_service.create(
-            kind="skill_new", risk="medium", state="observed",
-            title=f"Skill candidata: {nombre}",
-            summary=("Este trabajo se ha hecho con herramientas y parece un "
-                     "procedimiento repetible."),
-            payload={"name": nombre,
-                     # `description` es además el texto con el que se compara la
-                     # siguiente misión (`same_work`): el objetivo REAL, no el
-                     # nombre que se inventó el modelo.
-                     "description": objetivo[:280],
-                     "definition": {"steps": pasos},
-                     "tools": list(tools),
-                     "created_by": "local_learning_loop"},
-            project_id=None)
-        await proposal_service.add_evidence(pid, evidencia)
-        logger.info(f"[learner] nueva observación de skill «{nombre}»")
-        return pid
-
-    pid = previa["id"]
-    antes = previa["state"]
-    despues = await proposal_service.add_evidence(pid, evidencia)
-    if despues["state"] != antes:
-        logger.info(f"[learner] la observación «{nombre}» sube a "
-                    f"{despues['state']} ({ladder.MIN_REP} contextos distintos)")
-    return pid
 
 
 # ---------------------------------------------------------------------------

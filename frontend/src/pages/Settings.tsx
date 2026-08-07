@@ -881,7 +881,7 @@ const MEL_POLICY_META_KEYS: Record<string, { labelKey: string; hintKey: string }
 const MEL_CAP_LABEL_KEYS: Record<string, string> = {
   chat: "settings.mel.cap.chat", classify: "settings.mel.cap.classify", extract: "settings.mel.cap.extract", summarize: "settings.mel.cap.summarize",
   draft: "settings.mel.cap.draft", reason: "settings.mel.cap.reason", code: "settings.mel.cap.code", analyze: "settings.mel.cap.analyze",
-  vision: "settings.mel.cap.vision",
+  vision: "settings.mel.cap.vision", learn: "settings.mel.cap.learn",
 };
 // Orden y whitelist de capacidades activas. `research` y `agentic` siguen sin
 // mostrarse a propósito: son internas (el auto-catálogo y el bucle de tools las
@@ -889,7 +889,18 @@ const MEL_CAP_LABEL_KEYS: Record<string, string> = {
 // [B·WEB-2, 2026-08-05] `vision` SÍ se muestra: desde que existe `find_and_click`
 // es una capacidad que el usuario usa de verdad, y necesita poder ver qué modelo
 // la atiende — o enterarse de que no tiene ninguno.
-const MEL_CAPS_ORDER = ["chat", "classify", "extract", "summarize", "draft", "reason", "code", "analyze", "vision"];
+// [LC1, 2026-08-07] `learn` (Aprendizaje) también se muestra: es el modelo que
+// juzga si cada misión sirvió y decide qué merece aprenderse. El usuario tiene
+// que poder elegirlo — y le conviene un razonador LOCAL, que trabaja de
+// madrugada, sin prisa y sin coste.
+const MEL_CAPS_ORDER = ["chat", "classify", "extract", "summarize", "draft", "reason", "code", "analyze", "vision", "learn"];
+// Capacidades cuyo "sin modelo" merece decir QUÉ hacer en vez de constatar el
+// hueco: son las que exigen un modelo con una propiedad concreta (ver imágenes,
+// razonar de verdad) y que un catálogo normal puede no tener.
+const MEL_CAP_EMPTY_HINT: Record<string, string> = {
+  vision: "settings.mel.visionNoModel",
+  learn: "settings.mel.learnNoModel",
+};
 const MEL_POLICY_ORDER = ["economy", "quality", "speed", "balanced", "offline", "custom"];
 const MEL_EDITABLE = new Set(["economy", "quality", "speed", "balanced", "custom"]);
 
@@ -1429,18 +1440,20 @@ function IntelligenceSettings() {
                         </div>
                       ) : (
                         <span className={`text-ink-faint ml-2 text-right ${
-                          // El aviso de visión sin modelo es una frase entera: se
-                          // deja envolver (sin `truncate`) o quedaría en "…".
-                          chain.length === 0 && cap === "vision" ? "" : "truncate"
+                          // El aviso de visión/aprendizaje sin modelo es una frase
+                          // entera: se deja envolver (sin `truncate`) o quedaría
+                          // en "…".
+                          chain.length === 0 && MEL_CAP_EMPTY_HINT[cap] ? "" : "truncate"
                         }`}>
-                          {/* [B·WEB-2] Con visión, "sin modelo" no es informativo:
-                              lo que el usuario necesita saber es QUÉ hacer. */}
-                          {chain.length === 0 && cap === "vision" && (
+                          {/* [B·WEB-2 · LC1] En visión y aprendizaje, "sin modelo"
+                              no es informativo: lo que el usuario necesita saber
+                              es QUÉ hacer para tenerlo. */}
+                          {chain.length === 0 && MEL_CAP_EMPTY_HINT[cap] && (
                             <span className="text-signal-warn">
-                              {tr("settings.mel.visionNoModel")}
+                              {tr(MEL_CAP_EMPTY_HINT[cap])}
                             </span>
                           )}
-                          {chain.length === 0 && cap !== "vision" && tr("settings.mel.noModel")}
+                          {chain.length === 0 && !MEL_CAP_EMPTY_HINT[cap] && tr("settings.mel.noModel")}
                           {chain.map((k, i) => (
                             <span key={`${k}-${i}`} className={i > 0 ? "opacity-60" : undefined}>
                               {i > 0 && " → "}
