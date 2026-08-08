@@ -18,6 +18,7 @@ WORKSPACE_DIR = APP_DIR / "workspace"
 AUTOMATION_DIR = APP_DIR / "automation"
 TIE_DIR = APP_DIR / "tie"
 LEARNER_DIR = APP_DIR / "learner"
+MCP_DIR = APP_DIR / "mcp"
 
 # Internos que NADIE de fuera del propio modulo debe importar directamente.
 # Cada entrada: (prefijo de import prohibido, directorio propietario que SI puede).
@@ -83,9 +84,18 @@ FORBIDDEN_MODULES = (
     # llama a `app.learner.consolidate()` / `run_cleanup()`.
     ("app.learner.consolidation", LEARNER_DIR),
     ("app.learner.cleanup", LEARNER_DIR),
+    # [SK1] La recuperación de skills es interna: quien las quiera pide
+    # `app.learner.procedure_for(...)` por el barrel.
+    ("app.learner.retrieval", LEARNER_DIR),
     # [LC3] La prueba de mejora efectiva: interna. Quien quiera comparar dos
     # versiones de una skill llama a `app.learner.compare_skill_change(...)`.
     ("app.learner.comparison", LEARNER_DIR),
+    # V1.2 (C1): fronteras del cliente MCP. El resto de la app habla con los
+    # servidores MCP SOLO por el barrel `app.mcp` (register_enabled_servers,
+    # get_connection, list_servers...) — store/client/proxy son internos.
+    ("app.mcp.store", MCP_DIR),
+    ("app.mcp.client", MCP_DIR),
+    ("app.mcp.proxy", MCP_DIR),
     ("app.tie.authority", TIE_DIR),  # R4: la frontera de autoridad es interna del TIE
     ("app.tie.graph", TIE_DIR),
     ("app.tie.enricher", TIE_DIR),

@@ -5692,10 +5692,135 @@ que el cierre de V1.0 — paso explícito, no automático).
 > real del Learner Cognitivo se etiqueta **`v1.1.1`** — bump en las 7
 > ubicaciones sincronizadas (`config.py`, `main.py` ×2, `package.json`, los
 > 4 `.bat`).
+>
+> **✅ SK1 CERRADA (2026-08-08) — LAS SKILLS SE USAN + AUTO-APLICACIÓN
+> PROBADA (doc 41 §SK1).** Sesión extra, nacida del análisis honesto que pidió
+> el usuario al cerrar LC3: la cadena LC1→LC3 entera terminaba en **una fila de
+> BD que nadie leía** — `SkillLibrary.execute()` lanza `NotImplementedError`, la
+> acción del AE es un stub desde V0.9, y **ningún punto del TIE recuperaba jamás
+> una skill** (doc 09 especificó crear/validar/ejecutar y nunca ENCONTRAR). Todo
+> lo anterior era teatro. **`app/learner/retrieval.py` (NUEVO)** las recupera
+> **por CONTEXTO** (objetivo + herramientas disponibles + proyecto, presupuesto
+> duro de 1,5 s con degradación a "sin skills") y las antepone al prompt del
+> planner y del bucle de herramientas, con sus `pitfalls` incluidos — el usuario
+> nunca tiene que mencionarlas, que era su petición literal. Solo guían las
+> `validated`/`local` (una `draft` es justo lo que aún no consta que sirva); las
+> herramientas FILTRAN, el proyecto ORDENA (compilar un servidor es compilar un
+> servidor, aunque sea otra carpeta). **Dos decisiones del usuario**: (a) las
+> skills del TRABAJO PROPIO se crean y se mejoran SIN aprobación previa —el
+> briefing informa—, y el control se mueve a puertas más duras que un botón que
+> se acaba pulsando sin leer: **crear** exige suficiencia juzgada y razonada por
+> el Juez + pasos ANCLADOS en herramientas realmente usadas (puerta dura, antes
+> degradaba a observación); **mejorar** exige pertinencia real (*"coincidir en el
+> nombre no basta"*, su ejemplo literal de Godot) + mejora DEMOSTRADA por juez
+> independiente vía `comparison.py`, y sin comparación concluyente no se toca la
+> skill; la salida es **revertir después** con el snapshot que `skill_events`
+> guarda desde L1. (b) **Fuera `MIN_REP=3`** — contar repeticiones mide
+> constancia, no aprendizaje: un trabajo hecho UNA vez puede enseñar, y nueve
+> fallos con un acierto enseñan más que tres repeticiones (los fallos se guardan
+> como `pitfalls` y viajan al prompt). 17 tests nuevos, **4 mutaciones**
+> confirmadas y restauradas byte a byte, **195 passed** en todo el Learner + 81
+> en TIE (el único fallo, `test_startup_time`, es el flake de entorno ya
+> documentado: falla también en solitario y ningún import de SK1 es pesado ni
+> eager). **Hallazgo real de sus propios tests**: `skill_library.search` degrada
+> a `LIKE %frase entera%` sin ChromaDB sano, y eso NUNCA casa con un objetivo en
+> lenguaje natural — con la BD vectorial fría la recuperación no habría devuelto
+> nada **en silencio** y toda la función habría sido invisible; cerrado con un
+> respaldo por palabras de contenido que reusa el mismo Jaccard y umbral que ya
+> usa el Learner. **La cuarentena se CONSERVA** para skills importadas de un
+> runtime ajeno (doc 27 H3): sin misiones juzgadas ni pasos anclados, es otra
+> clase de riesgo. Política registrada en docs **41 §SK1, 15 §13, 09 §1.2 y 27
+> (ML2/SE1/H3)** para que una sesión futura no la deshaga por inercia — SE1
+> (V1.2) sustituirá la puerta de comparación por su torneo con banco real, no el
+> destino. **Pendiente (→ SK2)**: que las skills aprendidas entren en el catálogo
+> asignable a agentes, que el briefing informe de lo añadido/mejorado cada día, y
+> que el panel Aprendizaje pase a informativo (sin aceptar/rechazar, con
+> revertir/eliminar y la traza completa de qué se hizo y por qué).
 
 ---
 
-*Última actualización: 2026-08-08 — **CAMPAÑA 03 — TEST E2E EN VIVO DEL
+*Última actualización: 2026-08-08 — **V1.2 C1 EJECUTADA — MCP CLIENT: Aithera
+habla el estándar del sector (doc 27 §C1, primera sesión de la fase V1.2)**.
+Módulo `app/mcp/` NUEVO: el usuario conecta servidores MCP externos (GitHub o
+cualquiera del ecosistema) desde Ajustes → Conexiones y sus tools entran al
+ToolManager como ciudadanas de primera — MISMA whitelist, MISMAS validaciones,
+timeout duro y log de auditoría — más las suyas propias, porque un servidor
+MCP es código externo de facto: **gate SIEMPRE** (`requires_confirmation` en
+tool Y en cada acción → ninguna acción MCP se ejecuta sin ApprovalGate;
+permiso nuevo **`mcp.use`** en A3b, riesgo ALTO, fuera de `balanced`, mapeado
+por PREFIJO `mcp_` en `permission_for_tool_action` — la constante vive en
+permissions.py como vocabulario de seguridad, con test anti-divergencia),
+**sandbox de argumentos** (solo se envía lo que el inputSchema del servidor
+declara; un argumento colado se RECHAZA, no se reenvía; tipos primitivos
+comprobados, bool≠int), y **respuesta = datos** (`clean_external` S9c antes
+del transcript). Arquitectura del cliente: un worker-task por servidor que
+posee la pila anyio entera (los cancel-scopes del SDK exigen misma-task —
+abrir en una task y usar desde otra revienta), con las lecciones S9
+(double-checked locking del lanzamiento) y S9b (muerto→relanza UNA vez)
+copiadas, no reinventadas; **hallazgo de la verificación en vivo**: un
+servidor que muere AL ARRANCAR se comía el timeout entero (30s medidos) antes
+de reportar — `ensure_ready` pasa a esperar "listo O worker muerto, lo
+primero" y falla en <1s con la causa real. **Desviación al alza documentada**:
+transporte `http` (streamable) además de stdio/SSE — SSE está deprecado en el
+estándar y los servidores remotos de 2026 usan streamable HTTP; sin él, el
+directorio de MCPs de C1b no funcionaría con la mayoría. Windows+npx resuelto
+(`cmd /c` para .cmd/.bat — sin esto, conectar los servidores más comunes del
+ecosistema fallaría en la máquina real). Config en tabla `Config` (sin
+migración): `mcp.servers` + secretos DPAPI (`mcp.secret.<n>`, cifrado entero,
+la API devuelve solo NOMBRES de claves) + caché de tools descubiertas
+(`mcp.tools.<n>`, para que el catálogo del TIE tenga las acciones tras un
+reinicio sin esperar a reconectar — la conexión es PEREZOSA: registrar no
+conecta, así que un servidor caído no retrasa ni rompe el arranque).
+`ToolManager.unregister` (4 líneas) para alta/baja EN CALIENTE. Endpoints
+`/api/mcp` (CRUD + `/test` — la única llamada cara a propósito — + `/tools`)
++ `McpPanel.tsx` en Ajustes → Conexiones (+26 claves i18n ×4, paridad 1390).
+**Product-contracts de la fase V1.2 escritos (regla de la primera sesión,
+patrón L1)** en `test_product_v12.py`: nº1 "una tool MCP jamás se ejecuta sin
+pasar el gate" y nº2 "un servidor MCP caído no rompe el ToolManager" — VERDES
+(el nº1 con el toolloop REAL: gate abierto antes de ejecutar, rechazo = cero
+ejecuciones); nº3 "misión con paralelismo no mezcla sesiones" (T1), nº4
+"modelo mal puntuado baja en la cadena tras el ciclo nocturno" (ML1), nº5
+"una exploración jamás cambia el output del usuario" (PE2) y nº6 "una
+variante solo llega a la bandeja tras ganar en el banco" (SE1) — EN ROJO
+(xfail estricto: quien los implemente tendrá que quitar la marca a
+conciencia). Tests: `test_mcp_client.py` (23 — store/cifrado en reposo,
+proxy/sandbox/preflight/permiso, INTEGRACIÓN contra un servidor MCP REAL por
+stdio — `tests/mcp_mini_server.py`, el SDK oficial lanzado como subproceso,
+sin mocks — y los endpoints HTTP vía TestClient, que además ejercitan el
+lifespan entero). 3 mutaciones confirmadas y restauradas byte a byte (gate
+desactivado, mapeo de permiso quitado, sanitización quitada). Regresión: 53
+passed + 4 xfailed del subconjunto + 183 del área amplia; 2 tests de
+contrato de A3b actualizados al catálogo nuevo (11→12 permisos, mismo flip
+que hizo A3b con 9→11). **El único fallo restante es AJENO**:
+`test_contrato_sin_permiso_no_se_escribe_nada` lo rompe el cambio EN VUELO
+(sin commitear) de la sesión concurrente SK1 — su `procedure_for` añade un
+await de ChromaDB antes de la primera vuelta del toolloop y revienta el
+margen de 0,1s de ese test; documentado aquí para esa sesión, sus archivos
+no se tocaron. `tsc --noEmit` limpio + `vite build` completo (13,8s).
+**Pendiente en Windows**: reiniciar el backend y conectar un servidor MCP
+real del ecosistema desde Ajustes → Conexiones (p. ej. `npx -y
+@modelcontextprotocol/server-github` con un GITHUB_TOKEN) — pulsar «Probar»
+debe descubrir sus tools, y pedir por chat algo que las use debe abrir el
+gate de aprobación. La siguiente pieza (C1b, diseño en esta misma sesión):
+el DIRECTORIO de MCPs conectables con un clic + /comando + uso por contexto.*
+
+*Anterior: 2026-08-08 — **SK1 — LAS SKILLS SE USAN + AUTO-APLICACIÓN
+PROBADA (§30, doc 41 §SK1)**: el análisis honesto que pidió el usuario destapó
+que toda la cadena LC1→LC3 terminaba en una fila que nadie leía — ningún punto
+del TIE recuperaba jamás una skill, así que crear, juzgar y mejorar no cambiaba
+nada de cómo trabaja Aithera. `app/learner/retrieval.py` las recupera POR
+CONTEXTO (objetivo + herramientas + proyecto) y las antepone al prompt del
+planner y del bucle de herramientas, con lo que NO funcionó incluido. Y por
+decisión del usuario, las skills del trabajo propio se crean y se mejoran sin
+aprobación (el briefing informa): el control pasa a la suficiencia juzgada +
+pasos anclados en tools reales para crear, a la pertinencia + mejora demostrada
+para mejorar, y a revertir después. Fuera la regla de las 3 misiones: contar
+repeticiones mide constancia, no aprendizaje. 17 tests, 4 mutaciones, 195+81
+passed. **Pendiente en Windows**: `alembic upgrade head` (las 2 migraciones de
+LC1 siguen sin aplicar) + reiniciar backend; luego pedirle dos veces un trabajo
+parecido y confirmar que la segunda ya llega guiada.*
+
+*Anterior: 2026-08-08 — **CAMPAÑA 03 — TEST E2E EN VIVO DEL
 LEARNER + FIX: EL JUEZ YA NO TIENE PLAZO** (`test-lab/campanya-03-learner-e2e-vivo/INFORME.md`).
 Petición directa del usuario: probar el Learner de punta a punta usando
 Aithera de verdad (chat real → TIE → Orquestador → MEL → herramientas →

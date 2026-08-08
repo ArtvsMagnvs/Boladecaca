@@ -32,6 +32,8 @@ from app.api.endpoints import telegram as telegram_endpoints
 # V1.0/1.1 (Tools): configuracion de Search Tool (Brave/SerpAPI, mismo patron
 # de secreto cifrado que Telegram).
 from app.api.endpoints import search_config as search_config_endpoints
+# V1.2 (C1): servidores MCP externos (CRUD + test + tools descubiertas).
+from app.api.endpoints import mcp_servers as mcp_servers_endpoints
 # V1.0 (MEL v1, E1b): router del Model Execution Layer (informe de capacidades
 # auto-investigado). El import registra ademas los modelos de app.mel
 # (mel_executions/mel_policies/mel_capability_reports) antes del create_all.
@@ -190,6 +192,21 @@ async def lifespan(app: FastAPI):
             "startup", e,
             "No se pudo iniciar el canal Telegram (backend sigue sin ese canal)",
         )
+
+    # V1.2 (C1, doc 27 §C1): servidores MCP externos. Registrar NO conecta —
+    # la conexión es perezosa (primer uso, o el botón "Probar" de Ajustes) —
+    # así que un servidor caído no retrasa NI rompe el arranque. Fail-soft por
+    # servidor dentro de register_enabled_servers; try/except total aquí por
+    # si falta la lib `mcp` (patrón telegram: sin ella, el backend sigue).
+    try:
+        from app import mcp as mcp_service
+        from app.tools.tool_manager import tool_manager as _tm
+
+        _mcp_ids = mcp_service.register_enabled_servers(_tm)
+        if _mcp_ids:
+            log_info("startup", f"Servidores MCP registrados: {', '.join(_mcp_ids)}")
+    except Exception as e:
+        log_error("startup", e, "No se pudieron registrar los servidores MCP (backend sigue)")
 
     # V0.9 (Automation A2a): APScheduler es ahora el planificador ÚNICO. Absorbe
     # los jobs asyncio de V0.85 (ingesta M2, resumen nocturno M3) + el nuevo
@@ -492,6 +509,14 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         log_error("shutdown", e, "Error deteniendo los canales del Gateway")
 
+    # V1.2 (C1): apagar los workers de conexión MCP (cancelan su transport,
+    # que termina el subproceso stdio del servidor si lo hay).
+    try:
+        from app import mcp as mcp_service
+        await mcp_service.shutdown_all()
+    except Exception as e:
+        log_error("shutdown", e, "Error apagando las conexiones MCP")
+
     # FIX (audit sistema de audio): el httpx.AsyncClient de ElevenLabs
     # (creado una vez al importar app.voice.elevenlabs_voice) nunca se
     # cerraba en shutdown. En un solo proceso de desarrollo no se nota, pero
@@ -568,6 +593,8 @@ app.include_router(memory.router, prefix="/api")
 # V0.8 (Fase 5 Clientes): configuracion del canal Telegram (status/configure).
 app.include_router(telegram_endpoints.router, prefix="/api")
 app.include_router(search_config_endpoints.router, prefix="/api")
+# V1.2 (C1): servidores MCP externos (CRUD + test + tools descubiertas).
+app.include_router(mcp_servers_endpoints.router, prefix="/api")
 app.include_router(local_models_endpoints.router, prefix="/api")
 app.include_router(codex_setup_endpoints.router, prefix="/api")
 app.include_router(onboarding_endpoints.router, prefix="/api")

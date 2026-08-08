@@ -992,7 +992,7 @@ el git log de este doc si hiciera falta consultar el alcance original.)*
 > ese gap. Nota de diseño: OpenJarvis expone MCP cliente Y servidor de forma
 > bidireccional — nuestro C2 (server) ya lo prevé, mantenerlo en el alcance.
 
-### C1 — MCP client · **Fable 5, extra**
+### ✅ C1 — MCP client · **Fable 5, extra** — EJECUTADA (2026-08-08)
 - Alcance: `MCPToolProxy` — tools de servidores MCP externos registradas en el
   ToolManager con LAS MISMAS validaciones (schema, whitelist, gates, permiso
   nuevo `mcp.use` en A3b); config de servidores en Ajustes (stdio/SSE); sandbox
@@ -1001,6 +1001,38 @@ el git log de este doc si hiciera falta consultar el alcance original.)*
   "misión con paralelismo no mezcla sesiones" (para T1); "un modelo mal puntuado
   N veces baja en la cadena tras el ciclo nocturno" (para ML1).
 - Por qué Fable: superficie de seguridad nueva (código externo de facto).
+- **Cierre**: `app/mcp/` NUEVO (store en tabla Config + secretos DPAPI ·
+  cliente con un worker-task por servidor que posee la pila anyio entera —
+  los cancel-scopes del SDK exigen misma-task; locks S9, muerto→relanza-una-vez
+  S9b, muerto-al-arrancar detectado al morir y no al agotar el plazo — hallazgo
+  de la verificación en vivo · `MCPToolProxy` con gate en tool Y en cada
+  acción, sandbox de argumentos contra el inputSchema del propio servidor —
+  un argumento no declarado se RECHAZA, no se reenvía—, respuesta saneada con
+  `clean_external` S9c, preflight barato Sesión A). **Desviación al alza**:
+  transporte `http` (streamable) además de stdio/SSE — SSE quedó deprecado en
+  el estándar y los servidores remotos de 2026 usan streamable HTTP.
+  `mcp.use` en el catálogo A3b (riesgo ALTO, fuera de `balanced`) + mapeo por
+  PREFIJO `mcp_` en `permission_for_tool_action` (la constante vive en
+  permissions.py, vocabulario de seguridad; test anti-divergencia con el
+  proxy). `ToolManager.unregister` (4 líneas) para alta/baja EN CALIENTE
+  desde Ajustes. Endpoints `/api/mcp` (CRUD + /test + /tools; los secretos
+  entran y NUNCA salen — solo nombres de claves). UI: `McpPanel.tsx` en
+  Ajustes → Conexiones (+26 claves i18n ×4, paridad 1390). Tests:
+  `test_mcp_client.py` (23 — store/cifrado, proxy/sandbox/preflight/permiso,
+  integración contra un servidor MCP REAL por stdio `tests/mcp_mini_server.py`,
+  endpoints HTTP) + `test_product_v12.py` (los 6 contratos de la fase: 2
+  VERDES de C1 + 4 xfail estrictos para T1/ML1/PE2/SE1, incluidos los 2 de la
+  ampliación como pedía la regla de la primera sesión). 3 mutaciones
+  confirmadas y restauradas byte a byte. Regresión: 53 passed + 4 xfailed en
+  el subconjunto MCP/permisos/contratos/boundaries + 183 del área amplia
+  (el único fallo, `test_contrato_sin_permiso_no_se_escribe_nada`, es de los
+  cambios EN VUELO de la sesión concurrente SK1 — su `procedure_for` añade un
+  await antes de la primera vuelta del bucle y rompe el margen de 0,1s de ese
+  test; ajeno a C1, anotado para esa sesión). `tsc --noEmit` limpio +
+  `vite build` completo. **Pendiente**: conectar un servidor MCP real del
+  ecosistema (npx) en vivo desde Ajustes — la mecánica stdio+npx (cmd /c en
+  Windows) está implementada y el flujo entero verificado contra el
+  mini-servidor real del venv.
 
 ### C2 — MCP server · **Opus, alto**
 - Alcance: exponer el ToolManager como servidor MCP (stdio para Claude
@@ -1028,6 +1060,15 @@ el git log de este doc si hiciera falta consultar el alcance original.)*
   en sombra, bandeja de recomendaciones con evidencia, auto-aplicar solo pristine.
 - Tests: producto "modelo mal puntuado baja tras ciclo" verde; unit de las 4
   defensas anti-conclusión-falsa (fixtures sintéticas).
+
+> ⚠ **[SK1, 2026-08-08 — DECISIÓN DEL USUARIO QUE SUPERSEDE PARTE DE ESTA
+> SESIÓN]** Las skills aprendidas del TRABAJO PROPIO ya no pasan por cuarentena
+> ni por aprobación: se crean y se mejoran DIRECTAMENTE, y el briefing lo
+> cuenta. Cuando llegue ML2, `merge/split/specialize/deprecate` sobre skills
+> **se aplican igual que improve** (sin bandeja); lo que se conserva de la
+> cuarentena es para los kinds que no son skills. No re-introducir la
+> aprobación previa para skills: se retiró a propósito, no por olvido. Ver
+> doc 41 §SK1 y `consolidation.py` (cabecera).
 
 ### ML2 — Skill Evolution + AutomationLearner · **Opus, alto**
 - Alcance: operaciones merge/split/specialize/deprecate como PROPUESTAS (doc 15
@@ -1124,7 +1165,13 @@ es el mismo modelo que ejecutó la variante juzgada**; si solo hay un modelo
 capaz disponible, se juzga igual pero el resultado queda marcado
 `judge_bias=true` (visible en la evidencia — nunca silencioso).
 
-**Resultado**: SOLO la ganadora entra como propuesta REAL en la bandeja, con la
+**Resultado** — ⚠ **[SK1, 2026-08-08]** con la auto-aplicación en vigor, "entra
+como propuesta en la bandeja" pasa a ser "SE APLICA": el torneo sustituye a la
+comparación ligera de `comparison.py` como puerta previa, no al destino. Todo lo
+demás de esta sesión (el banco, la whitelist de lectura, el juez ≠ ejecutor, el
+incumbente que gana = no se toca nada) sigue igual y sigue siendo necesario.
+
+SOLO la ganadora entra como propuesta REAL en la bandeja, con la
 **tabla comparativa completa adjunta como evidencia** (el usuario ve por qué
 ganó); las perdedoras se registran en `skill_events` con la comparativa en el
 payload — el porqué nunca se pierde. **Si el incumbente gana, no hay
@@ -1281,6 +1328,12 @@ caminos nuevos; 1 resultó mejor y ya te lo he propuesto"*.
 - AitheraToolProvider (gates SIEMPRE; grounding A-1 aplicado: lo que Hermes dice
   haber hecho debe tener tool ejecutada) + AitheraSkillProvider (skills de
   Hermes → LSL como DRAFT con cuarentena).
+- ⚠ **[SK1, 2026-08-08]** La cuarentena de esta sesión SE MANTIENE, y no es una
+  incoherencia con la auto-aplicación: la decisión del usuario habla de aprender
+  del TRABAJO PROPIO, con misiones reales juzgadas y pasos anclados en
+  herramientas que se usaron de verdad. Una skill IMPORTADA de un runtime ajeno
+  no tiene nada de eso — es otra clase de riesgo y entra como `draft`, que es
+  justo el estado que `retrieval.py` no consulta.
 
 ### H4 — Routing + cierre · **Opus, alto**
 - Routing por capabilities en el TIE (tareas complejas→Hermes, simples→toolloop

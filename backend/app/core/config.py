@@ -35,6 +35,14 @@ class Settings:
     # corta un loop de mensajes (un canal que reenvia en bucle).
     GATEWAY_COOLDOWN_S = float(os.getenv("GATEWAY_COOLDOWN_S", "1.0"))
 
+    # V1.2 (C1, doc 27 §C1): cliente MCP. Plazo para lanzar+inicializar la
+    # conexión con un servidor MCP externo (un stdio con npx puede tardar en
+    # el primer arranque porque descarga el paquete), y plazo por llamada a
+    # una tool de ese servidor. La llamada además sigue bajo el timeout duro
+    # del ToolManager, como cualquier tool.
+    MCP_CONNECT_TIMEOUT_S = float(os.getenv("MCP_CONNECT_TIMEOUT_S", "45"))
+    MCP_CALL_TIMEOUT_S = float(os.getenv("MCP_CALL_TIMEOUT_S", "120"))
+
     # V1.0 (TIE v1): kill-switch del Task Intelligence Engine. Con False, el
     # Gateway sigue usando el chat_message_handler legacy (el switch a tie.handle
     # es T4). En T1 el TIE existe pero no está enganchado todavía.

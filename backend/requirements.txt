@@ -123,6 +123,14 @@ openpyxl==3.1.5
 # estable con AsyncIOScheduler); 4.x es una reescritura beta, no se usa.
 APScheduler==3.11.0
 
+# --- Cliente MCP (V1.2 C1, doc 27 §C1) ---
+# SDK oficial del Model Context Protocol. Aithera como CLIENTE: el usuario
+# conecta servidores MCP externos y sus tools entran al ToolManager
+# (app/mcp/). Trae sus propios forks vendorizados de httpx (httpx2/httpcore2)
+# — verificado que NO toca el httpx 0.28.1 del proyecto. Import LAZY en
+# app/mcp/client.py: sin la lib, el backend arranca igual (patrón telegram).
+mcp==2.0.0
+
 # --- Desktop app (CustomTkinter) ---
 customtkinter==5.2.2
 darkdetect==0.8.0

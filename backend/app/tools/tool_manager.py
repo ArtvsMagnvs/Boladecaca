@@ -97,6 +97,12 @@ class ToolManager:
             print(f"[ToolManager] Reemplazando herramienta: {tool.tool_id}")
         self._tools[tool.tool_id] = tool
 
+    def unregister(self, tool_id: str) -> bool:
+        """[V1.2 C1] Retira una herramienta del registro. Lo usan los proxies
+        MCP cuando el usuario borra/deshabilita un servidor en Ajustes — sin
+        esto, el cambio solo surtiria efecto al reiniciar el backend."""
+        return self._tools.pop(tool_id, None) is not None
+
     def get_tool(self, tool_id: str) -> Optional[BaseTool]:
         return self._tools.get(tool_id)
 

@@ -21,6 +21,7 @@ import VoicePanel from "@/components/voice/VoicePanel";
 import CodexSetup from "@/components/settings/CodexSetup";
 // [PU4b] Pestaña Briefing (secciones/horarios/noticias del briefing 2.0).
 import BriefingPanel from "@/components/settings/BriefingPanel";
+import McpPanel from "@/components/settings/McpPanel";
 import { shortRef } from "@/lib/modelNames";
 import { PROVIDER_AUTH_HELP } from "@/data/providerAuthHelp";
 
@@ -2685,6 +2686,14 @@ export default function Settings() {
               {tr("connections.telegram.desc")}
             </p>
             <TelegramSettings />
+          </div>
+
+          {/* V1.2 (C1): seccion Servidores MCP */}
+          <div className="glass-surface rounded-2xl p-4">
+            <h3 className="text-sm font-medium text-ink mb-3">
+              {tr("connections.mcp.title")}
+            </h3>
+            <McpPanel />
           </div>
         </div>
       )}

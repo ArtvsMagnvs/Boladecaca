@@ -549,6 +549,34 @@ export interface TelegramStatus {
   token_masked: string;
 }
 
+// V1.2 (C1): servidores MCP externos conectados por el usuario.
+export interface McpServer {
+  name: string;
+  transport: "stdio" | "sse" | "http";
+  command: string;
+  args: string[];
+  url: string;
+  description: string;
+  enabled: boolean;
+  connected: boolean;
+  last_error: string | null;
+  tools_count: number;
+  secret_keys: { env: string[]; headers: string[] };
+}
+
+export interface McpServerIn {
+  name: string;
+  transport: "stdio" | "sse" | "http";
+  command?: string;
+  args?: string[];
+  url?: string;
+  description?: string;
+  enabled?: boolean;
+  // Secretos: omitidos = conservar los guardados (nunca vuelven por la API).
+  env?: Record<string, string>;
+  headers?: Record<string, string>;
+}
+
 export interface SearchProviderStatus {
   configured: boolean;
   key_masked: string;
@@ -1014,6 +1042,21 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ mode }),
     }),
+
+  // --- Servidores MCP (V1.2 C1) ---
+  getMcpServers: () => request<McpServer[]>("/mcp/servers"),
+  upsertMcpServer: (data: McpServerIn) =>
+    request<McpServer>("/mcp/servers", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+  deleteMcpServer: (name: string) =>
+    request<{ ok: boolean }>(`/mcp/servers/${name}`, { method: "DELETE" }),
+  testMcpServer: (name: string) =>
+    request<McpServer>(`/mcp/servers/${name}/test`, { method: "POST" }),
+  getMcpServerTools: (name: string) =>
+    request<{ tools: { name: string; description: string }[] }>(
+      `/mcp/servers/${name}/tools`),
 
   // --- Email + Calendar (V0.7 Fase 4) ---
   // Email status

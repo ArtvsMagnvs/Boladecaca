@@ -111,6 +111,18 @@ CATALOG: list[PermissionDef] = [
                     "en la vista de Misiones.",
         group="Misiones", risk="low",
     ),
+    # [V1.2 C1, doc 27 §C1] Tools de servidores MCP externos. Riesgo ALTO por
+    # definición: un servidor MCP es código externo de facto (un proceso o un
+    # servicio remoto que Aithera no controla). risk="high" → fuera del perfil
+    # `balanced`; solo `full` o el toggle explícito lo pre-autorizan. El gate
+    # se abre SIEMPRE (MCPToolProxy fuerza requires_confirmation en todo);
+    # este permiso solo decide si se auto-resuelve — con rastro, como siempre.
+    PermissionDef(
+        id="mcp.use", label="Usar servidores MCP conectados",
+        description="Ejecutar acciones de los servidores MCP externos que hayas "
+                    "conectado (GitHub, etc.) sin confirmarte cada una.",
+        group="Conexiones externas", risk="high",
+    ),
 ]
 
 _BY_ID: dict[str, PermissionDef] = {p.id: p for p in CATALOG}
@@ -200,12 +212,25 @@ _ACTION_PERMISSION: dict[str, str] = {
     "aithera.run_agent_task": "agent.execute",
 }
 
+# [V1.2 C1] Prefijo de tool_id de los servidores MCP externos (MCPToolProxy
+# registra `mcp_<servidor>`). Vive AQUÍ y no en app/mcp porque es vocabulario
+# de SEGURIDAD: es lo que traduce cualquier tool MCP —presente o futura, con
+# cualquier nombre de servidor— al permiso `mcp.use`. app/mcp lo importa de
+# este módulo (dirección automation ← mcp, sin ciclo) y un test de contrato
+# vigila que ambos usen la MISMA constante.
+MCP_TOOL_PREFIX = "mcp_"
+
 
 def permission_for_tool_action(tool_id: str, action: str) -> Optional[str]:
     """El permiso del catálogo que gobierna una acción de tool, o None si esa
     acción no está cubierta por ninguno (→ se pregunta siempre, fail-closed)."""
     if not tool_id:
         return None
+    # Los servidores MCP tienen nombre dinámico — el mapeo es por prefijo, no
+    # por enumeración: mcp_github, mcp_loquesea → mcp.use, sin tocar este
+    # archivo por cada servidor que el usuario conecte.
+    if tool_id.startswith(MCP_TOOL_PREFIX):
+        return "mcp.use"
     return _ACTION_PERMISSION.get(f"{tool_id}.{action}") or _TOOL_PERMISSION.get(tool_id)
 
 
