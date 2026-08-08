@@ -1,0 +1,218 @@
+{
+  "_meta": {
+    "about": "Catálogo CURADO de servidores MCP conectables con un clic (V1.2 C1b, doc 42 §2). Estático y local — mismo patrón que skillsCatalog.json (PU2): sin fetch en tiempo de ejecución, la app funciona sin red. Lo que NO esté aquí se busca en el registro oficial desde el propio panel (segundo nivel).",
+    "verificado": "2026-08-08 — cada paquete npm comprobado contra registry.npmjs.org (existe y no está deprecado) y cada URL remota comprobada con un initialize real (responden 401 = viven y piden credenciales). No hay ni una entrada escrita de memoria.",
+    "excluidos_a_proposito": "filesystem y memory oficiales: Aithera ya tiene sus propias herramientas de archivos y de memoria, y duplicarlas confunde al planificador en vez de añadir nada."
+  },
+  "categories": [
+    { "id": "desarrollo", "label_es": "Desarrollo" },
+    { "id": "productividad", "label_es": "Productividad" },
+    { "id": "web", "label_es": "Web e investigación" },
+    { "id": "negocio", "label_es": "Negocio" },
+    { "id": "diseno", "label_es": "Diseño" },
+    { "id": "razonamiento", "label_es": "Razonamiento" }
+  ],
+  "servers": [
+    {
+      "slug": "github",
+      "category": "desarrollo",
+      "title": "GitHub",
+      "description_es": "Tus repositorios, issues, pull requests, ramas y commits en GitHub.",
+      "config": { "transport": "http", "url": "https://api.githubcopilot.com/mcp/" },
+      "secrets": [
+        {
+          "key": "Authorization",
+          "kind": "header",
+          "prefix": "Bearer ",
+          "label_es": "Token personal de GitHub (classic o fine-grained)",
+          "help_url": "https://github.com/settings/tokens",
+          "required": true
+        }
+      ],
+      "context_hints": "repositorios de código, issues, pull requests, commits, ramas, GitHub"
+    },
+    {
+      "slug": "sentry",
+      "category": "desarrollo",
+      "title": "Sentry",
+      "description_es": "Errores y trazas de tus aplicaciones registrados en Sentry.",
+      "config": { "transport": "http", "url": "https://mcp.sentry.dev/mcp" },
+      "secrets": [
+        {
+          "key": "Authorization",
+          "kind": "header",
+          "prefix": "Bearer ",
+          "label_es": "Token de usuario de Sentry",
+          "help_url": "https://sentry.io/settings/account/api/auth-tokens/",
+          "required": true
+        }
+      ],
+      "context_hints": "errores de producción, excepciones, trazas, crashes, Sentry"
+    },
+    {
+      "slug": "playwright",
+      "category": "desarrollo",
+      "title": "Playwright",
+      "description_es": "Automatiza y prueba páginas web con un navegador controlado por Playwright.",
+      "config": { "transport": "stdio", "command": "npx", "args": ["-y", "@playwright/mcp@latest"] },
+      "secrets": [],
+      "context_hints": "pruebas de navegador, automatizar una web, tests end-to-end, Playwright"
+    },
+    {
+      "slug": "context7",
+      "category": "desarrollo",
+      "title": "Context7",
+      "description_es": "Documentación actualizada de librerías y frameworks, lista para programar con ella.",
+      "config": { "transport": "stdio", "command": "npx", "args": ["-y", "@upstash/context7-mcp"] },
+      "secrets": [],
+      "context_hints": "documentación de una librería, API de un framework, cómo se usa un paquete"
+    },
+    {
+      "slug": "supabase",
+      "category": "desarrollo",
+      "title": "Supabase",
+      "description_es": "Tu base de datos, tablas y funciones en Supabase.",
+      "config": { "transport": "stdio", "command": "npx", "args": ["-y", "@supabase/mcp-server-supabase@latest"] },
+      "secrets": [
+        {
+          "key": "SUPABASE_ACCESS_TOKEN",
+          "kind": "env",
+          "label_es": "Token de acceso personal de Supabase",
+          "help_url": "https://supabase.com/dashboard/account/tokens",
+          "required": true
+        }
+      ],
+      "context_hints": "base de datos Supabase, tablas, consultas SQL, migraciones"
+    },
+    {
+      "slug": "notion",
+      "category": "productividad",
+      "title": "Notion",
+      "description_es": "Tus páginas, bases de datos y notas de Notion.",
+      "config": { "transport": "http", "url": "https://mcp.notion.com/mcp" },
+      "secrets": [],
+      "context_hints": "páginas de Notion, mis notas, base de datos de Notion, wiki"
+    },
+    {
+      "slug": "linear",
+      "category": "productividad",
+      "title": "Linear",
+      "description_es": "Issues, ciclos y proyectos de tu equipo en Linear.",
+      "config": { "transport": "http", "url": "https://mcp.linear.app/mcp" },
+      "secrets": [],
+      "context_hints": "issues de Linear, tickets del equipo, sprint, backlog"
+    },
+    {
+      "slug": "airtable",
+      "category": "productividad",
+      "title": "Airtable",
+      "description_es": "Bases, tablas y registros de Airtable.",
+      "config": { "transport": "stdio", "command": "npx", "args": ["-y", "airtable-mcp-server"] },
+      "secrets": [
+        {
+          "key": "AIRTABLE_API_KEY",
+          "kind": "env",
+          "label_es": "Token de acceso personal de Airtable",
+          "help_url": "https://airtable.com/create/tokens",
+          "required": true
+        }
+      ],
+      "context_hints": "base de Airtable, registros, tabla de Airtable"
+    },
+    {
+      "slug": "firecrawl",
+      "category": "web",
+      "title": "Firecrawl",
+      "description_es": "Extrae el contenido de páginas web completas y lo devuelve limpio y estructurado.",
+      "config": { "transport": "stdio", "command": "npx", "args": ["-y", "firecrawl-mcp"] },
+      "secrets": [
+        {
+          "key": "FIRECRAWL_API_KEY",
+          "kind": "env",
+          "label_es": "Clave de API de Firecrawl",
+          "help_url": "https://www.firecrawl.dev/app/api-keys",
+          "required": true
+        }
+      ],
+      "context_hints": "extraer el contenido de una web, rastrear un sitio entero, scraping"
+    },
+    {
+      "slug": "exa",
+      "category": "web",
+      "title": "Exa",
+      "description_es": "Búsqueda web pensada para investigación: resultados por significado, no por palabras clave.",
+      "config": { "transport": "stdio", "command": "npx", "args": ["-y", "exa-mcp-server"] },
+      "secrets": [
+        {
+          "key": "EXA_API_KEY",
+          "kind": "env",
+          "label_es": "Clave de API de Exa",
+          "help_url": "https://dashboard.exa.ai/api-keys",
+          "required": true
+        }
+      ],
+      "context_hints": "investigación profunda en internet, buscar papers, búsqueda semántica"
+    },
+    {
+      "slug": "tavily",
+      "category": "web",
+      "title": "Tavily",
+      "description_es": "Búsqueda web y extracción de contenido orientadas a agentes.",
+      "config": { "transport": "stdio", "command": "npx", "args": ["-y", "tavily-mcp"] },
+      "secrets": [
+        {
+          "key": "TAVILY_API_KEY",
+          "kind": "env",
+          "label_es": "Clave de API de Tavily",
+          "help_url": "https://app.tavily.com/home",
+          "required": true
+        }
+      ],
+      "context_hints": "buscar en internet con contexto, noticias recientes, investigar un tema"
+    },
+    {
+      "slug": "stripe",
+      "category": "negocio",
+      "title": "Stripe",
+      "description_es": "Pagos, clientes, suscripciones y facturas de tu cuenta de Stripe.",
+      "config": { "transport": "http", "url": "https://mcp.stripe.com" },
+      "secrets": [
+        {
+          "key": "Authorization",
+          "kind": "header",
+          "prefix": "Bearer ",
+          "label_es": "Clave secreta de Stripe (usa la de modo prueba para empezar)",
+          "help_url": "https://dashboard.stripe.com/apikeys",
+          "required": true
+        }
+      ],
+      "context_hints": "cobros, clientes de Stripe, suscripciones, facturas, pagos"
+    },
+    {
+      "slug": "figma",
+      "category": "diseno",
+      "title": "Figma",
+      "description_es": "Lee tus diseños de Figma para convertirlos en código o describirlos.",
+      "config": { "transport": "stdio", "command": "npx", "args": ["-y", "figma-developer-mcp", "--stdio"] },
+      "secrets": [
+        {
+          "key": "FIGMA_API_KEY",
+          "kind": "env",
+          "label_es": "Token personal de Figma",
+          "help_url": "https://www.figma.com/developers/api#access-tokens",
+          "required": true
+        }
+      ],
+      "context_hints": "diseño de Figma, maqueta, pasar un diseño a código, componentes"
+    },
+    {
+      "slug": "pensamiento",
+      "category": "razonamiento",
+      "title": "Pensamiento secuencial",
+      "description_es": "Ayuda a desmenuzar problemas difíciles en pasos, revisando el razonamiento sobre la marcha.",
+      "config": { "transport": "stdio", "command": "npx", "args": ["-y", "@modelcontextprotocol/server-sequential-thinking"] },
+      "secrets": [],
+      "context_hints": "problema complejo, pensar paso a paso, analizar en profundidad"
+    }
+  ]
+}

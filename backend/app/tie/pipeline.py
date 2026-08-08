@@ -22,8 +22,8 @@ from app.core.logging_config import get_system_logger
 from app.core.strings import t as _t
 from app.tie import authority as authority_mod
 from app.tie import progress as _progress
-from app.tie import (conversation, enricher, executor, intents, planner,
-                     quick_answers, responder, tracer)
+from app.tie import (conversation, enricher, executor, intents, mcp_command,
+                     planner, quick_answers, responder, tracer)
 from app.tie.authority import Authority
 from app.tie.contracts import Intent, Mission, NodeState, TaskGraph
 from app.tie.missions import new_mission
@@ -248,6 +248,19 @@ async def handle_stream(text: str, *, channel: str = "web", intent: Optional[Int
             yield ("text", quick_mem)
             return
 
+    # [C1b, doc 42 §3] "/github dame mis PRs". Dentro del MISMO guard que los
+    # quick_*: si el Orquestador ya clasificó (intent != None), también ya
+    # resolvió el comando y nos pasa el texto limpio — no se parsea dos veces.
+    _mcp_pin: Optional[str] = None
+    if intent is None:
+        _cmd = await asyncio.to_thread(mcp_command.parse, text)
+        if _cmd is not None:
+            if _cmd.reply:
+                _record_path("chat")
+                yield ("text", _cmd.reply)
+                return
+            text, _mcp_pin = _cmd.rest, _cmd.tool_id
+
     # [A·VOZ-6] Clasificar SIN emitir "analizando" todavía: el ~80% de los
     # mensajes son camino corto (charla / query simple) y NO deben mostrar
     # "analizando" — eso hacía que un simple "¿cómo estás?" pareciera una misión
@@ -266,6 +279,12 @@ async def handle_stream(text: str, *, channel: str = "web", intent: Optional[Int
     except Exception as e:
         logger.error(f"[tie] handle_stream: clasificación falló: {type(e).__name__}: {e}")
         intent = Intent.conversational_fallback(text)
+
+    # [C1b] El servicio que el usuario nombró con "/" manda sobre lo que el
+    # clasificador dedujera — incluso sobre el fallback conversacional de
+    # arriba: un comando explícito no puede acabar en charla sin herramientas.
+    if _mcp_pin:
+        intent = mcp_command.pin(intent, _mcp_pin)
 
     # [E2b] ¿El usuario nombró un modelo? Aclaración/pin/forzado antes de nada.
     explicit = await _resolve_explicit_model(intent, project_id=None)
@@ -712,6 +731,15 @@ async def _run_pipeline(
     if quick_mem:
         return quick_mem
 
+    # [C1b, doc 42 §3] "/github …" también por el Gateway (Telegram y cualquier
+    # canal futuro): el atajo no puede existir solo en el chat de Electron.
+    _mcp_pin: Optional[str] = None
+    _cmd = await asyncio.to_thread(mcp_command.parse, text)
+    if _cmd is not None:
+        if _cmd.reply:
+            return _cmd.reply
+        text, _mcp_pin = _cmd.rest, _cmd.tool_id
+
     # [1+2] Clasificar y pre-fetch de contexto EN PARALELO (doc 11 B.2): el
     # enricher no sabe todavía qué tipos pedir, así que hace una consulta general;
     # si el intent pide tipos concretos, el planner/nodo la afinará. Coste: una
@@ -720,6 +748,8 @@ async def _run_pipeline(
     ctx_task = asyncio.create_task(_prefetch_context(text))
     intent = await intent_task
     prefetched = await ctx_task
+    if _mcp_pin:
+        intent = mcp_command.pin(intent, _mcp_pin)
 
     # [E2b] ¿El usuario nombró un modelo? Aclarar/pinear/forzar antes de nada.
     explicit = await _resolve_explicit_model(intent, project_id=project_id)

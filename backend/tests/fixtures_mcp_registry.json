@@ -1,0 +1,229 @@
+{
+ "npm_stdio": [
+  {
+   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-09-29/server.schema.json",
+   "name": "com.pulsemcp/remote-filesystem",
+   "description": "MCP server for remote filesystem operations on cloud storage (Google Cloud Storage).",
+   "repository": {
+    "url": "https://github.com/pulsemcp/mcp-servers",
+    "source": "github",
+    "subfolder": "experimental/remote-filesystem"
+   },
+   "version": "0.1.2",
+   "packages": [
+    {
+     "registryType": "npm",
+     "registryBaseUrl": "https://registry.npmjs.org",
+     "identifier": "remote-filesystem-mcp-server",
+     "version": "0.1.2",
+     "runtimeHint": "npx",
+     "transport": {
+      "type": "stdio"
+     },
+     "runtimeArguments": [
+      {
+       "value": "-y",
+       "type": "positional"
+      }
+     ],
+     "environmentVariables": [
+      {
+       "description": "Google Cloud Storage bucket name.",
+       "isRequired": true,
+       "name": "GCS_BUCKET"
+      },
+      {
+       "description": "Google Cloud project ID.",
+       "name": "GCS_PROJECT_ID"
+      },
+      {
+       "description": "Service account email for inline credentials.",
+       "name": "GCS_CLIENT_EMAIL"
+      },
+      {
+       "description": "Service account private key for inline credentials.",
+       "isSecret": true,
+       "name": "GCS_PRIVATE_KEY"
+      },
+      {
+       "description": "Path to Google Cloud service account key file.",
+       "name": "GOOGLE_APPLICATION_CREDENTIALS"
+      },
+      {
+       "description": "Root path prefix to restrict access within bucket.",
+       "name": "GCS_ROOT_PATH"
+      },
+      {
+       "description": "Make uploaded files publicly accessible.",
+       "default": "false",
+       "name": "GCS_MAKE_PUBLIC"
+      },
+      {
+       "description": "Comma-separated tool groups: readonly or readwrite.",
+       "name": "ENABLED_TOOLGROUPS"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-09-29/server.schema.json",
+   "name": "com.pulsemcp/remote-filesystem",
+   "description": "MCP server for remote filesystem operations on cloud storage (Google Cloud Storage).",
+   "repository": {
+    "url": "https://github.com/pulsemcp/mcp-servers",
+    "source": "github",
+    "subfolder": "experimental/remote-filesystem"
+   },
+   "version": "0.1.3",
+   "packages": [
+    {
+     "registryType": "npm",
+     "registryBaseUrl": "https://registry.npmjs.org",
+     "identifier": "remote-filesystem-mcp-server",
+     "version": "0.1.3",
+     "runtimeHint": "npx",
+     "transport": {
+      "type": "stdio"
+     },
+     "runtimeArguments": [
+      {
+       "value": "-y",
+       "type": "positional"
+      }
+     ],
+     "environmentVariables": [
+      {
+       "description": "Google Cloud Storage bucket name.",
+       "isRequired": true,
+       "name": "GCS_BUCKET"
+      },
+      {
+       "description": "Google Cloud project ID.",
+       "name": "GCS_PROJECT_ID"
+      },
+      {
+       "description": "Service account email for inline credentials.",
+       "name": "GCS_CLIENT_EMAIL"
+      },
+      {
+       "description": "Service account private key for inline credentials.",
+       "isSecret": true,
+       "name": "GCS_PRIVATE_KEY"
+      },
+      {
+       "description": "Path to Google Cloud service account key file.",
+       "name": "GOOGLE_APPLICATION_CREDENTIALS"
+      },
+      {
+       "description": "Root path prefix to restrict access within bucket.",
+       "name": "GCS_ROOT_PATH"
+      },
+      {
+       "description": "Make uploaded files publicly accessible.",
+       "default": "false",
+       "name": "GCS_MAKE_PUBLIC"
+      },
+      {
+       "description": "Comma-separated tool groups: readonly or readwrite.",
+       "name": "ENABLED_TOOLGROUPS"
+      }
+     ]
+    }
+   ]
+  }
+ ],
+ "remote_http": [
+  {
+   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-09-29/server.schema.json",
+   "name": "ai.smithery/Hint-Services-obsidian-github-mcp",
+   "description": "Connect AI assistants to your GitHub-hosted Obsidian vault to seamlessly access, search, and analy…",
+   "repository": {
+    "url": "https://github.com/Hint-Services/obsidian-github-mcp",
+    "source": "github"
+   },
+   "version": "0.4.0",
+   "remotes": [
+    {
+     "type": "streamable-http",
+     "url": "https://server.smithery.ai/@Hint-Services/obsidian-github-mcp/mcp",
+     "headers": [
+      {
+       "description": "Bearer token for Smithery authentication",
+       "isRequired": true,
+       "value": "Bearer {smithery_api_key}",
+       "isSecret": true,
+       "name": "Authorization"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-09-16/server.schema.json",
+   "name": "ai.smithery/saidsef-mcp-github-pr-issue-analyser",
+   "description": "A Model Context Protocol (MCP) application for automated GitHub PR analysis and issue management.…",
+   "repository": {
+    "url": "https://github.com/saidsef/mcp-github-pr-issue-analyser",
+    "source": "github"
+   },
+   "version": "1.15.0",
+   "remotes": [
+    {
+     "type": "streamable-http",
+     "url": "https://server.smithery.ai/@saidsef/mcp-github-pr-issue-analyser/mcp",
+     "headers": [
+      {
+       "description": "Bearer token for Smithery authentication",
+       "value": "Bearer {smithery_api_key}",
+       "name": "Authorization"
+      }
+     ]
+    }
+   ]
+  }
+ ],
+ "no_conectable": [
+  {
+   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-09-29/server.schema.json",
+   "name": "io.github.dockersamples/mcp-docker-release-information",
+   "description": "MCP server providing Docker Desktop release notes and security information.",
+   "repository": {
+    "url": "https://github.com/dockersamples/mcp-docker-release-information",
+    "source": "github"
+   },
+   "version": "0.2.0",
+   "packages": [
+    {
+     "registryType": "oci",
+     "identifier": "docker.io/dockersamples/mcp-docker-release-information:0.2.0",
+     "transport": {
+      "type": "stdio"
+     }
+    }
+   ]
+  }
+ ],
+ "pypi_sin_hint": [
+  {
+   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+   "name": "io.github.CSOAI-ORG/docker-helper-ai-mcp",
+   "description": "Docker Helper Ai MCP server. Tools: generate dockerfile, parse compose, optimize image. Buil...",
+   "repository": {
+    "url": "https://github.com/CSOAI-ORG/docker-helper-ai-mcp",
+    "source": "github"
+   },
+   "version": "1.0.1",
+   "packages": [
+    {
+     "registryType": "pypi",
+     "identifier": "docker-helper-ai-mcp",
+     "version": "1.0.1",
+     "transport": {
+      "type": "stdio"
+     }
+    }
+   ]
+  }
+ ]
+}

@@ -564,6 +564,32 @@ export interface McpServer {
   secret_keys: { env: string[]; headers: string[] };
 }
 
+// V1.2 (C1b): una entrada del registro OFICIAL de servidores MCP, ya traducida
+// por el backend a algo conectable (o marcada `connectable: false` con motivo).
+export interface McpDirectorySecret {
+  key: string;
+  kind: "env" | "header";
+  description: string;
+  required: boolean;
+  is_secret: boolean;
+}
+
+export interface McpDirectoryEntry {
+  name: string;
+  title: string;
+  description: string;
+  version: string;
+  repository_url: string;
+  suggested_slug: string;
+  transport: string;
+  command: string;
+  args: string[];
+  url: string;
+  connectable: boolean;
+  reason: string;
+  secrets: McpDirectorySecret[];
+}
+
 export interface McpServerIn {
   name: string;
   transport: "stdio" | "sse" | "http";
@@ -1057,6 +1083,9 @@ export const api = {
   getMcpServerTools: (name: string) =>
     request<{ tools: { name: string; description: string }[] }>(
       `/mcp/servers/${name}/tools`),
+  searchMcpDirectory: (q: string, limit = 20) =>
+    request<{ results: McpDirectoryEntry[] }>(
+      `/mcp/directory/search?q=${encodeURIComponent(q)}&limit=${limit}`),
 
   // --- Email + Calendar (V0.7 Fase 4) ---
   // Email status

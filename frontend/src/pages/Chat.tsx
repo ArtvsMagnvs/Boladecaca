@@ -12,6 +12,8 @@ import { MiniMarkdown } from "@/lib/miniMarkdown";
 import ActivityTrail from "@/components/chat/ActivityTrail";
 import { usePolling } from "@/hooks/usePolling";
 import { useT, useI18n } from "@/store/useI18n";
+import { useDragResize, MIN_CARD_W, MIN_CARD_H, type CardLayout, type Rect } from "./Workspace/useWindowCard";
+import { useChatCardLayout } from "./useChatCardLayout";
 
 // [O1] Trocea la respuesta en fragmentos hablables para el TTS por frases. La
 // clave del turn-taking fluido: agrupa por frases (. ! ? … saltos de línea)
@@ -87,6 +89,22 @@ export default function Chat() {
   // un clic extra en el input.
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   useEffect(() => { textareaRef.current?.focus(); }, []);
+  // [C1b, doc 42 §3] Servicios MCP conectados, para el autocompletado de "/".
+  // Se cargan UNA vez al montar: sin esto el usuario tendría que acordarse de
+  // memoria de cómo se llamaba cada servicio que conectó.
+  const [mcpSlugs, setMcpSlugs] = useState<{ name: string; description: string }[]>([]);
+  useEffect(() => {
+    api.getMcpServers()
+      .then((rows) => setMcpSlugs(rows.filter((r) => r.enabled)
+                                      .map((r) => ({ name: r.name, description: r.description }))))
+      .catch(() => { /* sin servicios conectados: el autocompletado no aparece */ });
+  }, []);
+  // Sugerencias visibles: solo mientras el mensaje ENTERO es "/algo" — en
+  // cuanto hay un espacio, el usuario ya está escribiendo su petición.
+  const slashMatch = /^\/([a-z0-9_-]*)$/i.exec(input);
+  const mcpSuggestions = slashMatch
+    ? mcpSlugs.filter((s) => s.name.startsWith(slashMatch[1].toLowerCase()))
+    : [];
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const location = useLocation();
   const navigate = useNavigate();
@@ -97,6 +115,15 @@ export default function Chat() {
   const backendConnected = useAppStore((s) => s.backendConnected);
   const setCoreState     = useAppStore((s) => s.setCoreState);
   const pulseError       = useAppStore((s) => s.pulseError);
+  // [hotfix 2026-08-02] Sincroniza el Modo Conversación con la pill del Hub y
+  // el atajo SPACE — ver la nota junto a `toggleConversation` más abajo.
+  const setConversationRequested = useAppStore((s) => s.setConversationRequested);
+  // [PU8, cruce de idioma/voz 2026-08-08] Ver la nota larga junto al efecto de
+  // `getVoiceDefaults()` más abajo: este contador es lo que le avisa a la
+  // ventana de chat (persistente, nunca se remonta) de que la voz activa hay
+  // que volver a resolverla — al cambiar de idioma o al elegir otra voz/
+  // proveedor/favorita a mano en Ajustes → Voz.
+  const voiceDefaultsVersion = useAppStore((s) => s.voiceDefaultsVersion);
 
   // V0.83 (voz): proveedor activo + voz principal elegidos en el Centro de Voz
   // (persistidos en Config). Por defecto EdgeTTS + Elvira (español), que es lo
@@ -134,8 +161,28 @@ export default function Chat() {
   // usuario nunca había pasado por el Centro de Voz no había voz guardada y
   // Aithera respondía MUDA en el chat (bug real reportado). `/voice/defaults`
   // devuelve siempre una voz —la elegida por el usuario, o la mejor del idioma
-  // configurado, que además persiste— así que el chat habla desde el primer
-  // mensaje sin que nadie configure nada.
+  // configurado (favorita si hay una, si no la de defecto), que además
+  // persiste— así que el chat habla desde el primer mensaje sin que nadie
+  // configure nada.
+  //
+  // [PU8, 2026-08-08 — FIX del cruce de idioma/voz reportado: "a veces tienes
+  // voz en inglés hablando en español con acento, o viceversa"] EL BUG: este
+  // efecto tenía `[]` de dependencias — se pedía UNA sola vez, al montar. Y
+  // Chat.tsx es una VENTANA persistente (PU6a-bis: "el componente sigue
+  // montado"), no una ruta que se remonta al navegar. Resultado: cambiar de
+  // idioma en Ajustes (o elegir otra voz/proveedor/favorita a mano) nunca
+  // volvía a pedir `/voice/defaults` — `selectedVoiceRef`/`providerRef` se
+  // quedaban con la voz del idioma ANTERIOR indefinidamente, hasta reiniciar
+  // la app entera. Cada respuesta hablada (chat Y briefing, que comparten este
+  // mismo `synthChunk`) salía con la voz vieja mientras el texto/UI ya estaban
+  // en el idioma nuevo — justo la mezcla que se reportó.
+  //
+  // AHORA: depende de `uiLang` (cambia SIEMPRE que se hace clic en un idioma,
+  // vía LanguageSelector → useI18n.setLang) y de `voiceDefaultsVersion`
+  // (cambia cuando VoicePanel persiste una voz/proveedor/favorita nueva a
+  // mano) — así la voz activa se re-resuelve EN VIVO, sin recargar nada, y
+  // usa la lógica de `/voice/defaults` del backend, que ahora prioriza la voz
+  // favorita del idioma elegido (o la de defecto si no hay ninguna marcada).
   useEffect(() => {
     api
       .getVoiceDefaults()
@@ -144,9 +191,9 @@ export default function Chat() {
         selectedVoiceRef.current = d.voice_id;
       })
       .catch(() => {
-        // Sin backend, los defaults de los refs (EdgeTTS + Elvira) ya sirven.
+        // Sin backend, los defaults de los refs (o los ya resueltos antes) siguen sirviendo.
       });
-  }, []);
+  }, [uiLang, voiceDefaultsVersion]);
 
   // [O1, A·VOZ-1] Síntesis con fallback a EdgeTTS (gratis, sin key, siempre
   // disponible — reemplaza al antiguo fallback eSpeak), devuelve el data-URL.
@@ -831,13 +878,38 @@ ${t("chat.stoppedByYou")}` : t("chat.stoppedByYou"),
     const next = !conversationRef.current;
     conversationRef.current = next;
     setConversation(next);
+    // [hotfix 2026-08-02] Empuja el valor real al store global — ver la nota
+    // de sincronización justo abajo.
+    setConversationRequested(next);
     if (next) {
       void conversationLoop();
     } else {
       try { audioRef.current?.pause(); } catch { /* noop */ }
       setCoreState("idle");
     }
-  }, [conversationLoop, setCoreState]);
+  }, [conversationLoop, setCoreState, setConversationRequested]);
+
+  // [hotfix 2026-08-02 — BUG REAL reportado: "el botón de conversación de
+  // Aithera en modo Hub/home no funciona"]. Causa raíz: la pill del Hub
+  // (Hub.tsx) y el atajo SPACE (AppLayout.tsx) SOLO tocaban la bandera global
+  // `conversationRequested` del store — nunca arrancaban el bucle de voz real.
+  // El bucle vive aquí, en `conversation`/`conversationRef` LOCALES a este
+  // componente, controlados por `toggleConversation`; nada leía la bandera
+  // global, así que pulsar la pill cambiaba un booleano que no observaba
+  // nadie y no pasaba nada. Los propios comentarios del código ya describían
+  // la intención ("el botón refleja siempre el estado real aunque la
+  // conversación se activara por teclado") — la mitad que faltaba era esta:
+  // reaccionar al cambio.
+  //
+  // Se compara contra el REF (no contra `conversation`, que llega con un
+  // render de retraso) para no reaccionar al propio `setConversationRequested`
+  // que `toggleConversation` dispara dos líneas más arriba — si no, la pill
+  // del Hub y este efecto se llamarían el uno al otro en bucle.
+  const conversationRequested = useAppStore((s) => s.conversationRequested);
+  useEffect(() => {
+    if (conversationRequested === conversationRef.current) return;
+    toggleConversation();
+  }, [conversationRequested, toggleConversation]);
 
   // Al desmontar, cortar la conversación.
   useEffect(() => {
@@ -859,9 +931,286 @@ ${t("chat.stoppedByYou")}` : t("chat.stoppedByYou"),
 
   // AVCS S3 (Chat limpio, doc 13 §13.5): la presencia domina el centro — el
   // AVCS ya vive detrás vía AppLayout (full-bleed), así que esta página deja
-  // esa zona vacía a propósito. Solo el panel flotante lateral lleva UI.
+  // esa zona vacía a propósito. Solo el panel flotante lleva UI.
+  //
+  // [PU7, 2026-08-02] La tarjeta pasa de `<aside>` con posición/tamaño FIJOS
+  // por CSS a una VENTANA arrastrable/redimensionable — petición explícita
+  // del usuario: "que la tarjeta del chat también pueda modificarla el
+  // usuario en tamaño como sucede con las tarjetas de proyectos... moverla,
+  // hacerla mas alta, mas ancha, expandir y contraer desde cualquier
+  // dirección, y también expansión total... si el usuario hace doble click
+  // al header". Reutiliza el MISMO motor de gestos que ProjectCard/
+  // AgentWindowCard (`useDragResize`, `./Workspace/useWindowCard`) — no hay
+  // mecánica nueva que mantener por duplicado.
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [rawBounds, setRawBounds] = useState({ width: 0, height: 0 });
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const measure = () => setRawBounds({ width: el.clientWidth, height: el.clientHeight });
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  // La tarjeta vive en un wrapper `absolute inset-0` de AppLayout (pantalla
+  // completa, NO el `pb-28` que reserva sitio para el Dock en el contenido de
+  // página normal) — así que aquí hay que restar ese hueco A MANO para que la
+  // tarjeta (arrastre, resize Y expansión total) nunca pueda montarse encima
+  // de los botones sueltos. 112px = el mismo `pb-28` que usa AppLayout.
+  const DOCK_RESERVE_PX = 112;
+  const bounds = { width: rawBounds.width, height: Math.max(0, rawBounds.height - DOCK_RESERVE_PX) };
+
+  const { layout, setLayout, toggleExpanded } = useChatCardLayout(bounds);
+  const [liveW, setLiveW] = useState<number | null>(null);
+  const handleCardCommit = useCallback((patch: Partial<CardLayout>) => {
+    setLiveW(null);
+    setLayout(patch);
+  }, [setLayout]);
+  const { nodeRef, headerHandlers, resizeHandlers } = useDragResize({
+    // `useDragResize` viene de una mecánica pensada para colecciones de
+    // tarjetas (shelved/zIndex incluidos en su tipo); esta ventana no tiene
+    // "estantería" ni apilado con otras — se rellenan con valores neutros,
+    // nunca leídos por nada de este archivo.
+    layout: { ...layout, shelved: false, zIndex: 1 },
+    bounds,
+    onCommit: handleCardCommit,
+    onInteractStart: () => {},
+    onLiveResize: useCallback((r: Rect) => setLiveW(r.w), []),
+  });
+
+  const rectStyle = layout.expanded
+    ? { transform: "translate(16px, 16px)", width: Math.max(0, bounds.width - 32), height: Math.max(0, bounds.height - 16) }
+    : { transform: `translate(${layout.x}px, ${layout.y}px)`, width: layout.w, height: layout.h, minWidth: MIN_CARD_W, minHeight: MIN_CARD_H };
+
+  // [PU7] "Cuando la tarjeta del chat se expande más del 45% de la pantalla,
+  // las sesiones... pasan a el lado izquierdo... en forma de lista (como
+  // estan aqui en claude)". El umbral se mide sobre el ANCHO DE LA PANTALLA
+  // (bounds.width, no el propio ancho de la tarjeta) — literal a lo pedido.
+  // `liveW` sigue el ancho MIENTRAS se arrastra un asa (mismo patrón que
+  // `AgentWindowCard`), así que la lista aparece/desaparece en vivo, no solo
+  // al soltar.
+  const SESSIONS_SIDEBAR_RATIO = 0.45;
+  const anchoActual = layout.expanded ? bounds.width : (liveW ?? layout.w);
+  const sessionsAsSidebar = layout.expanded || anchoActual > bounds.width * SESSIONS_SIDEBAR_RATIO;
+
+  const sessionRow = (s: (typeof sessions)[number], variant: "tab" | "row") => (
+    <div
+      key={s.id}
+      role="button"
+      tabIndex={0}
+      onClick={() => switchSession(s.id)}
+      onKeyDown={(e) => e.key === "Enter" && switchSession(s.id)}
+      title={s.title}
+      className={
+        variant === "tab"
+          ? `shrink-0 flex items-center gap-1 pl-2.5 pr-1 py-1 rounded-md text-[11px] cursor-pointer max-w-[110px] ${
+              s.id === activeSessionId
+                ? "bg-accent/20 text-ink border border-accent/30"
+                : "bg-base-800/60 text-ink-faint border border-transparent hover:text-ink-dim"
+            }`
+          : `flex items-center gap-1.5 pl-2.5 pr-1.5 py-1.5 rounded-lg text-xs cursor-pointer ${
+              s.id === activeSessionId
+                ? "bg-accent/20 text-ink border border-accent/30"
+                : "border border-transparent text-ink-dim hover:bg-base-800/60 hover:text-ink"
+            }`
+      }
+    >
+      {s.sending && <span className="w-1.5 h-1.5 rounded-full bg-accent animate-pulse shrink-0" />}
+      <span className="truncate flex-1 min-w-0">{s.title}</span>
+      {sessions.length > 1 && (
+        <button
+          onClick={(e) => { e.stopPropagation(); closeSession(s.id); }}
+          title={t("chat.closeTab")}
+          aria-label={t("chat.closeTab")}
+          className="shrink-0 w-3.5 h-3.5 flex items-center justify-center rounded hover:bg-ink/10 hover:text-signal-error"
+        >
+          ×
+        </button>
+      )}
+    </div>
+  );
+
+  const messagesPane = (
+    <>
+      {/* Historial */}
+      <div className="flex-1 min-h-0 overflow-y-auto px-3 py-3 flex flex-col gap-2">
+        {messages.map((msg, i) => (
+          <ChatBubble key={i} role={msg.role} content={msg.content} missionId={msg.missionId}
+                      activity={msg.activity} />
+        ))}
+        {sending && (
+          <div className="flex justify-start">
+            <div className="bg-base-700/50 px-3 py-2 rounded-xl text-xs text-ink-dim max-w-[85%]">
+              {/* Mientras el TIE entiende/planifica aún no hay texto: se
+                  muestra QUÉ está haciendo en vez de un "Pensando..." mudo. */}
+              {streamingText ? <MiniMarkdown text={streamingText} /> : (tieStatus ? `${tieStatus}…` : t("chat.thinking"))}
+              <span className="animate-pulse">|</span>
+              {/* [2026-08-02] EN VIVO: la lista de lo que va haciendo, con la
+                  última línea destacada. Debajo del texto porque el acuse
+                  ("me pongo con ello") llega primero y es lo que se lee. */}
+              {activity.length > 0 && <ActivityTrail lines={activity} live />}
+            </div>
+          </div>
+        )}
+
+        {/* [2026-07-19] Los permisos se piden AQUÍ, donde estás mirando.
+            Antes solo salían en Misiones/Automatizaciones: para cuando los
+            encontrabas y aprobabas, el bucle ya se había rendido (espera 120s
+            y sigue sin esa acción), así que aprobar "no hacía nada". */}
+        <PendingApprovals />
+        {/* [2026-08-02] PREGUNTAS al usuario — mismo criterio que los
+            permisos de arriba y por el mismo motivo: si Aithera necesita un
+            dato para seguir, tiene que poder pedírtelo DONDE estás mirando.
+            Antes no existía este canal: la pregunta acababa escrita en el
+            resumen final de la misión, donde ya no se puede contestar y el
+            trabajo se queda sin hacer. */}
+        {pendingQuestions.length > 0 && (
+          <div className="flex flex-col gap-2 my-2">
+            {pendingQuestions.map((q) => (
+              <UserQuestionCard key={q.gate_id} question={q} onAnswered={refreshQuestions} />
+            ))}
+          </div>
+        )}
+        <div ref={messagesEndRef} />
+      </div>
+
+      {/* Controles: input + voz. Durante Comunicación, la voz mueve la
+          presencia (§8) — este panel se queda deliberadamente quieto. */}
+      <div className="shrink-0 border-t border-white/5 p-3 flex flex-col gap-2">
+        {/* [C1b] Autocompletado de "/": los servicios MCP conectados. Clic
+            rellena el comando y deja el cursor listo para escribir la
+            petición — no envía nada por su cuenta. */}
+        {mcpSuggestions.length > 0 && (
+          <div className="flex flex-wrap gap-1.5">
+            <span className="text-[10px] text-ink-faint self-center">
+              {t("chat.mcpHint")}:
+            </span>
+            {mcpSuggestions.map((s) => (
+              <button
+                key={s.name}
+                type="button"
+                title={s.description}
+                onClick={() => {
+                  setInput(`/${s.name} `);
+                  textareaRef.current?.focus();
+                }}
+                className="text-[10px] px-2 py-0.5 rounded-full border border-base-700 text-ink-dim hover:text-ink hover:border-accent/40"
+              >
+                /{s.name}
+              </button>
+            ))}
+          </div>
+        )}
+        {/* [2026-07-19] `textarea`, no `input`: con un input de una sola línea
+            era IMPOSIBLE escribir un segundo párrafo — Ctrl+Enter enviaba
+            igual porque no había dónde meter el salto. Crece con el texto
+            hasta un tope y luego hace scroll.
+            Tampoco se deshabilita mientras responde: puedes ir escribiendo lo
+            siguiente (el input `disabled` era, además, lo que hacía que la UI
+            pareciera congelada). */}
+        <div className="flex gap-2 items-end">
+          <textarea
+            ref={textareaRef}
+            value={input}
+            rows={1}
+            onChange={(e) => {
+              setInput(e.target.value);
+              e.target.style.height = "auto";
+              e.target.style.height = `${Math.min(e.target.scrollHeight, 140)}px`;
+            }}
+            onKeyDown={(e) => {
+              if (e.key !== "Enter") return;
+              // Ctrl/Cmd/Shift + Enter = párrafo nuevo. Enter solo = enviar.
+              if (e.ctrlKey || e.metaKey || e.shiftKey) return; // el textarea mete el salto
+              e.preventDefault();
+              handleSend();
+            }}
+            placeholder={t("chat.inputPlaceholder")}
+            className="flex-1 min-w-0 resize-none bg-base-800 border border-base-700 rounded-lg px-3 py-2 text-xs text-ink placeholder:text-ink-faint focus:outline-none focus:border-accent/40 leading-relaxed"
+          />
+          {sending ? (
+            <button
+              onClick={handleStop}
+              title={t("chat.stop")}
+              aria-label={t("chat.stop")}
+              className="shrink-0 w-9 h-9 flex items-center justify-center bg-signal-error/15 text-signal-error rounded-lg border border-signal-error/30 hover:bg-signal-error/25"
+            >
+              {/* Cuadrado de STOP, sin texto. */}
+              <span className="block w-3 h-3 bg-current rounded-[2px]" />
+            </button>
+          ) : (
+            <button
+              onClick={handleSend}
+              disabled={!input.trim()}
+              className="shrink-0 px-3 py-2 bg-accent/15 text-accent rounded-lg text-xs font-medium border border-accent/30 hover:bg-accent/25 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {t("chat.send")}
+            </button>
+          )}
+        </div>
+
+        <div className="flex items-center gap-2">
+          {/* V0.83 (Paso 4): boton de micro. FIX (audit): deshabilitado
+              durante "Modo Conversación" — antes se podian usar los dos a
+              la vez, abriendo dos capturas de microfono concurrentes que
+              transcribian y enviaban la misma intervencion por separado. */}
+          <MicButton
+            onTranscript={handleTranscript}
+            language={uiLang}
+            disabled={conversation}
+            onStartRecording={stopSpeaking}
+          />
+          {/* V0.83: Modo Conversación (escucha continua). Verde = activo. */}
+          <button
+            type="button"
+            onClick={toggleConversation}
+            title={conversation ? t("chat.conversationActive") : t("chat.conversationStart")}
+            aria-label={conversation ? t("chat.conversationActive") : t("chat.conversationStart")}
+            className={`shrink-0 w-10 h-10 rounded-lg flex items-center justify-center border transition-all ${
+              conversation
+                ? "bg-signal-ok/20 text-signal-ok border-signal-ok/40 animate-pulse"
+                : "bg-base-800 text-ink-dim border-base-700 hover:text-ink hover:border-base-600"
+            }`}
+          >
+            {/* icono de conversación (dos bocadillos) */}
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M8 10h.01M12 10h.01M16 10h.01M21 12a8 8 0 0 1-11.6 7.1L3 21l1.9-6.4A8 8 0 1 1 21 12z" />
+            </svg>
+          </button>
+          {/* AVCS S3: TTS on/off — silencia la voz, el texto sigue llegando. */}
+          <button
+            type="button"
+            onClick={toggleTts}
+            title={ttsEnabled ? t("chat.voiceOn") : t("chat.voiceOff")}
+            aria-label="Voz (texto a voz)"
+            aria-pressed={ttsEnabled}
+            className={`shrink-0 w-10 h-10 rounded-lg flex items-center justify-center border transition-all ${
+              ttsEnabled
+                ? "bg-base-800 text-ink-dim border-base-700 hover:text-ink hover:border-base-600"
+                : "bg-signal-warn/15 text-signal-warn border-signal-warn/30"
+            }`}
+          >
+            {ttsEnabled ? (
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
+                <path d="M15.54 8.46a5 5 0 0 1 0 7.07M19.07 4.93a10 10 0 0 1 0 14.14" />
+              </svg>
+            ) : (
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
+                <line x1="23" y1="9" x2="17" y2="15" />
+                <line x1="17" y1="9" x2="23" y2="15" />
+              </svg>
+            )}
+          </button>
+        </div>
+      </div>
+    </>
+  );
+
   return (
-    <div className="h-full relative">
+    <div className="h-full relative" ref={containerRef}>
       {/* [Fix 2026-08-01] Dos regresiones del chat "bloqueado": (1) el calc()
           SIN espacios es CSS inválido (Tailwind exige la sintaxis con `_`) —
           el width caía a auto y el panel se descolocaba (re-aplicado: el
@@ -869,207 +1218,94 @@ ${t("chat.stoppedByYou")}` : t("chat.stoppedByYou"),
           (2) el wrapper de AppLayout es pointer-events-none (los clics deben
           atravesar hacia el Hub) y `pointer-events` SE HEREDA: sin re-activarlo
           aquí, el panel entero era clic-through y no se podía ni escribir. */}
-      <aside className="avcs-panel-breathe glass-surface absolute top-4 right-4 bottom-4 w-[min(380px,calc(100%_-_2rem))] rounded-2xl flex flex-col overflow-hidden pointer-events-auto">
-        <div className="shrink-0 flex items-center justify-between px-4 py-3 border-b border-white/5">
-          <h1 className="text-sm font-semibold text-ink">{t("chat.title")}</h1>
-          <span
-            className={`h-1.5 w-1.5 rounded-full shrink-0 ${backendConnected ? "bg-signal-ok" : "bg-signal-error"}`}
-            title={backendConnected ? t("chat.connected") : t("chat.disconnected")}
-          />
-        </div>
-
-        {/* [Feature 2026-07-17] Pestañas de sesión: varias conversaciones a la
-            vez, cada una con su propio historial y envío en curso. Franja
-            compacta con scroll horizontal — el panel solo tiene 380px. */}
-        <div className="shrink-0 flex items-center gap-1 px-2 py-1.5 border-b border-white/5 overflow-x-auto">
-          {sessions.map((s) => (
-            <div
-              key={s.id}
-              role="button"
-              tabIndex={0}
-              onClick={() => switchSession(s.id)}
-              onKeyDown={(e) => e.key === "Enter" && switchSession(s.id)}
-              title={s.title}
-              className={`shrink-0 flex items-center gap-1 pl-2.5 pr-1 py-1 rounded-md text-[11px] cursor-pointer max-w-[110px] ${
-                s.id === activeSessionId
-                  ? "bg-accent/20 text-ink border border-accent/30"
-                  : "bg-base-800/60 text-ink-faint border border-transparent hover:text-ink-dim"
-              }`}
-            >
-              {s.sending && <span className="w-1.5 h-1.5 rounded-full bg-accent animate-pulse shrink-0" />}
-              <span className="truncate">{s.title}</span>
-              {sessions.length > 1 && (
-                <button
-                  onClick={(e) => { e.stopPropagation(); closeSession(s.id); }}
-                  title={t("chat.closeTab")}
-                  aria-label={t("chat.closeTab")}
-                  className="shrink-0 w-3.5 h-3.5 flex items-center justify-center rounded hover:bg-ink/10 hover:text-signal-error"
-                >
-                  ×
-                </button>
-              )}
+      <div
+        ref={nodeRef}
+        className="avcs-panel-breathe glass-surface holo-frame absolute top-0 left-0 rounded-2xl flex overflow-hidden pointer-events-auto"
+        style={rectStyle}
+      >
+        {/* [PU7] Lista de sesiones como columna izquierda — SOLO cuando la
+            tarjeta ocupa más del 45% de la pantalla (o está expandida). Por
+            debajo de ese ancho, las sesiones vuelven a la franja de pestañas
+            horizontal de siempre (dentro de la columna principal). */}
+        {sessionsAsSidebar && (
+          <aside className="shrink-0 w-56 border-r border-white/5 flex flex-col overflow-hidden bg-base-900/40">
+            <div className="shrink-0 px-3 py-3 border-b border-white/5">
+              <button
+                onClick={() => newSession()}
+                className="w-full flex items-center justify-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs text-ink-dim border border-base-700 hover:text-ink hover:border-accent/40"
+              >
+                <span className="text-sm leading-none">+</span> {t("chat.newConversation")}
+              </button>
             </div>
-          ))}
-          <button
-            onClick={() => newSession()}
-            title={t("chat.newConversation")}
-            aria-label={t("chat.newConversation")}
-            className="shrink-0 w-6 h-6 flex items-center justify-center rounded-md text-ink-faint hover:text-ink hover:bg-base-800/60"
+            <div className="flex-1 min-h-0 overflow-y-auto p-1.5 flex flex-col gap-0.5">
+              {sessions.map((s) => sessionRow(s, "row"))}
+            </div>
+          </aside>
+        )}
+
+        <div className="min-w-0 flex-1 flex flex-col">
+          {/* Header — asa de arrastre (si no está expandida) + doble clic =
+              expansión total, igual que ProjectCard/AgentWindowCard. */}
+          <div
+            {...(layout.expanded ? {} : headerHandlers)}
+            onDoubleClick={toggleExpanded}
+            className={`shrink-0 flex items-center justify-between gap-2 px-4 py-3 border-b border-white/5 select-none ${
+              layout.expanded ? "" : "cursor-grab active:cursor-grabbing"
+            }`}
+            title={layout.expanded ? undefined : t("workspace.projectCard.dragToMove")}
           >
-            +
-          </button>
-        </div>
+            <h1 className="text-sm font-semibold text-ink truncate">{t("chat.title")}</h1>
+            <div className="flex items-center gap-2 shrink-0">
+              <span
+                className={`h-1.5 w-1.5 rounded-full shrink-0 ${backendConnected ? "bg-signal-ok" : "bg-signal-error"}`}
+                title={backendConnected ? t("chat.connected") : t("chat.disconnected")}
+              />
+              <button
+                onClick={(e) => { e.stopPropagation(); toggleExpanded(); }}
+                onPointerDown={(e) => e.stopPropagation()}
+                className="text-ink-faint hover:text-ink text-xs px-1"
+                title={layout.expanded ? t("workspace.projectCard.restore") : t("workspace.projectCard.expand")}
+              >
+                {layout.expanded ? "⤡" : "⤢"}
+              </button>
+            </div>
+          </div>
 
-        {/* Historial compacto */}
-        <div className="flex-1 min-h-0 overflow-y-auto px-3 py-3 flex flex-col gap-2">
-          {messages.map((msg, i) => (
-            <ChatBubble key={i} role={msg.role} content={msg.content} missionId={msg.missionId}
-                        activity={msg.activity} />
-          ))}
-          {sending && (
-            <div className="flex justify-start">
-              <div className="bg-base-700/50 px-3 py-2 rounded-xl text-xs text-ink-dim max-w-[85%]">
-                {/* Mientras el TIE entiende/planifica aún no hay texto: se
-                    muestra QUÉ está haciendo en vez de un "Pensando..." mudo. */}
-                {streamingText ? <MiniMarkdown text={streamingText} /> : (tieStatus ? `${tieStatus}…` : t("chat.thinking"))}
-                <span className="animate-pulse">|</span>
-                {/* [2026-08-02] EN VIVO: la lista de lo que va haciendo, con la
-                    última línea destacada. Debajo del texto porque el acuse
-                    ("me pongo con ello") llega primero y es lo que se lee. */}
-                {activity.length > 0 && <ActivityTrail lines={activity} live />}
-              </div>
+          {/* [Feature 2026-07-17] Pestañas de sesión — SOLO cuando NO hay
+              columna lateral (tarjeta estrecha). Franja compacta con scroll
+              horizontal, como siempre. */}
+          {!sessionsAsSidebar && (
+            <div className="shrink-0 flex items-center gap-1 px-2 py-1.5 border-b border-white/5 overflow-x-auto">
+              {sessions.map((s) => sessionRow(s, "tab"))}
+              <button
+                onClick={() => newSession()}
+                title={t("chat.newConversation")}
+                aria-label={t("chat.newConversation")}
+                className="shrink-0 w-6 h-6 flex items-center justify-center rounded-md text-ink-faint hover:text-ink hover:bg-base-800/60"
+              >
+                +
+              </button>
             </div>
           )}
 
-          {/* [2026-07-19] Los permisos se piden AQUÍ, donde estás mirando.
-              Antes solo salían en Misiones/Automatizaciones: para cuando los
-              encontrabas y aprobabas, el bucle ya se había rendido (espera 120s
-              y sigue sin esa acción), así que aprobar "no hacía nada". */}
-          <PendingApprovals />
-          {/* [2026-08-02] PREGUNTAS al usuario — mismo criterio que los
-              permisos de arriba y por el mismo motivo: si Aithera necesita un
-              dato para seguir, tiene que poder pedírtelo DONDE estás mirando.
-              Antes no existía este canal: la pregunta acababa escrita en el
-              resumen final de la misión, donde ya no se puede contestar y el
-              trabajo se queda sin hacer. */}
-          {pendingQuestions.length > 0 && (
-            <div className="flex flex-col gap-2 my-2">
-              {pendingQuestions.map((q) => (
-                <UserQuestionCard key={q.gate_id} question={q} onAnswered={refreshQuestions} />
-              ))}
-            </div>
-          )}
-          <div ref={messagesEndRef} />
+          {messagesPane}
         </div>
 
-        {/* Controles: input + voz. Durante Comunicación, la voz mueve la
-            presencia (§8) — este panel se queda deliberadamente quieto. */}
-        <div className="shrink-0 border-t border-white/5 p-3 flex flex-col gap-2">
-          {/* [2026-07-19] `textarea`, no `input`: con un input de una sola línea
-              era IMPOSIBLE escribir un segundo párrafo — Ctrl+Enter enviaba
-              igual porque no había dónde meter el salto. Crece con el texto
-              hasta un tope y luego hace scroll.
-              Tampoco se deshabilita mientras responde: puedes ir escribiendo lo
-              siguiente (el input `disabled` era, además, lo que hacía que la UI
-              pareciera congelada). */}
-          <div className="flex gap-2 items-end">
-            <textarea
-              ref={textareaRef}
-              value={input}
-              rows={1}
-              onChange={(e) => {
-                setInput(e.target.value);
-                e.target.style.height = "auto";
-                e.target.style.height = `${Math.min(e.target.scrollHeight, 140)}px`;
-              }}
-              onKeyDown={(e) => {
-                if (e.key !== "Enter") return;
-                // Ctrl/Cmd/Shift + Enter = párrafo nuevo. Enter solo = enviar.
-                if (e.ctrlKey || e.metaKey || e.shiftKey) return; // el textarea mete el salto
-                e.preventDefault();
-                handleSend();
-              }}
-              placeholder={t("chat.inputPlaceholder")}
-              className="flex-1 min-w-0 resize-none bg-base-800 border border-base-700 rounded-lg px-3 py-2 text-xs text-ink placeholder:text-ink-faint focus:outline-none focus:border-accent/40 leading-relaxed"
-            />
-            {sending ? (
-              <button
-                onClick={handleStop}
-                title={t("chat.stop")}
-                aria-label={t("chat.stop")}
-                className="shrink-0 w-9 h-9 flex items-center justify-center bg-signal-error/15 text-signal-error rounded-lg border border-signal-error/30 hover:bg-signal-error/25"
-              >
-                {/* Cuadrado de STOP, sin texto. */}
-                <span className="block w-3 h-3 bg-current rounded-[2px]" />
-              </button>
-            ) : (
-              <button
-                onClick={handleSend}
-                disabled={!input.trim()}
-                className="shrink-0 px-3 py-2 bg-accent/15 text-accent rounded-lg text-xs font-medium border border-accent/30 hover:bg-accent/25 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {t("chat.send")}
-              </button>
-            )}
-          </div>
-
-          <div className="flex items-center gap-2">
-            {/* V0.83 (Paso 4): boton de micro. FIX (audit): deshabilitado
-                durante "Modo Conversación" — antes se podian usar los dos a
-                la vez, abriendo dos capturas de microfono concurrentes que
-                transcribian y enviaban la misma intervencion por separado. */}
-            <MicButton
-              onTranscript={handleTranscript}
-              language={uiLang}
-              disabled={conversation}
-              onStartRecording={stopSpeaking}
-            />
-            {/* V0.83: Modo Conversación (escucha continua). Verde = activo. */}
-            <button
-              type="button"
-              onClick={toggleConversation}
-              title={conversation ? t("chat.conversationActive") : t("chat.conversationStart")}
-              aria-label={conversation ? t("chat.conversationActive") : t("chat.conversationStart")}
-              className={`shrink-0 w-10 h-10 rounded-lg flex items-center justify-center border transition-all ${
-                conversation
-                  ? "bg-signal-ok/20 text-signal-ok border-signal-ok/40 animate-pulse"
-                  : "bg-base-800 text-ink-dim border-base-700 hover:text-ink hover:border-base-600"
-              }`}
-            >
-              {/* icono de conversación (dos bocadillos) */}
-              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M8 10h.01M12 10h.01M16 10h.01M21 12a8 8 0 0 1-11.6 7.1L3 21l1.9-6.4A8 8 0 1 1 21 12z" />
-              </svg>
-            </button>
-            {/* AVCS S3: TTS on/off — silencia la voz, el texto sigue llegando. */}
-            <button
-              type="button"
-              onClick={toggleTts}
-              title={ttsEnabled ? t("chat.voiceOn") : t("chat.voiceOff")}
-              aria-label="Voz (texto a voz)"
-              aria-pressed={ttsEnabled}
-              className={`shrink-0 w-10 h-10 rounded-lg flex items-center justify-center border transition-all ${
-                ttsEnabled
-                  ? "bg-base-800 text-ink-dim border-base-700 hover:text-ink hover:border-base-600"
-                  : "bg-signal-warn/15 text-signal-warn border-signal-warn/30"
-              }`}
-            >
-              {ttsEnabled ? (
-                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
-                  <path d="M15.54 8.46a5 5 0 0 1 0 7.07M19.07 4.93a10 10 0 0 1 0 14.14" />
-                </svg>
-              ) : (
-                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
-                  <line x1="23" y1="9" x2="17" y2="15" />
-                  <line x1="17" y1="9" x2="23" y2="15" />
-                </svg>
-              )}
-            </button>
-          </div>
-        </div>
-      </aside>
+        {/* Asas de resize — igual que ProjectCard/AgentWindowCard, solo
+            cuando la tarjeta no está expandida. */}
+        {!layout.expanded && (
+          <>
+            <div {...resizeHandlers.n} className="absolute top-0 left-3 right-3 h-2 cursor-ns-resize" />
+            <div {...resizeHandlers.s} className="absolute bottom-0 left-3 right-3 h-2 cursor-ns-resize" />
+            <div {...resizeHandlers.w} className="absolute left-0 top-3 bottom-3 w-2 cursor-ew-resize" />
+            <div {...resizeHandlers.e} className="absolute right-0 top-3 bottom-3 w-2 cursor-ew-resize" />
+            <div {...resizeHandlers.nw} className="absolute top-0 left-0 w-3 h-3 cursor-nwse-resize" />
+            <div {...resizeHandlers.ne} className="absolute top-0 right-0 w-3 h-3 cursor-nesw-resize" />
+            <div {...resizeHandlers.sw} className="absolute bottom-0 left-0 w-3 h-3 cursor-nesw-resize" />
+            <div {...resizeHandlers.se} className="absolute bottom-0 right-0 w-3 h-3 cursor-nwse-resize" />
+          </>
+        )}
+      </div>
     </div>
   );
 }

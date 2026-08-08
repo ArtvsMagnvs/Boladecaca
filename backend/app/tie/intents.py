@@ -24,6 +24,7 @@ from typing import Optional
 from app.ai.reasoning_filter import strip_reasoning
 from app.core.logging_config import get_system_logger
 from app.tie import action_intent
+from app.tie import mcp_command
 from app.tie.contracts import MEL_CAPABILITIES, Intent, IntentType
 
 logger = get_system_logger("tie.intents")
@@ -473,7 +474,11 @@ async def _classify_core(text: str, *, channel: Optional[str] = None) -> Intent:
         # degrada por el MISMO camino que ya existía para su error — no hay una
         # segunda forma de fallar que mantener.
         _deadline = _settings.TIE_CLASSIFY_DEADLINE_S
-        _call = router.complete(text, system_prompt=_SYSTEM_PROMPT, capability="classify",
+        # [C1b, doc 42 §4] El prompt base + los servicios MCP que el usuario
+        # tenga conectados. Sin ninguno, `classifier_block()` devuelve "" y el
+        # prompt es EXACTAMENTE el de siempre (no-regresión por defecto).
+        _sys = _SYSTEM_PROMPT + mcp_command.classifier_block()
+        _call = router.complete(text, system_prompt=_sys, capability="classify",
                                 model_override=_cls_model, policy_override=_cls_policy)
         result = await (asyncio.wait_for(_call, timeout=_deadline) if _deadline > 0 else _call)
         _cms = int((_t.monotonic() - _c0) * 1000)

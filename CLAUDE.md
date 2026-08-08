@@ -5736,10 +5736,131 @@ que el cierre de V1.0 — paso explícito, no automático).
 > asignable a agentes, que el briefing informe de lo añadido/mejorado cada día, y
 > que el panel Aprendizaje pase a informativo (sin aceptar/rechazar, con
 > revertir/eliminar y la traza completa de qué se hizo y por qué).
+>
+> **✅ SK1b CERRADA (2026-08-08) — EL APRENDIZAJE ES GLOBAL (doc 41 §SK1b).**
+> Petición del usuario al leer el cierre de SK1: *"todos los chats que existen en
+> Aithera con todo tipo de orquestadores y agentes tienen que tener acceso a lo
+> aprendido, no solo el chat general y orquestador principal"*. La auditoría de
+> **quién llama a qué** encontró **tres caminos que producen trabajo y no pasaban
+> ni por el planner ni por el toolloop**: (1) `chat_service.build_system_prompt`
+> — el pipeline conversacional ÚNICO, o sea `/api/chat`, el Gateway (Telegram),
+> el **camino corto** (~80% de los mensajes) y los **nodos de misión sin
+> herramientas**; hablarle al orquestador de un proyecto sin lanzar misión caía
+> justo aquí; (2) `agent_manager._delegate_to_cli_agent` — los agentes **Claude
+> Code / Codex**, que saltan el TIE entero por diseño y eran los únicos agentes
+> ciegos a lo aprendido; (3) `webloop.run` — la navegación agentic, hermana del
+> toolloop pero con catálogo propio, el único trabajo que no aprendía nunca de sí
+> mismo. Los tres enganchados a `procedure_for`. **Presupuesto propio para el
+> chat** (`CHAT_BUDGET_S` = 400 ms frente a 1,5 s) y **dentro del mismo `gather`**
+> que el MOS y el workspace, no detrás. **`tools=None` en chat y CLI**: no es "sin
+> herramientas" sino "sin restricción de repertorio" — ahí no se ejecuta nada, lo
+> que sirve es el CONOCIMIENTO, y filtrar habría vaciado el bloque en el camino
+> más usado. **Atajo `_any_active()`** cacheado 60 s (sin skills activas el chat
+> no paga ni una consulta por mensaje; ante un fallo devuelve True, porque una
+> optimización que se equivoca hacia "no busques" apaga la función en silencio) e
+> invalidado por `skill_library.create` para que una skill recién nacida guíe de
+> inmediato. **Hallazgo real: la medida respondía a otra pregunta.** SK1 reusó el
+> Jaccard del Learner "para no inventar una segunda medida" — pero Jaccard
+> responde *"¿son el mismo trabajo?"* (simétrico) y aquí la pregunta es *"¿aplica
+> esta skill?"*: *"cómo compilo el servidor de OpenTibia"* NO recuperaba
+> *"compilar un servidor de OpenTibia"*, y una skill **bien descrita** puntuaba
+> PEOR que una escrita a medias porque cada palabra crecía el denominador — el
+> sistema penalizaba documentar bien. Sustituido por **cobertura de la consulta**
+> con mínimo de dos palabras compartidas; lo cazó el test del chat general.
+> 11 tests nuevos (3 de ellos NEGATIVOS sobre el riesgo de ruido de la medida),
+> **5 mutaciones** confirmadas y restauradas byte a byte — la quinta **no la
+> detectó nadie al primer intento** (la fixture reseteaba la caché por su cuenta,
+> así que la invalidación era código sin defensa: el patrón "correcto pero
+> desconectado" sobre mi propia optimización), y se añadió el test que la prueba
+> sin ayuda. Regresión: **347 passed / 10 skipped** (Learner + TIE + chat +
+> agentes + contratos de producto + fronteras) y **80** más en los tres bloques
+> de navegación. El test de fronteras cazó de paso un import de interno del
+> Learner desde `chat_service`; corregido por el barrel.
 
 ---
 
-*Última actualización: 2026-08-08 — **V1.2 C1 EJECUTADA — MCP CLIENT: Aithera
+*Última actualización: 2026-08-08 — **V1.2 C1b EJECUTADA — EL DIRECTORIO DE
+MCPs: conectar con un clic, `/comando`, y uso POR CONTEXTO (doc 42)**.
+Petición directa del usuario al arrancar C1: *"un repositorio de MCP
+disponibles… una lista por tipos, con un botón de Conectar… y que Aithera
+sepa usarlo por comando (/github) o por contexto (la ruta naval a Mallorca →
+el MCP de Nausika)"*. Las tres piezas, sobre la fontanería de seguridad que
+C1 ya dejó puesta (gate siempre, `mcp.use`, sandbox de argumentos):
+**(1) DIRECTORIO en dos niveles.** `frontend/src/data/mcpCatalog.json` — 14
+servidores curados por categorías (Desarrollo/Productividad/Web/Negocio/
+Diseño/Razonamiento) con «Conectar» de un clic: pegas el token y ya. **Las
+14 están VERIFICADAS**, no escritas de memoria: cada paquete npm consultado
+contra `registry.npmjs.org` (existe y no está deprecado) y cada URL remota
+probada con un `initialize` real (las 5 responden 401 = viven y piden
+credenciales). Descartados a propósito los oficiales DEPRECADOS
+(`server-github`, `server-slack`, `server-postgres`, `server-brave-search`) y
+los `filesystem`/`memory` oficiales (Aithera ya tiene los suyos; duplicarlos
+confunde al planificador). Segundo nivel: `app/mcp/directory.py` +
+`GET /api/mcp/directory/search` — proxy al **registro OFICIAL**
+(`registry.modelcontextprotocol.io`, REST público sin auth, caché 15 min,
+fail-soft) con **mapeo DETERMINISTA** entrada→config (`packages` npm/pypi +
+`runtimeHint` → `npx -y <pkg>`/`uvx <pkg>`; `remotes` streamable-http →
+transporte `http`; `environmentVariables`/`headers` con `isSecret` → los
+campos del formulario CON sus textos de ayuda). Honestidad: una entrada que
+solo publica imagen Docker se marca **no conectable con motivo** y enlace al
+repo — nunca se adivina un comando, que es justo lo que no se hace con
+código externo. `McpConnectForm.tsx` muestra SIEMPRE el comando o la URL
+antes de conectar, y prueba automáticamente al guardar.
+**(2) `/github dame mis PRs`** — `app/tie/mcp_command.py`: parseo
+determinista (0 LLM) con **salida en la primera línea si el mensaje no
+empieza por "/"**, enganchado en los TRES puntos de entrada reales
+(`orchestrator.handle_stream`, `tie.handle_stream` y `_run_pipeline` — el
+Gateway/Telegram también). Retira el prefijo y fija el servidor en el intent.
+**La distinción que no se puede perder**: `/github` expresa INTENCIÓN de
+herramienta, jamás AUTORIZACIÓN — el gate y `mcp.use` siguen igual (hay un
+test que lo fija). El pin además sube el intent a EXECUTE si quedó en camino
+corto: sin eso el comando se aceptaría y el servicio no se usaría, porque el
+camino corto no tiene herramientas. `/github` a secas lista sus acciones (de
+la caché de C1, sin LLM); un slug desconocido responde con los que sí hay.
+Autocompletado de "/" en el chat.
+**(3) POR CONTEXTO — el gap real, que era el que importaba.** Auditando C1
+se confirmó lo que PU8 ya había encontrado: la lista de `requires_tools` del
+clasificador es un **TECHO** — lo que no está en ella no llega al camino de
+acción directa, y esa lista es estática con solo las tools nativas. Un
+servidor MCP conectado era invisible para el clasificador por bien descrito
+que estuviera: "dame la ruta naval a Mallorca" habría acabado en
+`search`/`browser`. `classifier_block()` inyecta los conectados con su
+descripción como pista (caché de 30 s: el clasificador corre en el camino
+caliente de cada mensaje), y `capabilities_map` gana su línea para que el
+chat sepa DECIR que puede usarlos. **Sin servidores conectados el prompt
+queda EXACTAMENTE igual** (no-regresión por defecto, con test).
+**HALLAZGO PROPIO, corregido**: el mapa de capacidades mide 1449 de un tope
+de 1500, así que la línea MCP no cabía; la primera versión la RESERVABA
+dentro del presupuesto y —verificado— **expulsaba en silencio la categoría
+"organizar tu trabajo"**: el mismo modo de fallo que PU8 documentó, esta vez
+causado por mí. Corregida a **aditiva** con tope propio de 400: lo que el
+usuario conecta se SUMA a lo que Aithera ya sabía hacer, nunca lo sustituye
+(test que compara línea a línea que el mapa base sobrevive intacto). Las dos
+cachés (bloque del clasificador 30 s, mapa 1 HORA) se invalidan al conectar
+o desconectar: sin eso, conectar GitHub y preguntar "¿qué sabes hacer?" no
+lo mencionaría hasta una hora después. Tests: `test_mcp_directorio.py` (24 —
+mapeo con RESPUESTAS REALES del registro grabadas como fixture: npm+npx,
+remoto streamable-http, pypi sin `runtimeHint`, y la entrada solo-Docker que
+se rechaza con motivo; el atajo con sus negativos —mensaje normal intacto,
+"/algo" sin servidores no secuestra nada, servidor desactivado no es
+invocable—; y el enrutado por contexto con `intents.classify` REAL). **5
+mutaciones** confirmadas y restauradas byte a byte, incluida la que
+comprueba que el `/comando` está **CABLEADO** y no solo es correcto (ya pasó
+dos veces en este proyecto —S9b, S9c— que la lógica estuviera desconectada).
+Regresión: 270 passed + 4 xfailed en el subconjunto TIE/orquestador/MCP;
+`tsc --noEmit` limpio y `vite build` completo (8,0 s); +20 claves i18n ×4
+idiomas (paridad 1410). **El único fallo, `test_action_intent.py::
+test_el_detector_cubre_todas_las_acciones_del_catalogo`, es PREEXISTENTE y
+ajeno** — sus archivos están intactos en este árbol y ya venía documentado
+del cierre de LC3 (`learn_skill`/`search_skills` sin sustantivo de dominio).
+**Pendiente en Windows**: reiniciar el backend y (a) conectar GitHub desde
+Ajustes → Conexiones → Servidores MCP → Directorio con un token real y ver
+sus herramientas, (b) escribir "/" en el chat y ver el autocompletado, y (c)
+el caso Nausika de verdad — conectar un servicio de dominio y preguntarle
+algo de ese dominio SIN nombrarlo, para confirmar que el clasificador lo
+elige solo.*
+
+*Anterior: 2026-08-08 — **V1.2 C1 EJECUTADA — MCP CLIENT: Aithera
 habla el estándar del sector (doc 27 §C1, primera sesión de la fase V1.2)**.
 Módulo `app/mcp/` NUEVO: el usuario conecta servidores MCP externos (GitHub o
 cualquiera del ecosistema) desde Ajustes → Conexiones y sus tools entran al
@@ -5803,6 +5924,23 @@ real del ecosistema desde Ajustes → Conexiones (p. ej. `npx -y
 debe descubrir sus tools, y pedir por chat algo que las use debe abrir el
 gate de aprobación. La siguiente pieza (C1b, diseño en esta misma sesión):
 el DIRECTORIO de MCPs conectables con un clic + /comando + uso por contexto.*
+
+*Anterior: 2026-08-08 — **SK1b — EL APRENDIZAJE ES GLOBAL (§30, doc 41 §SK1b)**:
+SK1 dejó lo aprendido llegando solo al planner y al bucle de herramientas. La
+auditoría de quién llama a qué encontró TRES caminos que hacen trabajo sin pasar
+por ninguno de los dos — el pipeline conversacional único (chat general,
+Telegram, camino corto y nodos sin herramientas: ahí cae hablarle al orquestador
+de un proyecto), los agentes Claude Code/Codex (que saltan el TIE entero) y el
+bucle de navegación. Los tres enganchados, con presupuesto propio para el chat
+(400 ms, en paralelo con el MOS) y un atajo para que sin skills activas no se
+pague nada por mensaje. **Hallazgo real**: la medida de recuperación respondía a
+otra pregunta — Jaccard mide "¿son el mismo trabajo?" y penalizaba tanto una
+variante verbal como una skill BIEN descrita; sustituida por cobertura de la
+consulta. 11 tests nuevos, 5 mutaciones (una destapó que la invalidación de caché
+era código sin defensa), 347+80 passed. **Pendiente en Windows**: `alembic
+upgrade head` (las 2 migraciones de LC1 siguen sin aplicar) + reiniciar backend;
+luego preguntar en el chat general por algo que Aithera ya haya hecho y confirmar
+que responde con lo aprendido.*
 
 *Anterior: 2026-08-08 — **SK1 — LAS SKILLS SE USAN + AUTO-APLICACIÓN
 PROBADA (§30, doc 41 §SK1)**: el análisis honesto que pidió el usuario destapó

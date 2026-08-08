@@ -96,6 +96,13 @@ FORBIDDEN_MODULES = (
     ("app.mcp.store", MCP_DIR),
     ("app.mcp.client", MCP_DIR),
     ("app.mcp.proxy", MCP_DIR),
+    # [C1b] El proxy al registro oficial: quien busque pide
+    # `app.mcp.search_directory(...)` por el barrel.
+    ("app.mcp.directory", MCP_DIR),
+    # [C1b] El puente MCP↔TIE (/comando + bloque del clasificador): interno
+    # del TIE, como el resto de sus piezas. El Orquestador lo usa por el
+    # barrel (`tie.parse_mcp_command` / `tie.pin_mcp_tool`).
+    ("app.tie.mcp_command", TIE_DIR),
     ("app.tie.authority", TIE_DIR),  # R4: la frontera de autoridad es interna del TIE
     ("app.tie.graph", TIE_DIR),
     ("app.tie.enricher", TIE_DIR),

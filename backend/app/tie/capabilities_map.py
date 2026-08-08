@@ -39,6 +39,10 @@ from typing import Optional
 # chat — esto es una GUÍA para el modelo, no un manual de referencia. El
 # recorte respeta líneas completas (ver `_build`): nunca corta a media frase.
 MAX_CHARS = 1500
+# [C1b] Tope APARTE para la línea de servicios MCP conectados: se añade encima
+# de MAX_CHARS (ver el final de `_build`), así que necesita su propio límite
+# para que veinte servidores no hinchen el system prompt sin control.
+_MCP_LINE_MAX = 400
 
 # Cuánto se cachea el mapa entre recálculos. El catálogo de tools es estático
 # tras el arranque (se registran una vez en `_register_default_tools`), así
@@ -122,6 +126,34 @@ def _automation_line() -> Optional[str]:
             "o cuando pase algo) — por ejemplo: " + ", ".join(known) + ".")
 
 
+def _mcp_line() -> Optional[str]:
+    """[C1b, doc 42 §4] Los servicios externos que el usuario ha conectado por
+    MCP. Van en su propia línea y NO por el bucle de categorías de arriba: sus
+    tools ya aparecerían en el cajón "Además" con un genérico de conteo
+    ("mcp · github (14 acciones disponibles)"), que no dice nada — lo que
+    importa es que el chat sepa DECIR "puedo consultar tu GitHub".
+
+    Best-effort: sin servidores conectados (el caso por defecto), no añade
+    nada y el mapa queda idéntico al de siempre."""
+    try:
+        from app.tie import mcp_command
+
+        servicios = mcp_command.connected()
+    except Exception:
+        return None
+    if not servicios:
+        return None
+    frases = [f"{nombre}" + (f" ({desc})" if desc else "")
+              for _tid, nombre, desc in servicios]
+    linea = ("También tienes conectados estos servicios externos, y puedo usarlos "
+             "cuando la petición encaje con ellos: " + "; ".join(frases) + ".")
+    # Tope propio: con muchos servidores conectados esta línea podría comerse
+    # el presupuesto entero y dejar sin sitio a lo que Aithera sabe hacer de
+    # base (`_build` le reserva espacio, así que sin este tope lo reservado
+    # crecería sin límite).
+    return linea[:_MCP_LINE_MAX] if len(linea) > _MCP_LINE_MAX else linea
+
+
 def _build() -> str:
     """Recorre el catálogo REAL y arma el texto. Nunca lanza: ante cualquier
     fallo, un mapa vacío es preferible a tumbar el chat por esto."""
@@ -150,6 +182,17 @@ def _build() -> str:
         if phrases:
             lines.append(f"- Para {category}: " + "; ".join(phrases) + ".")
 
+    # [C1b] Los servidores MCP conectados se cuentan aparte, con su nombre y
+    # su descripción real — y se marcan como "usados" para que el cajón
+    # genérico de abajo no los repita con un conteo de acciones sin sentido
+    # ("mcp · github (14 acciones disponibles)" no dice nada).
+    mcp = _mcp_line()
+    if mcp:
+        from app.automation import permission_service
+
+        used.update(t["tool_id"] for t in tools
+                    if t["tool_id"].startswith(permission_service.MCP_TOOL_PREFIX))
+
     # Cualquier tool NO cubierta por una categoría (la nueva del criterio #3)
     # entra en un cajón final, genérico pero visible.
     resto = [t for t in tools if t["tool_id"] not in used]
@@ -174,6 +217,16 @@ def _build() -> str:
             break
         kept.append(line)
         total += 1 + len(line)
+    # [C1b] La línea de servicios MCP se añade ENCIMA del presupuesto base, no
+    # dentro. Medido: el mapa base ya ocupa 1449 de los 1500, así que meterla
+    # dentro tenía DOS finales malos — o desaparecía en silencio (el modo de
+    # fallo que PU8 encontró con la última categoría), o desplazaba a una
+    # categoría nativa (verificado: expulsaba "organizar tu trabajo"). Ninguno
+    # vale: lo que el usuario conecta se SUMA a lo que Aithera ya sabía hacer,
+    # no lo sustituye. El coste extra solo lo paga quien tiene MCP conectado, y
+    # está acotado por `_MCP_LINE_MAX`.
+    if mcp:
+        kept.append(f"- {mcp}")
     return header + ("\n" + "\n".join(kept) if kept else "")
 
 
@@ -189,3 +242,10 @@ def summary(*, force: bool = False) -> str:
     text = _build()
     _cache["summary"] = (now, text)
     return text
+
+
+def invalidate() -> None:
+    """[C1b] Tira la caché. La llama `mcp_command.invalidate_cache()` cuando el
+    usuario conecta o desconecta un servidor MCP: con un TTL de una hora, el
+    cambio no se notaría hasta mucho después de haberlo hecho."""
+    _cache.pop("summary", None)

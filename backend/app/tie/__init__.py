@@ -105,6 +105,18 @@ quick_memory_answer_async = _quick_memory.try_answer_async
 # que es la puerta por la que el TIE general llega a la navegación profunda.
 from app.tie import webloop as _webloop  # noqa: E402
 browse = _webloop.run
+# [C1b, doc 42 §3] "/github dame mis PRs": atajo EXPLÍCITO a un servidor MCP
+# conectado. Determinista (0 LLM) y consultado ANTES de clasificar, igual que
+# los quick_* de arriba. `parse_mcp_command` decide; `pin_mcp_tool` fija el
+# servidor en el intent que salga del clasificador. Lo usan el Orquestador y
+# el propio pipeline del TIE (los dos prechecks, lección de PU4).
+from app.tie import mcp_command as _mcp_command  # noqa: E402
+parse_mcp_command = _mcp_command.parse
+pin_mcp_tool = _mcp_command.pin
+# Lo llaman los endpoints de `/api/mcp` al conectar/desconectar: hay dos
+# cachés que dependen de la lista de servidores (el bloque del clasificador y
+# el mapa de capacidades) y el cambio tiene que notarse al instante.
+invalidate_mcp_cache = _mcp_command.invalidate_cache
 
 __all__ = [
     # contratos
@@ -152,4 +164,7 @@ __all__ = [
     "orchestrator_tools",
     # bucle agentic de navegación web (C·WEB-3)
     "browse",
+    # atajo /servidor a un MCP conectado (C1b)
+    "parse_mcp_command",
+    "pin_mcp_tool",
 ]

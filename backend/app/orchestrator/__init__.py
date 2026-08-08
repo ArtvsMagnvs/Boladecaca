@@ -154,6 +154,19 @@ async def handle_stream(text: str, *, channel: str = "web", session_id: Optional
         yield ("text", quick_mem)
         return
 
+    # [C1b, doc 42 §3] "/github dame mis PRs": el usuario nombra el servicio.
+    # Determinista, 0 LLM, y con salida en la 1.ª línea si el mensaje no
+    # empieza por "/". Dos formas: respuesta directa (slug desconocido, o
+    # "/github" a secas → sus acciones), o seguir el camino normal con el
+    # texto SIN el prefijo y ese servidor fijado tras clasificar.
+    _mcp_pin: Optional[str] = None
+    _cmd = await _asyncio.to_thread(tie.parse_mcp_command, text)
+    if _cmd is not None:
+        if _cmd.reply:
+            yield ("text", _cmd.reply)
+            return
+        text, _mcp_pin = _cmd.rest, _cmd.tool_id
+
     # No es charla obvia: hay que clasificar con el modelo. AHÍ sí tiene sentido
     # "analizando" (cubre la latencia del clasificador).
     yield ("status", _t("status.analyzing"))
@@ -166,6 +179,12 @@ async def handle_stream(text: str, *, channel: str = "web", session_id: Optional
                                           conversational=conversational):
             yield ev
         return
+
+    # [C1b] El servicio que el usuario nombró con "/" manda sobre lo que el
+    # clasificador dedujera — el clasificador puede acertar o no, pero esto
+    # el usuario lo escribió explícitamente.
+    if _mcp_pin:
+        intent = tie.pin_mcp_tool(intent, _mcp_pin)
 
     if len(intent.objectives) < 2:
         # [R6.5b] Un solo encargo = una charla: lleva el hilo de la conversación.

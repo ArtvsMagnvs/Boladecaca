@@ -17,6 +17,19 @@ from pydantic import BaseModel
 from app import mcp as mcp_service
 from app.tools.tool_manager import tool_manager
 
+
+def _refresh_tie_caches() -> None:
+    """[C1b] El TIE cachea la lista de servidores en dos sitios (el bloque del
+    clasificador y el mapa de capacidades). Al conectar o desconectar uno hay
+    que tirarlas, o el cambio no se notaría hasta que caduquen. Best-effort:
+    esto NUNCA puede hacer fallar un alta."""
+    try:
+        import app.tie as tie
+
+        tie.invalidate_mcp_cache()
+    except Exception:           # noqa: BLE001
+        pass
+
 router = APIRouter(prefix="/mcp", tags=["MCP"])
 
 
@@ -90,6 +103,7 @@ async def upsert_mcp_server(body: MCPServerIn):
     mcp_service.unregister_server(tool_manager, cfg.name)
     if cfg.enabled:
         mcp_service.register_enabled_servers(tool_manager)
+    _refresh_tie_caches()
     return _server_out(mcp_service.get_server(cfg.name))
 
 
@@ -102,6 +116,7 @@ async def delete_mcp_server(name: str):
     mcp_service.unregister_server(tool_manager, name)
     if not mcp_service.delete_server(name):
         raise HTTPException(status_code=404, detail=f"servidor no encontrado: {name}")
+    _refresh_tie_caches()
     return {"ok": True}
 
 
@@ -120,6 +135,16 @@ async def test_mcp_server(name: str):
     except Exception as e:
         raise HTTPException(status_code=502, detail=str(e))
     return _server_out(cfg)
+
+
+@router.get("/directory/search")
+async def search_directory(q: str, limit: int = 20):
+    """[C1b] Busca en el registro OFICIAL de servidores MCP y devuelve cada
+    entrada YA traducida a una config conectable (o marcada como no
+    conectable, con el motivo). Fail-soft: sin red devuelve lista vacía, y el
+    catálogo curado del frontend sigue estando."""
+    entradas = await mcp_service.search_directory(q, limit=limit)
+    return {"results": [mcp_service.entry_to_dict(e) for e in entradas]}
 
 
 @router.get("/servers/{name}/tools")

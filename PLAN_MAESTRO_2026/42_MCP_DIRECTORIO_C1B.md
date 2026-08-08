@@ -9,10 +9,9 @@
 > Mallorca y tengo el MCP de Nausika conectado, Aithera lo usa y elabora la
 > respuesta con lo que Nausika devuelve)."*
 >
-> **Estado**: INVESTIGACIÓN CERRADA + diseño ejecutable. Es la sesión **C1b**
-> (propuesta: Opus, esfuerzo alto — C1 ya puso toda la fontanería de
-> seguridad; esto es catálogo + parser determinista + 2 inyecciones). La
-> decisión de CUÁNDO (antes o después de C2) es del usuario.
+> **Estado**: ✅ **EJECUTADA (2026-08-08, Opus)**. Lo que sigue es el diseño
+> tal como se escribió; al final (§6) está el cierre con lo que cambió al
+> implementarlo y lo que quedó pendiente de probar en vivo.
 
 ---
 
@@ -187,3 +186,59 @@ Fuera de alcance (dicho explícito): OAuth de servidores remotos (los que lo
 exijan se conectan con token pegado; el flujo OAuth navegador es sesión
 aparte si algún servidor clave lo necesita), y C2 (Aithera como SERVIDOR
 MCP) que sigue siendo su propia sesión.
+
+---
+
+## 6. Cierre — qué se construyó de verdad (2026-08-08)
+
+Lo entregado sigue el diseño de arriba punto por punto. Lo que MERECE
+anotarse porque no estaba escrito o cambió al tocar el código real:
+
+**Un hallazgo con consecuencia.** El mapa de capacidades (R6) mide 1449
+caracteres de un tope de 1500. La línea de servicios MCP (~145) no cabía, y
+la primera versión la RESERVABA dentro del presupuesto: verificado que eso
+expulsaba en silencio la categoría "organizar tu trabajo" — el mismo modo de
+fallo que PU8 documentó, esta vez causado por mí. Corregido a **aditiva**
+(con tope propio de 400): lo que el usuario conecta se SUMA a lo que Aithera
+ya sabía hacer, nunca lo sustituye. Un test lo fija comparando línea a línea
+que el mapa base sobrevive intacto.
+
+**El catálogo curado tiene 14 entradas, no 25** — y las 14 están
+verificadas: cada paquete npm consultado contra `registry.npmjs.org` (existe
+y no está deprecado) y cada URL remota probada con un `initialize` real (las
+5 responden 401 = viven y piden credenciales). Se descartaron a propósito
+`server-github`, `server-slack`, `server-postgres` y `server-brave-search`
+oficiales (DEPRECADOS en npm) y los `filesystem`/`memory` oficiales (Aithera
+ya tiene los suyos; duplicarlos confunde al planificador). Catorce entradas
+que funcionan valen más que veinticinco a medias.
+
+**El `/comando` no autoriza, y hay un test que lo dice.** Fija QUÉ
+herramienta usar; `mcp.use` y el ApprovalGate siguen exactamente igual. El
+pin además SUBE el intent a EXECUTE si quedó en camino corto — sin eso, el
+comando se aceptaría y el servicio no se usaría (el camino corto no tiene
+herramientas).
+
+**Cableado, no solo lógica.** Dos veces en este proyecto (S9b, S9c) la
+lógica era correcta y estaba desconectada; aquí hay un test que ejercita
+`tie.handle_stream` REAL y comprueba que el prefijo se retira antes de
+clasificar. Su mutación (desconectar el parseo del pipeline) lo tumba.
+
+**Invalidación de caché.** El mapa de capacidades cachea 1 hora: sin
+invalidar, conectar GitHub y preguntar "¿qué sabes hacer?" no lo mencionaría
+hasta una hora después. Los endpoints de alta/baja tiran las dos cachés.
+
+**Tests**: `test_mcp_directorio.py` (24) — mapeo con respuestas REALES del
+registro grabadas como fixture (npm+npx, remoto streamable-http, pypi sin
+`runtimeHint`, y una entrada solo-Docker que se marca no conectable con
+motivo), el atajo con sus negativos, y el enrutado por contexto con el
+clasificador real. **5 mutaciones** confirmadas y restauradas byte a byte.
+Regresión: 270 passed + 4 xfailed en el subconjunto TIE/orquestador/MCP (el
+único fallo, `test_action_intent.py::test_el_detector_cubre_todas_las_
+acciones_del_catalogo`, es PREEXISTENTE y ajeno — sus archivos están
+intactos en este árbol, ya venía documentado del cierre de LC3).
+
+**Pendiente de probar en vivo** (nada de esto es verificable sin la app
+corriendo): conectar GitHub desde el directorio con un token real y ver sus
+herramientas; escribir `/` en el chat y ver el autocompletado; y el caso
+Nausika de verdad — un servicio de dominio conectado y una pregunta de ese
+dominio SIN nombrarlo, para confirmar que el clasificador lo elige.

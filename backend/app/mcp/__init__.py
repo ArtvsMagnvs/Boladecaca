@@ -22,6 +22,14 @@ from app.mcp.store import (
     validate_config,
 )
 from app.mcp.client import get_connection, drop_connection, shutdown_all
+# [C1b, doc 42 §2] El registro OFICIAL de servidores MCP: buscar lo que no
+# esté en el catálogo curado y traducirlo a una config conectable.
+from app.mcp.directory import (
+    DirectoryEntry,
+    entry_to_dict,
+    map_entry,
+    search as search_directory,
+)
 
 __all__ = [
     "MCPToolProxy",
@@ -40,4 +48,8 @@ __all__ = [
     "get_connection",
     "drop_connection",
     "shutdown_all",
+    "DirectoryEntry",
+    "entry_to_dict",
+    "map_entry",
+    "search_directory",
 ]
