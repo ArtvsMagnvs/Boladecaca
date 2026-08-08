@@ -242,3 +242,66 @@ corriendo): conectar GitHub desde el directorio con un token real y ver sus
 herramientas; escribir `/` en el chat y ver el autocompletado; y el caso
 Nausika de verdad — un servicio de dominio conectado y una pregunta de ese
 dominio SIN nombrarlo, para confirmar que el clasificador lo elige.
+
+---
+
+## 7. C1c — «Autorizar» sin tokens + pestaña propia (2026-08-08)
+
+Petición del usuario al ver C1b, con capturas de cómo lo hace Claude: *"que
+se puedan conectar múltiples MCP de forma directa, con redirección a la url
+que toca, con el authorize directo en la web del producto sin tantas
+complejidades de buscar tokens"*, más sacar MCP de «Conexiones» a su propia
+pestaña entre IA y Permisos, buscador arriba, y descripciones que entienda
+alguien que no sabe qué es ese MCP.
+
+**El login de un clic — `app/mcp/oauth.py`.** No se reimplementa el
+protocolo: el SDK oficial ya trae el baile completo (descubrimiento del
+recurso protegido RFC 9728 → metadatos del servidor de autorización RFC 8414
+→ **registro dinámico de cliente** RFC 7591, que es lo que evita tener que
+dar de alta una app en cada servicio → PKCE → intercambio → refresco). Lo
+que se aporta son las tres piezas que el SDK deja abiertas porque dependen
+de dónde corre el cliente: **dónde se guardan** los tokens (cifrados con
+DPAPI en la tabla Config, como el resto de secretos), **cómo se abre el
+navegador** (el SDK asume una CLI; aquí se CAPTURA la URL y la abre el
+frontend) y **cómo vuelve el código** (el `redirect_uri` es un endpoint de
+la propia API). El puente entre las dos últimas es un `asyncio.Event` por
+flujo — no un `Future`, que se ata a un event loop al construirse y aquí el
+arranque y la espera son dos peticiones HTTP distintas.
+
+**Verificado EN VIVO contra los servicios reales**: se probó el flujo
+completo (sin autorizar nada — eso es del usuario) contra 23 servidores
+remotos. **16 devolvieron una URL de «Authorize» de su propio dominio**:
+Linear, Notion, Asana, Atlassian, Intercom, Sentry, Vercel, Netlify, Neon,
+Stripe, PayPal, Square, Canva, Webflow, Wix y Zapier. **GitHub NO**: su
+servidor no admite registro dinámico (404 en el `registration_endpoint`), así
+que se queda con token — y el catálogo lo dice con esas palabras en vez de
+fingir que se puede. Box, Monday, Prisma, Cloudflare-docs y Globalping
+tampoco completaron el descubrimiento y quedan fuera del catálogo.
+
+**Catálogo a 27 entradas**, todas verificadas: las 16 de OAuth por el flujo
+real de arriba, y los paquetes npm contra `registry.npmjs.org`. Cada entrada
+declara `auth: oauth | token | none`, y la UI lo enseña como una etiqueta
+("1 clic" / "pide clave" / "sin cuenta") para que se sepa antes de pulsar.
+Las descripciones se reescribieron para alguien que no sabe qué es ese
+servicio ("el sitio donde aterrizan los errores de tus aplicaciones cuando
+fallan en producción" en vez de "Sentry MCP server").
+
+**La pestaña.** «Servicios» sale de Conexiones y se coloca entre «IA y
+Modelos» y «Permisos». De arriba abajo: qué es esto en dos frases sin jerga
+→ **el buscador** (filtra el catálogo al teclear y, si no encuentra,
+consulta el registro público) → lo que ya tienes conectado → el catálogo por
+categorías. El alta manual queda al final, para un servidor propio.
+
+Tests: `test_mcp_oauth.py` (18 — el token cifrado en reposo y que la API no
+lo devuelve, el puente navegador↔callback llamando al handler REAL del SDK,
+un `state` desconocido que se rechaza, dos flujos concurrentes sin mezclarse,
+la autorización que se va al borrar el servidor, que solo `auth="oauth"`
+arma el flujo, y la coherencia del catálogo — 27 entradas, cada tipo de auth
+declarando lo suyo, descripciones de verdad). **3 mutaciones** confirmadas y
+restauradas byte a byte. Regresión: 123 passed + 4 xfailed; `tsc` limpio y
+`vite build` completo; +19 claves i18n ×4 (paridad 1429).
+
+**Pendiente en vivo**: pulsar «Conectar» en Notion o Linear y completar el
+«Authorize» de verdad en el navegador — el descubrimiento y la URL están
+probados contra los servidores reales, pero el viaje de vuelta (callback →
+token → herramientas descubiertas) solo se cierra con una cuenta real.

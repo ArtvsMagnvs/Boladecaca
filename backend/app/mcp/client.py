@@ -36,7 +36,7 @@ from typing import Any, Optional
 
 from app.core.config import settings
 
-from . import store
+from . import oauth, store
 
 logger = logging.getLogger(__name__)
 
@@ -207,15 +207,22 @@ class MCPConnection:
             return stdio_client(StdioServerParameters(
                 command=command, args=args, env=env))
         headers = srv_secrets.get("headers") or None
+        # [C1c] OAuth: si el servidor está marcado `auth="oauth"`, la
+        # autorización la lleva el proveedor del SDK (descubrimiento + registro
+        # dinámico + PKCE + refresco) y el usuario la concede en la WEB DEL
+        # PROPIO SERVICIO. Con `auth="token"` (o sin marca) se usan los headers
+        # que el usuario pegó, exactamente como en C1.
+        auth = oauth.build_provider(cfg.name, cfg.url) if cfg.auth == "oauth" else None
         if cfg.transport == "sse":
             from mcp.client.sse import sse_client
-            return sse_client(cfg.url, headers=headers)
+            return sse_client(cfg.url, headers=headers, auth=auth)
         # "http" (streamable HTTP, el transport moderno para servidores
-        # remotos — SSE quedó deprecado en el estándar). Los headers viajan
-        # por un cliente httpx propio del SDK.
+        # remotos — SSE quedó deprecado en el estándar). Los headers y el
+        # `auth` viajan por un cliente httpx propio del SDK.
         from mcp.client.streamable_http import (create_mcp_http_client,
                                                 streamable_http_client)
-        http_client = create_mcp_http_client(headers=headers) if headers else None
+        http_client = (create_mcp_http_client(headers=headers, auth=auth)
+                       if (headers or auth) else None)
         return streamable_http_client(cfg.url, http_client=http_client)
 
 

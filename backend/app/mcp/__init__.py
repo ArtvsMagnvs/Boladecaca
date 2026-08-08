@@ -22,6 +22,15 @@ from app.mcp.store import (
     validate_config,
 )
 from app.mcp.client import get_connection, drop_connection, shutdown_all
+# [C1c] OAuth: el usuario autoriza en la web del propio servicio, sin pegar
+# tokens. Se expone lo mínimo — el flujo lo conduce el cliente.
+from app.mcp.oauth import AUTHORIZE_TIMEOUT_S
+from app.mcp.oauth import cancel as cancel_oauth
+from app.mcp.oauth import forget as forget_oauth
+from app.mcp.oauth import is_authorized
+from app.mcp.oauth import pending_url as pending_authorize_url
+from app.mcp.oauth import redirect_uri as oauth_redirect_uri
+from app.mcp.oauth import resolve_callback as resolve_oauth_callback
 # [C1b, doc 42 §2] El registro OFICIAL de servidores MCP: buscar lo que no
 # esté en el catálogo curado y traducirlo a una config conectable.
 from app.mcp.directory import (
@@ -52,4 +61,11 @@ __all__ = [
     "entry_to_dict",
     "map_entry",
     "search_directory",
+    "AUTHORIZE_TIMEOUT_S",
+    "cancel_oauth",
+    "forget_oauth",
+    "is_authorized",
+    "oauth_redirect_uri",
+    "pending_authorize_url",
+    "resolve_oauth_callback",
 ]

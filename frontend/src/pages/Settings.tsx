@@ -36,6 +36,10 @@ import { PROVIDER_AUTH_HELP } from "@/data/providerAuthHelp";
 // - "Sistema" gana el panel informativo del escáner de hardware (CPU/GPU/RAM).
 const SETTINGS_TABS = [
   { id: "ia", labelKey: "settings.tab.ia" },
+  // [C1c, petición del usuario 2026-08-08] Los servicios externos (MCP) salen
+  // de «Conexiones» a su propia pestaña, aquí: justo debajo de IA y Modelos y
+  // encima de Permisos — es donde el usuario los busca, y ya no es un rincón.
+  { id: "mcp", labelKey: "settings.tab.mcp" },
   { id: "permisos", labelKey: "settings.tab.permisos" },
   { id: "voz", labelKey: "settings.tab.voz" },
   // [PU4b, doc 35] Briefing: secciones, horarios (N al día) y noticias.
@@ -2687,14 +2691,15 @@ export default function Settings() {
             </p>
             <TelegramSettings />
           </div>
+        </div>
+      )}
 
-          {/* V1.2 (C1): seccion Servidores MCP */}
-          <div className="glass-surface rounded-2xl p-4">
-            <h3 className="text-sm font-medium text-ink mb-3">
-              {tr("connections.mcp.title")}
-            </h3>
-            <McpPanel />
-          </div>
+      {/* ═══ Pestaña Servicios (MCP) — C1c: pestaña propia, ya no en Conexiones ═══ */}
+      {tab === "mcp" && (
+        <div className="glass-surface rounded-2xl p-4">
+          <h3 className="text-sm font-medium text-ink mb-1">{tr("mcp.title")}</h3>
+          <p className="text-[11px] text-ink-faint mb-3">{tr("mcp.subtitle")}</p>
+          <McpPanel />
         </div>
       )}
 

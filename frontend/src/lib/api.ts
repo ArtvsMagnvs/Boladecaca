@@ -562,6 +562,8 @@ export interface McpServer {
   last_error: string | null;
   tools_count: number;
   secret_keys: { env: string[]; headers: string[] };
+  auth: "oauth" | "token" | "none";
+  authorized: boolean;
 }
 
 // V1.2 (C1b): una entrada del registro OFICIAL de servidores MCP, ya traducida
@@ -598,6 +600,7 @@ export interface McpServerIn {
   url?: string;
   description?: string;
   enabled?: boolean;
+  auth?: "oauth" | "token" | "none";
   // Secretos: omitidos = conservar los guardados (nunca vuelven por la API).
   env?: Record<string, string>;
   headers?: Record<string, string>;
@@ -1086,6 +1089,13 @@ export const api = {
   searchMcpDirectory: (q: string, limit = 20) =>
     request<{ results: McpDirectoryEntry[] }>(
       `/mcp/directory/search?q=${encodeURIComponent(q)}&limit=${limit}`),
+  // [C1c] Arranca el «Autorizar» en la web del propio servicio: devuelve la
+  // URL que hay que abrir en el navegador del usuario.
+  startMcpOAuth: (data: { name: string; url: string; description?: string }) =>
+    request<{ authorize_url: string; name: string }>("/mcp/oauth/start", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
 
   // --- Email + Calendar (V0.7 Fase 4) ---
   // Email status

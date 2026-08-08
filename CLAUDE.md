@@ -5779,7 +5779,71 @@ que el cierre de V1.0 — paso explícito, no automático).
 
 ---
 
-*Última actualización: 2026-08-08 — **V1.2 C1b EJECUTADA — EL DIRECTORIO DE
+*Última actualización: 2026-08-08 — **V1.2 C1c — «AUTORIZAR» SIN TOKENS +
+PESTAÑA PROPIA DE SERVICIOS (doc 42 §7)**. Petición del usuario al ver C1b,
+con capturas de cómo lo hace Claude: conectar los MCP *"de forma directa, con
+redirección a la url que toca, con el authorize directo en la web del producto
+sin tantas complejidades de buscar tokens"*, sacar MCP de «Conexiones» a su
+**pestaña propia entre IA y Permisos**, buscador arriba, y descripciones que
+entienda alguien que no sabe qué es ese MCP.
+**EL LOGIN DE UN CLIC (`app/mcp/oauth.py`)**: no se reimplementa el protocolo
+— el SDK oficial ya trae el baile completo (descubrimiento del recurso
+protegido RFC 9728 → metadatos del servidor de autorización RFC 8414 →
+**registro dinámico de cliente** RFC 7591, que es lo que evita dar de alta una
+app en cada servicio → PKCE → intercambio → refresco). Se aportan las TRES
+piezas que el SDK deja abiertas porque dependen de dónde corre el cliente:
+**dónde se guardan** los tokens (cifrados con DPAPI en la tabla Config, mismo
+helper que el resto de secretos de Aithera), **cómo se abre el navegador** (el
+SDK asume una CLI que abre una ventana; aquí se CAPTURA la URL y la abre el
+frontend, porque el backend no puede abrir nada en la máquina del usuario de
+forma fiable) y **cómo vuelve el código** (el `redirect_uri` es un endpoint de
+la propia API, `/api/mcp/oauth/callback`). El puente entre las dos últimas es
+un `asyncio.Event` por flujo — **no un `Future`**, que se ata a un event loop
+al construirse y aquí el arranque y la espera son dos peticiones HTTP
+distintas (los 3 primeros tests fallaron por eso y el diseño se corrigió).
+Las credenciales las teclea el usuario en la web del proveedor: **Aithera
+nunca las ve**, mismo modelo que el OAuth de Google que ya existía.
+**VERIFICADO EN VIVO CONTRA LOS SERVICIOS REALES** (sin autorizar nada — eso
+es del usuario): flujo completo probado contra 23 servidores remotos, **16
+devolvieron una URL de «Authorize» de su propio dominio con un `client_id`
+real** — Linear, Notion, Asana, Atlassian, Intercom, Sentry, Vercel, Netlify,
+Neon, Stripe, PayPal, Square, Canva, Webflow, Wix y Zapier. **GitHub NO**: su
+servidor devuelve 404 en el `registration_endpoint` (no admite registro
+dinámico), así que se queda con token — y el catálogo lo dice con esas
+palabras en vez de fingir que se puede. Box, Monday, Prisma, Cloudflare-docs y
+Globalping tampoco completaron el descubrimiento y quedan fuera.
+**CATÁLOGO A 27 ENTRADAS**, todas verificadas (las 16 de OAuth por el flujo
+real; los paquetes npm contra `registry.npmjs.org`). Cada entrada declara
+`auth: oauth | token | none` — campo append-only en `MCPServerConfig` con
+default seguro (`none`), así que una config guardada por C1 no puede volverse
+OAuth por sorpresa — y la UI lo enseña como etiqueta ("1 clic" / "pide clave"
+/ "sin cuenta") para que se sepa ANTES de pulsar. Las descripciones se
+reescribieron para quien no conoce el servicio ("el sitio donde aterrizan los
+errores de tus aplicaciones cuando fallan en producción" en vez de "Sentry MCP
+server"), con un test que exige que existan, tengan cuerpo y no sean el título
+repetido.
+**LA PESTAÑA**: «Servicios» sale de Conexiones y se coloca entre «IA y
+Modelos» y «Permisos». De arriba abajo: qué es esto en dos frases sin jerga →
+**el buscador** (filtra el catálogo al teclear y, si no encuentra, consulta el
+registro público de miles de servicios) → lo que ya tienes conectado → el
+catálogo por categorías con «Conectar». El alta manual queda al final, para un
+servidor propio. Tests: `test_mcp_oauth.py` (18 — token cifrado en reposo y la
+API que no lo devuelve, el puente navegador↔callback llamando al **handler
+REAL del SDK** —simularlo habría dejado el handler sin probar, lección
+S9b/S9c—, un `state` desconocido que se RECHAZA, dos flujos concurrentes sin
+mezclarse, la autorización que se borra con el servidor, que solo
+`auth="oauth"` arma el flujo, y la coherencia del catálogo). **3 mutaciones**
+confirmadas y restauradas byte a byte (el `state` sin registrar, los tokens
+sin cifrar, el OAuth armándose siempre). Regresión: **123 passed + 4 xfailed**;
+`tsc --noEmit` limpio y `vite build` completo (7,1 s); +19 claves i18n ×4
+(paridad 1429). El test de fronteras cazó de paso un import interno de
+`app.mcp.oauth` desde el endpoint, corregido por el barrel.
+**Pendiente en vivo**: pulsar «Conectar» en Notion o Linear y completar el
+«Authorize» de verdad en el navegador — el descubrimiento y la URL están
+probados contra los servidores reales, pero el viaje de vuelta (callback →
+token → herramientas descubiertas) solo se cierra con una cuenta real.*
+
+*Anterior: 2026-08-08 — **V1.2 C1b EJECUTADA — EL DIRECTORIO DE
 MCPs: conectar con un clic, `/comando`, y uso POR CONTEXTO (doc 42)**.
 Petición directa del usuario al arrancar C1: *"un repositorio de MCP
 disponibles… una lista por tipos, con un botón de Conectar… y que Aithera

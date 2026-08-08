@@ -42,6 +42,12 @@ class Settings:
     # del ToolManager, como cualquier tool.
     MCP_CONNECT_TIMEOUT_S = float(os.getenv("MCP_CONNECT_TIMEOUT_S", "45"))
     MCP_CALL_TIMEOUT_S = float(os.getenv("MCP_CALL_TIMEOUT_S", "120"))
+    # [C1c] A donde vuelve el navegador tras pulsar «Authorize» en la web del
+    # servicio. Es un endpoint de esta misma API — el registro dinamico de
+    # cliente (RFC 7591) lo declara, asi que cambiarlo obliga a re-autorizar.
+    # localhost por http esta permitido explicitamente para clientes nativos.
+    MCP_OAUTH_REDIRECT_URI = os.getenv(
+        "MCP_OAUTH_REDIRECT_URI", "http://localhost:8000/api/mcp/oauth/callback")
 
     # V1.0 (TIE v1): kill-switch del Task Intelligence Engine. Con False, el
     # Gateway sigue usando el chat_message_handler legacy (el switch a tie.handle

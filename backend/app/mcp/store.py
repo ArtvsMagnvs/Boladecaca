@@ -47,13 +47,18 @@ class MCPServerConfig:
     url: str = ""                     # sse/http: URL del servidor
     description: str = ""             # para el usuario Y para el modelo (contexto)
     enabled: bool = True
+    # [C1c] Cómo se autentica. "oauth" = el usuario autoriza en la web del
+    # propio servicio (sin pegar tokens); "token" = credenciales pegadas a
+    # mano; "none" = no necesita nada. Append-only y con default seguro: una
+    # config guardada por C1 (sin este campo) sigue comportándose igual.
+    auth: str = "none"
 
     def to_dict(self) -> dict:
         return {
             "name": self.name, "transport": self.transport,
             "command": self.command, "args": list(self.args),
             "url": self.url, "description": self.description,
-            "enabled": self.enabled,
+            "enabled": self.enabled, "auth": self.auth,
         }
 
     @classmethod
@@ -66,6 +71,7 @@ class MCPServerConfig:
             url=str(d.get("url", "")),
             description=str(d.get("description", "")),
             enabled=bool(d.get("enabled", True)),
+            auth=str(d.get("auth", "none")),
         )
 
 
@@ -193,6 +199,10 @@ def delete_server(name: str) -> bool:
         _config_set(db, _KEY_SERVERS, json.dumps(nuevos, ensure_ascii=False))
         _config_del(db, _KEY_SECRET + name)
         _config_del(db, _KEY_TOOLS + name)
+        # [C1c] La autorización OAuth se va con el servidor: dejar el token
+        # de un servicio ya borrado sería guardar una llave de una puerta que
+        # ya no existe.
+        _config_del(db, "mcp.oauth." + name)
         db.commit()
         return True
     finally:

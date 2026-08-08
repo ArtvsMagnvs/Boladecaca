@@ -99,6 +99,9 @@ FORBIDDEN_MODULES = (
     # [C1b] El proxy al registro oficial: quien busque pide
     # `app.mcp.search_directory(...)` por el barrel.
     ("app.mcp.directory", MCP_DIR),
+    # [C1c] El flujo OAuth: quien lo necesite usa las funciones del barrel
+    # (`pending_authorize_url`, `resolve_oauth_callback`, `forget_oauth`…).
+    ("app.mcp.oauth", MCP_DIR),
     # [C1b] El puente MCP↔TIE (/comando + bloque del clasificador): interno
     # del TIE, como el resto de sus piezas. El Orquestador lo usa por el
     # barrel (`tie.parse_mcp_command` / `tie.pin_mcp_tool`).

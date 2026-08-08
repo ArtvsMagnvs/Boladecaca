@@ -9,9 +9,11 @@
 # Efecto EN CALIENTE: añadir/activar registra el proxy en el ToolManager al
 # momento; desactivar/borrar lo retira y apaga su conexión — sin reiniciar
 # el backend (a diferencia de Telegram, cuyo polling se monta al arrancar).
+import asyncio
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, HTTPException
+from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 
 from app import mcp as mcp_service
@@ -41,6 +43,7 @@ class MCPServerIn(BaseModel):
     url: str = ""
     description: str = ""
     enabled: bool = True
+    auth: str = "none"                       # [C1c] oauth | token | none
     # Secretos: None/omitido = conservar los guardados; {} = borrarlos.
     env: Optional[Dict[str, str]] = None
     headers: Optional[Dict[str, str]] = None
@@ -58,6 +61,8 @@ class MCPServerOut(BaseModel):
     last_error: Optional[str] = None
     tools_count: int
     secret_keys: Dict[str, List[str]]        # nombres, jamás valores
+    auth: str = "none"                       # oauth | token | none
+    authorized: bool = False                 # [C1c] hay autorización OAuth guardada
 
 
 def _server_out(cfg) -> MCPServerOut:
@@ -70,6 +75,8 @@ def _server_out(cfg) -> MCPServerOut:
         last_error=(conn.last_error if conn else None),
         tools_count=len(mcp_service.cached_tools(cfg.name)),
         secret_keys=mcp_service.secret_key_names(cfg.name),
+        auth=cfg.auth,
+        authorized=mcp_service.is_authorized(cfg.name),
     )
 
 
@@ -84,7 +91,7 @@ async def upsert_mcp_server(body: MCPServerIn):
         name=body.name.strip().lower(), transport=body.transport,
         command=body.command.strip(), args=[a for a in body.args if a.strip()],
         url=body.url.strip(), description=body.description.strip(),
-        enabled=body.enabled,
+        enabled=body.enabled, auth=body.auth,
     )
     secrets = None
     if body.env is not None or body.headers is not None:
@@ -135,6 +142,109 @@ async def test_mcp_server(name: str):
     except Exception as e:
         raise HTTPException(status_code=502, detail=str(e))
     return _server_out(cfg)
+
+
+# ---------------------------------------------------------------------------
+# OAuth (C1c) — «Autorizar» en la web del propio servicio, sin pegar tokens
+# ---------------------------------------------------------------------------
+class OAuthStartIn(BaseModel):
+    name: str
+    url: str
+    description: str = ""
+
+
+@router.post("/oauth/start")
+async def oauth_start(body: OAuthStartIn):
+    """Da de alta el servidor (marcado `auth=oauth`) y arranca la conexión en
+    segundo plano: el SDK descubre el servidor de autorización, registra el
+    cliente y construye la URL de «Authorize». Se devuelve esa URL para que el
+    frontend la abra en el navegador del usuario.
+
+    El backend NO abre navegadores ni teclea credenciales: quien autoriza es
+    el usuario, en la página del propio servicio."""
+    nombre = body.name.strip().lower()
+    cfg = mcp_service.MCPServerConfig(
+        name=nombre, transport="http", url=body.url.strip(),
+        description=body.description.strip(), enabled=True, auth="oauth")
+    try:
+        mcp_service.upsert_server(cfg)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    # Reconectar desde cero: una autorización vieja de un servidor que se
+    # vuelve a conectar puede ser de otra cuenta o estar revocada.
+    mcp_service.forget_oauth(nombre)
+    conn = mcp_service.get_connection(nombre)
+    if conn is not None:
+        await conn.shutdown()
+    mcp_service.drop_connection(nombre)
+
+    conn = mcp_service.get_connection(nombre)
+    # `ensure_ready` dispara el 401 → descubrimiento → registro → URL. Corre en
+    # segundo plano porque se quedará ESPERANDO a que el usuario autorice.
+    tarea = asyncio.create_task(_connect_quietly(conn))
+    _OAUTH_TASKS.add(tarea)
+    tarea.add_done_callback(_OAUTH_TASKS.discard)
+
+    # Esperar a que aparezca la URL (el descubrimiento son 2-3 peticiones).
+    for _ in range(60):
+        url = mcp_service.pending_authorize_url(nombre)
+        if url:
+            return {"authorize_url": url, "name": nombre}
+        if tarea.done():
+            break
+        await asyncio.sleep(0.25)
+
+    mcp_service.cancel_oauth(nombre, "no se pudo iniciar la autorización")
+    raise HTTPException(
+        status_code=502,
+        detail=(f"'{body.url}' no ofreció un inicio de sesión automático. "
+                f"Conéctalo con un token desde «Añadir a mano»."))
+
+
+_OAUTH_TASKS: set = set()
+
+
+async def _connect_quietly(conn) -> None:
+    """La conexión de fondo del flujo OAuth. Un fallo aquí NO es un error de
+    servidor: queda en `conn.last_error` y la UI lo muestra."""
+    try:
+        await conn.ensure_ready(timeout=mcp_oauth_timeout())
+    except Exception:
+        pass
+
+
+def mcp_oauth_timeout() -> float:
+    # Lo que tarde el usuario en autorizar, más el margen del propio handshake.
+    return mcp_service.AUTHORIZE_TIMEOUT_S + 60
+
+
+@router.get("/oauth/callback", response_class=HTMLResponse)
+async def oauth_callback(code: str = "", state: str = "", error: str = ""):
+    """A donde vuelve el navegador tras «Authorize». Devuelve una página
+    mínima: el usuario cierra la pestaña y sigue en Aithera."""
+    if error:
+        return HTMLResponse(_pagina(f"No se completó la conexión: {error}"), status_code=400)
+    if not code or not state:
+        return HTMLResponse(_pagina("Faltan datos en la respuesta del servicio."),
+                            status_code=400)
+    if not mcp_service.resolve_oauth_callback(code, state):
+        return HTMLResponse(
+            _pagina("Esta autorización ya no estaba esperando (puede que "
+                    "haya caducado). Vuelve a Aithera e inténtalo otra vez."),
+            status_code=409)
+    return HTMLResponse(_pagina("Listo. Ya puedes cerrar esta pestaña y volver a Aithera."))
+
+
+def _pagina(mensaje: str) -> str:
+    return (
+        "<!doctype html><meta charset='utf-8'>"
+        "<title>Aithera</title>"
+        "<body style=\"margin:0;display:flex;align-items:center;"
+        "justify-content:center;height:100vh;background:#0f1115;color:#e8eaed;"
+        "font-family:system-ui,sans-serif;text-align:center;padding:24px\">"
+        f"<div><p style='font-size:16px;max-width:420px'>{mensaje}</p></div></body>"
+    )
 
 
 @router.get("/directory/search")
